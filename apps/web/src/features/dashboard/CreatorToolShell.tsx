@@ -1,8 +1,10 @@
-import { useState, type ReactNode } from 'react';
-import { ArrowLeft, ServerOff } from 'lucide-react';
+import { type ReactNode } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
-import ToolAgentComposer from './ToolAgentComposer.js';
-import CreatorAgentPanel from './CreatorAgentPanel.js';
+import CreatorCollaborationPanel, {
+  type CreatorPanelQuickAction
+} from './CreatorCollaborationPanel.js';
+import { creatorPanelAdapterFor } from './creator-panel-adapters.js';
 import { useOptionalCreatorSession } from './creator-session-store.js';
 
 export default function CreatorToolShell(props: {
@@ -14,30 +16,25 @@ export default function CreatorToolShell(props: {
   placeholder: string;
   pageClassName?: string;
   contentClassName?: string;
+  stepLabel?: string;
+  currentIssue?: string;
+  quickActions?: CreatorPanelQuickAction[];
+  onCancelTask?(): void;
+  onResumeTask?(): void;
+  taskControlPending?: 'canceling' | 'resuming';
   children: ReactNode;
   onBack(): void;
   onCommand?(command: string): string;
 }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
-  const [input, setInput] = useState('');
-
-  function runCommand(command: string) {
-    const prompt = command.trim();
-    if (!prompt) return;
-    if (session === null) return;
-    const operation = session.agentBusy
-      ? session.steerAgentTurn(prompt)
-      : session.runAgentTurn(prompt);
-    void operation.catch(() => undefined);
-  }
-
-  function submit() {
-    const prompt = input.trim();
-    if (!prompt) return;
-    setInput('');
-    runCommand(prompt);
-  }
+  const adapter = creatorPanelAdapterFor(session?.job.templateId ?? '');
+  const quickActions = props.quickActions ?? props.suggestions.map((suggestion, index) => ({
+    id: `suggestion-${index}`,
+    label: suggestion,
+    kind: 'agent' as const,
+    prompt: suggestion
+  }));
 
   return (
     <main className={`creator-workspace-page${props.pageClassName ? ` ${props.pageClassName}` : ''}`}>
@@ -55,42 +52,17 @@ export default function CreatorToolShell(props: {
           <div className={`creator-workspace-content${props.contentClassName ? ` ${props.contentClassName}` : ''}`}>{props.children}</div>
         </section>
 
-        {session !== null ? (
-          <CreatorAgentPanel
-            title="OpenCreator"
-            statusSummary={props.context}
-            activities={session.job.activities}
-            turns={session.turns}
-            items={session.items}
-            approvals={session.approvals}
-            busy={session.agentBusy}
-            onInterrupt={() => void session.interruptAgentTurn().catch(() => undefined)}
-            onApproval={(approval, decision) => void session.respondAgentApproval(
-              approval.id,
-              decision,
-              approval.processGeneration
-            ).catch(() => undefined)}
-            composer={(
-              <>
-                <div className="creator-tool-agent-suggestions" aria-label={l('Agent 建议', 'Agent suggestions')}>
-                  {props.suggestions.map(suggestion => (
-                    <button type="button" key={suggestion} onClick={() => runCommand(suggestion)}>{suggestion}</button>
-                  ))}
-                </div>
-                <ToolAgentComposer
-                  value={input}
-                  onChange={setInput}
-                  onSubmit={submit}
-                  ariaLabel={`${l('告诉 Agent', 'Tell the Agent your')} ${props.title} ${l('要求', 'requirements')}`}
-                  placeholder={props.placeholder}
-                />
-              </>
-            )}
-          />
-        ) : <aside className="creator-tool-agent" aria-label="OpenCreator" role="alert">
-          <ServerOff size={18} aria-hidden="true" />
-          <p>{l('Creator Runtime 未连接，无法启动 Agent。', 'Creator Runtime is disconnected, so the Agent cannot start.')}</p>
-        </aside>}
+        <CreatorCollaborationPanel
+          adapter={adapter}
+          stepLabel={props.stepLabel ?? props.title}
+          contextSummary={props.context}
+          promptHint={props.placeholder}
+          currentIssue={props.currentIssue}
+          quickActions={quickActions}
+          onCancelTask={props.onCancelTask}
+          onResumeTask={props.onResumeTask}
+          taskControlPending={props.taskControlPending}
+        />
       </div>
     </main>
   );

@@ -12,7 +12,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
-import DashboardPageView from './DashboardPage.js';
+import DashboardPageView, {
+  createCreatorJobWithRecovery
+} from './DashboardPage.js';
 
 function DashboardPage(props: ComponentProps<typeof DashboardPageView>) {
   return (
@@ -70,12 +72,14 @@ function createInMemoryCreatorService(): CreatorWebService {
       };
     } else if (current.templateId === 'video-translation' && request.action === 'edit-subtitle') {
       job = editTranslationSubtitles(current, request.input);
+    } else if (current.templateId === 'video-translation' && request.action === 'commit-version') {
+      job = commitTranslationVersion(current, request.input);
     } else if (
       current.templateId === 'video-translation'
       && request.action === 'run-stage'
-      && request.input.stageId === 'subtitle'
+      && typeof request.input.stageId === 'string'
     ) {
-      job = completeTranslationStage(current);
+      job = completeTranslationStage(current, request.input.stageId, request.input);
     } else {
       job = current;
     }
@@ -156,6 +160,7 @@ function editTranslationSubtitles(
 ): CreatorJob {
   const now = new Date().toISOString();
   const version = latestResultVersion(current) + 1;
+  const baseResultVersion = positiveResultVersion(input.baseResultVersion);
   const sourceArtifactId = typeof input.artifactId === 'string' ? input.artifactId : '';
   const source = current.artifacts.find(artifact => artifact.id === sourceArtifactId);
   const artifact = translationArtifact(current, {
@@ -173,6 +178,7 @@ function editTranslationSubtitles(
     description: '保存字幕修改',
     changedArtifacts: [artifact],
     state: current.state,
+    baseResultVersion,
     createdAt: now
   });
   return {
@@ -193,46 +199,74 @@ function editTranslationSubtitles(
   };
 }
 
-function completeTranslationStage(current: CreatorJob): CreatorJob {
+function commitTranslationVersion(
+  current: CreatorJob,
+  input: Record<string, CreatorJson>
+): CreatorJob {
   const now = new Date().toISOString();
-  const previousSnapshot = translationSnapshots(current).at(-1);
-  const completesEditedVersion = previousSnapshot?.action === 'edit-subtitle';
-  const version = completesEditedVersion
-    ? previousSnapshot.version
-    : latestResultVersion(current) + 1;
-  const existingSubtitle = completesEditedVersion
-    ? latestTranslationArtifact(current, 'target_subtitle')
-    : undefined;
-  const subtitle = existingSubtitle ?? translationArtifact(current, {
-    kind: 'target_subtitle',
+  const version = latestResultVersion(current) + 1;
+  const snapshot = translationSnapshot(current, {
     version,
-    fileName: `目标字幕-V${version}.srt`,
-    metadata: { cues: defaultTranslationCues }
+    action: 'commit-version',
+    description: '保存版本设置',
+    changedArtifacts: [],
+    state: current.state,
+    baseResultVersion: positiveResultVersion(input.baseResultVersion),
+    createdAt: now
   });
-  const generatedArtifacts: CreatorArtifact[] = existingSubtitle === undefined ? [subtitle] : [];
-  if (current.state.dubbing === true) {
+  return {
+    ...current,
+    status: 'completed',
+    revision: current.revision + 1,
+    state: {
+      ...current.state,
+      resultVersion: version,
+      latestResultVersion: version,
+      resultSnapshots: [...translationSnapshots(current), snapshot]
+    },
+    updatedAt: now
+  };
+}
+
+function completeTranslationStage(
+  current: CreatorJob,
+  stageId: string,
+  input: Record<string, CreatorJson>
+): CreatorJob {
+  const now = new Date().toISOString();
+  const targetResultVersion = positiveResultVersion(input.targetResultVersion);
+  const existingTarget = targetResultVersion === undefined
+    ? undefined
+    : translationSnapshots(current).find(snapshot => snapshot.version === targetResultVersion);
+  const version = existingTarget === undefined
+    ? latestResultVersion(current) + 1
+    : targetResultVersion!;
+  const generatedArtifacts: CreatorArtifact[] = [];
+  if (stageId === 'subtitle') {
+    generatedArtifacts.push(translationArtifact(current, {
+      kind: 'target_subtitle',
+      version,
+      fileName: `目标字幕-V${version}.srt`,
+      metadata: { cues: defaultTranslationCues }
+    }));
+  } else if (stageId === 'tts') {
     generatedArtifacts.push(translationArtifact(current, {
       kind: 'dubbed_audio',
       version,
       fileName: `目标语言配音-V${version}.wav`
     }));
-  }
-  if (current.state.composeVideo === true) {
-    const videoFormat = current.state.videoFormat;
-    if (videoFormat !== 'vertical') {
-      generatedArtifacts.push(translationArtifact(current, {
-        kind: 'horizontal_video',
-        version,
-        fileName: `翻译成片-V${version}.mp4`
-      }));
-    }
-    if (videoFormat === 'vertical' || videoFormat === 'all') {
-      generatedArtifacts.push(translationArtifact(current, {
-        kind: 'vertical_video',
-        version,
-        fileName: `竖屏翻译成片-V${version}.mp4`
-      }));
-    }
+  } else if (stageId === 'render-horizontal') {
+    generatedArtifacts.push(translationArtifact(current, {
+      kind: 'horizontal_video',
+      version,
+      fileName: `翻译成片-V${version}.mp4`
+    }));
+  } else if (stageId === 'render-vertical') {
+    generatedArtifacts.push(translationArtifact(current, {
+      kind: 'vertical_video',
+      version,
+      fileName: `竖屏翻译成片-V${version}.mp4`
+    }));
   }
   const snapshot = translationSnapshot(current, {
     version,
@@ -240,28 +274,32 @@ function completeTranslationStage(current: CreatorJob): CreatorJob {
     description: version === 1 ? '初次生成' : `生成项目 V${version}`,
     changedArtifacts: generatedArtifacts,
     state: current.state,
+    stageId,
+    baseResultVersion: positiveResultVersion(input.baseResultVersion),
     createdAt: now
   });
-  const snapshots = completesEditedVersion
-    ? [...translationSnapshots(current).slice(0, -1), snapshot]
-    : [...translationSnapshots(current), snapshot];
+  const resultSnapshots = existingTarget === undefined
+    ? [...translationSnapshots(current), snapshot]
+    : translationSnapshots(current).map(candidate => (
+        candidate.version === version ? snapshot : candidate
+      ));
   return {
     ...current,
     status: 'completed',
     revision: current.revision + 1,
     state: {
       ...current.state,
-      currentStage: 'subtitle',
+      currentStage: stageId,
       resultVersion: version,
-      latestResultVersion: version,
-      resultSnapshots: snapshots
+      latestResultVersion: Math.max(latestResultVersion(current), version),
+      resultSnapshots
     },
     stages: [
       ...current.stages,
       {
-        id: `translation_stage_${version}`,
+        id: `translation_stage_${current.stages.length + 1}`,
         jobId: current.id,
-        stageId: 'subtitle',
+        stageId,
         executor: 'krillinai',
         status: 'succeeded',
         dispatchStatus: 'finished',
@@ -269,7 +307,17 @@ function completeTranslationStage(current: CreatorJob): CreatorJob {
         claimExpiresAt: null,
         attempt: 1,
         idempotencyKey: null,
-        progress: { workflow: true },
+        progress: {
+          workflow: true,
+          resultVersion: version,
+          ...(positiveResultVersion(input.baseResultVersion) === undefined
+            ? {}
+            : { baseResultVersion: positiveResultVersion(input.baseResultVersion)! }),
+          ...(positiveResultVersion(input.inputResultVersion) === undefined
+            ? {}
+            : { inputResultVersion: positiveResultVersion(input.inputResultVersion)! }),
+          ...(targetResultVersion === undefined ? {} : { targetResultVersion })
+        },
         errorCode: null,
         errorMessage: null,
         startedAt: now,
@@ -316,22 +364,38 @@ function translationSnapshot(
     description: string;
     changedArtifacts: CreatorArtifact[];
     state: Record<string, CreatorJson>;
+    stageId?: string;
+    baseResultVersion?: number;
     createdAt: string;
   }
 ): CreatorResultSnapshot {
-  const previousRefs = translationSnapshots(current).at(-1)?.artifactRefs ?? {};
+  const snapshots = translationSnapshots(current);
+  const existing = snapshots.find(snapshot => snapshot.version === input.version);
+  const base = existing
+    ?? snapshots.find(snapshot => snapshot.version === input.baseResultVersion)
+    ?? snapshots.at(-1);
+  const previousRefs = base?.artifactRefs ?? {};
   const artifactRefs: Record<string, string[]> = Object.fromEntries(
     Object.entries(previousRefs).map(([kind, ids]) => [kind, [...ids]])
   );
   for (const artifact of input.changedArtifacts) artifactRefs[artifact.kind] = [artifact.id];
+  pruneTranslationArtifactRefs(
+    artifactRefs,
+    input.state,
+    input.stageId,
+    input.action
+  );
   return {
     version: input.version,
     createdAt: input.createdAt,
     action: input.action,
-    stageId: input.action === 'stage-succeeded' ? 'subtitle' : null,
+    stageId: input.action === 'stage-succeeded' ? input.stageId ?? 'subtitle' : null,
     description: input.description,
     artifactRefs,
-    changedArtifactIds: input.changedArtifacts.map(artifact => artifact.id),
+    changedArtifactIds: [
+      ...(existing?.changedArtifactIds ?? []),
+      ...input.changedArtifacts.map(artifact => artifact.id)
+    ],
     staleArtifactIds: [],
     state: { ...input.state }
   };
@@ -346,6 +410,40 @@ function latestResultVersion(job: CreatorJob): number {
     (highest, snapshot) => Math.max(highest, snapshot.version),
     0
   );
+}
+
+function positiveResultVersion(value: CreatorJson | undefined): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function pruneTranslationArtifactRefs(
+  refs: Record<string, string[]>,
+  state: Record<string, CreatorJson>,
+  stageId: string | undefined,
+  action: string
+) {
+  const remove = (...kinds: string[]) => {
+    for (const kind of kinds) delete refs[kind];
+  };
+  if (stageId === 'subtitle' || action === 'edit-subtitle') {
+    remove('dubbed_audio', 'dubbed_video', 'horizontal_video', 'vertical_video');
+  } else if (stageId === 'tts') {
+    remove('horizontal_video', 'vertical_video');
+  } else if (stageId === 'render-horizontal' && state.videoFormat === 'all') {
+    remove('vertical_video');
+  }
+  if (state.dubbing !== true) remove('dubbed_audio', 'dubbed_video');
+  if (state.composeVideo !== true) {
+    remove('horizontal_video', 'vertical_video');
+  } else if (stageId === undefined) {
+    if (state.videoFormat === 'horizontal') {
+      remove('vertical_video');
+    } else if (state.videoFormat === 'vertical') {
+      remove('horizontal_video');
+    }
+  }
 }
 
 function latestTranslationArtifact(job: CreatorJob, kind: string) {
@@ -378,6 +476,49 @@ function completedAgentTurn(jobId: string, content: string) {
 }
 
 describe('DashboardPage', () => {
+  it('accepts a late creator job response after all short retry windows expire', async () => {
+    vi.useFakeTimers();
+    try {
+      const createdAt = '2026-08-30T00:00:00.000Z';
+      const job: CreatorJob = {
+        id: 'creator_late_job',
+        projectId: 'project_1',
+        templateId: 'cover',
+        templateVersion: 2,
+        status: 'draft',
+        revision: 0,
+        state: { prompt: '迟到但已成功创建的任务' },
+        agentThreadId: null,
+        stages: [],
+        artifacts: [],
+        activities: [],
+        createdAt,
+        updatedAt: createdAt
+      };
+      let resolveCreation!: (response: { job: CreatorJob }) => void;
+      const lateResponse = new Promise<{ job: CreatorJob }>(resolve => {
+        resolveCreation = resolve;
+      });
+      const createJob = vi.fn(() => lateResponse);
+      const work = createCreatorJobWithRecovery(
+        { createJob } as unknown as CreatorWebService,
+        {
+          projectId: job.projectId,
+          templateId: job.templateId,
+          creationKey: 'creator-late-response'
+        }
+      );
+
+      await vi.advanceTimersByTimeAsync(12_750);
+      expect(createJob).toHaveBeenCalledTimes(3);
+
+      resolveCreation({ job });
+      await expect(work).resolves.toEqual(job);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('opens a Skill workspace directly and keeps its prompt as an inactive hint', () => {
     const onSelectPrompt = vi.fn();
     const onBackToHome = vi.fn();
@@ -449,16 +590,10 @@ describe('DashboardPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '返回' }));
     fireEvent.click(screen.getByRole('button', { name: /^视频下载/ }));
-    const downloadInput = screen.getByRole('textbox', { name: '告诉 Agent 视频下载 要求' });
+    const downloadInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
     expect(downloadInput.closest('form')).toHaveClass('tool-agent-composer');
-    expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
-
-    const contextFile = new File(['notes'], 'download-notes.txt', { type: 'text/plain' });
-    fireEvent.change(screen.getByLabelText('添加文件'), { target: { files: [contextFile] } });
-    expect(screen.getByText('download-notes.txt')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '移除 download-notes.txt' }));
-    expect(screen.queryByText('download-notes.txt')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '添加上下文' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '选择模型 默认模型' })).not.toBeInTheDocument();
   });
 
   it('renders featured apps and the searchable creator app directory', () => {
@@ -970,42 +1105,28 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('menu')).toHaveTextContent('项目 V1');
   });
 
-  it('generates four cover variants from prompt and supports ratio changes', () => {
+  it('opens the three-step cover workflow and configures the output count', () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^封面生成/ }));
 
     expect(screen.getByRole('heading', { name: '封面生成' })).toBeInTheDocument();
     const coverSteps = screen.getByRole('navigation', { name: '封面生成流程' });
-    expect(within(coverSteps).getByRole('button', { name: '1 设置封面' })).toHaveAttribute('aria-current', 'step');
-    expect(within(coverSteps).getByRole('button', { name: '2 查看方案' })).toBeDisabled();
+    expect(within(coverSteps).getByRole('button', { name: '1 生成依据' })).toHaveAttribute('aria-current', 'step');
+    expect(within(coverSteps).getByRole('button', { name: '2 封面设置' })).toBeDisabled();
+    expect(within(coverSteps).getByRole('button', { name: '3 封面方案' })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('textbox', { name: '封面提示词' }), {
+      target: { value: '蓝色科技感，人物主体清晰，电影级光线' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+
+    expect(within(coverSteps).getByRole('button', { name: /封面设置$/ }))
+      .toHaveAttribute('aria-current', 'step');
     fireEvent.click(screen.getByRole('radio', { name: /1:1/ }));
-    fireEvent.click(screen.getByRole('button', { name: '生成 2 个封面' }));
-
-    expect(screen.getByRole('region', { name: '封面生成项目产出' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: '4 张' }));
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('封面比例1:1');
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('生成数量2');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('生成数量4 张');
     expect(screen.getByLabelText('任务摘要')).not.toHaveClass('is-compact');
-    expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-result-layout');
-    expect(screen.getByRole('button', { name: '项目 V1' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '封面方案' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: '参考素材' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '任务设置' })).toBeInTheDocument();
-    expect(screen.getAllByRole('img', { name: /^封面方案/ })).toHaveLength(2);
-    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
-    expect(screen.getByRole('region', { name: '封面生成项目产出' })).toHaveTextContent('封面比例1:1');
-
-    fireEvent.click(within(coverSteps).getByRole('button', { name: /设置封面$/ }));
-    fireEvent.click(screen.getByRole('button', { name: '生成 2 个封面' }));
-    expect(screen.getByRole('status')).toHaveTextContent('设置没有变化，继续查看 V1，未创建新版本');
-
-    fireEvent.click(within(coverSteps).getByRole('button', { name: /设置封面$/ }));
-    fireEvent.change(screen.getByRole('textbox', { name: '封面提示词' }), { target: { value: '蓝色科技感，人物主体更大，标题更醒目' } });
-    fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
-    expect(screen.getByRole('button', { name: '项目 V2' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '项目 V2' }));
-    const versionMenu = screen.getByRole('menu');
-    expect(versionMenu).toHaveTextContent('项目 V1');
-    expect(versionMenu).toHaveTextContent('项目 V2');
   });
 
   it('edits and saves generated subtitles without leaving the result workspace', async () => {
@@ -1193,12 +1314,196 @@ describe('DashboardPage', () => {
     fireEvent.click(within(reopenedVersionMenu).getByText('项目 V1').closest('button') as HTMLButtonElement);
 
     expect(screen.getByText('项目 V1')).toBeInTheDocument();
+    expect(screen.queryByText('正在查看 V1')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     const settings = screen.getByText('目标语言').closest('dl');
     expect(settings).not.toBeNull();
     expect(within(settings as HTMLElement).getByText('简体中文')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
     expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toHaveValue('Welcome to OpenCreator.');
+  });
+
+  it('reuses completed subtitles when video composition is enabled for a new version', async () => {
+    const baseService = createInMemoryCreatorService();
+    const applyAction = vi.fn(baseService.applyAction.bind(baseService));
+    const creatorService = {
+      ...baseService,
+      applyAction
+    } as CreatorWebService;
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        creatorService={creatorService}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=reuse-subtitles' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    await startVideoTranslation();
+
+    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '调整设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
+
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        action: 'run-stage',
+        input: expect.objectContaining({
+          stageId: 'render-horizontal',
+          workflow: true,
+          baseResultVersion: 1,
+          inputResultVersion: 1
+        })
+      })
+    ));
+    const runStageIds = applyAction.mock.calls.flatMap(([, request]) => (
+      request.action === 'run-stage' && typeof request.input.stageId === 'string'
+        ? [request.input.stageId]
+        : []
+    ));
+    expect(runStageIds).toEqual(['subtitle', 'render-horizontal']);
+    expect(screen.getByRole('status')).toHaveTextContent('已有前置产物会直接复用');
+  });
+
+  it('does not bind a changed URL source to the selected version input artifacts', async () => {
+    const baseService = createInMemoryCreatorService();
+    const applyAction = vi.fn(baseService.applyAction.bind(baseService));
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        creatorService={{ ...baseService, applyAction } as CreatorWebService}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=source-v1' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    await startVideoTranslation();
+
+    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '调整设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加视频' }));
+    fireEvent.click(screen.getByRole('button', { name: '清除当前视频来源' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=source-v2' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
+
+    await waitFor(() => {
+      const regeneration = applyAction.mock.calls.find(([, request]) => (
+        request.action === 'run-stage'
+        && request.input.stageId === 'subtitle'
+        && request.input.baseResultVersion === 1
+      ));
+      expect(regeneration?.[1].input).toEqual({
+        stageId: 'subtitle',
+        workflow: true,
+        baseResultVersion: 1
+      });
+    });
+  });
+
+  it('commits a new version when output is disabled without rerunning a stage', async () => {
+    const baseService = createInMemoryCreatorService();
+    const applyAction = vi.fn(baseService.applyAction.bind(baseService));
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        creatorService={{ ...baseService, applyAction } as CreatorWebService}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=settings-only' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+    await startVideoTranslation();
+
+    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '调整设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
+
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        action: 'commit-version',
+        input: { baseResultVersion: 1 }
+      })
+    ));
+    expect(applyAction.mock.calls.flatMap(([, request]) => (
+      request.action === 'run-stage' ? [request.input.stageId] : []
+    ))).toEqual(['subtitle']);
+    expect(await screen.findByRole('button', { name: '项目 V2' })).toBeInTheDocument();
+  });
+
+  it('merges a manual subtitle edit and downstream render into one project version', async () => {
+    const baseService = createInMemoryCreatorService();
+    const applyAction = vi.fn(baseService.applyAction.bind(baseService));
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        creatorService={{ ...baseService, applyAction } as CreatorWebService}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=single-version' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+    await startVideoTranslation();
+
+    fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '横屏字幕 1' }), {
+      target: { value: 'Edited before rendering.' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存并生成 V2' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认生成 V2' }));
+
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        action: 'edit-subtitle',
+        input: expect.objectContaining({ baseResultVersion: 1 })
+      })
+    ));
+    expect(applyAction).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        action: 'run-stage',
+        input: expect.objectContaining({
+          stageId: 'render-horizontal',
+          baseResultVersion: 2,
+          inputResultVersion: 2,
+          targetResultVersion: 2
+        })
+      })
+    );
+    const versionTrigger = await screen.findByRole('button', { name: '项目 V2' });
+    fireEvent.click(versionTrigger);
+    expect(screen.getByRole('menu')).not.toHaveTextContent('项目 V3');
   });
 
   it('resizes the immersive operation and Agent panes', () => {

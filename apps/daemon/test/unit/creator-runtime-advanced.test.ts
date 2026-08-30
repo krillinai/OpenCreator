@@ -176,7 +176,7 @@ describe('creator runtime advanced contracts', () => {
       state: {
         needsInput: {
           code: 'creator_transcription_config_missing',
-          deepLink: '/settings/ai-services?section=transcription'
+          deepLink: '#/settings?tab=ai-services&section=transcription'
         }
       }
     });
@@ -217,10 +217,85 @@ describe('creator runtime advanced contracts', () => {
       state: {
         needsInput: {
           code: 'creator_image_config_missing',
-          deepLink: '/settings/ai-services?section=image'
+          deepLink: '#/settings?tab=ai-services&section=image'
         }
       }
     });
+    await runner.close();
+    db.close();
+  });
+
+  it('keeps existing cover versions available after source re-analysis', async () => {
+    const { db, repository, service, templates } = setup();
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{
+        id: 'cover-analysis',
+        async run() {
+          return {
+            outputs: [
+              {
+                kind: 'cover_brief',
+                status: 'completed' as const,
+                path: join(tempDir, 'cover-brief.json'),
+                metadata: { imagePrompt: 'Updated video summary' }
+              },
+              {
+                kind: 'source_keyframe',
+                status: 'completed' as const,
+                path: join(tempDir, 'source-keyframe.jpg')
+              }
+            ]
+          };
+        }
+      }],
+      workRoot: join(tempDir, 'work')
+    });
+    const job = service.createJob({
+      projectId: 'p1',
+      templateId: 'cover',
+      state: {
+        sourceType: 'youtube',
+        sourceUrl: 'https://www.youtube.com/watch?v=cover-reanalysis',
+        latestResultVersion: 1,
+        resultVersion: 1,
+        resultSnapshots: [{
+          version: 1,
+          createdAt: '2026-08-29T00:00:00.000Z',
+          action: 'stage-succeeded',
+          stageId: 'generate',
+          description: '生成封面',
+          artifactRefs: {},
+          staleArtifactIds: [],
+          state: {}
+        }]
+      }
+    });
+    const cover = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'cover_image',
+      status: 'completed',
+      path: join(tempDir, 'cover-v1.png'),
+      sourceArtifactIds: [],
+      metadata: { resultVersion: 1 }
+    });
+
+    const completedStage = await runner.run(job.id, 'analyze-source');
+
+    const completed = service.getJob(job.id)!;
+    expect(completedStage.status).toBe('succeeded');
+    expect(completed.artifacts.find(artifact => artifact.id === cover.id)?.status)
+      .toBe('completed');
+    expect(completed.state.latestResultVersion).toBe(1);
+    expect(completed.state.resultVersion).toBe(1);
+    expect(completed.state.resultSnapshots).toHaveLength(1);
+    expect(completed.artifacts.filter(artifact => (
+      artifact.kind === 'cover_brief' || artifact.kind === 'source_keyframe'
+    ))).toEqual([
+      expect.objectContaining({ kind: 'cover_brief', metadata: { imagePrompt: 'Updated video summary' } }),
+      expect.objectContaining({ kind: 'source_keyframe', metadata: {} })
+    ]);
     await runner.close();
     db.close();
   });
@@ -268,6 +343,9 @@ describe('creator runtime advanced contracts', () => {
       templateId: 'video-translation',
       state: {
         sourceUrl: 'https://www.youtube.com/watch?v=test',
+        dubbing: true,
+        composeVideo: true,
+        videoFormat: 'horizontal',
         resultVersion: 1
       }
     });
@@ -337,18 +415,238 @@ describe('creator runtime advanced contracts', () => {
     expect(snapshots[3]).toMatchObject({
       version: 4,
       artifactRefs: {
-        target_subtitle: [latestSubtitle.id],
-        dubbed_audio: [voice.id],
-        horizontal_video: [video.id]
+        target_subtitle: [latestSubtitle.id]
       }
     });
     expect((completed.state.resultSnapshots as Array<{ staleArtifactIds: string[] }>)[3]?.staleArtifactIds)
-      .toEqual(expect.arrayContaining([voice.id, video.id]));
+      .toEqual([]);
     expect(subtitle).toMatchObject({ version: 1, metadata: { resultVersion: 1 } });
     expect(voice).toMatchObject({ version: 1, metadata: { resultVersion: 2 } });
     expect(video).toMatchObject({ version: 1, metadata: { resultVersion: 3 } });
     expect(latestSubtitle).toMatchObject({ version: 2, metadata: { resultVersion: 4 } });
     expect(completed.state.resultVersion).toBe(4);
+    await runner.close();
+    db.close();
+  });
+
+  it('branches a render from the selected project version instead of the latest artifacts', async () => {
+    const { db, repository, agentRepository, service, templates } = setup();
+    let observedInputIds: string[] = [];
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{
+        id: 'krillinai',
+        async run({ inputArtifacts }) {
+          observedInputIds = inputArtifacts.map(artifact => artifact.id);
+          return {
+            outputs: [{
+              kind: 'horizontal_video',
+              status: 'completed' as const,
+              path: join(tempDir, 'branched-horizontal.mp4')
+            }]
+          };
+        }
+      }],
+      workRoot: join(tempDir, 'work')
+    });
+    const job = service.createJob({
+      projectId: 'p1',
+      templateId: 'video-translation',
+      state: {
+        sourceType: 'url',
+        sourceUrl: 'https://www.youtube.com/watch?v=branch-v1',
+        composeVideo: true,
+        videoFormat: 'horizontal'
+      }
+    });
+    const sourceV1 = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'source_video',
+      status: 'completed',
+      path: join(tempDir, 'source-v1.mp4'),
+      sourceArtifactIds: [],
+      metadata: { resultVersion: 1 }
+    });
+    const subtitleV1 = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'target_subtitle',
+      status: 'completed',
+      path: join(tempDir, 'subtitle-v1.srt'),
+      sourceArtifactIds: [sourceV1.id],
+      metadata: { resultVersion: 1 }
+    });
+    const voiceV1 = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'dubbed_audio',
+      status: 'completed',
+      path: join(tempDir, 'voice-v1.wav'),
+      sourceArtifactIds: [subtitleV1.id],
+      metadata: { resultVersion: 1 }
+    });
+    const dubbedVideoV1 = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'dubbed_video',
+      status: 'completed',
+      path: join(tempDir, 'dubbed-v1.mp4'),
+      sourceArtifactIds: [sourceV1.id, voiceV1.id],
+      metadata: { resultVersion: 1 }
+    });
+    const sourceV2 = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'source_video',
+      status: 'completed',
+      path: join(tempDir, 'source-v2.mp4'),
+      sourceArtifactIds: [],
+      metadata: { resultVersion: 2 }
+    });
+    const subtitleV2 = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'target_subtitle',
+      status: 'completed',
+      path: join(tempDir, 'subtitle-v2.srt'),
+      sourceArtifactIds: [sourceV2.id],
+      metadata: { resultVersion: 2 }
+    });
+    repository.updateJob({
+      id: job.id,
+      status: 'completed',
+      revision: 0,
+      state: {
+        ...job.state,
+        resultVersion: 2,
+        latestResultVersion: 2,
+        resultSnapshots: [
+          {
+            version: 1,
+            createdAt: '2026-08-30T00:00:00.000Z',
+            action: 'stage-succeeded',
+            stageId: 'subtitle',
+            description: '生成字幕',
+            artifactRefs: {
+              source_video: [sourceV1.id],
+              target_subtitle: [subtitleV1.id],
+              dubbed_audio: [voiceV1.id],
+              dubbed_video: [dubbedVideoV1.id]
+            },
+            changedArtifactIds: [
+              sourceV1.id,
+              subtitleV1.id,
+              voiceV1.id,
+              dubbedVideoV1.id
+            ],
+            staleArtifactIds: [],
+            state: {
+              sourceType: 'url',
+              sourceUrl: 'https://www.youtube.com/watch?v=branch-v1',
+              composeVideo: false,
+              videoFormat: 'horizontal'
+            }
+          },
+          {
+            version: 2,
+            createdAt: '2026-08-30T00:01:00.000Z',
+            action: 'stage-succeeded',
+            stageId: 'subtitle',
+            description: '生成字幕',
+            artifactRefs: {
+              source_video: [sourceV2.id],
+              target_subtitle: [subtitleV2.id]
+            },
+            changedArtifactIds: [sourceV2.id, subtitleV2.id],
+            staleArtifactIds: [],
+            state: {
+              sourceType: 'url',
+              sourceUrl: 'https://www.youtube.com/watch?v=branch-v2',
+              composeVideo: false,
+              videoFormat: 'horizontal'
+            }
+          }
+        ]
+      }
+    });
+    const dispatcher = createCreatorCommandDispatcher({
+      service,
+      repository,
+      receipts: agentRepository
+    });
+    const queued = dispatcher.dispatch(job.id, {
+      action: 'run-stage',
+      expectedRevision: 0,
+      idempotencyKey: 'branch-render-from-v1',
+      input: {
+        stageId: 'render-horizontal',
+        baseResultVersion: 1,
+        inputResultVersion: 1
+      }
+    }, 'user');
+
+    await runner.runStageRun(queued.commandReceipt.stageRunId!);
+
+    expect(observedInputIds).toEqual([sourceV1.id, subtitleV1.id]);
+    const completed = service.getJob(job.id)!;
+    const snapshot = (completed.state.resultSnapshots as Array<{
+      version: number;
+      artifactRefs: Record<string, string[]>;
+    }>).at(-1)!;
+    expect(snapshot).toMatchObject({
+      version: 3,
+      artifactRefs: {
+        source_video: [sourceV1.id],
+        target_subtitle: [subtitleV1.id],
+        horizontal_video: [expect.any(String)]
+      }
+    });
+    expect(snapshot.artifactRefs.source_video).not.toContain(sourceV2.id);
+    expect(snapshot.artifactRefs.target_subtitle).not.toContain(subtitleV2.id);
+    expect(snapshot.artifactRefs).not.toHaveProperty('dubbed_audio');
+    expect(snapshot.artifactRefs).not.toHaveProperty('dubbed_video');
+    await runner.close();
+    db.close();
+  });
+
+  it('does not reuse an old local source after the job switches to a URL', async () => {
+    const { db, repository, service, templates } = setup();
+    let observedInputs: string[] = [];
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{
+        id: 'krillinai',
+        async run({ inputArtifacts }) {
+          observedInputs = inputArtifacts.map(artifact => artifact.id);
+          return {
+            outputs: [{
+              kind: 'target_subtitle',
+              status: 'completed' as const,
+              path: join(tempDir, 'url-subtitle.srt')
+            }]
+          };
+        }
+      }],
+      workRoot: join(tempDir, 'work')
+    });
+    const job = service.createJob({
+      projectId: 'p1',
+      templateId: 'video-translation',
+      state: {
+        sourceType: 'url',
+        sourceUrl: 'https://www.youtube.com/watch?v=current-url',
+        sourceArtifactId: null
+      }
+    });
+    const oldLocalSource = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'source_video',
+      status: 'completed',
+      path: join(tempDir, 'old-local-source.mp4'),
+      sourceArtifactIds: [],
+      metadata: { source: 'local-upload' }
+    });
+
+    await runner.run(job.id, 'subtitle');
+
+    expect(observedInputs).not.toContain(oldLocalSource.id);
     await runner.close();
     db.close();
   });

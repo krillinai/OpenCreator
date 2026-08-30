@@ -1,6 +1,6 @@
 import { createVideoTranslationTemplate } from './video-translation.js';
 import { createVideoDownloadTemplate } from './video-download.js';
-import { createCoverTemplate } from './cover.js';
+import { createCoverTemplate, createLegacyCoverTemplate } from './cover.js';
 import { createImageGenerationTemplate } from './image-generation.js';
 import { createAutoClipTemplate } from './auto-clip.js';
 import { createStickmanVideoTemplate } from './stickman-video.js';
@@ -12,6 +12,7 @@ import type {
 export {
   createAutoClipTemplate,
   createCoverTemplate,
+  createLegacyCoverTemplate,
   createImageGenerationTemplate,
   createStickmanVideoTemplate,
   createVideoDownloadTemplate,
@@ -22,6 +23,7 @@ export function createDefaultCreatorTemplateRegistry(): CreatorTemplateRegistry 
   return createCreatorTemplateRegistry([
     createVideoTranslationTemplate(),
     createVideoDownloadTemplate(),
+    createLegacyCoverTemplate(),
     createCoverTemplate(),
     createImageGenerationTemplate(),
     createAutoClipTemplate(),
@@ -95,6 +97,13 @@ function validateTemplate(template: CreatorTemplateDefinition): void {
   }
   const stageIds = new Set(template.stages.map(stage => stage.id));
   if (stageIds.size !== template.stages.length) throw new Error(`Duplicate stage: ${template.id}`);
+  for (const stage of template.stages) {
+    for (const artifact of stage.inputArtifacts) {
+      if (artifact.selector === 'state-artifact-id' && !artifact.stateKey?.trim()) {
+        throw new Error(`State artifact selector requires stateKey: ${template.id}/${stage.id}`);
+      }
+    }
+  }
   const visiting = new Set<string>();
   const visited = new Set<string>();
   const visit = (id: string) => {

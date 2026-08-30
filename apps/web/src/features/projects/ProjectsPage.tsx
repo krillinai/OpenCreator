@@ -355,12 +355,23 @@ function creatorDraftDefaults(templateId: string): Record<string, unknown[]> {
   if (templateId === 'cover') {
     return {
       prompt: [
+        '',
         '面向创作者的 AI 视频工作流，主体清晰，高对比标题，专业但有冲击力',
         'An AI video workflow for creators, with a clear subject, high-contrast title, and a professional, bold look'
       ],
+      sourceType: ['prompt'],
       ratio: ['16:9'],
       sourceUrl: [''],
-      candidateCount: [4]
+      candidateCount: [2, 4],
+      quality: ['medium'],
+      referenceImageArtifactId: [null],
+      currentStep: [0],
+      furthestStep: [0],
+      workspacePhase: ['configure'],
+      resultVersion: [null],
+      resultTab: ['options'],
+      draftBaseVersion: [null],
+      currentStage: [null]
     };
   }
   if (templateId === 'video-download') {

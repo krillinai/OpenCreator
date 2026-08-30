@@ -1,11 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createCoverTemplate,
   createImageGenerationTemplate,
   createCreatorTemplateRegistry,
   createVideoTranslationTemplate
 } from '../../src/creator/templates/registry.js';
 
 describe('creator template registry', () => {
+  it('registers the current cover workflow with real source and artifact stages', () => {
+    const template = createCoverTemplate();
+
+    expect(template.version).toBe(2);
+    expect(template.inputSchema.parse({})).toMatchObject({
+      sourceType: 'prompt',
+      ratio: '16:9',
+      candidateCount: 2,
+      quality: 'medium',
+      referenceImageArtifactId: null
+    });
+    expect(template.stages).toMatchObject([
+      {
+        id: 'analyze-source',
+        executor: 'cover-analysis',
+        resultVersionPolicy: 'none'
+      },
+      {
+        id: 'generate',
+        executor: 'image',
+        inputArtifacts: expect.arrayContaining([{
+          kind: 'reference_image',
+          selector: 'state-artifact-id',
+          stateKey: 'referenceImageArtifactId',
+          optional: true
+        }])
+      }
+    ]);
+    expect(template.actions.map(action => action.id)).not.toContain('select-cover');
+    expect(template.inputSchema.parse({})).not.toHaveProperty('selectedCoverArtifactId');
+  });
+
   it('registers image generation as a persisted Creator Runtime template', () => {
     const template = createImageGenerationTemplate();
 

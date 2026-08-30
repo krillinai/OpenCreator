@@ -65,7 +65,10 @@ export function createCodexProviderConfigService(input: {
     const normalized = normalizeUpdateRequest(request);
     const current = await readProviderState(input.client);
     const storedApiKey = await readStoredApiKey(input.readStoredApiKey, current);
-    const loginApiKey = normalized.apiKey ?? (
+    const targetStoredApiKey = normalized.apiKey === undefined
+      ? await readStoredApiKey(input.readStoredApiKey, normalized)
+      : undefined;
+    const loginApiKey = normalized.apiKey ?? targetStoredApiKey ?? (
       current.authentication === 'none'
       || (
         normalized.baseUrl.length > 0

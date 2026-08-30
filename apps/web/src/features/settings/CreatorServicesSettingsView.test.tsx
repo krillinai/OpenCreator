@@ -13,35 +13,55 @@ import type { CreatorServicesSettingsService } from '../../services/creator-serv
 import { CreatorServicesSettingsView } from './CreatorServicesSettingsView.js';
 
 describe('CreatorServicesSettingsView', () => {
-  it('prefills the Codex fallback and allows an independent text model', async () => {
+  it('edits the shared model provider used by Agent and text tasks', async () => {
     const user = userEvent.setup();
     const service = createService(['llm.apiKey']);
-    render(<CreatorServicesSettingsView connected service={service} />);
+    const modelService = createModelService();
+    render(
+      <CreatorServicesSettingsView
+        connected
+        service={service}
+        modelService={modelService}
+      />
+    );
 
     expect(await screen.findByRole('heading', { name: 'AI 服务' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '模型服务' })).toBeInTheDocument();
     expect(screen.getByLabelText('Base URL')).toHaveValue('https://gateway.example.test/v1');
     expect(screen.getByLabelText('模型')).toHaveValue('gpt-shared');
     expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'password');
     expect(screen.getByLabelText('API Key')).toHaveAttribute('placeholder', '已配置，留空则保持');
-    expect(screen.queryByText(/请在“Codex Agent”中修改/)).not.toBeInTheDocument();
+    expect(screen.getByText('Agent 可用')).toBeInTheDocument();
+    expect(screen.getByText('文本任务可用')).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('模型'));
-    await user.type(screen.getByLabelText('模型'), 'gpt-independent');
-    await user.type(screen.getByLabelText('API Key'), 'sk-independent');
+    await user.type(screen.getByLabelText('模型'), 'gpt-unified');
+    await user.type(screen.getByLabelText('API Key'), 'sk-unified');
     await user.click(screen.getByRole('button', { name: '保存配置' }));
 
+    await waitFor(() => expect(modelService.updateCodexProvider).toHaveBeenCalledWith({
+      baseUrl: 'https://gateway.example.test/v1',
+      model: 'gpt-unified',
+      apiKey: 'sk-unified'
+    }));
     await waitFor(() => expect(service.saveConfig).toHaveBeenCalled());
     expect(vi.mocked(service.saveConfig).mock.calls[0]?.[0].llm).toMatchObject({
       baseUrl: 'https://gateway.example.test/v1',
-      apiKey: 'sk-independent',
-      model: 'gpt-independent',
-      source: 'custom'
+      apiKey: '',
+      model: 'gpt-unified',
+      source: 'codex'
     });
     expect(screen.getByText('配置已安全保存')).toBeInTheDocument();
   });
 
   it('shows configured credentials without loading their secret values', async () => {
-    render(<CreatorServicesSettingsView connected service={createService(['llm.apiKey'])} />);
+    render(
+      <CreatorServicesSettingsView
+        connected
+        service={createService(['llm.apiKey'])}
+        modelService={createModelService()}
+      />
+    );
 
     const apiKey = await screen.findByLabelText('API Key');
     expect(apiKey).toHaveValue('');
@@ -49,21 +69,15 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.queryByDisplayValue(/secret/i)).not.toBeInTheDocument();
   });
 
-  it('keeps the Codex fallback when only JSON mode changes', async () => {
-    const user = userEvent.setup();
-    const service = createService(['llm.apiKey']);
-    render(<CreatorServicesSettingsView connected service={service} />);
-
-    await user.click(await screen.findByRole('switch', { name: /JSON 输出模式/ }));
-    await user.click(screen.getByRole('button', { name: '保存配置' }));
-
-    await waitFor(() => expect(service.saveConfig).toHaveBeenCalled());
-    expect(vi.mocked(service.saveConfig).mock.calls[0]?.[0].llm.source).toBe('codex');
-  });
-
   it('shows only the fields required by the selected transcription and voice providers', async () => {
     const user = userEvent.setup();
-    render(<CreatorServicesSettingsView connected service={createService()} />);
+    render(
+      <CreatorServicesSettingsView
+        connected
+        service={createService()}
+        modelService={createModelService()}
+      />
+    );
     await screen.findByRole('tabpanel');
 
     await user.click(screen.getByRole('tab', { name: '语音识别' }));
@@ -98,7 +112,11 @@ describe('CreatorServicesSettingsView', () => {
     const service = createService();
     render(
       <ConfirmDialogProvider>
-        <CreatorServicesSettingsView connected service={service} />
+        <CreatorServicesSettingsView
+          connected
+          service={service}
+          modelService={createModelService()}
+        />
       </ConfirmDialogProvider>
     );
 
@@ -122,6 +140,7 @@ describe('CreatorServicesSettingsView', () => {
       <CreatorServicesSettingsView
         connected
         service={createService([], runtimeCapabilities('win32', 'x64'))}
+        modelService={createModelService()}
       />
     );
 
@@ -142,7 +161,13 @@ describe('CreatorServicesSettingsView', () => {
       config: staleConfig,
       configuredCredentials: []
     });
-    render(<CreatorServicesSettingsView connected service={service} />);
+    render(
+      <CreatorServicesSettingsView
+        connected
+        service={service}
+        modelService={createModelService()}
+      />
+    );
 
     await user.click(await screen.findByRole('tab', { name: '语音识别' }));
     expect(screen.getByRole('button', { name: '本地 Whisper' }))
@@ -160,12 +185,16 @@ describe('CreatorServicesSettingsView', () => {
   it('localizes the service navigation in English', async () => {
     render(
       <LanguageProvider initialPreference="en-US">
-        <CreatorServicesSettingsView connected service={createService()} />
+        <CreatorServicesSettingsView
+          connected
+          service={createService()}
+          modelService={createModelService()}
+        />
       </LanguageProvider>
     );
 
     expect(await screen.findByRole('heading', { name: 'AI Services' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Text' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Models' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Transcription' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Voice' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Images' })).toBeInTheDocument();
@@ -174,7 +203,13 @@ describe('CreatorServicesSettingsView', () => {
 
   it('configures image and video generation as separate services', async () => {
     const user = userEvent.setup();
-    render(<CreatorServicesSettingsView connected service={createService()} />);
+    render(
+      <CreatorServicesSettingsView
+        connected
+        service={createService()}
+        modelService={createModelService()}
+      />
+    );
     await screen.findByRole('tabpanel');
 
     await user.click(screen.getByRole('tab', { name: '图像生成' }));
@@ -192,6 +227,26 @@ describe('CreatorServicesSettingsView', () => {
     await user.click(screen.getByRole('combobox', { name: '服务商' }));
     await user.click(screen.getByRole('option', { name: 'Veo' }));
     expect(screen.getByLabelText('模型')).toHaveValue('veo-3.1-generate-preview');
+  });
+
+  it('keeps non-model services available when the model provider cannot be read', async () => {
+    const modelService = createModelService();
+    vi.mocked(modelService.getCodexProvider).mockRejectedValue(
+      new Error('model provider unavailable')
+    );
+    render(
+      <CreatorServicesSettingsView
+        connected
+        service={createService()}
+        modelService={modelService}
+        initialSection="tts"
+      />
+    );
+
+    expect(await screen.findByRole('tab', { name: '配音服务' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('combobox', { name: '服务商' })).toBeInTheDocument();
+    expect(screen.queryByText('配置暂不可用')).not.toBeInTheDocument();
   });
 
   it('explains that the local Runtime is required when disconnected', () => {
@@ -229,6 +284,31 @@ function createService(
     previewTtsVoice: vi.fn(async () => new Response(Buffer.from('preview-audio'), {
       status: 200,
       headers: { 'Content-Type': 'audio/mpeg' }
+    }))
+  };
+}
+
+function createModelService(options: {
+  authentication?: 'none' | 'chatgpt' | 'api_key';
+  apiKeyConfigured?: boolean;
+} = {}) {
+  const provider = {
+    baseUrl: 'https://gateway.example.test/v1',
+    model: 'gpt-shared',
+    authentication: options.authentication ?? 'api_key' as const,
+    apiKeyConfigured: options.apiKeyConfigured ?? true,
+    configVersion: 'v1'
+  };
+  return {
+    getCodexProvider: vi.fn(async () => structuredClone(provider)),
+    updateCodexProvider: vi.fn(async input => ({
+      baseUrl: input.baseUrl,
+      model: input.model,
+      authentication: input.apiKey === undefined
+        ? provider.authentication
+        : 'api_key' as const,
+      apiKeyConfigured: input.apiKey !== undefined || provider.apiKeyConfigured,
+      configVersion: 'v2'
     }))
   };
 }

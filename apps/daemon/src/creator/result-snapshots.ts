@@ -47,10 +47,20 @@ export function nextCreatorResultVersion(job: CreatorJob): number {
   return Math.max(snapshotVersion, stateVersion, artifactVersion) + 1;
 }
 
+export function creatorResultSnapshotForVersion(
+  job: CreatorJob,
+  version: number
+): CreatorResultSnapshot | undefined {
+  return readCreatorResultSnapshots(job.state.resultSnapshots)
+    .find(snapshot => snapshot.version === version);
+}
+
 export function appendCreatorResultSnapshot(input: {
   job: CreatorJob;
   version: number;
+  baseResultVersion?: number;
   changedArtifacts: CreatorArtifact[];
+  artifactRefsPatch?: Record<string, string[]>;
   staleArtifactIds?: string[];
   action: string;
   stageId?: string | null;
@@ -60,9 +70,18 @@ export function appendCreatorResultSnapshot(input: {
 }): Record<string, CreatorJson> {
   const snapshots = readCreatorResultSnapshots(input.job.state.resultSnapshots);
   const previous = snapshots.at(-1);
-  const artifactRefs = previous === undefined
+  const existingIndex = snapshots.findIndex(snapshot => snapshot.version === input.version);
+  const existing = existingIndex < 0 ? undefined : snapshots[existingIndex];
+  const selectedBase = input.baseResultVersion === undefined
+    ? undefined
+    : snapshots.find(snapshot => snapshot.version === input.baseResultVersion);
+  if (input.baseResultVersion !== undefined && selectedBase === undefined) {
+    throw new Error(`Creator result version ${input.baseResultVersion} was not found`);
+  }
+  const base = existing ?? selectedBase ?? previous;
+  const artifactRefs = base === undefined
     ? legacyArtifactRefs(input.job.artifacts, new Set(input.changedArtifacts.map(artifact => artifact.id)))
-    : cloneArtifactRefs(previous.artifactRefs);
+    : cloneArtifactRefs(base.artifactRefs);
   const changedByKind = new Map<string, string[]>();
   for (const artifact of input.changedArtifacts) {
     const ids = changedByKind.get(artifact.kind) ?? [];
@@ -70,27 +89,44 @@ export function appendCreatorResultSnapshot(input: {
     changedByKind.set(artifact.kind, ids);
   }
   for (const [kind, ids] of changedByKind) artifactRefs[kind] = ids;
+  for (const [kind, ids] of Object.entries(input.artifactRefsPatch ?? {})) {
+    if (ids.length === 0) delete artifactRefs[kind];
+    else artifactRefs[kind] = [...ids];
+  }
 
   const referencedIds = new Set(Object.values(artifactRefs).flat());
   const staleArtifactIds = [...new Set([
-    ...(previous?.staleArtifactIds ?? []),
+    ...(base?.staleArtifactIds ?? []),
     ...(input.staleArtifactIds ?? [])
   ])].filter(id => referencedIds.has(id) && !input.changedArtifacts.some(artifact => artifact.id === id));
+  const changedArtifactIds = [...new Set([
+    ...(existing?.changedArtifactIds ?? []),
+    ...input.changedArtifacts.map(artifact => artifact.id)
+  ])];
   const snapshot: CreatorResultSnapshot = {
     version: input.version,
-    createdAt: input.createdAt ?? input.changedArtifacts.at(-1)?.createdAt ?? input.job.updatedAt,
+    createdAt: existing?.createdAt
+      ?? input.createdAt
+      ?? input.changedArtifacts.at(-1)?.createdAt
+      ?? input.job.updatedAt,
     action: input.action,
     stageId: input.stageId ?? null,
     description: input.description,
     artifactRefs,
-    changedArtifactIds: input.changedArtifacts.map(artifact => artifact.id),
+    changedArtifactIds,
     staleArtifactIds,
     state: snapshotState(input.state ?? input.job.state)
   };
+  const resultSnapshots = existingIndex < 0
+    ? [...snapshots, snapshot]
+    : snapshots.map((candidate, index) => index === existingIndex ? snapshot : candidate);
   return {
     resultVersion: input.version,
-    latestResultVersion: input.version,
-    resultSnapshots: [...snapshots, snapshot] as CreatorJson
+    latestResultVersion: Math.max(
+      input.version,
+      readPositiveInteger(input.job.state.latestResultVersion) ?? 0
+    ),
+    resultSnapshots: resultSnapshots as CreatorJson
   };
 }
 

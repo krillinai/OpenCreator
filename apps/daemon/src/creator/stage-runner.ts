@@ -6,9 +6,11 @@ import { CreatorExecutorError } from './executor.js';
 import type { CreatorRepository } from './repository.js';
 import {
   appendCreatorResultSnapshot,
+  creatorResultSnapshotForVersion,
   nextCreatorResultVersion
 } from './result-snapshots.js';
 import type { CreatorTemplateRegistry } from './templates/types.js';
+import { videoTranslationArtifactRefsPatch } from './templates/video-translation-results.js';
 
 export type CreatorStageRunner = ReturnType<typeof createCreatorStageRunner>;
 
@@ -86,7 +88,17 @@ export function createCreatorStageRunner(input: {
       }
       const executor = executors.get(stage.executor);
       if (executor === undefined) throw new CreatorExecutorError('creator_executor_unavailable', `Creator executor ${stage.executor} is unavailable`);
-      const resolved = resolveInputs(job, stage.inputArtifacts);
+      const inputResultVersion = readPositiveInteger(stageRun.progress.inputResultVersion);
+      const inputSnapshot = inputResultVersion === undefined
+        ? undefined
+        : creatorResultSnapshotForVersion(job, inputResultVersion);
+      if (inputResultVersion !== undefined && inputSnapshot === undefined) {
+        throw new CreatorExecutorError(
+          'creator_result_version_not_found',
+          `Creator result version ${inputResultVersion} was not found`
+        );
+      }
+      const resolved = resolveInputs(job, stage.inputArtifacts, inputSnapshot?.artifactRefs);
       updateStageRun({
         id: stageRun.id,
         status: resolved.missing.length === 0 ? 'queued' : 'failed',
@@ -133,12 +145,18 @@ export function createCreatorStageRunner(input: {
       }
       input.repository.transaction(() => {
         const beforeOutputs = requireJob(input.repository, jobId);
-        const resultVersion = nextCreatorResultVersion(beforeOutputs);
+        const createsResultVersion = stage.resultVersionPolicy !== 'none';
+        const targetResultVersion = readPositiveInteger(stageRun!.progress.targetResultVersion);
+        const resultVersion = createsResultVersion
+          ? targetResultVersion ?? nextCreatorResultVersion(beforeOutputs)
+          : undefined;
         const insertedArtifacts: CreatorArtifact[] = [];
-        const staleArtifactIds = dependentArtifactIdsForChangedKinds(
-          beforeOutputs,
-          new Set(result.outputs.map(output => output.kind))
-        );
+        const staleArtifactIds = stage.invalidateDependentArtifacts === false
+          ? []
+          : dependentArtifactIdsForChangedKinds(
+              beforeOutputs,
+              new Set(result.outputs.map(output => output.kind))
+            );
         for (const artifactId of staleArtifactIds) {
           input.repository.setArtifactStatus(artifactId, 'stale');
         }
@@ -149,21 +167,42 @@ export function createCreatorStageRunner(input: {
             status: output.status,
             path: output.path,
             sourceArtifactIds: output.sourceArtifactIds ?? resolved.artifacts.map(artifact => artifact.id),
-            metadata: { ...(output.metadata ?? {}), resultVersion }
+            metadata: {
+              ...(output.metadata ?? {}),
+              ...(resultVersion === undefined ? {} : { resultVersion })
+            }
           }));
         }
-        updateStageRun({ id: stageRun!.id, status: 'succeeded', progress: result.progress });
+        updateStageRun({
+          id: stageRun!.id,
+          status: 'succeeded',
+          progress: {
+            ...(result.progress ?? {}),
+            ...(resultVersion === undefined ? {} : { resultVersion })
+          }
+        });
         const latest = requireJob(input.repository, jobId);
-        const snapshotPatch = insertedArtifacts.length === 0
+        const artifactRefsPatch = {
+          ...(job.templateId === 'cover'
+            ? artifactRefsByKind(resolved.artifacts)
+            : {}),
+          ...(job.templateId === 'video-translation'
+            ? videoTranslationArtifactRefsPatch(job.state, stageId)
+            : {})
+        };
+        const baseResultVersion = readPositiveInteger(stageRun!.progress.baseResultVersion);
+        const snapshotPatch = insertedArtifacts.length === 0 || resultVersion === undefined
           ? {}
           : appendCreatorResultSnapshot({
               job: latest,
               version: resultVersion,
+              ...(baseResultVersion === undefined ? {} : { baseResultVersion }),
               changedArtifacts: insertedArtifacts,
+              ...(Object.keys(artifactRefsPatch).length === 0 ? {} : { artifactRefsPatch }),
               staleArtifactIds,
               action: 'stage-succeeded',
               stageId,
-              description: resultSnapshotDescription(stageId),
+              description: resultSnapshotDescription(stageId, job.templateId),
               state: job.state
             });
         updateJob(
@@ -314,18 +353,70 @@ export function createCreatorStageRunner(input: {
 
 function resolveInputs(
   job: CreatorJob,
-  requirements: Array<{ kind: string; optional?: boolean }>
+  requirements: Array<{
+    kind: string;
+    selector?: 'latest-completed' | 'explicit-version' | 'state-artifact-id';
+    stateKey?: string;
+    optional?: boolean;
+  }>,
+  explicitArtifactRefs?: Record<string, string[]>
 ): { artifacts: CreatorArtifact[]; missing: string[] } {
   const artifacts: CreatorArtifact[] = [];
   const missing: string[] = [];
   for (const requirement of requirements) {
-    const artifact = [...job.artifacts].reverse().find(candidate => (
-      candidate.kind === requirement.kind && candidate.status === 'completed'
-    ));
+    if (!creatorInputArtifactEnabled(job, requirement.kind)) continue;
+    if (explicitArtifactRefs !== undefined) {
+      const explicitIds = explicitArtifactRefs[requirement.kind] ?? [];
+      const artifact = [...explicitIds].reverse().flatMap(id => {
+        const candidate = job.artifacts.find(item => (
+          item.id === id
+          && item.kind === requirement.kind
+          && (item.status === 'completed' || item.status === 'stale')
+        ));
+        return candidate === undefined ? [] : [candidate];
+      }).at(0);
+      if (artifact !== undefined) artifacts.push(artifact);
+      else if (requirement.optional !== true) missing.push(requirement.kind);
+      continue;
+    }
+    const selectedId = requirement.selector === 'state-artifact-id'
+      && requirement.stateKey !== undefined
+      ? job.state[requirement.stateKey]
+      : undefined;
+    const artifact = requirement.selector === 'state-artifact-id'
+      ? typeof selectedId === 'string'
+        ? job.artifacts.find(candidate => (
+            candidate.id === selectedId
+            && candidate.kind === requirement.kind
+            && candidate.status === 'completed'
+          ))
+        : undefined
+      : [...job.artifacts].reverse().find(candidate => (
+          candidate.kind === requirement.kind && candidate.status === 'completed'
+        ));
     if (artifact !== undefined) artifacts.push(artifact);
-    else if (requirement.optional !== true) missing.push(requirement.kind);
+    else if (
+      requirement.optional !== true
+      || (requirement.selector === 'state-artifact-id' && selectedId !== null && selectedId !== undefined)
+    ) {
+      missing.push(requirement.kind);
+    }
   }
   return { artifacts, missing };
+}
+
+function creatorInputArtifactEnabled(job: CreatorJob, kind: string): boolean {
+  if (job.templateId !== 'video-translation') return true;
+  if (
+    (kind === 'dubbed_audio' || kind === 'dubbed_video')
+    && job.state.dubbing !== true
+  ) {
+    return false;
+  }
+  if (kind === 'bilingual_subtitle' && job.state.bilingual !== true) {
+    return false;
+  }
+  return true;
 }
 
 function dependentArtifactIdsForChangedKinds(job: CreatorJob, changedKinds: Set<string>): string[] {
@@ -345,6 +436,20 @@ function dependentArtifactIdsForChangedKinds(job: CreatorJob, changedKinds: Set<
     }
   }
   return [...stale];
+}
+
+function artifactRefsByKind(artifacts: CreatorArtifact[]): Record<string, string[]> {
+  const refs = new Map<string, string[]>();
+  for (const artifact of artifacts) {
+    refs.set(artifact.kind, [...(refs.get(artifact.kind) ?? []), artifact.id]);
+  }
+  return Object.fromEntries(refs);
+}
+
+function readPositiveInteger(value: CreatorJson | undefined): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : undefined;
 }
 
 function updateJob(
@@ -374,12 +479,12 @@ function errorCode(error: unknown): string {
   return error instanceof CreatorExecutorError ? error.code : 'creator_stage_failed';
 }
 
-function resultSnapshotDescription(stageId: string): string {
+function resultSnapshotDescription(stageId: string, templateId: string): string {
   if (stageId === 'subtitle') return '生成字幕';
   if (stageId === 'tts') return '生成配音';
   if (stageId === 'render-horizontal') return '合成横屏视频';
   if (stageId === 'render-vertical') return '合成竖屏视频';
-  if (stageId === 'generate') return '生成图片';
+  if (stageId === 'generate') return templateId === 'cover' ? '生成封面' : '生成图片';
   return `完成 ${stageId}`;
 }
 
@@ -396,6 +501,6 @@ function creatorConfigurationInput(code: string, message: string): Record<string
   return section === null ? null : {
     code,
     message,
-    deepLink: `/settings/ai-services?section=${section}`
+    deepLink: `#/settings?tab=ai-services&section=${section === 'llm' ? 'text' : section}`
   };
 }

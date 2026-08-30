@@ -37,10 +37,11 @@ type CreatorSessionContextValue = {
   flush(): Promise<void>;
   clearError(): void;
   applyRemoteSnapshot(job: CreatorJob): void;
-  applyAction(request: Omit<CreatorActionRequest, 'expectedRevision'>): Promise<void>;
+  applyAction(request: Omit<CreatorActionRequest, 'expectedRevision'>): Promise<CreatorJob>;
   cancelJob(): Promise<void>;
   resumeJob(): Promise<void>;
   uploadSourceVideo(file: File): Promise<void>;
+  uploadReferenceImage(file: File): Promise<void>;
   openArtifact(artifactId: string): Promise<Response>;
   agentSession: CreatorAgentSession | null;
   turns: CreatorAgentTurn[];
@@ -76,6 +77,7 @@ export function CreatorSessionProvider(props: {
     | 'getAgentTimeline'
     | 'getJob'
     | 'openArtifact'
+    | 'uploadReferenceImage'
     | 'uploadSourceVideo'
     | 'cancelJob'
     | 'resumeJob'
@@ -326,6 +328,7 @@ export function CreatorSessionProvider(props: {
       confirmedRef.current = response.job;
       setConfirmedJob(response.job);
       setError(null);
+      return response.job;
     } catch (cause) {
       setError(toSessionError(cause));
       throw cause;
@@ -340,6 +343,26 @@ export function CreatorSessionProvider(props: {
       await flush();
       await ensurePersistedJob();
       const response = await props.service.uploadSourceVideo(confirmedRef.current.id, {
+        file,
+        expectedRevision: confirmedRef.current.revision
+      });
+      confirmedRef.current = response.job;
+      setConfirmedJob(response.job);
+      setError(null);
+    } catch (cause) {
+      setError(toSessionError(cause));
+      throw cause;
+    }
+  }, [ensurePersistedJob, flush, props.service]);
+
+  const uploadReferenceImage = useCallback(async (file: File) => {
+    if (props.service.uploadReferenceImage === undefined) {
+      throw new Error('Creator reference upload transport is unavailable');
+    }
+    try {
+      await flush();
+      await ensurePersistedJob();
+      const response = await props.service.uploadReferenceImage(confirmedRef.current.id, {
         file,
         expectedRevision: confirmedRef.current.revision
       });
@@ -493,6 +516,7 @@ export function CreatorSessionProvider(props: {
     applyAction,
     cancelJob,
     resumeJob,
+    uploadReferenceImage,
     uploadSourceVideo,
     openArtifact,
     agentSession,
@@ -504,7 +528,7 @@ export function CreatorSessionProvider(props: {
     steerAgentTurn,
     interruptAgentTurn,
     respondAgentApproval
-  }), [agentBusy, agentSession, applyAction, applyRemoteSnapshot, approvals, cancelJob, clearError, confirmedJob, conflictedFields, draft, error, flush, interruptAgentTurn, items, openArtifact, respondAgentApproval, resumeJob, runAgentTurn, steerAgentTurn, turns, updateDraft, uploadSourceVideo]);
+  }), [agentBusy, agentSession, applyAction, applyRemoteSnapshot, approvals, cancelJob, clearError, confirmedJob, conflictedFields, draft, error, flush, interruptAgentTurn, items, openArtifact, respondAgentApproval, resumeJob, runAgentTurn, steerAgentTurn, turns, updateDraft, uploadReferenceImage, uploadSourceVideo]);
 
   return (
     <CreatorSessionContext.Provider value={value}>

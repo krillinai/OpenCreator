@@ -272,6 +272,87 @@ describe('KrillinAI CLI runner', () => {
       }
     ]);
   });
+
+  it.skipIf(process.platform === 'win32')('selects the short vertical subtitle without changing horizontal subtitle selection', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-cli-render-'));
+    const resourceRoot = join(tempDir, 'runtime');
+    const jobsRoot = join(tempDir, 'jobs');
+    const dependencyRoot = join(tempDir, 'dependencies');
+    const cli = join(resourceRoot, 'bin', 'krillinai-cli');
+    const source = join(jobsRoot, 'job-render', 'artifacts', 'source.mp4');
+    const target = join(jobsRoot, 'job-render', 'artifacts', 'target.srt');
+    const bilingual = join(jobsRoot, 'job-render', 'artifacts', 'bilingual.srt');
+    const vertical = join(jobsRoot, 'job-render', 'artifacts', 'vertical.srt');
+    mkdirSync(dirname(cli), { recursive: true });
+    mkdirSync(dirname(source), { recursive: true });
+    writeFileSync(cli, `#!${process.execPath}\n${FAKE_CLI}`);
+    writeFileSync(source, 'fixture-video');
+    writeFileSync(target, '1\n00:00:00,000 --> 00:00:01,000\n目标字幕\n');
+    writeFileSync(bilingual, '1\n00:00:00,000 --> 00:00:01,000\n目标字幕\nSource subtitle\n');
+    writeFileSync(vertical, '1\n00:00:00,000 --> 00:00:01,000\n竖屏短字幕\n');
+    chmodSync(cli, 0o755);
+
+    const manifest: KrillinRuntimeManifest = {
+      version: 1,
+      platform: process.platform,
+      arch: process.arch,
+      resources: [{
+        path: relative(resourceRoot, cli).replaceAll('\\', '/'),
+        sha256: 'c'.repeat(64),
+        kind: 'executable'
+      }]
+    };
+    const config = createDefaultCreatorServicesConfig();
+    const artifacts = [
+      { id: 'source-1', kind: 'source_video', path: source },
+      { id: 'vertical-1', kind: 'vertical_subtitle', path: vertical },
+      { id: 'target-1', kind: 'target_subtitle', path: target },
+      { id: 'bilingual-1', kind: 'bilingual_subtitle', path: bilingual }
+    ];
+    const run = async (
+      stageId: 'render-horizontal' | 'render-vertical',
+      stageRunId: string,
+      inputs = artifacts
+    ) => {
+      const workdir = join(jobsRoot, 'job-render', stageRunId);
+      mkdirSync(workdir, { recursive: true });
+      const stage = {
+        stageRun: {
+          id: stageRunId,
+          stageId,
+          progress: {}
+        },
+        job: {
+          id: 'job-render',
+          state: {}
+        },
+        inputArtifacts: [],
+        workdir,
+        signal: new AbortController().signal,
+        reportProgress() {}
+      } as unknown as CreatorExecutorInput;
+      await runKrillinCli({
+        resourceRoot,
+        jobsRoot,
+        dependencyRoot,
+        manifest,
+        stage,
+        config,
+        artifacts: inputs,
+        options: { bilingual: true }
+      });
+      return JSON.parse(readFileSync(join(workdir, 'observed-args.json'), 'utf8')) as string[];
+    };
+    const selectedSubtitle = (args: string[]) => args[args.indexOf('--subtitle') + 1];
+
+    expect(selectedSubtitle(await run('render-vertical', 'stage-run-vertical'))).toBe(vertical);
+    expect(selectedSubtitle(await run(
+      'render-vertical',
+      'stage-run-vertical-fallback',
+      artifacts.filter(artifact => artifact.kind !== 'vertical_subtitle')
+    ))).toBe(target);
+    expect(selectedSubtitle(await run('render-horizontal', 'stage-run-horizontal'))).toBe(bilingual);
+  });
 });
 
 const FAKE_CLI = String.raw`
@@ -313,6 +394,16 @@ if (args[0] === 'tts') {
     tts_audio: join(workdir, 'dubbed_audio.wav')
   };
   writeFileSync(outputs.tts_audio, 'audio');
+} else if (args[0] === 'render-horizontal') {
+  outputs = {
+    horizontal_video: join(workdir, 'horizontal_video.mp4')
+  };
+  writeFileSync(outputs.horizontal_video, 'video');
+} else if (args[0] === 'render-vertical') {
+  outputs = {
+    vertical_video: join(workdir, 'vertical_video.mp4')
+  };
+  writeFileSync(outputs.vertical_video, 'video');
 } else {
   writeFileSync(join(workdir, 'observed-dependencies.json'), JSON.stringify({
     resourceRoot: process.env.KRILLINAI_RESOURCE_ROOT,

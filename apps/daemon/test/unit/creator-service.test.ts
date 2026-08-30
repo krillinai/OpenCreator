@@ -62,7 +62,11 @@ describe('creator service', () => {
     const job = service.createJob({
       projectId: 'project_1',
       templateId: 'video-translation',
-      state: {}
+      state: {
+        dubbing: true,
+        composeVideo: true,
+        videoFormat: 'horizontal'
+      }
     });
     const first = service.applyAction(job.id, {
       actor: 'user',
@@ -90,6 +94,76 @@ describe('creator service', () => {
       'update-settings'
     ]);
     expect(activities[1]?.revision).toBe(2);
+    db.close();
+  });
+
+  it('persists UI-only state without exposing it as creator activity', () => {
+    const { db, service } = setup();
+    const job = service.createJob({
+      projectId: 'project_1',
+      templateId: 'cover',
+      state: {}
+    });
+    const uiOnly = service.applyAction(job.id, {
+      actor: 'user',
+      action: 'update-settings',
+      expectedRevision: 0,
+      input: {
+        patch: {
+          currentStep: 1,
+          furthestStep: 1,
+          workspacePhase: 'configure'
+        },
+        activityMode: 'draft',
+        objectId: 'currentStep,furthestStep,workspacePhase'
+      }
+    });
+
+    expect(uiOnly.job.revision).toBe(1);
+    expect(uiOnly.job.state.currentStep).toBe(1);
+    expect(uiOnly.job.activities.map(activity => activity.action)).toEqual(['create-job']);
+
+    const mixed = service.applyAction(job.id, {
+      actor: 'user',
+      action: 'update-settings',
+      expectedRevision: uiOnly.job.revision,
+      input: {
+        patch: {
+          prompt: '高对比电影感人物封面',
+          currentStep: 2,
+          workspacePhase: 'result'
+        },
+        activityMode: 'draft',
+        objectId: 'currentStep,prompt,workspacePhase'
+      }
+    });
+
+    expect(mixed.job.activities.at(-1)).toMatchObject({
+      action: 'update-settings:draft',
+      details: { objectId: 'prompt' }
+    });
+    db.close();
+  });
+
+  it('records the structured stage id for run-stage activity', () => {
+    const { db, service } = setup();
+    const job = service.createJob({
+      projectId: 'project_1',
+      templateId: 'cover',
+      state: { prompt: '电影感人物封面' }
+    });
+
+    const started = service.applyAction(job.id, {
+      actor: 'user',
+      action: 'run-stage',
+      expectedRevision: 0,
+      input: { stageId: 'generate' }
+    });
+
+    expect(started.job.activities.at(-1)).toMatchObject({
+      action: 'run-stage',
+      details: { stageId: 'generate' }
+    });
     db.close();
   });
 
@@ -174,6 +248,41 @@ describe('creator service', () => {
     db.close();
   });
 
+  it('clears an obsolete TTS request when dubbing is turned off', () => {
+    const { db, repository, service } = setup();
+    const job = service.createJob({
+      projectId: 'project_1',
+      templateId: 'video-translation',
+      state: {
+        sourceUrl: 'https://www.youtube.com/watch?v=test',
+        dubbing: true
+      }
+    });
+    repository.createStageRun({
+      jobId: job.id,
+      stageId: 'subtitle',
+      executor: 'krillinai',
+      status: 'succeeded',
+      progress: { workflow: true }
+    });
+    const waiting = service.setNeedsInput(job.id, {
+      code: 'creator_tts_config_missing',
+      message: '请先完成目标语言配音服务配置'
+    });
+
+    const updated = service.applyAction(job.id, {
+      actor: 'user',
+      action: 'update-settings',
+      expectedRevision: waiting.revision,
+      input: { patch: { dubbing: false } }
+    });
+
+    expect(updated.job.status).toBe('completed');
+    expect(updated.job.state.dubbing).toBe(false);
+    expect(updated.job.state).not.toHaveProperty('needsInput');
+    db.close();
+  });
+
   it('stales only artifacts linked to the edited subtitle version', () => {
     const { db, repository, service } = setup();
     const job = service.createJob({
@@ -233,15 +342,100 @@ describe('creator service', () => {
     expect(artifacts.find(item => item.id === audioV1.id)?.status).toBe('completed');
     expect(artifacts.find(item => item.id === audioV2.id)?.status).toBe('stale');
     expect(artifacts.find(item => item.id === videoV2.id)?.status).toBe('stale');
+    const editedSubtitle = response.job.artifacts
+      .filter(item => item.kind === 'target_subtitle')
+      .at(-1)!;
     expect(response.job.state.resultVersion).toBe(3);
     expect(response.job.state.resultSnapshots).toMatchObject([{
       version: 3,
       artifactRefs: {
-        dubbed_audio: [audioV2.id],
-        horizontal_video: [videoV2.id]
+        target_subtitle: [editedSubtitle.id]
       },
-      staleArtifactIds: [audioV2.id, videoV2.id]
+      staleArtifactIds: []
     }]);
+    db.close();
+  });
+
+  it('commits a settings-only project version from the selected base snapshot', () => {
+    const { db, repository, service } = setup();
+    const job = service.createJob({
+      projectId: 'project_1',
+      templateId: 'video-translation',
+      state: {
+        composeVideo: false,
+        videoFormat: 'horizontal'
+      }
+    });
+    const subtitle = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'target_subtitle',
+      status: 'completed',
+      path: join(tempDir, 'subtitle-v1.srt'),
+      sourceArtifactIds: [],
+      metadata: { resultVersion: 1 }
+    });
+    const video = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'horizontal_video',
+      status: 'completed',
+      path: join(tempDir, 'video-v1.mp4'),
+      sourceArtifactIds: [subtitle.id],
+      metadata: { resultVersion: 1 }
+    });
+    repository.updateJob({
+      id: job.id,
+      status: 'completed',
+      revision: 0,
+      state: {
+        ...job.state,
+        resultVersion: 1,
+        latestResultVersion: 1,
+        resultSnapshots: [{
+          version: 1,
+          createdAt: '2026-08-30T00:00:00.000Z',
+          action: 'stage-succeeded',
+          stageId: 'render-horizontal',
+          description: '合成横屏视频',
+          artifactRefs: {
+            target_subtitle: [subtitle.id],
+            horizontal_video: [video.id]
+          },
+          changedArtifactIds: [subtitle.id, video.id],
+          staleArtifactIds: [],
+          state: {
+            composeVideo: true,
+            videoFormat: 'horizontal'
+          }
+        }]
+      }
+    });
+
+    const response = service.applyAction(job.id, {
+      actor: 'user',
+      action: 'commit-version',
+      expectedRevision: 0,
+      input: { baseResultVersion: 1 }
+    });
+
+    expect(response.job.state.resultVersion).toBe(2);
+    expect(response.job.state.resultSnapshots).toMatchObject([
+      { version: 1 },
+      {
+        version: 2,
+        action: 'commit-version',
+        artifactRefs: {
+          target_subtitle: [subtitle.id]
+        },
+        state: {
+          composeVideo: false,
+          videoFormat: 'horizontal'
+        }
+      }
+    ]);
+    expect(response.job.state.resultSnapshots).not.toMatchObject([
+      {},
+      { artifactRefs: { horizontal_video: expect.anything() } }
+    ]);
     db.close();
   });
 });

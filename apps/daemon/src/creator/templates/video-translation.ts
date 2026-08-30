@@ -11,7 +11,7 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
     inputSchema: z.object({
       sourceType: z.enum(['url', 'file']).default('url'),
       sourceUrl: z.string().default(''),
-      sourceArtifactId: z.string().optional(),
+      sourceArtifactId: z.string().nullable().optional(),
       sourceLanguage: z.string().default('zh_cn'),
       targetLanguage: z.string().default('en'),
       preferPlatformCaptions: z.boolean().default(true),
@@ -39,7 +39,8 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
         allowedJobStatuses: ['draft', 'running', 'needs_input', 'failed'],
         inputArtifacts: [{
           kind: 'source_video',
-          selector: 'latest-completed',
+          selector: 'state-artifact-id',
+          stateKey: 'sourceArtifactId',
           optional: true
         }],
         outputArtifacts: [
@@ -118,6 +119,11 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
       },
       {
         id: 'run-stage',
+        inputSchema: jsonRecord,
+        allowedStages: ['subtitle', 'tts', 'render-horizontal', 'render-vertical']
+      },
+      {
+        id: 'commit-version',
         inputSchema: jsonRecord,
         allowedStages: ['subtitle', 'tts', 'render-horizontal', 'render-vertical']
       },

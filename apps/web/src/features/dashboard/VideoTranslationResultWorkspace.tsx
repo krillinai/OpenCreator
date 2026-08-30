@@ -357,7 +357,6 @@ export default function VideoTranslationResultWorkspace(props: {
           <header className="video-result-pane-heading">
             <div>
               <h2>{l('当前版本设置', 'Current version settings')}</h2>
-              <p>{l('调整后会生成新版本，当前结果不会被覆盖', 'Changes create a new version without overwriting the current output')}</p>
             </div>
             <button type="button" onClick={props.onAdjustSettings}>
               <Settings2 size={15} strokeWidth={1.8} aria-hidden="true" />

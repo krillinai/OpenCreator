@@ -42,6 +42,9 @@ const configuredKrillinUpstreamCommit = process.env.OPENCREATOR_KRILLINAI_UPSTRE
 const protocolVersion = 1;
 const protocolSchemaSource = join(rootDir, 'packages', 'protocol', 'contracts', 'krillin-opencreator-v1.schema.json');
 const runtimeMode = 'cli';
+const ytDlpVerificationTimeoutMs = process.platform === 'darwin'
+  ? 180_000
+  : 60_000;
 
 ensureCliDependencies();
 const vendorVersions = readVendorVersions();
@@ -83,6 +86,12 @@ for (const [name, configured, vendored] of externalInputs) {
   const target = join(binDir, `${name}${executableSuffix}`);
   copyExecutable(source, target);
   if (name === 'yt-dlp') verifyStandaloneYtDlp(target);
+}
+for (const path of [
+  primaryExecutablePath,
+  ...externalInputs.map(([name]) => join(binDir, `${name}${executableSuffix}`))
+]) {
+  clearMacOSFileMetadata(path);
 }
 
 const subtitleStylePath = join(outputRoot, 'subtitle-style.json');
@@ -190,7 +199,16 @@ function resolveExecutable(name, configured, vendored) {
 
 function copyExecutable(source, target) {
   copyFileSync(source, target);
+  clearMacOSFileMetadata(target);
   if (process.platform !== 'win32') chmodSync(target, 0o755);
+}
+
+function clearMacOSFileMetadata(path) {
+  if (process.platform !== 'darwin') return;
+  execFileSync('xattr', ['-c', path], {
+    cwd: rootDir,
+    stdio: 'ignore'
+  });
 }
 
 function verifyStandaloneKrillinCli(path) {
@@ -226,7 +244,7 @@ function verifyStandaloneYtDlp(path) {
       env: minimalRuntimeEnvironment(process.env),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 60_000,
+      timeout: ytDlpVerificationTimeoutMs,
       windowsHide: true
     }).trim();
   } catch (error) {

@@ -245,6 +245,102 @@ describe('CreatorSessionStore', () => {
     expect(startAgentTurn).toHaveBeenCalledWith('job_1', expect.any(Object));
   });
 
+  it('flushes edits made during pending creation before starting a stage', async () => {
+    let resolveCreation!: (created: CreatorJob) => void;
+    let creationState: CreatorJob['state'] = {};
+    const ensureJob = vi.fn((state: CreatorJob['state']) => {
+      creationState = { ...state };
+      return new Promise<CreatorJob>(resolve => {
+        resolveCreation = resolve;
+      });
+    });
+    const applyAction = vi.fn(async (
+      _jobId: string,
+      request: { action: string; expectedRevision: number; input: Record<string, any> }
+    ) => {
+      const nextState = request.action === 'update-settings'
+        ? { ...creationState, ...request.input.patch }
+        : creationState;
+      const revision = request.action === 'update-settings' ? 1 : 2;
+      if (request.action === 'update-settings') creationState = nextState;
+      return {
+        job: job(revision, nextState),
+        receipt: {
+          actor: 'user' as const,
+          action: request.action,
+          summary: request.action,
+          affectedArtifacts: [],
+          newRevision: revision,
+          createdAt: '2026-08-30T00:00:01.000Z'
+        }
+      };
+    });
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    function ActionHarness() {
+      session = useCreatorSession();
+      return null;
+    }
+    render(
+      <CreatorSessionProvider
+        initialJob={pendingJob({
+          sourceType: 'url',
+          sourceUrl: '',
+          currentStep: 0,
+          furthestStep: 0
+        })}
+        ensureJob={ensureJob}
+        service={{ applyAction, runAgentTurn: vi.fn() } as never}
+      >
+        <ActionHarness />
+      </CreatorSessionProvider>
+    );
+
+    act(() => session!.updateDraft({ ttsProvider: 'aliyun' }));
+    let initialFlush!: Promise<void>;
+    act(() => {
+      initialFlush = session!.flush();
+    });
+    expect(ensureJob).toHaveBeenCalledWith(expect.objectContaining({
+      sourceUrl: '',
+      ttsProvider: 'aliyun'
+    }));
+
+    act(() => session!.updateDraft({
+      sourceUrl: 'https://www.youtube.com/watch?v=C4gJinSiuG4',
+      currentStep: 3,
+      furthestStep: 3
+    }));
+    let stageWork!: Promise<CreatorJob>;
+    act(() => {
+      stageWork = session!.applyAction({
+        action: 'run-stage',
+        input: { stageId: 'subtitle', workflow: true }
+      });
+    });
+
+    await act(async () => {
+      resolveCreation(job(0, creationState));
+      await Promise.all([initialFlush, stageWork]);
+    });
+
+    expect(applyAction).toHaveBeenNthCalledWith(1, 'job_1', expect.objectContaining({
+      action: 'update-settings',
+      expectedRevision: 0,
+      input: expect.objectContaining({
+        patch: {
+          sourceUrl: 'https://www.youtube.com/watch?v=C4gJinSiuG4',
+          currentStep: 3,
+          furthestStep: 3
+        }
+      })
+    }));
+    expect(applyAction).toHaveBeenNthCalledWith(2, 'job_1', expect.objectContaining({
+      action: 'run-stage',
+      expectedRevision: 1,
+      input: { stageId: 'subtitle', workflow: true }
+    }));
+  });
+
   it('updates shared draft immediately without creating an agent turn', async () => {
     vi.useFakeTimers();
     const applyAction = vi.fn(async () => ({

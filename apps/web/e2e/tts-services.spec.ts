@@ -1,11 +1,41 @@
 import { expect, test, type Page } from './fixtures/runtime.js';
 
 test('统一配音配置在设置、智能配音和视频翻译中保持一致', async ({ page, runtime }) => {
+  await page.route('**/.opencreator/runtime/creator-services/tts/voices?**', async route => {
+    const url = new URL(route.request().url());
+    const provider = url.searchParams.get('provider');
+    if (provider === 'aliyun') {
+      await route.fulfill({
+        json: {
+          provider,
+          model: url.searchParams.get('model') ?? 'qwen3-tts-flash',
+          voices: [
+            { id: 'Cherry', name: 'Cherry', provider, kind: 'builtin' },
+            { id: 'Kiki', name: 'Kiki', provider, kind: 'builtin' }
+          ]
+        }
+      });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        provider: provider ?? 'openai',
+        model: url.searchParams.get('model') ?? 'gpt-4o-mini-tts',
+        voices: [{
+          id: 'marin',
+          name: 'Marin',
+          provider: provider ?? 'openai',
+          kind: 'builtin'
+        }]
+      }
+    });
+  });
   await runtime.openApp(page);
-  await page.goto(`${runtime.origin}/#/settings?tab=ai-services`);
+  await page.goto(`${runtime.origin}/#/settings?tab=ai-services&section=tts`);
   await expect(page.getByRole('heading', { name: 'AI 服务' })).toBeVisible();
-
-  await page.getByRole('tab', { name: '配音服务' }).click();
+  await expect(page.getByRole('tab', { name: '配音服务' }))
+    .toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: 'Codex Agent' })).toHaveCount(0);
   const providerSelect = page.getByRole('combobox', { name: '服务商' });
   await expect(providerSelect).toHaveText('OpenAI TTS');
   await expect(page.getByRole('combobox', { name: '默认音色' })).toHaveValue('marin');

@@ -44,6 +44,13 @@ describe('creator web service', () => {
       }),
       expectedRevision: 7
     });
+    await service.uploadReferenceImage('job_1', {
+      file: new File(['image'], 'reference.png', {
+        type: 'image/png',
+        lastModified: 456
+      }),
+      expectedRevision: 8
+    });
     await service.openProjectCover('job_1');
     await service.openArtifact('job_1', 'artifact 1');
 
@@ -70,6 +77,11 @@ describe('creator web service', () => {
       '/creator/jobs/job_1/source-video?expectedRevision=7&fileName=sample.webm&mime=video%2Fwebm&lastModified=123',
       expect.any(File),
       'application/vnd.opencreator.creator-source'
+    );
+    expect(client.postBinary).toHaveBeenCalledWith(
+      '/creator/jobs/job_1/reference-image?expectedRevision=8&fileName=reference.png&mime=image%2Fpng&lastModified=456',
+      expect.any(File),
+      'application/vnd.opencreator.creator-reference-image'
     );
     expect(client.rawGet).toHaveBeenCalledWith('/creator/jobs/job_1/cover');
     expect(client.rawGet).toHaveBeenCalledWith('/creator/jobs/job_1/artifacts/artifact%201/content');
@@ -99,8 +111,45 @@ describe('creator web service', () => {
     await subscribeUntilDisconnect(service, 'job_1', event => received.push(event.id));
 
     expect(received).toEqual(['agent:1']);
-    expect(rawGet).toHaveBeenNthCalledWith(1, '/creator/jobs/job_1/events');
-    expect(rawGet).toHaveBeenNthCalledWith(2, '/creator/jobs/job_1/events?cursor=agent%3A1');
+    expect(rawGet).toHaveBeenNthCalledWith(
+      1,
+      '/creator/jobs/job_1/events',
+      { signal: expect.any(AbortSignal) }
+    );
+    expect(rawGet).toHaveBeenNthCalledWith(
+      2,
+      '/creator/jobs/job_1/events?cursor=agent%3A1',
+      { signal: expect.any(AbortSignal) }
+    );
+  });
+
+  it('aborts the SSE request when the subscription closes', async () => {
+    let requestSignal: AbortSignal | undefined;
+    const rawGet = vi.fn((
+      _path: string,
+      options?: { signal?: AbortSignal }
+    ) => new Promise<Response>((_resolve, reject) => {
+      requestSignal = options?.signal;
+      requestSignal?.addEventListener('abort', () => {
+        reject(new DOMException('aborted', 'AbortError'));
+      }, { once: true });
+    }));
+    const service = createCreatorService({
+      get: vi.fn(),
+      post: vi.fn(),
+      rawGet
+    });
+    const onDisconnect = vi.fn();
+
+    const subscription = service.subscribeJobEvents('job_1', vi.fn(), onDisconnect);
+    await vi.waitFor(() => expect(rawGet).toHaveBeenCalledOnce());
+
+    expect(requestSignal).toBeDefined();
+    subscription.close();
+
+    expect(requestSignal?.aborted).toBe(true);
+    await Promise.resolve();
+    expect(onDisconnect).not.toHaveBeenCalled();
   });
 });
 

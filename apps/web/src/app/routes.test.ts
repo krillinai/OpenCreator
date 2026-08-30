@@ -45,8 +45,21 @@ describe('app routes', () => {
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
     expect(parseRoute('#/settings?tab=ai-services')).toEqual({ view: 'settings', tab: 'ai-services' });
     expect(formatRoute({ view: 'settings', tab: 'ai-services' })).toBe('#/settings?tab=ai-services');
-    expect(parseRoute('#/settings?tab=codex-agent')).toEqual({ view: 'settings', tab: 'codex-agent' });
-    expect(formatRoute({ view: 'settings', tab: 'codex-agent' })).toBe('#/settings?tab=codex-agent');
+    expect(parseRoute('#/settings?tab=ai-services&section=tts')).toEqual({
+      view: 'settings',
+      tab: 'ai-services',
+      section: 'tts'
+    });
+    expect(formatRoute({
+      view: 'settings',
+      tab: 'ai-services',
+      section: 'tts'
+    })).toBe('#/settings?tab=ai-services&section=tts');
+    expect(parseRoute('#/settings?tab=codex-agent')).toEqual({
+      view: 'settings',
+      tab: 'ai-services',
+      section: 'text'
+    });
     expect(parseRoute('#/capabilities')).toEqual({ view: 'capabilities' });
     expect(parseRoute('#/activity')).toEqual({ view: 'activity', range: '7d' });
     expect(parseRoute('#/activity?range=today')).toEqual({ view: 'activity', range: 'today' });

@@ -40,7 +40,8 @@ export function createCreatorProjectCoverService(input: {
 
   return {
     async resolve(job) {
-      const explicitCover = latestArtifact(job.artifacts, ['cover_image', 'generated_image']);
+      const explicitCover = latestCoverArtifact(job.artifacts)
+        ?? latestArtifact(job.artifacts, ['generated_image']);
       if (explicitCover?.path !== null && explicitCover !== undefined && await isNonEmptyFile(explicitCover.path)) {
         return {
           path: explicitCover.path,
@@ -109,6 +110,31 @@ async function resolveVideoFrameCover(input: {
   }
 }
 
+function latestCoverArtifact(artifacts: CreatorArtifact[]): CreatorArtifact | undefined {
+  const covers = artifacts.filter(artifact => (
+    artifact.kind === 'cover_image'
+    && artifact.path !== null
+    && artifact.status !== 'stale'
+  ));
+  const versioned = covers.filter(artifact => (
+    positiveMetadataNumber(artifact, 'resultVersion') !== undefined
+  ));
+  if (versioned.length === 0) return latestArtifact(artifacts, ['cover_image']);
+
+  const latestResultVersion = Math.max(...versioned.map(artifact => (
+    positiveMetadataNumber(artifact, 'resultVersion')!
+  )));
+  return versioned
+    .filter(artifact => positiveMetadataNumber(artifact, 'resultVersion') === latestResultVersion)
+    .sort((left, right) => (
+      (positiveMetadataNumber(left, 'candidate') ?? left.version)
+      - (positiveMetadataNumber(right, 'candidate') ?? right.version)
+      || left.createdAt.localeCompare(right.createdAt)
+      || left.id.localeCompare(right.id)
+    ))
+    .at(0);
+}
+
 function latestArtifact(
   artifacts: CreatorArtifact[],
   kinds: readonly string[]
@@ -128,6 +154,16 @@ function latestArtifact(
     if (artifact !== undefined) return artifact;
   }
   return undefined;
+}
+
+function positiveMetadataNumber(
+  artifact: CreatorArtifact,
+  field: string
+): number | undefined {
+  const value = artifact.metadata[field];
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
 }
 
 function artifactFileName(artifact: CreatorArtifact, fallback: string): string {

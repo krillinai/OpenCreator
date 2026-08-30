@@ -8,6 +8,10 @@ export type RuntimeClientInput = ConnectionConfig & {
   fetchImpl?: typeof fetch;
 };
 
+export type RuntimeRequestOptions = {
+  signal?: AbortSignal;
+};
+
 export class RuntimeClient {
   private readonly baseUrl: string;
   private readonly token: string | undefined;
@@ -23,8 +27,8 @@ export class RuntimeClient {
     return this.request<T>(path, { method: 'GET' });
   }
 
-  async rawGet(path: string): Promise<Response> {
-    return this.rawRequest(path, { method: 'GET' });
+  async rawGet(path: string, options: RuntimeRequestOptions = {}): Promise<Response> {
+    return this.rawRequest(path, { method: 'GET', signal: options.signal });
   }
 
   async post<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -65,6 +69,7 @@ export class RuntimeClient {
       body?: unknown;
       binaryBody?: BodyInit;
       binaryContentType?: string;
+      signal?: AbortSignal;
     }
   ): Promise<Response> {
     const headers: Record<string, string> = {};
@@ -80,6 +85,7 @@ export class RuntimeClient {
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method: input.method,
       headers,
+      signal: input.signal,
       body: input.binaryBody ?? (
         input.body === undefined ? undefined : JSON.stringify(input.body)
       )

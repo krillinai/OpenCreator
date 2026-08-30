@@ -46,6 +46,17 @@
 - 只有用户明确要求读取、处理或回写 OpenCreator 飞书 Bug 文档时，才允许使用 `opencreator-bug-fix`。
 - 未得到上述明确要求时，禁止因为任务看起来像 Bug 而读取飞书文档、执行文档闭环或按该流程自动创建 Git commit；应直接按当前需求完成代码修改与必要验证。
 
+## Creator 模板协作面板架构铁律
+
+- 铁律：视频翻译、封面生成、图像生成、视频生成及后续所有 Creator 模板必须共用唯一的 `CreatorCollaborationPanel`；禁止为单个模板复制或新建一套完整的 Agent Panel。
+- 通用 Panel 统一负责 Agent 消息、Activity 时间线、Stage 状态卡、真实进度、审批、Composer、权限以及任务终止和继续。模板 Workspace 不得自行维护第二套消息、审批、SSE 或 Stage 展示逻辑。
+- 模板差异只能通过 `CreatorPanelAdapter`、配置、回调或局部 slot 表达。Adapter 只负责 Stage/Phase/字段文案、Activity 语义化、进度标准化、Composer 默认提示和模板上下文摘要，不得复制通用交互框架。
+- Workspace 只向通用 Panel 提供当前步骤、业务上下文、问题状态和快捷操作。真正只属于某个模板的能力可以使用局部 slot，但不得借此复制完整 Panel。
+- 通用 Panel 禁止读取 `krillinEventPayload` 或其他执行器私有字段。Runtime 对外进度统一为 `phase`、`percent`、`message`、`completed`、`failed`、`total`；旧字段兼容只能存在于对应 Adapter 或 Runtime normalizer。
+- 纯界面状态不得写入用户可见的创作动态，包括步骤索引、最远步骤、工作区页签、结果页签和草稿版本等 UI-only 字段。Activity 必须先语义化、过滤并合并连续同类更新。
+- 未知模板必须使用 fallback adapter，显示稳定的通用文案，不得直接暴露内部 Stage ID、执行器名称或原始事件字段。
+- 新增 Creator 模板时必须同时增加 Adapter 测试、Activity 过滤与去重测试、Stage 状态测试和真实进度测试；禁止以创建独立 Panel 作为交付方式。
+
 ## Web / Desktop 一致性铁律门禁
 
 ### 核心定义

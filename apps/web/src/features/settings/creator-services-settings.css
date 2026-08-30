@@ -146,8 +146,39 @@
 .creator-services-tts-voice,
 .creator-services-toggle,
 .creator-services-inline-note,
-.creator-services-runtime-note {
+.creator-services-runtime-note,
+.creator-services-model-status {
   grid-column: 1 / -1;
+}
+
+.creator-services-model-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.creator-services-model-status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.creator-services-model-status svg {
+  color: var(--success);
+}
+
+.creator-services-model-status .is-warning {
+  color: var(--warning);
+}
+
+.creator-services-model-status .is-warning svg {
+  color: currentColor;
 }
 
 .creator-services-tts-voice {

@@ -193,4 +193,66 @@ describe('Codex provider configuration', () => {
       model: 'gpt-shared'
     });
   });
+
+  it('migrates a legacy key that matches the provider being selected', async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    let config = { model: 'gpt-current', openai_base_url: '' };
+    let account: null | { type: 'apiKey' } = null;
+    const client: RestartableCodexAppServerRequestClient = {
+      async request<Result>(method: string, params: unknown): Promise<Result> {
+        calls.push({ method, params });
+        if (method === 'config/read') {
+          return {
+            config,
+            layers: [{ name: { type: 'user', profile: null }, version: 'v1' }]
+          } as Result;
+        }
+        if (method === 'account/read') {
+          return { account, requiresOpenaiAuth: true } as Result;
+        }
+        if (method === 'config/batchWrite') {
+          const body = params as { edits: Array<{ keyPath: string; value: unknown }> };
+          config = {
+            model: String(body.edits.find(edit => edit.keyPath === 'model')?.value),
+            openai_base_url: String(
+              body.edits.find(edit => edit.keyPath === 'openai_base_url')?.value ?? ''
+            )
+          };
+          return { status: 'ok', version: 'v2' } as Result;
+        }
+        if (method === 'account/login/start') {
+          account = { type: 'apiKey' };
+          return { type: 'apiKey' } as Result;
+        }
+        throw new Error(`Unexpected method: ${method}`);
+      },
+      restart: vi.fn(async () => undefined),
+      close: async () => undefined
+    };
+    const readStoredApiKey = vi.fn(async (provider: { baseUrl: string; model: string }) => (
+      provider.baseUrl === 'https://legacy.example.test/v1'
+      && provider.model === 'gpt-legacy'
+        ? 'sk-legacy'
+        : undefined
+    ));
+    const service = createCodexProviderConfigService({
+      client,
+      readiness: { refresh: vi.fn() } as never,
+      readStoredApiKey
+    });
+
+    await service.update({
+      baseUrl: 'https://legacy.example.test/v1',
+      model: 'gpt-legacy'
+    });
+
+    expect(readStoredApiKey).toHaveBeenCalledWith({
+      baseUrl: 'https://legacy.example.test/v1',
+      model: 'gpt-legacy'
+    });
+    expect(calls.find(call => call.method === 'account/login/start')?.params).toEqual({
+      type: 'apiKey',
+      apiKey: 'sk-legacy'
+    });
+  });
 });

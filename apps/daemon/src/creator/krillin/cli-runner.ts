@@ -219,11 +219,14 @@ function commandArguments(
       );
     }
     const video = dubbed ? dubbedVideo : sourceVideo;
+    const vertical = artifactPath(artifacts, 'vertical_subtitle');
     const target = artifactPath(artifacts, 'target_subtitle');
     const bilingual = artifactPath(artifacts, 'bilingual_subtitle');
-    const subtitle = booleanOption(options, 'bilingual', false) && bilingual
-      ? bilingual
-      : target ?? bilingual;
+    const subtitle = command === 'render-vertical'
+      ? vertical ?? target ?? bilingual
+      : booleanOption(options, 'bilingual', false) && bilingual
+        ? bilingual
+        : target ?? bilingual;
     if (!video || !subtitle) {
       throw new CreatorExecutorError('creator_stage_input_missing', 'Render video and subtitle inputs are required');
     }

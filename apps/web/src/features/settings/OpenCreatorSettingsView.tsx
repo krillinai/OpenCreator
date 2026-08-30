@@ -17,12 +17,12 @@ import type { ProjectPermission } from '../projects/project-model.js';
 import { ProfileSettingsView, type ProfileSettingsService } from './ProfileSettingsView.js';
 import { CleanupSettingsView, type CleanupSettingsService } from './CleanupSettingsView.js';
 import { DiagnosticsSettingsView } from './DiagnosticsSettingsView.js';
-import { CreatorServicesSettingsView } from './CreatorServicesSettingsView.js';
-import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import {
-  CodexRuntimeSettingsView,
-  type CodexRuntimeSettingsService
-} from './CodexRuntimeSettingsView.js';
+  CreatorServicesSettingsView,
+  type CreatorServicesSection
+} from './CreatorServicesSettingsView.js';
+import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
+import type { CodexRuntimeSettingsService } from './CodexRuntimeSettingsView.js';
 import {
   MemorySettingsView,
   type MemoryScopeOption,
@@ -66,11 +66,12 @@ export type OpenCreatorSettingsViewProps = {
   memoryProjects?: MemoryScopeOption[];
   memoryThreads?: MemoryScopeOption[];
   codexStatus?: CodexStatusResponse;
-  initialTab?: 'general' | 'ai-services' | 'codex-agent';
+  initialTab?: 'general' | 'ai-services';
+  initialSection?: CreatorServicesSection;
   onBack(): void;
 };
 
-type SettingsTab = 'general' | 'ai-services' | 'codex-agent' | 'plugins' | 'memory' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
+type SettingsTab = 'general' | 'ai-services' | 'plugins' | 'memory' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
 
 export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => props.initialTab ?? 'general');
@@ -78,7 +79,6 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: 'general', label: t('settings.tab.general') },
     { id: 'ai-services', label: t('settings.tab.aiServices') },
-    { id: 'codex-agent', label: t('settings.tab.codexAgent') },
     { id: 'plugins', label: t('settings.tab.plugins') },
     { id: 'memory', label: t('settings.tab.memory') },
     { id: 'profiles', label: t('settings.tab.profiles') },
@@ -138,12 +138,8 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
           <CreatorServicesSettingsView
             connected={props.runtimeStatus.connected}
             service={props.creatorServicesService ?? null}
-          />
-        ) : null}
-        {activeTab === 'codex-agent' ? (
-          <CodexRuntimeSettingsView
-            connected={props.runtimeStatus.connected}
-            service={props.codexRuntimeService ?? null}
+            modelService={props.codexRuntimeService ?? null}
+            initialSection={props.initialSection}
           />
         ) : null}
         {activeTab === 'plugins' ? <PluginSettings runtimeStatus={props.runtimeStatus} /> : null}

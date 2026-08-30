@@ -44,6 +44,39 @@ describe('creator project cover', () => {
     expect(extractFrame).not.toHaveBeenCalled();
   });
 
+  it('uses the first candidate from the latest result and ignores legacy selection state', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-project-latest-cover-'));
+    const versionOnePath = join(tempDir, 'cover-v1-1.png');
+    const versionTwoFirstPath = join(tempDir, 'cover-v2-1.png');
+    const versionTwoSecondPath = join(tempDir, 'cover-v2-2.png');
+    writeFileSync(versionOnePath, 'version-one');
+    writeFileSync(versionTwoFirstPath, 'version-two-first');
+    writeFileSync(versionTwoSecondPath, 'version-two-second');
+    const service = createCreatorProjectCoverService({ jobsRoot: tempDir });
+    const job = creatorJob([
+      {
+        ...artifact('cover_image', versionOnePath, { resultVersion: 1, candidate: 1 }),
+        id: 'cover_v1_1',
+        version: 1
+      },
+      {
+        ...artifact('cover_image', versionTwoSecondPath, { resultVersion: 2, candidate: 2 }),
+        id: 'cover_v2_2',
+        version: 3
+      },
+      {
+        ...artifact('cover_image', versionTwoFirstPath, { resultVersion: 2, candidate: 1 }),
+        id: 'cover_v2_1',
+        version: 2
+      }
+    ]);
+    job.state.selectedCoverArtifactId = 'cover_v1_1';
+
+    const cover = await service.resolve(job);
+
+    expect(cover?.path).toBe(versionTwoFirstPath);
+  });
+
   it('extracts and caches the fifth-second frame from the source video', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-project-cover-'));
     const sourcePath = join(tempDir, 'source.mp4');

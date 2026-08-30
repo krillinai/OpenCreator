@@ -16,6 +16,7 @@ import {
   resolveInside,
   verifyKrillinRuntimeManifest
 } from './manifest.js';
+import { listBundledTtsVoices } from './tts-voice-catalog.js';
 
 const MAX_OUTPUT_BYTES = 100 * 1024 * 1024;
 const MAX_PROCESS_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -107,6 +108,14 @@ export function createKrillinTtsService(input: {
       return { provider, model: '', voices: [] };
     }
     const prepared = prepareConfig(await input.configStore.read(), provider, model);
+    const bundledVoices = listBundledTtsVoices(provider, prepared.model);
+    if (bundledVoices !== undefined) {
+      return {
+        provider,
+        model: prepared.model,
+        voices: bundledVoices
+      };
+    }
     const launcherRoot = await createLauncherRoot(input.workRoot);
     try {
       const response = await executeUtility({
@@ -118,7 +127,9 @@ export function createKrillinTtsService(input: {
       return {
         provider,
         model: prepared.model,
-        voices: (response.voices ?? []).flatMap(voice => mapVoice(voice, provider))
+        voices: (response.voices ?? [])
+          .filter(voice => supportsModel(voice, prepared.model))
+          .flatMap(voice => mapVoice(voice, provider))
       };
     } finally {
       await rm(launcherRoot, { recursive: true, force: true });
@@ -245,6 +256,17 @@ function ensureCredentials(
     `Configure the ${provider} TTS API key before generating speech`,
     409
   );
+}
+
+function supportsModel(voice: KrillinVoice, model: string): boolean {
+  if (!Array.isArray(voice.supported_models) || voice.supported_models.length === 0) {
+    return true;
+  }
+  const normalizedModel = model.trim().toLowerCase();
+  return voice.supported_models.some(candidate => (
+    typeof candidate === 'string'
+    && candidate.trim().toLowerCase() === normalizedModel
+  ));
 }
 
 function mapVoice(

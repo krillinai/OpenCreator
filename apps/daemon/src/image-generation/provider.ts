@@ -24,7 +24,7 @@ export type GeneratedImageContent = {
 
 export class ImageGenerationProviderError extends Error {
   constructor(
-    readonly code: 'config_missing' | 'upstream_error',
+    readonly code: 'config_missing' | 'upstream_error' | 'unsupported_capability',
     message: string
   ) {
     super(message);
@@ -38,6 +38,7 @@ export async function generateImageContents(
   options: {
     fetchImpl?: typeof fetch;
     signal?: AbortSignal;
+    referenceImage?: GeneratedImageContent;
   } = {}
 ): Promise<{ model: string; contents: GeneratedImageContent[] }> {
   const controller = new AbortController();
@@ -47,13 +48,35 @@ export async function generateImageContents(
   if (options.signal?.aborted) abort();
   else options.signal?.addEventListener('abort', abort, { once: true });
   try {
+    if (
+      options.referenceImage !== undefined
+      && request.provider !== 'openai'
+      && request.provider !== 'gemini'
+    ) {
+      throw new ImageGenerationProviderError(
+        'unsupported_capability',
+        `The ${request.provider} image provider does not support reference images`
+      );
+    }
     if (request.provider === 'gemini') {
-      return await generateGeminiImages(request, config, controller.signal, options.fetchImpl);
+      return await generateGeminiImages(
+        request,
+        config,
+        controller.signal,
+        options.referenceImage,
+        options.fetchImpl
+      );
     }
     if (request.provider === 'kling') {
       return await generateKlingImages(request, config, controller.signal, options.fetchImpl);
     }
-    return await generateOpenAiImages(request, config, controller.signal, options.fetchImpl);
+    return await generateOpenAiImages(
+      request,
+      config,
+      controller.signal,
+      options.referenceImage,
+      options.fetchImpl
+    );
   } catch (error) {
     if (error instanceof ImageGenerationProviderError) throw error;
     if (options.signal?.aborted) throw error;
@@ -71,24 +94,41 @@ async function generateOpenAiImages(
   request: CreateImageGenerationRequest,
   config: CreatorServicesConfig,
   signal: AbortSignal,
+  referenceImage?: GeneratedImageContent,
   fetchImpl?: typeof fetch
 ) {
   const provider = request.provider === 'jimeng' ? config.image.jimeng : config.image.openai;
   if (!provider.apiKey.trim()) missingConfig(request.provider);
   const model = provider.model.trim()
     || (request.provider === 'jimeng' ? 'doubao-seedream-4-0-250828' : 'gpt-image-1');
-  const endpoint = openAiCompatibleEndpoint(provider.baseUrl, 'images/generations');
+  const endpoint = openAiImageEndpoint(
+    provider.baseUrl,
+    referenceImage === undefined ? 'generations' : 'edits'
+  );
+  const multipart = referenceImage === undefined
+    ? undefined
+    : createImageEditBody({
+        model,
+        prompt: request.prompt.trim(),
+        size: request.size,
+        quality: request.quality,
+        count: request.count,
+        image: referenceImage
+      });
   const response = await fetchCreatorService({
     endpoint,
     method: 'POST',
-    headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      prompt: request.prompt.trim(),
-      size: request.size,
-      ...(request.provider === 'openai' ? { quality: request.quality } : {}),
-      n: request.count
-    }),
+    headers: {
+      Authorization: `Bearer ${provider.apiKey}`,
+      'Content-Type': multipart?.contentType ?? 'application/json'
+    },
+    body: multipart?.body ?? JSON.stringify({
+        model,
+        prompt: request.prompt.trim(),
+        size: request.size,
+        ...(request.provider === 'openai' ? { quality: request.quality } : {}),
+        n: request.count
+      }),
     proxy: config.proxy.trim(),
     signal,
     maxResponseBytes: MAX_RESPONSE_BYTES,
@@ -114,6 +154,7 @@ async function generateGeminiImages(
   request: CreateImageGenerationRequest,
   config: CreatorServicesConfig,
   signal: AbortSignal,
+  referenceImage?: GeneratedImageContent,
   fetchImpl?: typeof fetch
 ) {
   const provider = config.image.gemini;
@@ -130,7 +171,19 @@ async function generateGeminiImages(
       method: 'POST',
       headers: { 'x-goog-api-key': provider.apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: request.prompt.trim() }] }],
+        contents: [{
+          parts: [
+            ...(referenceImage === undefined
+              ? []
+              : [{
+                  inlineData: {
+                    mimeType: referenceImage.mime,
+                    data: referenceImage.content.toString('base64')
+                  }
+                }]),
+            { text: request.prompt.trim() }
+          ]
+        }],
         generationConfig: {
           responseModalities: ['TEXT', 'IMAGE'],
           imageConfig: { aspectRatio: imageAspectRatio(request.size) }
@@ -156,6 +209,57 @@ async function generateGeminiImages(
     return { content, mime: mimeFromHeader(part.mime) ?? detectImageMime(content) };
   }));
   return { model, contents: generated };
+}
+
+function openAiImageEndpoint(
+  baseUrl: string,
+  operation: 'generations' | 'edits'
+): URL {
+  const endpoint = openAiCompatibleEndpoint(baseUrl, 'images/generations');
+  endpoint.pathname = endpoint.pathname.replace(
+    /\/images\/generations$/i,
+    `/images/${operation}`
+  );
+  return endpoint;
+}
+
+function createImageEditBody(input: {
+  model: string;
+  prompt: string;
+  size: string;
+  quality: string;
+  count: number;
+  image: GeneratedImageContent;
+}): { contentType: string; body: Buffer } {
+  const boundary = `opencreator-${crypto.randomUUID()}`;
+  const parts: Buffer[] = [];
+  const addField = (name: string, value: string) => {
+    parts.push(Buffer.from([
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="${name}"`,
+      '',
+      value,
+      ''
+    ].join('\r\n')));
+  };
+  addField('model', input.model);
+  addField('prompt', input.prompt);
+  addField('size', input.size);
+  addField('quality', input.quality);
+  addField('n', String(input.count));
+  parts.push(Buffer.from([
+    `--${boundary}`,
+    'Content-Disposition: form-data; name="image"; filename="reference-image"',
+    `Content-Type: ${input.image.mime}`,
+    '',
+    ''
+  ].join('\r\n')));
+  parts.push(input.image.content);
+  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  return {
+    contentType: `multipart/form-data; boundary=${boundary}`,
+    body: Buffer.concat(parts)
+  };
 }
 
 async function generateKlingImages(

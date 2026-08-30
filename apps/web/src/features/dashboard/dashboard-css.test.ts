@@ -9,7 +9,10 @@ const dashboardCss = readFileSync(
 function cssBlocks(selector: string): string[] {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return Array.from(
-    dashboardCss.matchAll(new RegExp(`${escapedSelector}\\s*\\{(?<body>[^}]*)\\}`, 'g')),
+    dashboardCss.matchAll(new RegExp(
+      `(?:^|[}\\n])\\s*${escapedSelector}\\s*\\{(?<body>[^}]*)\\}`,
+      'g'
+    )),
     match => match.groups?.body ?? ''
   );
 }
@@ -41,8 +44,8 @@ describe('dashboard CSS contracts', () => {
   it('keeps video result controls separate from the Agent panel layout', () => {
     const resultVersionButton = cssBlocks('.video-result-version > button');
     const resultVersionItem = cssBlocks('.video-result-version > div button');
-    const agentHeader = cssBlocks('.video-translation-agent-header');
-    const agentContext = cssBlocks('.video-translation-agent-context');
+    const agentHeader = cssBlocks('.creator-collaboration-header');
+    const agentContext = cssBlocks('.creator-collaboration-context');
 
     expect(resultVersionButton).toHaveLength(1);
     expect(resultVersionButton[0]).toContain('display: inline-flex;');
@@ -68,5 +71,46 @@ describe('dashboard CSS contracts', () => {
     expect(cssBlocks('.video-result-notice')).toHaveLength(1);
     expect(cssBlocks('.video-result-regenerate')).toHaveLength(1);
     expect(cssBlocks('.video-result-pane-actions')).toHaveLength(1);
+  });
+
+  it('keeps media generation steps vertically scrollable inside the fixed workspace', () => {
+    const stepScroll = cssBlocks('.media-generation-step-scroll');
+
+    expect(stepScroll).toHaveLength(1);
+    expect(stepScroll[0]).toContain('min-height: 0;');
+    expect(stepScroll[0]).toContain('overflow-x: hidden;');
+    expect(stepScroll[0]).toContain('overflow-y: auto;');
+    expect(stepScroll[0]).toContain('scrollbar-gutter: stable;');
+  });
+
+  it('keeps cover results within the available height and scrolls the result pane', () => {
+    const coverWorkspace = cssBlocks('.cover-result-workspace');
+    const resultLayout = cssBlocks('.cover-result-workspace .creator-result-layout');
+    const resultPane = cssBlocks('.cover-result-workspace .video-result-pane');
+
+    expect(coverWorkspace).toHaveLength(1);
+    expect(coverWorkspace[0]).toContain('height: 100%;');
+    expect(coverWorkspace[0]).toContain('min-height: 0;');
+    expect(resultLayout).toHaveLength(1);
+    expect(resultLayout[0]).toContain('flex: 1 1 auto;');
+    expect(resultLayout[0]).toContain('min-height: 0;');
+    expect(resultLayout[0]).toContain('grid-template-rows: minmax(0, 1fr);');
+    expect(resultLayout[0]).toContain('overflow: hidden;');
+    expect(resultPane).toHaveLength(1);
+    expect(resultPane[0]).toContain('min-height: 0;');
+  });
+
+  it('visually preserves creator steps that remain reachable after navigating back', () => {
+    const reachableConnector = cssBlocks(
+      '.video-translation-steps li[data-next-reachable="true"]::after'
+    );
+    const visitedStep = cssBlocks(
+      '.video-translation-steps li[data-visited="true"] button'
+    );
+
+    expect(reachableConnector).toHaveLength(1);
+    expect(reachableConnector[0]).toContain('background: var(--accent);');
+    expect(visitedStep).toHaveLength(1);
+    expect(visitedStep[0]).toContain('color: var(--text);');
   });
 });

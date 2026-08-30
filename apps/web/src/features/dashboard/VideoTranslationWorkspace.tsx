@@ -59,6 +59,7 @@ type WizardStep = 0 | 1 | 2 | 3;
 type WorkspacePhase = 'configure' | 'result';
 type ResultProposal = 'regenerate';
 type AgentFocus = 'language' | 'subtitles' | 'dubbing' | 'output';
+type TranslationStageId = 'subtitle' | 'tts' | 'render-horizontal' | 'render-vertical';
 
 type TranslationSettingsSnapshot = {
   sourceLanguage: string;
@@ -84,6 +85,9 @@ type TranslationSourceSnapshot = {
   sourceType: SourceType;
   videoUrl: string;
   videoFile: File | null;
+  videoFileName: string | null;
+  videoFileSize: number | null;
+  videoFileLastModified: number | null;
 };
 
 type TranslationResultVersion = {
@@ -100,7 +104,7 @@ type TranslationResultVersion = {
 };
 
 type PersistedTranslationResultVersion = Omit<TranslationResultVersion, 'source' | 'settings'> & {
-  source: Omit<TranslationSourceSnapshot, 'videoFile'> & { videoFileName: string | null };
+  source: Omit<TranslationSourceSnapshot, 'videoFile'>;
   settings: TranslationSettingsSnapshot;
 };
 
@@ -199,20 +203,22 @@ function subtitleFontFamily(value: SubtitleFont) {
   } as const)[value];
 }
 
-function sameFile(left: File | null, right: File | null) {
-  return left === right || Boolean(
-    left && right
-    && left.name === right.name
-    && left.size === right.size
-    && left.type === right.type
-    && left.lastModified === right.lastModified
-  );
+function localSourceFingerprint(source: TranslationSourceSnapshot) {
+  return {
+    name: source.videoFile?.name ?? source.videoFileName,
+    size: source.videoFile?.size ?? source.videoFileSize,
+    lastModified: source.videoFile?.lastModified ?? source.videoFileLastModified
+  };
 }
 
 function sameSource(left: TranslationSourceSnapshot, right: TranslationSourceSnapshot) {
-  return left.sourceType === right.sourceType
-    && left.videoUrl === right.videoUrl
-    && sameFile(left.videoFile, right.videoFile);
+  if (left.sourceType !== right.sourceType) return false;
+  if (left.sourceType === 'url') return left.videoUrl === right.videoUrl;
+  const leftFile = localSourceFingerprint(left);
+  const rightFile = localSourceFingerprint(right);
+  return leftFile.name === rightFile.name
+    && leftFile.size === rightFile.size
+    && leftFile.lastModified === rightFile.lastModified;
 }
 
 function sameSettings(left: TranslationSettingsSnapshot, right: TranslationSettingsSnapshot) {
@@ -246,13 +252,76 @@ function canReuseSubtitleCues(
     && version.settings.preferPlatformCaptions === settings.preferPlatformCaptions;
 }
 
+function translationChanges(
+  version: TranslationResultVersion,
+  settings: TranslationSettingsSnapshot,
+  source: TranslationSourceSnapshot,
+  subtitleNeedsRegeneration: boolean
+) {
+  const subtitleInputsChanged = !canReuseSubtitleCues(version, settings, source)
+    || version.settings.bilingual !== settings.bilingual
+    || version.settings.subtitlePosition !== settings.subtitlePosition;
+  const subtitleStyleChanged = version.settings.subtitleFont !== settings.subtitleFont
+    || version.settings.subtitleSize !== settings.subtitleSize
+    || version.settings.subtitleColor !== settings.subtitleColor;
+  const voiceChanged = version.settings.dubbing !== settings.dubbing
+    || version.settings.ttsProvider !== settings.ttsProvider
+    || version.settings.ttsModel !== settings.ttsModel
+    || version.settings.voiceCode !== settings.voiceCode
+    || version.settings.voiceName !== settings.voiceName;
+  const outputChanged = version.settings.composeVideo !== settings.composeVideo
+    || version.settings.videoFormat !== settings.videoFormat
+    || version.settings.verticalTitle !== settings.verticalTitle
+    || version.settings.verticalSubtitle !== settings.verticalSubtitle;
+  return {
+    subtitleInputsChanged,
+    subtitleContentChanged: subtitleNeedsRegeneration,
+    subtitleStyleChanged,
+    voiceChanged,
+    outputChanged
+  };
+}
+
+export function videoTranslationRegenerationStage(
+  version: TranslationResultVersion,
+  settings: TranslationSettingsSnapshot,
+  source: TranslationSourceSnapshot,
+  subtitleNeedsRegeneration: boolean
+): TranslationStageId | undefined {
+  const changes = translationChanges(
+    version,
+    settings,
+    source,
+    subtitleNeedsRegeneration
+  );
+  if (changes.subtitleInputsChanged) return 'subtitle';
+  if (settings.dubbing && (changes.subtitleContentChanged || changes.voiceChanged)) return 'tts';
+  if (
+    settings.composeVideo
+    && (
+      changes.subtitleContentChanged
+      || changes.subtitleStyleChanged
+      || changes.voiceChanged
+      || changes.outputChanged
+    )
+  ) {
+    return settings.videoFormat === 'vertical'
+      ? 'render-vertical'
+      : 'render-horizontal';
+  }
+  return undefined;
+}
+
 function serializeResultVersions(versions: TranslationResultVersion[]): CreatorJson {
   return versions.map((version): PersistedTranslationResultVersion => ({
     ...version,
     source: {
       sourceType: version.source.sourceType,
       videoUrl: version.source.videoUrl,
-      videoFileName: version.source.videoFile?.name ?? null
+      videoFileName: version.source.videoFile?.name ?? version.source.videoFileName,
+      videoFileSize: version.source.videoFile?.size ?? version.source.videoFileSize,
+      videoFileLastModified: version.source.videoFile?.lastModified
+        ?? version.source.videoFileLastModified
     },
     settings: version.settings
   })) as CreatorJson;
@@ -307,7 +376,16 @@ function deserializeResultVersions(value: CreatorJson | undefined): TranslationR
       source: {
         sourceType: sourceRecord.sourceType,
         videoUrl: sourceRecord.videoUrl,
-        videoFile: null
+        videoFile: null,
+        videoFileName: typeof sourceRecord.videoFileName === 'string'
+          ? sourceRecord.videoFileName
+          : null,
+        videoFileSize: typeof sourceRecord.videoFileSize === 'number'
+          ? sourceRecord.videoFileSize
+          : null,
+        videoFileLastModified: typeof sourceRecord.videoFileLastModified === 'number'
+          ? sourceRecord.videoFileLastModified
+          : null
       },
       settings: {
         sourceLanguage: settingsRecord.sourceLanguage,
@@ -481,12 +559,18 @@ function legacyResultVersionsFromArtifacts(
         ? representative
         : relatedArtifact(artifacts, representative, ['target_subtitle'])
           ?? latestArtifactBefore(artifacts, representative, 'target_subtitle');
+      const sourceArtifact = subtitleArtifact === undefined
+        ? undefined
+        : relatedArtifact(artifacts, subtitleArtifact, ['source_video']);
       const settings = representative.metadata.settingsSnapshot
         ?? subtitleArtifact?.metadata.settingsSnapshot;
       const sourceState = settings !== null && typeof settings === 'object' && !Array.isArray(settings)
         ? settings as Record<string, CreatorJson>
         : fallbackState;
       const persisted = persistedVersions.find(version => version.value === value);
+      const resultSourceType = sourceState.sourceType === 'file'
+        ? 'file'
+        : persisted?.source.sourceType ?? 'url';
       const hasHorizontal = group.some(artifact => artifact.kind === 'horizontal_video');
       const hasVertical = group.some(artifact => artifact.kind === 'vertical_video');
       const inferredVideoFormat = hasHorizontal && hasVertical
@@ -507,13 +591,27 @@ function legacyResultVersionsFromArtifacts(
             ? `成片版本 V${value}`
             : `字幕版本 V${value}`,
         source: {
-          sourceType: sourceState.sourceType === 'file'
-            ? 'file'
-            : persisted?.source.sourceType ?? 'url',
+          sourceType: resultSourceType,
           videoUrl: typeof sourceState.sourceUrl === 'string'
             ? sourceState.sourceUrl
             : persisted?.source.videoUrl ?? '',
-          videoFileName: null
+          videoFileName: resultSourceType === 'file'
+            ? typeof sourceState.sourceFileName === 'string'
+              ? sourceState.sourceFileName
+              : artifactFileName(sourceArtifact) ?? persisted?.source.videoFileName ?? null
+            : null,
+          videoFileSize: resultSourceType === 'file'
+            ? typeof sourceState.sourceFileSize === 'number'
+              ? sourceState.sourceFileSize
+              : readArtifactNumber(sourceArtifact, 'size') ?? persisted?.source.videoFileSize ?? null
+            : null,
+          videoFileLastModified: resultSourceType === 'file'
+            ? typeof sourceState.sourceFileLastModified === 'number'
+              ? sourceState.sourceFileLastModified
+              : readArtifactNumber(sourceArtifact, 'lastModified')
+                ?? persisted?.source.videoFileLastModified
+                ?? null
+            : null
         },
         settings: {
           sourceLanguage: typeof sourceState.sourceLanguage === 'string'
@@ -585,6 +683,7 @@ function resultVersionFromSnapshot(
   persistedVersions: TranslationResultVersion[]
 ): TranslationResultVersion | undefined {
   const subtitleArtifact = artifactFromRefs(artifacts, snapshot.artifactRefs, ['target_subtitle']);
+  const sourceArtifact = artifactFromRefs(artifacts, snapshot.artifactRefs, ['source_video']);
   const videoArtifacts = videoArtifactKinds.flatMap(kind => {
     const artifact = artifactFromRefs(artifacts, snapshot.artifactRefs, [kind]);
     return artifact === undefined ? [] : [artifact];
@@ -592,6 +691,9 @@ function resultVersionFromSnapshot(
   if (subtitleArtifact === undefined && videoArtifacts.length === 0) return undefined;
   const persisted = persistedVersions.find(version => version.value === snapshot.version);
   const sourceState = snapshot.state;
+  const resultSourceType = sourceState.sourceType === 'file'
+    ? 'file'
+    : persisted?.source.sourceType ?? (fallbackState.sourceType === 'file' ? 'file' : 'url');
   const hasHorizontal = (snapshot.artifactRefs.horizontal_video?.length ?? 0) > 0;
   const hasVertical = (snapshot.artifactRefs.vertical_video?.length ?? 0) > 0;
   const inferredVideoFormat = hasHorizontal && hasVertical
@@ -608,13 +710,33 @@ function resultVersionFromSnapshot(
     value: snapshot.version,
     description: snapshot.description || `项目版本 V${snapshot.version}`,
     source: {
-      sourceType: sourceState.sourceType === 'file'
-        ? 'file'
-        : persisted?.source.sourceType ?? (fallbackState.sourceType === 'file' ? 'file' : 'url'),
+      sourceType: resultSourceType,
       videoUrl: typeof sourceState.sourceUrl === 'string'
         ? sourceState.sourceUrl
         : persisted?.source.videoUrl ?? (typeof fallbackState.sourceUrl === 'string' ? fallbackState.sourceUrl : ''),
-      videoFileName: null
+      videoFileName: resultSourceType === 'file'
+        ? typeof sourceState.sourceFileName === 'string'
+          ? sourceState.sourceFileName
+          : artifactFileName(sourceArtifact)
+            ?? persisted?.source.videoFileName
+            ?? (typeof fallbackState.sourceFileName === 'string' ? fallbackState.sourceFileName : null)
+        : null,
+      videoFileSize: resultSourceType === 'file'
+        ? typeof sourceState.sourceFileSize === 'number'
+          ? sourceState.sourceFileSize
+          : readArtifactNumber(sourceArtifact, 'size')
+            ?? persisted?.source.videoFileSize
+            ?? (typeof fallbackState.sourceFileSize === 'number' ? fallbackState.sourceFileSize : null)
+        : null,
+      videoFileLastModified: resultSourceType === 'file'
+        ? typeof sourceState.sourceFileLastModified === 'number'
+          ? sourceState.sourceFileLastModified
+          : readArtifactNumber(sourceArtifact, 'lastModified')
+            ?? persisted?.source.videoFileLastModified
+            ?? (typeof fallbackState.sourceFileLastModified === 'number'
+              ? fallbackState.sourceFileLastModified
+              : null)
+        : null
     },
     settings: {
       sourceLanguage: readStringSetting(sourceState, fallbackState, persisted, 'sourceLanguage', 'zh_cn'),
@@ -748,6 +870,12 @@ function artifactFileName(artifact: CreatorArtifact | undefined): string | undef
   return typeof artifact?.metadata.fileName === 'string' ? artifact.metadata.fileName : undefined;
 }
 
+function readPositiveResultVersion(value: CreatorJson | undefined): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : undefined;
+}
+
 export function latestArtifactForResultVersion(
   artifacts: CreatorArtifact[],
   resultVersion: number,
@@ -846,26 +974,31 @@ function affectedArtifacts(
   subtitleNeedsRegeneration: boolean,
   l: LocalizeCopy
 ) {
-  const translationChanged = !canReuseSubtitleCues(version, settings, source)
-    || version.settings.bilingual !== settings.bilingual
-    || version.settings.subtitlePosition !== settings.subtitlePosition;
-  const subtitleStyleChanged = version.settings.subtitleFont !== settings.subtitleFont
-    || version.settings.subtitleSize !== settings.subtitleSize
-    || version.settings.subtitleColor !== settings.subtitleColor;
-  const voiceChanged = version.settings.dubbing !== settings.dubbing
-    || version.settings.ttsProvider !== settings.ttsProvider
-    || version.settings.ttsModel !== settings.ttsModel
-    || version.settings.voiceCode !== settings.voiceCode
-    || version.settings.voiceName !== settings.voiceName;
-  const outputChanged = version.settings.composeVideo !== settings.composeVideo
-    || version.settings.videoFormat !== settings.videoFormat
-    || version.settings.verticalTitle !== settings.verticalTitle
-    || version.settings.verticalSubtitle !== settings.verticalSubtitle;
+  const changes = translationChanges(version, settings, source, subtitleNeedsRegeneration);
   const artifacts = new Set<string>();
 
-  if (subtitleNeedsRegeneration || translationChanged || subtitleStyleChanged) artifacts.add(l('字幕', 'Subtitles'));
-  if (voiceChanged || ((subtitleNeedsRegeneration || translationChanged) && settings.dubbing)) artifacts.add(l('配音', 'Dubbing'));
-  if (subtitleNeedsRegeneration || translationChanged || subtitleStyleChanged || voiceChanged || outputChanged) artifacts.add(l('成片', 'Final video'));
+  if (
+    changes.subtitleContentChanged
+    || changes.subtitleInputsChanged
+    || changes.subtitleStyleChanged
+  ) {
+    artifacts.add(l('字幕', 'Subtitles'));
+  }
+  if (
+    changes.voiceChanged
+    || ((changes.subtitleContentChanged || changes.subtitleInputsChanged) && settings.dubbing)
+  ) {
+    artifacts.add(l('配音', 'Dubbing'));
+  }
+  if (
+    changes.subtitleContentChanged
+    || changes.subtitleInputsChanged
+    || changes.subtitleStyleChanged
+    || changes.voiceChanged
+    || changes.outputChanged
+  ) {
+    artifacts.add(l('成片', 'Final video'));
+  }
   if (artifacts.size === 0) {
     artifacts.add(l('字幕', 'Subtitles'));
     if (settings.dubbing) artifacts.add(l('配音', 'Dubbing'));
@@ -934,6 +1067,9 @@ export default function VideoTranslationWorkspace(props: {
   const [sourceType, setSourceType] = useState<SourceType>('url');
   const [videoUrl, setVideoUrl] = useState('');
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoFileName, setVideoFileName] = useState<string | null>(null);
+  const [videoFileSize, setVideoFileSize] = useState<number | null>(null);
+  const [videoFileLastModified, setVideoFileLastModified] = useState<number | null>(null);
   const [sourceLanguage, setSourceLanguage] = useState('en');
   const [targetLanguage, setTargetLanguage] = useState('zh_cn');
   const [bilingual, setBilingual] = useState(true);
@@ -976,6 +1112,13 @@ export default function VideoTranslationWorkspace(props: {
     const persisted = creatorSession.state;
     if (persisted.sourceType === 'url' || persisted.sourceType === 'file') setSourceType(persisted.sourceType);
     if (typeof persisted.sourceUrl === 'string') setVideoUrl(persisted.sourceUrl);
+    setVideoFileName(typeof persisted.sourceFileName === 'string' ? persisted.sourceFileName : null);
+    setVideoFileSize(typeof persisted.sourceFileSize === 'number' ? persisted.sourceFileSize : null);
+    setVideoFileLastModified(
+      typeof persisted.sourceFileLastModified === 'number'
+        ? persisted.sourceFileLastModified
+        : null
+    );
     if (typeof persisted.sourceLanguage === 'string') setSourceLanguage(persisted.sourceLanguage);
     if (typeof persisted.targetLanguage === 'string') setTargetLanguage(persisted.targetLanguage);
     if (typeof persisted.bilingual === 'boolean') setBilingual(persisted.bilingual);
@@ -1109,9 +1252,20 @@ export default function VideoTranslationWorkspace(props: {
     if (creatorSession === null) return;
     const skipPersist = skipPersistRef.current;
     if (skipPersist) skipPersistRef.current = false;
+    const shouldPersistSourceFile = sourceType === 'file'
+      || creatorSession.state.sourceFileName !== undefined
+      || creatorSession.state.sourceFileSize !== undefined
+      || creatorSession.state.sourceFileLastModified !== undefined;
     const next = {
       sourceType,
       sourceUrl: videoUrl,
+      ...(shouldPersistSourceFile
+        ? {
+            sourceFileName: sourceType === 'file' ? videoFileName : null,
+            sourceFileSize: sourceType === 'file' ? videoFileSize : null,
+            sourceFileLastModified: sourceType === 'file' ? videoFileLastModified : null
+          }
+        : {}),
       sourceLanguage,
       targetLanguage,
       bilingual,
@@ -1174,6 +1328,9 @@ export default function VideoTranslationWorkspace(props: {
     verticalSubtitle,
     verticalTitle,
     videoFormat,
+    videoFileLastModified,
+    videoFileName,
+    videoFileSize,
     videoUrl,
     voiceCode,
     voiceName,
@@ -1204,7 +1361,12 @@ export default function VideoTranslationWorkspace(props: {
   }, [cancelDialogOpen]);
 
   const jobArtifacts = creatorSession?.job.artifacts ?? [];
-  const registeredSourceArtifact = [...jobArtifacts].reverse().find(artifact => (
+  const registeredSourceArtifactId = creatorSession?.state.sourceArtifactId;
+  const registeredSourceArtifact = (
+    typeof registeredSourceArtifactId === 'string'
+      ? jobArtifacts.find(artifact => artifact.id === registeredSourceArtifactId)
+      : undefined
+  ) ?? [...jobArtifacts].reverse().find(artifact => (
     artifact.kind === 'source_video'
     && artifact.status === 'completed'
     && artifact.metadata.source === 'local-upload'
@@ -1221,7 +1383,7 @@ export default function VideoTranslationWorkspace(props: {
     && sourceArtifactMatchesFile(registeredSourceArtifact, videoFile);
   const hasSource = sourceType === 'url'
     ? isValidVideoUrl(videoUrl)
-    : videoFile !== null || registeredSourceArtifact !== undefined;
+    : videoFile !== null || videoFileName !== null || registeredSourceArtifact !== undefined;
   const latestStage = creatorSession?.job.stages.at(-1);
   const activeStage = creatorSession === null
     ? undefined
@@ -1232,15 +1394,25 @@ export default function VideoTranslationWorkspace(props: {
     && (latestStage?.status === 'canceled' || latestStage?.status === 'interrupted')
     ? latestStage
     : undefined;
-  const stageFailure = latestStage?.status === 'failed'
+  const rawStageFailure = latestStage?.status === 'failed'
     ? latestStage
     : undefined;
+  const rawStageConfigurationCode = normalizeStageConfigurationError(
+    rawStageFailure?.errorCode,
+    rawStageFailure?.errorMessage
+  );
+  const stageFailure = !dubbing && rawStageConfigurationCode === 'creator_tts_config_missing'
+    ? undefined
+    : rawStageFailure;
   const stageConfigurationCode = normalizeStageConfigurationError(
     stageFailure?.errorCode,
     stageFailure?.errorMessage
   );
-  const sessionError = creatorSession?.error ?? null;
-  const needsInput = readCreatorNeedsInput(creatorSession?.state.needsInput);
+  const rawSessionError = creatorSession?.error ?? null;
+  const sessionError = !dubbing && rawSessionError?.code === 'creator_tts_config_missing'
+    ? null
+    : rawSessionError;
+  const needsInput = readCreatorNeedsInput(creatorSession?.state.needsInput, dubbing);
   const runIssueMessage = sessionError !== null
     ? creatorErrorMessage(sessionError, l)
     : needsInput !== null
@@ -1255,7 +1427,10 @@ export default function VideoTranslationWorkspace(props: {
         : '';
   const sourceName = sourceType === 'url'
     ? (videoUrl.trim() || l('等待填写链接', 'Waiting for a link'))
-    : (videoFile?.name ?? registeredSourceFile?.name ?? l('等待上传视频', 'Waiting for an upload'));
+    : (videoFile?.name
+      ?? videoFileName
+      ?? registeredSourceFile?.name
+      ?? l('等待上传视频', 'Waiting for an upload'));
   const outputLabel = outputLabelFor({ composeVideo, videoFormat }, l);
   const subtitleStyleLabel = `${subtitleFontLabel(subtitleFont, l)} · ${subtitleSizeLabel(subtitleSize, l)} · ${subtitleColor.toUpperCase()}`;
   const summaryItems = useMemo(() => [
@@ -1436,7 +1611,9 @@ export default function VideoTranslationWorkspace(props: {
     : subtitleStyleLabel;
   const selectedSourceName = selectedResultSource?.sourceType === 'url'
     ? (selectedResultSource.videoUrl.trim() || l('等待填写链接', 'Waiting for a link'))
-    : (selectedResultSource?.videoFile?.name ?? l('等待上传视频', 'Waiting for an upload'));
+    : (selectedResultSource?.videoFile?.name
+      ?? selectedResultSource?.videoFileName
+      ?? l('等待上传视频', 'Waiting for an upload'));
   const subtitleDirty = selectedResult
     ? JSON.stringify(selectedResult.subtitleCues) !== selectedResult.savedSubtitleSnapshot
     : false;
@@ -1504,7 +1681,14 @@ export default function VideoTranslationWorkspace(props: {
   }
 
   function currentDraftSource(): TranslationSourceSnapshot {
-    return { sourceType, videoUrl, videoFile };
+    return {
+      sourceType,
+      videoUrl,
+      videoFile,
+      videoFileName,
+      videoFileSize,
+      videoFileLastModified
+    };
   }
 
   function applySettingsSnapshot(settings: TranslationSettingsSnapshot) {
@@ -1531,6 +1715,11 @@ export default function VideoTranslationWorkspace(props: {
     setSourceType(source.sourceType);
     setVideoUrl(source.videoUrl);
     setVideoFile(source.videoFile);
+    setVideoFileName(source.videoFile?.name ?? source.videoFileName);
+    setVideoFileSize(source.videoFile?.size ?? source.videoFileSize);
+    setVideoFileLastModified(
+      source.videoFile?.lastModified ?? source.videoFileLastModified
+    );
   }
 
   function focusAgentControl(focus: AgentFocus) {
@@ -1579,6 +1768,9 @@ export default function VideoTranslationWorkspace(props: {
 
   function chooseVideo(file: File | null) {
     setVideoFile(file);
+    setVideoFileName(file?.name ?? null);
+    setVideoFileSize(file?.size ?? null);
+    setVideoFileLastModified(file?.lastModified ?? null);
     setSourceOrientation('landscape');
     if (file) {
       setVideoUrl('');
@@ -1612,6 +1804,64 @@ export default function VideoTranslationWorkspace(props: {
     openWizardStep(1);
   }
 
+  async function executeRegeneration(stageId: TranslationStageId | undefined) {
+    if (
+      creatorSession === null
+      || selectedResult === undefined
+      || regenerationSource === undefined
+    ) {
+      throw new Error('Video translation regeneration context is unavailable');
+    }
+    const selectedBaseVersion = selectedResult.value;
+    const sourceChanged = !sameSource(regenerationSource, selectedResult.source);
+    let stageBaseVersion = selectedBaseVersion;
+    let subtitleEdited = false;
+
+    if (subtitleDirty && stageId !== 'subtitle') {
+      if (selectedSubtitleArtifact === undefined) {
+        throw new Error('The selected project version has no editable subtitle artifact');
+      }
+      const editedJob = await creatorSession.applyAction({
+        action: 'edit-subtitle',
+        input: {
+          artifactId: selectedSubtitleArtifact.id,
+          cues: selectedResult.subtitleCues,
+          baseResultVersion: selectedBaseVersion
+        }
+      });
+      const editedVersion = readPositiveResultVersion(editedJob.state.resultVersion);
+      if (editedVersion === undefined) {
+        throw new Error('Creator Runtime did not return the edited subtitle version');
+      }
+      stageBaseVersion = editedVersion;
+      subtitleEdited = true;
+    }
+
+    if (stageId === undefined) {
+      if (subtitleEdited) return stageBaseVersion;
+      const committedJob = await creatorSession.applyAction({
+        action: 'commit-version',
+        input: { baseResultVersion: selectedBaseVersion }
+      });
+      return readPositiveResultVersion(committedJob.state.resultVersion);
+    }
+
+    const inputResultVersion = sourceChanged && stageId === 'subtitle'
+      ? undefined
+      : stageBaseVersion;
+    const stageJob = await creatorSession.applyAction({
+      action: 'run-stage',
+      input: {
+        stageId,
+        workflow: true,
+        baseResultVersion: stageBaseVersion,
+        ...(inputResultVersion === undefined ? {} : { inputResultVersion }),
+        ...(subtitleEdited ? { targetResultVersion: stageBaseVersion } : {})
+      }
+    });
+    return readPositiveResultVersion(stageJob.state.resultVersion);
+  }
+
   async function submit() {
     if (!hasSource) {
       setCurrentStep(0);
@@ -1629,19 +1879,55 @@ export default function VideoTranslationWorkspace(props: {
       : 'starting');
     setResultNotice('');
     try {
+      const isRegeneration = draftBaseVersion !== undefined
+        && selectedResult !== undefined
+        && regenerationSettings !== undefined
+        && regenerationSource !== undefined;
+      if (isRegeneration && !hasPendingChanges) {
+        setResultNotice(l(
+          '当前版本没有修改，不需要生成新版本',
+          'Nothing changed, so a new version is not needed'
+        ));
+        return;
+      }
+      const stageId = isRegeneration
+        ? videoTranslationRegenerationStage(
+            selectedResult,
+            regenerationSettings,
+            regenerationSource,
+            subtitleNeedsRegeneration
+          )
+        : 'subtitle';
       if (sourceType === 'file' && videoFile !== null && !selectedFileRegistered) {
         setResultNotice(l('正在上传本地视频...', 'Uploading the local video...'));
         await creatorSession.uploadSourceVideo(videoFile);
         setSubmissionPhase('starting');
         setResultNotice(l('本地视频已上传，正在启动翻译...', 'The local video is uploaded. Starting translation...'));
       }
-      await creatorSession.applyAction({
-        action: 'run-stage',
-        input: { stageId: 'subtitle', workflow: true }
-      });
+      if (isRegeneration) {
+        await executeRegeneration(stageId);
+      } else {
+        await creatorSession.applyAction({
+          action: 'run-stage',
+          input: { stageId: 'subtitle', workflow: true }
+        });
+      }
       setWorkspacePhase('result');
       setDraftBaseVersion(undefined);
-      setResultNotice(l('翻译任务已开始，进度会实时同步到创作动态', 'Translation started. Progress will appear in creation activity.'));
+      setResultNotice(isRegeneration
+        ? stageId === undefined
+          ? l(
+              '修改已保存，本次无需重新转录或生成',
+              'Changes were saved without retranscribing or regenerating.'
+            )
+          : l(
+              `新版本已从“${translationStageLabel(stageId, l)}”开始，已有前置产物会直接复用`,
+              `The new version started from "${translationStageLabel(stageId, l)}" and will reuse existing upstream outputs.`
+            )
+        : l(
+            '翻译任务已开始，进度会实时同步到创作动态',
+            'Translation started. Progress will appear in creation activity.'
+          ));
     } catch (cause) {
       setResultNotice(creatorErrorMessage(cause, l));
     } finally {
@@ -1739,13 +2025,18 @@ export default function VideoTranslationWorkspace(props: {
     }
     setSubmitting(true);
     try {
-      await creatorSession.applyAction({
+      const editedJob = await creatorSession.applyAction({
         action: 'edit-subtitle',
-        input: { artifactId: selectedSubtitleArtifact.id, cues: selectedResult.subtitleCues }
+        input: {
+          artifactId: selectedSubtitleArtifact.id,
+          cues: selectedResult.subtitleCues,
+          baseResultVersion: selectedResult.value
+        }
       });
+      const savedVersion = readPositiveResultVersion(editedJob.state.resultVersion) ?? nextVersion;
       setResultNotice(l(
-        `字幕已保存为项目 V${nextVersion}，未变化的产物继续复用原文件`,
-        `Subtitles were saved as project V${nextVersion}; unchanged outputs still reuse their existing files.`
+        `字幕已保存为项目 V${savedVersion}，未变化的产物继续复用原文件`,
+        `Subtitles were saved as project V${savedVersion}; unchanged outputs still reuse their existing files.`
       ));
     } catch (cause) {
       setResultNotice(creatorErrorMessage(cause, l));
@@ -1811,7 +2102,7 @@ export default function VideoTranslationWorkspace(props: {
   function selectResultVersion(version: number) {
     setResultVersion(version);
     setResultProposal(undefined);
-    setResultNotice(l(`正在查看 V${version}`, `Viewing V${version}`));
+    setResultNotice('');
   }
 
   async function confirmRegeneration() {
@@ -1827,20 +2118,23 @@ export default function VideoTranslationWorkspace(props: {
     }
     setSubmitting(true);
     try {
-      if (subtitleDirty) {
-        if (selectedSubtitleArtifact !== undefined) {
-          await creatorSession.applyAction({
-            action: 'edit-subtitle',
-            input: { artifactId: selectedSubtitleArtifact.id, cues: selectedResult.subtitleCues }
-          });
-        }
-      }
-      await creatorSession.applyAction({
-        action: 'run-stage',
-        input: { stageId: 'subtitle', workflow: true }
-      });
+      const stageId = videoTranslationRegenerationStage(
+        selectedResult,
+        regenerationSettings,
+        regenerationSource,
+        subtitleNeedsRegeneration
+      );
+      await executeRegeneration(stageId);
       setResultProposal(undefined);
-      setResultNotice(l('新版本任务已启动，旧版本会继续保留', 'The new version started and previous versions remain available.'));
+      setResultNotice(stageId === undefined
+        ? l(
+            '修改已保存，本次无需重新转录或生成',
+            'Changes were saved without retranscribing or regenerating.'
+          )
+        : l(
+            `新版本已从“${translationStageLabel(stageId, l)}”开始，旧版本和已有前置产物会继续保留`,
+            `The new version started from "${translationStageLabel(stageId, l)}"; previous versions and upstream outputs remain available.`
+          ));
     } catch (cause) {
       setResultNotice(creatorErrorMessage(cause, l));
     } finally {
@@ -2356,7 +2650,13 @@ export default function VideoTranslationWorkspace(props: {
               {runIssueMessage || resultNotice}
             </span>
             {needsCreatorServicesConfiguration(sessionError?.code, needsInput?.code, stageConfigurationCode) ? (
-              <a href="#/settings?tab=ai-services">{l('打开 AI 服务设置', 'Open AI service settings')}</a>
+              <a href={creatorServicesSettingsHref(
+                sessionError?.code,
+                needsInput?.code,
+                stageConfigurationCode
+              )}>
+                {l('打开 AI 服务设置', 'Open AI service settings')}
+              </a>
             ) : null}
           </div>
         ) : null}
@@ -2486,8 +2786,8 @@ function readArtifactString(artifact: CreatorArtifact, key: string): string | un
   return typeof value === 'string' ? value : undefined;
 }
 
-function readArtifactNumber(artifact: CreatorArtifact, key: string): number | undefined {
-  const value = artifact.metadata[key];
+function readArtifactNumber(artifact: CreatorArtifact | undefined, key: string): number | undefined {
+  const value = artifact?.metadata[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
@@ -2643,14 +2943,28 @@ function needsCreatorServicesConfiguration(...codes: Array<string | null | undef
   ));
 }
 
-function readCreatorNeedsInput(value: unknown): { code: string; message: string } | null {
+function readCreatorNeedsInput(
+  value: unknown,
+  dubbing: boolean
+): { code: string; message: string } | null {
   if (value === null || Array.isArray(value) || typeof value !== 'object') return null;
   const record = value as Record<string, unknown>;
   if (typeof record.code !== 'string') return null;
+  if (record.code === 'creator_tts_config_missing' && !dubbing) return null;
   return {
     code: record.code,
     message: typeof record.message === 'string' ? record.message : ''
   };
+}
+
+function creatorServicesSettingsHref(...codes: Array<string | null | undefined>): string {
+  const code = codes.find(candidate => needsCreatorServicesConfiguration(candidate));
+  const section = code === 'creator_tts_config_missing'
+    ? 'tts'
+    : code === 'creator_transcription_config_missing'
+      ? 'transcription'
+      : 'text';
+  return `#/settings?tab=ai-services&section=${section}`;
 }
 
 function localizeStep(step: typeof steps[number], l: LocalizeCopy): string {

@@ -1,5 +1,6 @@
 import {
   createDefaultCreatorServicesConfig,
+  type CodexProviderConfig,
   type AliyunOssConfig,
   type AliyunSpeechConfig,
   type CreatorServicesCapabilitiesResponse,
@@ -14,6 +15,7 @@ import {
   AudioLines,
   Check,
   ChevronDown,
+  CircleAlert,
   Clapperboard,
   Cloud,
   Eye,
@@ -32,25 +34,40 @@ import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider
 import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
+import type { ConnectionService } from '../../services/connection-service.js';
 import './creator-services-settings.css';
 
-type ServiceSection = 'text' | 'transcription' | 'tts' | 'image' | 'video';
+export type CreatorServicesSection = 'text' | 'transcription' | 'tts' | 'image' | 'video';
+type ModelSettingsService = Pick<ConnectionService, 'getCodexProvider' | 'updateCodexProvider'>;
 
 export function CreatorServicesSettingsView(props: {
   connected: boolean;
   service: CreatorServicesSettingsService | null;
+  modelService?: ModelSettingsService | null;
+  initialSection?: CreatorServicesSection;
 }) {
   const l = useLocalizedCopy();
   const confirm = useConfirmDialog();
-  const [activeSection, setActiveSection] = useState<ServiceSection>('text');
+  const [activeSection, setActiveSection] = useState<CreatorServicesSection>(
+    props.initialSection ?? 'text'
+  );
   const [config, setConfig] = useState<CreatorServicesConfig>();
   const [capabilities, setCapabilities] = useState<CreatorServicesCapabilitiesResponse>();
+  const [modelProvider, setModelProvider] = useState<CodexProviderConfig>();
+  const [modelBaseUrl, setModelBaseUrl] = useState('');
+  const [modelName, setModelName] = useState('');
+  const [modelApiKey, setModelApiKey] = useState('');
   const [configuredCredentials, setConfiguredCredentials] = useState<ReadonlySet<CreatorServicesCredentialField>>(new Set());
   const [savedTranscriptionSelection, setSavedTranscriptionSelection] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  const [modelError, setModelError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+
+  useEffect(() => {
+    if (props.initialSection !== undefined) setActiveSection(props.initialSection);
+  }, [props.initialSection]);
 
   useEffect(() => {
     let active = true;
@@ -58,26 +75,50 @@ export function CreatorServicesSettingsView(props: {
       setLoading(false);
       setConfig(undefined);
       setCapabilities(undefined);
+      setModelProvider(undefined);
+      setModelError(undefined);
       return () => {
         active = false;
       };
     }
     setLoading(true);
     setError(undefined);
-    void Promise.all([
+    setModelError(undefined);
+    void Promise.allSettled([
       props.service.getConfig(),
-      props.service.getCapabilities()
+      props.service.getCapabilities(),
+      props.modelService?.getCodexProvider()
+        ?? Promise.reject(new Error('Model provider configuration is unavailable'))
     ])
-      .then(([response, nextCapabilities]) => {
-        if (active) {
-          setConfig(response.config);
-          setCapabilities(nextCapabilities);
-          setConfiguredCredentials(new Set(response.configuredCredentials));
-          setSavedTranscriptionSelection(transcriptionSelection(response.config));
+      .then(([configResult, capabilitiesResult, providerResult]) => {
+        if (!active) return;
+        if (configResult.status === 'rejected' || capabilitiesResult.status === 'rejected') {
+          setConfig(undefined);
+          setCapabilities(undefined);
+          setError(l('无法读取 AI 服务配置', 'Could not load AI service settings'));
+          return;
         }
-      })
-      .catch(() => {
-        if (active) setError(l('无法读取 AI 服务配置', 'Could not load AI service settings'));
+        const response = configResult.value;
+        setConfig(response.config);
+        setCapabilities(capabilitiesResult.value);
+        setConfiguredCredentials(new Set(response.configuredCredentials));
+        setSavedTranscriptionSelection(transcriptionSelection(response.config));
+        const useLegacyTextModel = response.config.llm.source === 'custom';
+        if (providerResult.status === 'fulfilled') {
+          const provider = providerResult.value;
+          setModelProvider(provider);
+          setModelBaseUrl(useLegacyTextModel ? response.config.llm.baseUrl : provider.baseUrl);
+          setModelName(useLegacyTextModel ? response.config.llm.model : provider.model);
+        } else {
+          setModelProvider(undefined);
+          setModelBaseUrl(response.config.llm.baseUrl);
+          setModelName(response.config.llm.model);
+          setModelError(l(
+            '模型服务暂不可用，语音、图像和视频服务仍可正常配置。',
+            'The model provider is unavailable. Speech, image, and video services can still be configured.'
+          ));
+        }
+        setModelApiKey('');
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -85,14 +126,14 @@ export function CreatorServicesSettingsView(props: {
     return () => {
       active = false;
     };
-  }, [props.connected, props.service]);
+  }, [props.connected, props.modelService, props.service]);
 
   const sections: Array<{
-    id: ServiceSection;
+    id: CreatorServicesSection;
     label: string;
     icon: typeof Languages;
   }> = [
-    { id: 'text', label: l('文本模型', 'Text'), icon: Languages },
+    { id: 'text', label: l('模型服务', 'Models'), icon: Languages },
     { id: 'transcription', label: l('语音识别', 'Transcription'), icon: Mic2 },
     { id: 'tts', label: l('配音服务', 'Voice'), icon: AudioLines },
     { id: 'image', label: l('图像生成', 'Images'), icon: Image },
@@ -139,7 +180,29 @@ export function CreatorServicesSettingsView(props: {
     setError(undefined);
     setNotice(undefined);
     try {
-      const response = await props.service.saveConfig(config);
+      let nextConfig = structuredClone(config);
+      if (activeSection === 'text') {
+        if (props.modelService === null || props.modelService === undefined || modelProvider === undefined) {
+          throw new Error('Model provider configuration is unavailable');
+        }
+        const provider = await props.modelService.updateCodexProvider({
+          baseUrl: modelBaseUrl,
+          model: modelName,
+          ...(modelApiKey.trim().length === 0 ? {} : { apiKey: modelApiKey })
+        });
+        setModelProvider(provider);
+        setModelBaseUrl(provider.baseUrl);
+        setModelName(provider.model);
+        setModelApiKey('');
+        nextConfig.llm = {
+          ...nextConfig.llm,
+          baseUrl: provider.baseUrl,
+          apiKey: '',
+          model: provider.model,
+          source: 'codex'
+        };
+      }
+      const response = await props.service.saveConfig(nextConfig);
       setConfig(response.config);
       setConfiguredCredentials(new Set(response.configuredCredentials));
       setSavedTranscriptionSelection(transcriptionSelection(response.config));
@@ -156,8 +219,8 @@ export function CreatorServicesSettingsView(props: {
     const confirmed = await confirm({
       title: l('恢复默认配置', 'Restore default settings'),
       description: l(
-        '这会清除已保存的 AI 服务 Key 与设置；文本模型将重新使用 Codex Agent 配置。',
-        'This clears saved AI service keys and settings. The text model will use the Codex Agent configuration again.'
+        '这会清除语音、图像和视频服务的 Key 与设置；模型服务配置会保留。',
+        'This clears speech, image, and video service keys and settings. The model provider configuration is kept.'
       ),
       confirmLabel: l('恢复默认', 'Restore defaults'),
       destructive: true
@@ -238,7 +301,22 @@ export function CreatorServicesSettingsView(props: {
           }}
         >
           {activeSection === 'text' ? (
-            <TextModelSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
+            <TextModelSettings
+              config={config}
+              update={updateConfig}
+              configuredCredentials={configuredCredentials}
+              provider={modelProvider}
+              baseUrl={modelBaseUrl}
+              model={modelName}
+              apiKey={modelApiKey}
+              error={modelError}
+              onProviderChange={value => {
+                setModelBaseUrl(value.baseUrl);
+                setModelName(value.model);
+                setModelApiKey(value.apiKey);
+                setNotice(undefined);
+              }}
+            />
           ) : null}
           {activeSection === 'transcription' ? (
             <TranscriptionSettings
@@ -277,7 +355,17 @@ export function CreatorServicesSettingsView(props: {
               <RotateCcw size={15} aria-hidden="true" />
               {l('恢复默认', 'Restore defaults')}
             </button>
-            <button className="settings-primary-button" type="submit" disabled={saving}>
+            <button
+              className="settings-primary-button"
+              type="submit"
+              disabled={
+                saving
+                || (
+                  activeSection === 'text'
+                  && (modelProvider === undefined || modelName.trim().length === 0)
+                )
+              }
+            >
               {saving ? (
                 <LoaderCircle className="creator-services-spinner" size={15} aria-hidden="true" />
               ) : (
@@ -292,39 +380,74 @@ export function CreatorServicesSettingsView(props: {
   );
 }
 
-function TextModelSettings(props: SettingsGroupProps) {
+function TextModelSettings(props: SettingsGroupProps & {
+  provider?: CodexProviderConfig;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  error?: string;
+  onProviderChange(value: OpenAiCompatibleConfig): void;
+}) {
   const l = useLocalizedCopy();
+  const legacyApiKeyConfigured = props.config.llm.source === 'custom'
+    && props.configuredCredentials.has('llm.apiKey');
+  const providerApiKeyConfigured = props.provider?.apiKeyConfigured === true;
+  const apiKeyConfigured = providerApiKeyConfigured || legacyApiKeyConfigured;
+  const agentAvailable = props.provider?.authentication !== 'none' || providerApiKeyConfigured;
+  const textTasksAvailable = apiKeyConfigured;
+  const AgentStatusIcon = agentAvailable ? Check : CircleAlert;
+  const TextTaskStatusIcon = textTasksAvailable ? Check : CircleAlert;
+  const modelCredentials = apiKeyConfigured
+    ? new Set<CreatorServicesCredentialField>(['llm.apiKey'])
+    : new Set<CreatorServicesCredentialField>();
   return (
     <>
       <SettingsFieldset
-        title={l('文本模型', 'Text model')}
+        title={l('模型服务', 'Model provider')}
         description={l(
-          '用于翻译、脚本处理和其他文本任务，支持 OpenAI API 兼容服务。',
-          'Used for translation, script processing, and other text tasks through OpenAI-compatible services.'
+          'OpenCreator Agent 与翻译、脚本处理等文本任务共用这一套 OpenAI 兼容配置。',
+          'OpenCreator Agent and text tasks such as translation and script processing share this OpenAI-compatible configuration.'
         )}
       >
         <OpenAiFields
           id="llm"
           credential="llm.apiKey"
-          configuredCredentials={props.configuredCredentials}
-          value={props.config.llm}
+          configuredCredentials={modelCredentials}
+          value={{
+            baseUrl: props.baseUrl,
+            apiKey: props.apiKey,
+            model: props.model
+          }}
           modelPlaceholder="gpt-4o-mini"
-          onChange={value => props.update(config => {
-            config.llm = {
-              ...config.llm,
-              ...value,
-              source: 'custom'
-            };
-          })}
+          onChange={props.onProviderChange}
         />
-        <ToggleField
-          label={l('JSON 输出模式', 'JSON response mode')}
-          description={l('仅在当前模型明确支持 JSON 格式时开启。', 'Enable only when the selected model explicitly supports JSON responses.')}
-          checked={props.config.llm.jsonMode}
-          onChange={checked => props.update(config => {
-            config.llm.jsonMode = checked;
-          })}
-        />
+        <div className="creator-services-model-status is-wide" role="status">
+          <span className={agentAvailable ? '' : 'is-warning'}>
+            <AgentStatusIcon size={15} aria-hidden="true" />
+            {agentAvailable
+              ? l('Agent 可用', 'Agent ready')
+              : l('Agent 尚未配置', 'Agent not configured')}
+          </span>
+          <span className={textTasksAvailable ? '' : 'is-warning'}>
+            <TextTaskStatusIcon size={15} aria-hidden="true" />
+            {textTasksAvailable
+              ? l('文本任务可用', 'Text tasks ready')
+              : l('文本任务需要 API Key', 'Text tasks require an API key')}
+          </span>
+        </div>
+        {props.provider?.authentication === 'chatgpt' && !textTasksAvailable ? (
+          <p className="creator-services-inline-note is-warning">
+            {l(
+              'ChatGPT 登录可用于 Agent，但视频翻译等文本任务通过兼容 API 调用，仍需填写 API Key。',
+              'ChatGPT sign-in can power the Agent, but text tasks such as video translation use the compatible API and still require an API key.'
+            )}
+          </p>
+        ) : null}
+        {props.error === undefined ? null : (
+          <p className="creator-services-inline-note is-warning" role="alert">
+            {props.error}
+          </p>
+        )}
       </SettingsFieldset>
       <SettingsFieldset
         title={l('网络', 'Network')}
@@ -1015,7 +1138,7 @@ function ReadonlyModelField(props: { label: string; value: string }) {
 
 function ToggleField(props: {
   label: string;
-  description: string;
+  description?: string;
   checked: boolean;
   onChange(checked: boolean): void;
 }) {
@@ -1023,7 +1146,7 @@ function ToggleField(props: {
     <label className="creator-services-toggle">
       <span>
         <strong>{props.label}</strong>
-        <small>{props.description}</small>
+        {props.description === undefined ? null : <small>{props.description}</small>}
       </span>
       <input
         type="checkbox"

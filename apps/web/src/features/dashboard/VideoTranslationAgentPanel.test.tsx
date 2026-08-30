@@ -24,9 +24,9 @@ describe('VideoTranslationAgentPanel', () => {
     expect(container.querySelector('.tool-agent-composer-icon-button')).toBeNull();
     expect(container.querySelectorAll('.tool-agent-composer-select')).toHaveLength(1);
     expect(container.querySelector('.tool-agent-composer-send')).not.toBeNull();
-    expect(container.querySelector('.video-translation-agent-header .opencreator-mark')).not.toBeNull();
+    expect(container.querySelector('.creator-collaboration-header .opencreator-mark')).not.toBeNull();
     expect(container.querySelector(
-      '.video-translation-agent-message[data-role="assistant"] .opencreator-mark'
+      '.creator-collaboration-message[data-role="assistant"] .opencreator-mark'
     )).not.toBeNull();
     expect(container.querySelector('.lucide-bot')).toBeNull();
   });
@@ -181,7 +181,7 @@ describe('VideoTranslationAgentPanel', () => {
     });
 
     expect(await screen.findByText('开始生成横屏成片')).toBeInTheDocument();
-    expect(container.querySelector('.video-translation-agent-activity[data-actor="agent"]')).not.toBeNull();
+    expect(container.querySelector('.creator-collaboration-activity[data-actor="agent"]')).not.toBeNull();
     expect(screen.queryByText('确认项目状态')).not.toBeInTheDocument();
     expect(screen.queryByText('执行记录')).not.toBeInTheDocument();
     expect(screen.queryByText('调用 Creator 工具')).not.toBeInTheDocument();
@@ -238,9 +238,9 @@ describe('VideoTranslationAgentPanel', () => {
 
     expect(await screen.findByText('请检查当前设置')).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Agent 正在工作' })).toBeInTheDocument();
-    expect(container.querySelectorAll('.video-translation-agent-working')).toHaveLength(1);
+    expect(container.querySelectorAll('.creator-collaboration-working')).toHaveLength(1);
     expect(container.querySelector(
-      '.video-translation-agent-message[data-source="agent"][data-role="assistant"]'
+      '.creator-collaboration-message[data-source="agent"][data-role="assistant"]'
     )).toBeNull();
   });
 
@@ -257,9 +257,9 @@ describe('VideoTranslationAgentPanel', () => {
     expect(screen.queryByText('确认项目状态')).not.toBeInTheDocument();
     expect(screen.queryByText('执行记录')).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Agent 正在工作' })).toBeInTheDocument();
-    expect(container.querySelectorAll('.video-translation-agent-working')).toHaveLength(1);
+    expect(container.querySelectorAll('.creator-collaboration-working')).toHaveLength(1);
     expect(container.querySelector(
-      '.video-translation-agent-message[data-source="agent"][data-role="assistant"]'
+      '.creator-collaboration-message[data-source="agent"][data-role="assistant"]'
     )).toBeNull();
   });
 
@@ -304,7 +304,7 @@ describe('VideoTranslationAgentPanel', () => {
     expect(await screen.findByRole('button', { name: '批准' })).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(container.querySelector(
-      '.video-translation-agent-message[data-source="agent"][data-role="assistant"]'
+      '.creator-collaboration-message[data-source="agent"][data-role="assistant"]'
     )).toBeNull();
   });
 
@@ -358,7 +358,7 @@ describe('VideoTranslationAgentPanel', () => {
     expect(screen.getByText('52%')).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: '字幕翻译进度' })).toHaveAttribute('aria-valuenow', '52');
     expect(screen.queryByRole('status', { name: 'Agent 正在工作' })).not.toBeInTheDocument();
-    expect(document.querySelectorAll('.video-translation-agent-spin')).toHaveLength(1);
+    expect(document.querySelectorAll('.creator-collaboration-spin')).toHaveLength(1);
     expect(screen.queryByText('开始生成字幕')).not.toBeInTheDocument();
     expect(screen.queryByText('我已从工作台开始视频字幕翻译。')).not.toBeInTheDocument();
     await waitFor(() => expect(getAgentTimeline).toHaveBeenCalledTimes(1));
@@ -486,7 +486,7 @@ describe('VideoTranslationAgentPanel', () => {
       'aria-valuetext',
       '失败前进度 67%'
     );
-    expect(document.querySelectorAll('.video-translation-agent-spin')).toHaveLength(0);
+    expect(document.querySelectorAll('.creator-collaboration-spin')).toHaveLength(0);
     await waitFor(() => expect(getAgentTimeline).toHaveBeenCalledTimes(1));
   });
 
@@ -504,7 +504,7 @@ describe('VideoTranslationAgentPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送给 Agent' }));
 
     expect(await screen.findByRole('status', { name: 'Agent 正在工作' })).toBeInTheDocument();
-    expect(container.querySelectorAll('.video-translation-agent-working')).toHaveLength(1);
+    expect(container.querySelectorAll('.creator-collaboration-working')).toHaveLength(1);
 
     await act(async () => pending.resolve({ turn: {} }));
   });
@@ -546,7 +546,7 @@ describe('VideoTranslationAgentPanel', () => {
     expect(screen.getByText('成片已经完成。')).toBeInTheDocument();
     expect(screen.getAllByText('成片已经完成。')).toHaveLength(1);
     expect(container.querySelectorAll(
-      '.video-translation-agent-message[data-role="assistant"]'
+      '.creator-collaboration-message[data-role="assistant"]'
     )).toHaveLength(2);
   });
 });

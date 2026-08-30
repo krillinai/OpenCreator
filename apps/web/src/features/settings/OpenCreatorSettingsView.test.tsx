@@ -24,6 +24,7 @@ describe('OpenCreatorSettingsView', () => {
     expect(screen.getByText('搜索暂不可用')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '常规' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: 'AI 服务' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Codex Agent' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'MCP 服务' }))
       .not.toBeInTheDocument();

@@ -36,11 +36,20 @@ import {
   type CreatorCommandDispatcher
 } from '../creator/command-dispatcher.js';
 import {
+  CoverWorkflowError,
+  type CoverWorkflow
+} from '../creator/templates/cover-actions.js';
+import {
   VideoTranslationWorkflowError,
   type VideoTranslationWorkflow
 } from '../creator/templates/video-translation-actions.js';
 import type { CreatorProjectCoverService } from '../creator/project-cover.js';
 import type { CreatorStageRunner } from '../creator/stage-runner.js';
+import {
+  CREATOR_REFERENCE_IMAGE_CONTENT_TYPE,
+  CreatorReferenceImageUploadError,
+  type CreatorReferenceImageUploadService
+} from '../creator/reference-image-upload.js';
 import {
   CREATOR_SOURCE_UPLOAD_CONTENT_TYPE,
   CreatorSourceUploadError,
@@ -54,8 +63,10 @@ export async function registerCreatorRoutes(
   options: {
     sseHeartbeatMs?: number;
     agentService?: CreatorAgentService;
+    coverWorkflow?: CoverWorkflow;
     videoTranslationWorkflow?: VideoTranslationWorkflow;
     projectCoverService?: CreatorProjectCoverService;
+    referenceImageUploadService?: CreatorReferenceImageUploadService;
     sourceUploadService?: CreatorSourceUploadService;
     dispatcher: CreatorCommandDispatcher;
     stageRunner?: Pick<CreatorStageRunner, 'cancel'>;
@@ -95,6 +106,45 @@ export async function registerCreatorRoutes(
         return sendCreatorError(reply, error);
       }
     });
+  }
+
+  if (options.referenceImageUploadService !== undefined) {
+    server.addContentTypeParser(
+      CREATOR_REFERENCE_IMAGE_CONTENT_TYPE,
+      (_request, payload, done) => done(null, payload)
+    );
+    server.post<{ Body: Readable }>(
+      '/creator/jobs/:id/reference-image',
+      async (request, reply) => {
+        const { id } = request.params as { id: string };
+        try {
+          const query = readObject(request.query);
+          if (!isReadable(request.body)) {
+            throw new TypeError('body must be an image stream');
+          }
+          const response = await options.referenceImageUploadService!.upload({
+            jobId: id,
+            expectedRevision: readQueryInteger(query.expectedRevision, 'expectedRevision'),
+            fileName: readString(query.fileName, 'fileName'),
+            mimeType: readString(query.mime, 'mime'),
+            lastModified: query.lastModified === undefined
+              ? null
+              : readQueryInteger(query.lastModified, 'lastModified'),
+            source: request.body
+          });
+          events.publish({
+            id: `snapshot:${response.job.revision}`,
+            jobId: response.job.id,
+            revision: response.job.revision,
+            kind: 'snapshot_changed',
+            payload: { revision: response.job.revision }
+          });
+          return reply.code(response.deduplicated ? 200 : 201).send(response);
+        } catch (error) {
+          return sendCreatorError(reply, error);
+        }
+      }
+    );
   }
 
   server.get('/creator/templates', async () => ({
@@ -227,7 +277,16 @@ export async function registerCreatorRoutes(
       }
       if (job.templateId === 'video-translation' && options.videoTranslationWorkflow !== undefined) {
         try {
-          await options.videoTranslationWorkflow.validate(job);
+          await options.videoTranslationWorkflow.validateStage(job, latest.stageId);
+        } catch (error) {
+          publishSnapshotIfChanged(events, service, job);
+          throw error;
+        }
+        job = requireCreatorJob(service, id);
+      }
+      if (job.templateId === 'cover' && options.coverWorkflow !== undefined) {
+        try {
+          await options.coverWorkflow.validateStage(job, latest.stageId);
         } catch (error) {
           publishSnapshotIfChanged(events, service, job);
           throw error;
@@ -250,6 +309,15 @@ export async function registerCreatorRoutes(
           ...(target.progress.workflow === true ? { workflow: true } : {}),
           ...(typeof target.progress.workflowParentStageRunId === 'string'
             ? { workflowParentStageRunId: target.progress.workflowParentStageRunId }
+            : {}),
+          ...(typeof target.progress.baseResultVersion === 'number'
+            ? { baseResultVersion: target.progress.baseResultVersion }
+            : {}),
+          ...(typeof target.progress.inputResultVersion === 'number'
+            ? { inputResultVersion: target.progress.inputResultVersion }
+            : {}),
+          ...(typeof target.progress.targetResultVersion === 'number'
+            ? { targetResultVersion: target.progress.targetResultVersion }
             : {}),
           resumedFromStageRunId: target.id
         }
@@ -322,38 +390,75 @@ export async function registerCreatorRoutes(
     const { id } = request.params as { id: string };
     try {
       const body = readObject(request.body);
-      if (body.action === 'run-stage' && options.videoTranslationWorkflow !== undefined) {
-        const job = service.getJob(id);
-        if (job === undefined) throw new CreatorServiceError('creator_job_not_found', 'Creator job not found');
-        if (job.templateId === 'video-translation') {
-          try {
-            await options.videoTranslationWorkflow.validate(job);
-          } catch (error) {
-            const latest = service.getJob(id);
-            if (latest !== undefined && latest.revision !== job.revision) {
-              events.publish({
-                id: `snapshot:${latest.revision}`,
-                jobId: id,
-                revision: latest.revision,
-                kind: 'snapshot_changed',
-                payload: { revision: latest.revision }
-              });
-            }
-            throw error;
+      const action = readString(body.action, 'action');
+      const actionInput = readObject(body.input) as CreatorActionRequest['input'];
+      const jobBeforeAction = service.getJob(id);
+      if (jobBeforeAction === undefined) {
+        throw new CreatorServiceError('creator_job_not_found', 'Creator job not found');
+      }
+      if (
+        action === 'run-stage'
+        && jobBeforeAction.templateId === 'video-translation'
+        && options.videoTranslationWorkflow !== undefined
+      ) {
+        const stageId = readString(actionInput.stageId, 'stageId');
+        try {
+          await options.videoTranslationWorkflow.validateStage(jobBeforeAction, stageId);
+        } catch (error) {
+          const latest = service.getJob(id);
+          if (latest !== undefined && latest.revision !== jobBeforeAction.revision) {
+            events.publish({
+              id: `snapshot:${latest.revision}`,
+              jobId: id,
+              revision: latest.revision,
+              kind: 'snapshot_changed',
+              payload: { revision: latest.revision }
+            });
           }
+          throw error;
         }
       }
-      const action = readString(body.action, 'action');
+      if (
+        action === 'run-stage'
+        && jobBeforeAction.templateId === 'cover'
+        && options.coverWorkflow !== undefined
+      ) {
+        const stageId = readString(actionInput.stageId, 'stageId');
+        try {
+          await options.coverWorkflow.validateStage(jobBeforeAction, stageId);
+        } catch (error) {
+          const latest = service.getJob(id);
+          if (latest !== undefined && latest.revision !== jobBeforeAction.revision) {
+            events.publish({
+              id: `snapshot:${latest.revision}`,
+              jobId: id,
+              revision: latest.revision,
+              kind: 'snapshot_changed',
+              payload: { revision: latest.revision }
+            });
+          }
+          throw error;
+        }
+      }
       const expectedRevision = readInteger(body.expectedRevision, 'expectedRevision');
-      const actionInput = readObject(body.input) as CreatorActionRequest['input'];
       const result = options.dispatcher.dispatch(id, {
         idempotencyKey: typeof body.idempotencyKey === 'string'
           ? body.idempotencyKey
           : fallbackIdempotencyKey(id, action, expectedRevision, actionInput),
-        action: readString(body.action, 'action'),
+        action,
         expectedRevision,
         input: actionInput
       }, 'user');
+      if (
+        options.videoTranslationWorkflow !== undefined
+        && shouldReconcileVideoTranslation(jobBeforeAction, result.job)
+      ) {
+        await options.videoTranslationWorkflow.reconcile(result.job);
+        return {
+          ...result,
+          job: service.getJob(id) ?? result.job
+        };
+      }
       return result;
     } catch (error) {
       return sendCreatorError(reply, error);
@@ -649,6 +754,10 @@ function readCreatorAgentSandbox(
 }
 
 function sendCreatorError(reply: FastifyReply, error: unknown) {
+  if (error instanceof CreatorReferenceImageUploadError) {
+    return reply.code(error.statusCode)
+      .send(apiError(error.code as RuntimeErrorCode, error.message));
+  }
   if (error instanceof CreatorSourceUploadError) {
     return reply.code(error.statusCode)
       .send(apiError(error.code as RuntimeErrorCode, error.message));
@@ -693,6 +802,15 @@ function sendCreatorError(reply: FastifyReply, error: unknown) {
     return reply.code(error.code === 'unsupported_source' ? 422 : 400)
       .send(apiError(error.code as RuntimeErrorCode, error.message));
   }
+  if (error instanceof CoverWorkflowError) {
+    const status = error.code === 'unsupported_source'
+      ? 422
+      : error.code === 'unsupported_capability'
+        ? 409
+        : 400;
+    return reply.code(status)
+      .send(apiError(error.code as RuntimeErrorCode, error.message));
+  }
   throw error;
 }
 
@@ -702,6 +820,21 @@ function requireCreatorJob(service: CreatorService, jobId: string): CreatorJob {
     throw new CreatorServiceError('creator_job_not_found', 'Creator job not found');
   }
   return job;
+}
+
+function shouldReconcileVideoTranslation(before: CreatorJob, after: CreatorJob): boolean {
+  if (before.templateId !== 'video-translation' || after.templateId !== 'video-translation') {
+    return false;
+  }
+  const previousNeedsInput = before.state.needsInput;
+  return (
+    previousNeedsInput !== null
+    && typeof previousNeedsInput === 'object'
+    && !Array.isArray(previousNeedsInput)
+    && previousNeedsInput.code === 'creator_tts_config_missing'
+    && after.state.dubbing !== true
+    && after.state.needsInput === undefined
+  );
 }
 
 function latestStageMatching(

@@ -107,3 +107,57 @@ test('图像生成在桌面和移动视口创建、持久化并从项目中心�
   await expect(page.getByRole('radio', { name: '高清', exact: true })).toBeChecked();
   await expect(page.getByRole('radio', { name: '4 张', exact: true })).toBeChecked();
 });
+
+test('封面生成在桌面和移动视口保持可操作并从项目中心恢复 Creator Job', async ({
+  page,
+  runtime
+}) => {
+  await runtime.openApp(page);
+  await page.goto(`${runtime.origin}/#/workbench`);
+  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible();
+  await page.getByRole('button', { name: /^封面生成/ }).click();
+
+  const workspace = page.getByRole('region', { name: '封面生成 操作区' });
+  const prompt = '人物主体清晰，明亮工作室，高对比构图，不生成文字';
+  await workspace.getByRole('textbox', { name: '封面提示词' }).fill(prompt);
+  await expect(page).toHaveURL(/#\/workbench\?tool=cover-generator&jobId=creator_job_/);
+  await workspace.getByRole('button', { name: '继续', exact: true }).click();
+  await workspace.getByRole('radio', { name: '9:16', exact: true }).click();
+  await workspace.getByRole('radio', { name: '高清', exact: true }).click();
+
+  const jobId = new URL(page.url()).hash.match(/jobId=([^&]+)/)?.[1];
+  expect(jobId).toBeTruthy();
+  await expect.poll(async () => {
+    const response = await runtime.api<{
+      job: { templateVersion: number; state: Record<string, unknown> };
+    }>('GET', `/creator/jobs/${decodeURIComponent(jobId!)}`);
+    return {
+      templateVersion: response.job.templateVersion,
+      state: response.job.state
+    };
+  }).toMatchObject({
+    templateVersion: 2,
+    state: {
+      prompt,
+      ratio: '9:16',
+      quality: 'high',
+      currentStep: 1,
+      furthestStep: 1
+    }
+  });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    await page.evaluate(() => window.innerWidth)
+  );
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '封面生成' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: '9:16', exact: true })).toBeChecked();
+  await expect(page.getByRole('radio', { name: '高清', exact: true })).toBeChecked();
+
+  await page.goto(`${runtime.origin}/#/projects`);
+  await page.getByRole('tab', { name: '图像设计' }).click();
+  await page.getByRole('button', { name: `打开项目 ${prompt}` }).click();
+  await expect(page).toHaveURL(new RegExp(`jobId=${jobId}`));
+  await expect(page.getByRole('heading', { name: '封面生成' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: '9:16', exact: true })).toBeChecked();
+});

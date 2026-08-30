@@ -125,6 +125,10 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     await currentApp.page.getByRole('button', { name: '设置' }).click();
     await currentApp.page.getByRole('button', { name: 'AI 服务' }).click();
     await expect(currentApp.page.getByRole('heading', { name: 'AI 服务' })).toBeVisible();
+    await expect(currentApp.page.getByRole('button', { name: 'Codex Agent' })).toHaveCount(0);
+    await expect(currentApp.page.getByRole('tab', { name: '模型服务' }))
+      .toHaveAttribute('aria-selected', 'true');
+    await expect(currentApp.page.getByRole('group', { name: '模型服务' })).toBeVisible();
     await currentApp.page.getByRole('tab', { name: '配音服务' }).click();
     const providerSelect = currentApp.page.getByRole('combobox', { name: '服务商' });
     await expect(providerSelect).toHaveText('OpenAI TTS');
@@ -252,6 +256,34 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         candidateCount: 4
       }
     });
+    const coverJob = await runtimeRequest<{
+      job: {
+        id: string;
+        revision: number;
+        templateVersion: number;
+        state: Record<string, unknown>;
+      };
+    }>(currentApp.page, 'POST', '/creator/jobs', {
+      projectId: createdProject.body.project.id,
+      templateId: 'cover',
+      state: {
+        prompt: 'Packaged cover generation smoke',
+        ratio: '9:16',
+        quality: 'high',
+        candidateCount: 2
+      }
+    });
+    expect(coverJob.status).toBe(201);
+    expect(coverJob.body.job).toMatchObject({
+      revision: 0,
+      templateVersion: 2,
+      state: {
+        prompt: 'Packaged cover generation smoke',
+        ratio: '9:16',
+        quality: 'high',
+        candidateCount: 2
+      }
+    });
 
     const relaunchInput = {
       executablePath: currentApp.executablePath,
@@ -283,6 +315,20 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         size: '1024x1536',
         quality: 'high',
         candidateCount: 4
+      }
+    });
+    const restoredCoverJob = await runtimeRequest<{
+      job: { id: string; templateVersion: number; state: Record<string, unknown> };
+    }>(currentApp.page, 'GET', `/creator/jobs/${coverJob.body.job.id}`);
+    expect(restoredCoverJob.status).toBe(200);
+    expect(restoredCoverJob.body.job).toMatchObject({
+      id: coverJob.body.job.id,
+      templateVersion: 2,
+      state: {
+        prompt: 'Packaged cover generation smoke',
+        ratio: '9:16',
+        quality: 'high',
+        candidateCount: 2
       }
     });
     expect(hasWhisperKitDependency(fixture.root)).toBe(false);

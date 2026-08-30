@@ -109,7 +109,8 @@ export function createCreatorCommandDispatcher(input: {
                 : {}),
               ...(typeof request.input.resumedFromStageRunId === 'string'
                 ? { resumedFromStageRunId: request.input.resumedFromStageRunId }
-                : {})
+                : {}),
+              ...resultVersionProgress(request.input)
             }
           }).id;
         }
@@ -202,6 +203,19 @@ function readStageId(value: CreatorJson | undefined): string {
     );
   }
   return value;
+}
+
+function resultVersionProgress(
+  input: Record<string, CreatorJson>
+): Record<string, CreatorJson> {
+  const progress: Record<string, CreatorJson> = {};
+  for (const field of ['baseResultVersion', 'inputResultVersion', 'targetResultVersion'] as const) {
+    const value = input[field];
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+      progress[field] = value;
+    }
+  }
+  return progress;
 }
 
 function stableStringify(value: unknown): string {

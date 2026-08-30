@@ -45,15 +45,27 @@ import { readKrillinRuntimeManifest, resolveInside, verifyKrillinRuntimeManifest
 import { createKrillinRuntimeHost } from '../creator/krillin/runtime-host.js';
 import { createKrillinTtsService } from '../creator/krillin/tts-service.js';
 import { createDownloadExecutor } from '../creator/download/executor.js';
-import { createImageExecutor } from '../creator/image/executor.js';
+import { createCoverAnalysisExecutor } from '../creator/cover/executor.js';
+import {
+  createFfmpegCoverImageNormalizer,
+  createImageExecutor
+} from '../creator/image/executor.js';
 import { createClipExecutor } from '../creator/clip/executor.js';
 import { createStickmanExecutor } from '../creator/stickman/executor.js';
 import { createCreatorProjectCoverService } from '../creator/project-cover.js';
+import {
+  createCreatorReferenceImageUploadService,
+  type CreatorReferenceImageUploadService
+} from '../creator/reference-image-upload.js';
 import {
   createCreatorSourceUploadService,
   type CreatorSourceUploadService
 } from '../creator/source-upload.js';
 import { validateMediaFile, type MediaProbe } from '../creator/validators/media.js';
+import {
+  createCoverWorkflow,
+  type CoverWorkflow
+} from '../creator/templates/cover-actions.js';
 import {
   createVideoTranslationWorkflow,
   type VideoTranslationWorkflow
@@ -263,6 +275,8 @@ export type BuildServerInput = {
   creatorServicesConfigStore?: CreatorServicesConfigStore;
   codexProviderCredentialStore?: CodexProviderCredentialStore;
   creatorService?: CreatorService;
+  creatorReferenceImageUploadService?: CreatorReferenceImageUploadService;
+  creatorReferenceImageMaxSizeBytes?: number;
   creatorSourceUploadService?: CreatorSourceUploadService;
   creatorSourceMediaProbe?(path: string): Promise<MediaProbe>;
   creatorSourceMaxSizeBytes?: number;
@@ -610,16 +624,16 @@ export async function buildServer(input: BuildServerInput) {
     dataDir,
     ttsService: krillinTtsService
   });
-  const creatorExecutors: CreatorExecutor[] = input.creatorExecutors ?? [
-    createKrillinExecutor({
+  const creatorExecutors: CreatorExecutor[] = input.creatorExecutors ?? [];
+  if (input.creatorExecutors === undefined) {
+    creatorExecutors.push(createKrillinExecutor({
       resourceRoot: creatorRuntimeRoot,
       jobsRoot: creatorJobsRoot,
       dependencyLoader: krillinDependencyLoader,
       runtimeHost: krillinRuntimeHost,
       configStore: creatorServicesConfigStore
-    }),
-    createImageExecutor({ configStore: creatorServicesConfigStore })
-  ];
+    }));
+  }
   let creatorFfmpegPath: string | undefined;
   let creatorFfprobePath: string | undefined;
   try {
@@ -637,6 +651,12 @@ export async function buildServer(input: BuildServerInput) {
     if (input.creatorExecutors === undefined && ytDlpPath && creatorFfprobePath) {
       creatorExecutors.push(createDownloadExecutor({ ytDlpPath, ffprobePath: creatorFfprobePath }));
     }
+    if (input.creatorExecutors === undefined && ytDlpPath) {
+      creatorExecutors.push(createCoverAnalysisExecutor({
+        configStore: creatorServicesConfigStore,
+        ytDlpPath
+      }));
+    }
     if (input.creatorExecutors === undefined && creatorFfmpegPath && creatorFfprobePath) {
       creatorExecutors.push(
         createClipExecutor({ configStore: creatorServicesConfigStore, ffmpegPath: creatorFfmpegPath, ffprobePath: creatorFfprobePath }),
@@ -645,6 +665,18 @@ export async function buildServer(input: BuildServerInput) {
     }
   } catch (error) {
     console.warn(`Creator optional runtime executors are unavailable: ${formatError(error)}`);
+  }
+  if (input.creatorExecutors === undefined) {
+    creatorExecutors.push(createImageExecutor({
+      configStore: creatorServicesConfigStore,
+      ...(creatorFfmpegPath === undefined
+        ? {}
+        : {
+            normalizeCoverImage: createFfmpegCoverImageNormalizer(
+              creatorFfmpegPath
+            )
+          })
+    }));
   }
   const creatorProjectCoverService = createCreatorProjectCoverService({
     jobsRoot: creatorJobsRoot,
@@ -663,6 +695,13 @@ export async function buildServer(input: BuildServerInput) {
           probeMedia: creatorSourceMediaProbe,
           maxSizeBytes: input.creatorSourceMaxSizeBytes
         }));
+  const creatorReferenceImageUploadService = input.creatorReferenceImageUploadService
+    ?? createCreatorReferenceImageUploadService({
+        jobsRoot: creatorJobsRoot,
+        creator: creatorService,
+        maxSizeBytes: input.creatorReferenceImageMaxSizeBytes
+      });
+  let coverWorkflow: CoverWorkflow | undefined;
   let videoTranslationWorkflow: VideoTranslationWorkflow | undefined;
   const creatorStageRunner = input.creatorService === undefined
     ? createCreatorStageRunner({
@@ -691,7 +730,12 @@ export async function buildServer(input: BuildServerInput) {
           });
         },
         onStageSucceeded(stage) {
-          videoTranslationWorkflow?.handleStageChanged(stage);
+          void coverWorkflow?.handleStageChanged(stage).catch(error => {
+            console.warn(`Cover workflow continuation failed: ${formatError(error)}`);
+          });
+          void videoTranslationWorkflow?.handleStageChanged(stage).catch(error => {
+            console.warn(`Video translation workflow continuation failed: ${formatError(error)}`);
+          });
         }
       })
     : undefined;
@@ -750,7 +794,19 @@ export async function buildServer(input: BuildServerInput) {
         dispatcher: creatorCommandDispatcher,
         configStore: creatorServicesConfigStore
       });
-  videoTranslationWorkflow?.recover();
+  coverWorkflow = creatorStageRunner === undefined
+    ? undefined
+    : createCoverWorkflow({
+        creator: creatorService,
+        dispatcher: creatorCommandDispatcher,
+        configStore: creatorServicesConfigStore
+      });
+  void coverWorkflow?.recover().catch(error => {
+    console.warn(`Cover workflow recovery failed: ${formatError(error)}`);
+  });
+  void videoTranslationWorkflow?.recover().catch(error => {
+    console.warn(`Video translation workflow recovery failed: ${formatError(error)}`);
+  });
   const scheduleRunInjector = createAgentScheduleRunInjector({
     capabilities: agentCapabilityTokens,
     getBaseUrl: getAgentToolBaseUrl,
@@ -1067,14 +1123,20 @@ export async function buildServer(input: BuildServerInput) {
     server,
     creatorServicesConfigStore,
     () => krillinDependencyLoader.capabilities(),
-    krillinTtsService
+    krillinTtsService,
+    async () => {
+      await videoTranslationWorkflow?.resumeConfiguredJobs();
+      await coverWorkflow?.resumeConfiguredJobs();
+    }
   );
   await registerSmartDubbingRoutes(server, smartDubbingService);
   await registerCreatorRoutes(server, creatorService, creatorEvents, {
     sseHeartbeatMs: input.sseHeartbeatMs,
     agentService: creatorAgentService,
+    coverWorkflow,
     videoTranslationWorkflow,
     projectCoverService: creatorProjectCoverService,
+    referenceImageUploadService: creatorReferenceImageUploadService,
     sourceUploadService: creatorSourceUploadService,
     dispatcher: creatorCommandDispatcher,
     stageRunner: creatorStageRunner

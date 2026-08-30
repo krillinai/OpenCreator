@@ -21,6 +21,28 @@ describe('RuntimeClient', () => {
     );
   });
 
+  it('rawGet forwards an abort signal to the underlying request', async () => {
+    const fetchMock = vi.fn(async () => new Response('stream', {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' }
+    }));
+    const client = new RuntimeClient({
+      baseUrl: 'http://127.0.0.1:60855',
+      token: 'tok',
+      fetchImpl: fetchMock
+    });
+    const controller = new AbortController();
+
+    await client.rawGet('/creator/jobs/job_1/events', {
+      signal: controller.signal
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:60855/creator/jobs/job_1/events',
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
   it('sends authorization header for authenticated requests', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ codexVersion: 'test' }), {
       status: 200,

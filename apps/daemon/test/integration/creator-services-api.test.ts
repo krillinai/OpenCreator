@@ -56,7 +56,7 @@ describe('creator services API', () => {
     await server.close();
   });
 
-  it('reads, validates, saves, and resets the independent text model', async () => {
+  it('supports legacy independent text-model fields during migration', async () => {
     const read = await server.inject({ method: 'GET', url: '/creator-services/config' });
     expect(read.statusCode).toBe(200);
     expect(read.body).not.toContain('initial-secret');

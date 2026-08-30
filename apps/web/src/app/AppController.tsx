@@ -5251,6 +5251,7 @@ export function AppController(props: AppControllerProps) {
       memoryThreads={memoryThreadOptions}
       codexStatus={connectionState.status === 'connected' ? connectionState.codexStatus : undefined}
       initialTab={props.route.view === 'settings' ? props.route.tab : undefined}
+      initialSection={props.route.view === 'settings' ? props.route.section : undefined}
       onBack={() => {
         dispatch({ type: 'back_to_app' });
         navigateToRoute(routeForConversation(state.selectedThreadId));

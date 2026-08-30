@@ -328,7 +328,7 @@ describe('creator api', () => {
     }));
   });
 
-  it('requires TTS configuration before creating a dubbing stage run', async () => {
+  it('starts subtitles without requiring TTS configuration up front', async () => {
     await setupServer();
     const created = await request('POST', '/creator/jobs', {
       projectId: 'project_vt6',
@@ -347,21 +347,14 @@ describe('creator api', () => {
       expectedRevision: 0,
       input: { stageId: 'subtitle' }
     });
-    expect(started.statusCode).toBe(400);
+    expect(started.statusCode).toBe(200);
     expect(started.json()).toMatchObject({
-      error: { code: 'creator_tts_config_missing' }
-    });
-
-    const restored = await request('GET', `/creator/jobs/${job.id}`);
-    expect(restored.json().job).toMatchObject({
+      commandReceipt: {
+        stageRunId: expect.any(String)
+      },
+      job: {
       revision: 1,
-      status: 'needs_input',
-      stages: [],
-      state: {
-        needsInput: {
-          code: 'creator_tts_config_missing',
-          deepLink: '/settings/ai-services?section=tts'
-        }
+        status: 'running'
       }
     });
   });

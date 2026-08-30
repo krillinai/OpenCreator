@@ -10,10 +10,13 @@ export type CreatorTemplateStage = {
   executor: string;
   dependsOn?: string[];
   optional?: boolean;
+  resultVersionPolicy?: 'snapshot' | 'none';
+  invalidateDependentArtifacts?: boolean;
   allowedJobStatuses: CreatorJobStatus[];
   inputArtifacts: Array<{
     kind: string;
-    selector: 'latest-completed' | 'explicit-version';
+    selector: 'latest-completed' | 'explicit-version' | 'state-artifact-id';
+    stateKey?: string;
     optional?: boolean;
   }>;
   outputArtifacts: Array<{

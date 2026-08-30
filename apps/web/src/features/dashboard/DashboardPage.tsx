@@ -164,6 +164,7 @@ type CategoryFilter = typeof categories[number];
 const CREATOR_JOB_LOAD_TIMEOUT_MS = 15_000;
 const CREATOR_JOB_CREATE_ATTEMPT_TIMEOUT_MS = 4_000;
 const CREATOR_JOB_CREATE_ATTEMPTS = 3;
+const CREATOR_JOB_CREATE_RECOVERY_TIMEOUT_MS = 30_000;
 const CREATOR_JOB_CREATION_STORAGE_PREFIX = 'opencreator.creator.pending-job:';
 
 export default function DashboardPage(props: {
@@ -671,18 +672,26 @@ function isPendingCreatorJob(job: CreatorJob): boolean {
   return job.id.startsWith('pending:');
 }
 
-async function createCreatorJobWithRecovery(
+export async function createCreatorJobWithRecovery(
   service: CreatorWebService,
   request: Parameters<CreatorWebService['createJob']>[0]
 ): Promise<CreatorJob> {
   let lastError: unknown;
+  const inFlightRequests: Promise<CreatorJob>[] = [];
   for (let attempt = 0; attempt < CREATOR_JOB_CREATE_ATTEMPTS; attempt += 1) {
+    const requestWork = service.createJob(request).then(
+      response => response.job,
+      error => {
+        lastError = error;
+        throw error;
+      }
+    );
+    inFlightRequests.push(requestWork);
     try {
-      const response = await withTimeout(
-        service.createJob(request),
+      return await withTimeout(
+        firstSuccessfulCreatorJob(inFlightRequests, () => lastError),
         CREATOR_JOB_CREATE_ATTEMPT_TIMEOUT_MS
       );
-      return response.job;
     } catch (error) {
       lastError = error;
       if (attempt + 1 < CREATOR_JOB_CREATE_ATTEMPTS) {
@@ -690,7 +699,23 @@ async function createCreatorJobWithRecovery(
       }
     }
   }
-  throw lastError;
+  try {
+    return await withTimeout(
+      firstSuccessfulCreatorJob(inFlightRequests, () => lastError),
+      CREATOR_JOB_CREATE_RECOVERY_TIMEOUT_MS
+    );
+  } catch (error) {
+    throw lastError ?? error;
+  }
+}
+
+function firstSuccessfulCreatorJob(
+  requests: Promise<CreatorJob>[],
+  readLastError: () => unknown
+): Promise<CreatorJob> {
+  return Promise.any(requests).catch(error => {
+    throw readLastError() ?? error;
+  });
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

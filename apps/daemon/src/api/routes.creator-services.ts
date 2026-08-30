@@ -25,7 +25,8 @@ export async function registerCreatorServicesRoutes(
   store: CreatorServicesConfigStore,
   readCapabilities: () => CreatorServicesCapabilitiesResponse =
     createKrillinCreatorServicesCapabilities,
-  ttsService?: Pick<KrillinTtsService, 'listVoices' | 'preview'>
+  ttsService?: Pick<KrillinTtsService, 'listVoices' | 'preview'>,
+  onConfigurationChanged?: () => Promise<void> | void
 ): Promise<void> {
   server.get('/creator-services/capabilities', async () => readCapabilities());
 
@@ -52,6 +53,11 @@ export async function registerCreatorServicesRoutes(
       }
       const current = await store.read();
       const saved = await store.write(retainCreatorServicesCredentials(config, current));
+      try {
+        await onConfigurationChanged?.();
+      } catch (error) {
+        server.log.warn({ error }, 'Creator workflow configuration reconciliation failed');
+      }
       return presentCreatorServicesConfig(saved);
     } catch (error) {
       if (error instanceof ZodError) {

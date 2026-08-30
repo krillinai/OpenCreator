@@ -5,10 +5,198 @@ import {
   resultVersionsFromArtifacts,
   subtitleArtifactsForResultVersion,
   subtitleCuesFromArtifact,
+  videoTranslationRegenerationStage,
   videoArtifactsForResultVersion
 } from './VideoTranslationWorkspace.js';
 
 describe('video translation result artifact selection', () => {
+  it('starts a new render from existing subtitles when video composition is enabled', () => {
+    const version = resultVersion({
+      settings: { composeVideo: false, videoFormat: 'horizontal' }
+    });
+
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, composeVideo: true },
+      version.source,
+      false
+    )).toBe('render-horizontal');
+  });
+
+  it('chooses the earliest stage affected by each translation setting change', () => {
+    const version = resultVersion();
+    const subtitleOnlyVersion = resultVersion({
+      settings: { composeVideo: false, videoFormat: 'horizontal' }
+    });
+
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, targetLanguage: 'ja' },
+      version.source,
+      false
+    )).toBe('subtitle');
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, dubbing: true },
+      version.source,
+      false
+    )).toBe('tts');
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, composeVideo: true, videoFormat: 'vertical' },
+      version.source,
+      false
+    )).toBe('render-vertical');
+    expect(videoTranslationRegenerationStage(
+      subtitleOnlyVersion,
+      subtitleOnlyVersion.settings,
+      subtitleOnlyVersion.source,
+      true
+    )).toBeUndefined();
+  });
+
+  it('restarts subtitles for source, language, bilingual, and subtitle order changes', () => {
+    const version = resultVersion();
+    const changedFile = new File(['next'], 'next.mp4', { type: 'video/mp4' });
+
+    expect(videoTranslationRegenerationStage(
+      version,
+      version.settings,
+      {
+        sourceType: 'url',
+        videoUrl: 'https://example.com/next',
+        videoFile: null,
+        videoFileName: null,
+        videoFileSize: null,
+        videoFileLastModified: null
+      },
+      false
+    )).toBe('subtitle');
+    expect(videoTranslationRegenerationStage(
+      version,
+      version.settings,
+      {
+        sourceType: 'file',
+        videoUrl: '',
+        videoFile: changedFile,
+        videoFileName: changedFile.name,
+        videoFileSize: changedFile.size,
+        videoFileLastModified: changedFile.lastModified
+      },
+      false
+    )).toBe('subtitle');
+    for (const settings of [
+      { ...version.settings, sourceLanguage: 'ja' },
+      { ...version.settings, targetLanguage: 'ja' },
+      { ...version.settings, preferPlatformCaptions: false },
+      { ...version.settings, bilingual: false },
+      { ...version.settings, subtitlePosition: 'bottom' as const }
+    ]) {
+      expect(videoTranslationRegenerationStage(
+        version,
+        settings,
+        version.source,
+        false
+      )).toBe('subtitle');
+    }
+  });
+
+  it('plans dubbing and render stages without retranscribing reusable subtitles', () => {
+    const version = resultVersion();
+    const dubbed = resultVersion({
+      settings: { dubbing: true }
+    });
+
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, subtitleFont: 'serif' },
+      version.source,
+      false
+    )).toBe('render-horizontal');
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, subtitleSize: 'large' },
+      version.source,
+      false
+    )).toBe('render-horizontal');
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, subtitleColor: '#FFE45C' },
+      version.source,
+      false
+    )).toBe('render-horizontal');
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, dubbing: true },
+      version.source,
+      false
+    )).toBe('tts');
+    expect(videoTranslationRegenerationStage(
+      dubbed,
+      { ...dubbed.settings, voiceCode: 'nova', voiceName: 'Nova' },
+      dubbed.source,
+      false
+    )).toBe('tts');
+    expect(videoTranslationRegenerationStage(
+      dubbed,
+      { ...dubbed.settings, dubbing: false },
+      dubbed.source,
+      false
+    )).toBe('render-horizontal');
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, videoFormat: 'vertical' },
+      version.source,
+      false
+    )).toBe('render-vertical');
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, videoFormat: 'all' },
+      version.source,
+      false
+    )).toBe('render-horizontal');
+  });
+
+  it('commits settings-only changes and starts downstream work for manual subtitles', () => {
+    const subtitleOnly = resultVersion({
+      settings: { composeVideo: false, videoFormat: 'horizontal' }
+    });
+    const dubbedSubtitleOnly = resultVersion({
+      settings: { composeVideo: false, videoFormat: 'horizontal', dubbing: true }
+    });
+
+    expect(videoTranslationRegenerationStage(
+      subtitleOnly,
+      { ...subtitleOnly.settings, subtitleColor: '#FFE45C' },
+      subtitleOnly.source,
+      false
+    )).toBeUndefined();
+    expect(videoTranslationRegenerationStage(
+      subtitleOnly,
+      subtitleOnly.settings,
+      subtitleOnly.source,
+      true
+    )).toBeUndefined();
+    expect(videoTranslationRegenerationStage(
+      dubbedSubtitleOnly,
+      dubbedSubtitleOnly.settings,
+      dubbedSubtitleOnly.source,
+      true
+    )).toBe('tts');
+    expect(videoTranslationRegenerationStage(
+      resultVersion(),
+      resultVersion().settings,
+      resultVersion().source,
+      true
+    )).toBe('render-horizontal');
+    expect(videoTranslationRegenerationStage(
+      resultVersion(),
+      { ...resultVersion().settings, composeVideo: false },
+      resultVersion().source,
+      false
+    )).toBeUndefined();
+  });
+
   it('keeps each real render as its own user-visible result version', () => {
     const subtitle = artifact({ id: 'subtitle-v1', kind: 'target_subtitle', version: 1 });
     const oldVideo = artifact({
@@ -146,6 +334,53 @@ describe('video translation result artifact selection', () => {
     )?.id).toBe(subtitle.id);
   });
 
+  it('restores the local source fingerprint from a project snapshot', () => {
+    const source = artifact({
+      id: 'source-local-v1',
+      kind: 'source_video',
+      version: 1,
+      metadata: {
+        source: 'local-upload',
+        fileName: 'interview.mp4',
+        size: 2048,
+        lastModified: 1_777_777
+      }
+    });
+    const subtitle = artifact({
+      id: 'subtitle-local-v1',
+      kind: 'target_subtitle',
+      version: 1,
+      sourceArtifactIds: [source.id],
+      metadata: { cues: [] }
+    });
+    const state = {
+      ...fallbackState(),
+      sourceType: 'file',
+      sourceUrl: '',
+      resultSnapshots: [{
+        ...snapshot(1, {
+          source_video: [source.id],
+          target_subtitle: [subtitle.id]
+        }, [source.id, subtitle.id]),
+        state: {
+          ...fallbackState(),
+          sourceType: 'file',
+          sourceUrl: '',
+          sourceFileName: 'interview.mp4',
+          sourceFileSize: 2048,
+          sourceFileLastModified: 1_777_777
+        }
+      }]
+    };
+
+    expect(resultVersionsFromArtifacts([source, subtitle], state)[0]?.source).toMatchObject({
+      sourceType: 'file',
+      videoFileName: 'interview.mp4',
+      videoFileSize: 2048,
+      videoFileLastModified: 1_777_777
+    });
+  });
+
   it('selects horizontal and vertical videos from the same project snapshot', () => {
     const horizontal = artifact({
       id: 'horizontal-v2',
@@ -257,4 +492,51 @@ function fallbackState() {
     verticalTitle: '',
     verticalSubtitle: ''
   } as const;
+}
+
+function resultVersion(input: {
+  settings?: {
+    composeVideo?: boolean;
+    videoFormat?: 'horizontal' | 'vertical' | 'all';
+    dubbing?: boolean;
+  };
+} = {}) {
+  const settings = { ...fallbackState(), ...input.settings };
+  return {
+    value: 1,
+    description: '初次生成',
+    source: {
+      sourceType: 'url' as const,
+      videoUrl: settings.sourceUrl,
+      videoFile: null,
+      videoFileName: null,
+      videoFileSize: null,
+      videoFileLastModified: null
+    },
+    settings: {
+      sourceLanguage: settings.sourceLanguage,
+      targetLanguage: settings.targetLanguage,
+      bilingual: settings.bilingual,
+      subtitlePosition: settings.subtitlePosition,
+      preferPlatformCaptions: settings.preferPlatformCaptions,
+      subtitleFont: 'system' as const,
+      subtitleSize: 'medium' as const,
+      subtitleColor: '#FFFFFF',
+      dubbing: settings.dubbing,
+      ttsProvider: 'openai' as const,
+      ttsModel: 'gpt-4o-mini-tts',
+      voiceCode: settings.voiceCode,
+      voiceName: '',
+      composeVideo: settings.composeVideo,
+      videoFormat: settings.videoFormat,
+      verticalTitle: settings.verticalTitle,
+      verticalSubtitle: settings.verticalSubtitle
+    },
+    subtitleCues: [],
+    savedSubtitleSnapshot: '[]',
+    generatedSubtitleSnapshot: '[]',
+    artifactRefs: {},
+    changedArtifactIds: [],
+    staleArtifactIds: []
+  };
 }

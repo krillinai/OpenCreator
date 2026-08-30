@@ -22,8 +22,14 @@ export type AppRoute =
   | { view: 'assets'; tab?: 'materials' }
   | { view: 'account' }
   | { view: 'capabilities' }
-  | { view: 'settings'; tab?: 'ai-services' | 'codex-agent' }
+  | {
+      view: 'settings';
+      tab?: 'ai-services';
+      section?: AiServicesSection;
+    }
   | { view: 'files'; threadId?: string; path?: string };
+
+export type AiServicesSection = 'text' | 'transcription' | 'tts' | 'image' | 'video';
 
 export function parseRoute(hash: string): AppRoute {
   const [path = '', query = ''] = hash.split('?', 2);
@@ -92,10 +98,16 @@ export function parseRoute(hash: string): AppRoute {
   if (path === '#/account') return { view: 'account' };
   if (path === '#/capabilities') return { view: 'capabilities' };
   if (path === '#/settings') {
-    const tab = new URLSearchParams(query).get('tab');
+    const params = new URLSearchParams(query);
+    const tab = params.get('tab');
+    const section = parseAiServicesSection(params.get('section'));
+    if (tab === 'codex-agent') {
+      return { view: 'settings', tab: 'ai-services', section: 'text' };
+    }
     return {
       view: 'settings',
-      ...(tab === 'ai-services' || tab === 'codex-agent' ? { tab } : {})
+      ...(tab === 'ai-services' || section !== undefined ? { tab: 'ai-services' as const } : {}),
+      ...(section === undefined ? {} : { section })
     };
   }
   if (path === '#/files') {
@@ -158,10 +170,12 @@ export function formatRoute(route: AppRoute): string {
       return '#/account';
     case 'capabilities':
       return '#/capabilities';
-    case 'settings':
-      return route.tab === 'ai-services' || route.tab === 'codex-agent'
-        ? `#/settings?tab=${route.tab}`
-        : '#/settings';
+    case 'settings': {
+      if (route.tab !== 'ai-services') return '#/settings';
+      const query = new URLSearchParams({ tab: 'ai-services' });
+      if (route.section !== undefined) query.set('section', route.section);
+      return `#/settings?${query.toString()}`;
+    }
     case 'files': {
       const query = new URLSearchParams();
       if (route.threadId !== undefined) query.set('threadId', route.threadId);
@@ -170,6 +184,16 @@ export function formatRoute(route: AppRoute): string {
       return suffix.length === 0 ? '#/files' : `#/files?${suffix}`;
     }
   }
+}
+
+function parseAiServicesSection(value: string | null): AiServicesSection | undefined {
+  return value === 'text'
+    || value === 'transcription'
+    || value === 'tts'
+    || value === 'image'
+    || value === 'video'
+    ? value
+    : undefined;
 }
 
 export type ActivityRange = 'today' | '7d' | '30d';
