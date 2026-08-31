@@ -341,7 +341,12 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     }).catch(() => undefined);
     await closePackagedApp(currentApp).catch(() => undefined);
     if (process.env.OPENCREATOR_E2E_KEEP_TEMP !== '1') {
-      rmSync(fixture.root, { recursive: true, force: true });
+      rmSync(fixture.root, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100
+      });
     }
   }
 });

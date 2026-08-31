@@ -62,6 +62,28 @@ describe('Daemon enterprise environment', () => {
     expect(environment.OPENCREATOR_ENTERPRISE_E2E_RUN_ID).toBeUndefined();
     expect(environment.OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED).toBeUndefined();
   });
+
+  it('passes the Desktop runtime configuration with the current environment contract', () => {
+    const environment = buildDaemonEnvironment(createInput({
+      requireProbe: true,
+      probeVerified: false
+    }));
+
+    expect(environment).toMatchObject({
+      OPENCREATOR_CODEX_BIN: '/usr/bin/codex',
+      CODEX_HOME: '/tmp/codex-home',
+      OPENCREATOR_DATA_DIR: '/tmp/data',
+      OPENCREATOR_DEFAULT_CWD: '/tmp',
+      OPENCREATOR_DEFAULT_PROJECT_ROOT: '/tmp/project',
+      OPENCREATOR_REQUIRE_CODEX_PROBE: '1',
+      OPENCREATOR_CODEX_PROBE_VERIFIED: '0'
+    });
+    expect(environment.CLAWEE_DATA_DIR).toBeUndefined();
+    expect(environment.CLAWEE_DEFAULT_CWD).toBeUndefined();
+    expect(environment.CLAWEE_DEFAULT_PROJECT_ROOT).toBeUndefined();
+    expect(environment.CLAWEE_REQUIRE_CODEX_PROBE).toBeUndefined();
+    expect(environment.CLAWEE_CODEX_PROBE_VERIFIED).toBeUndefined();
+  });
 });
 
 function createInput(
