@@ -16,6 +16,7 @@ import {
   readEnterpriseGatewayPackageConfig,
   serializeEnterpriseGatewayPackageConfig
 } from './enterprise-package-contract-2026-07-30.mjs';
+import { configureMacDirectorySigning } from './mac-signing.mjs';
 import { runStage } from './script-utils.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -38,7 +39,9 @@ const manifestPath = resolve(
   process.env.OPENCREATOR_DESKTOP_BUILD_MANIFEST
     ?? join(releaseDir, 'opencreator-desktop-build-manifest.json')
 );
-const mode = parseMode(process.argv.slice(2));
+const packageArguments = process.argv.slice(2);
+const mode = parseMode(packageArguments);
+const signedDirectoryRequested = packageArguments.includes('--signed');
 const platform = normalizePlatform(
   process.env.OPENCREATOR_DESKTOP_TARGET_PLATFORM ?? process.platform
 );
@@ -113,7 +116,14 @@ await runStage('准备 Codex Runtime', process.execPath, [
 const candidates = packageRootCandidates(platform, arch);
 for (const path of candidates) rmSync(path, { recursive: true, force: true });
 
-const { args, builderEnv } = electronBuilderArguments(mode, platform, arch, env);
+const {
+  args,
+  builderEnv,
+  macSigning
+} = electronBuilderArguments(mode, platform, arch, env, {
+  signedDirectoryRequested,
+  appleTeamId: process.env.OPENCREATOR_APPLE_TEAM_ID
+});
 await runStage(
   mode === 'dir' ? '生成可运行目录' : '生成桌面安装包',
   'electron-builder',
@@ -168,7 +178,12 @@ const manifest = {
   krillinServiceVersion: creatorRuntimeManifest.serviceVersion,
   krillinUpstreamCommit: creatorRuntimeManifest.upstreamCommit,
   krillinIntegrationPatchSha256: creatorRuntimeManifest.integrationPatchSha256,
-  krillinProtocolSha256: creatorRuntimeManifest.protocolSha256
+  krillinProtocolSha256: creatorRuntimeManifest.protocolSha256,
+  ytDlpRuntimeMode: creatorRuntimeManifest.ytDlp?.mode,
+  ytDlpVersion: creatorRuntimeManifest.ytDlp?.version,
+  ytDlpPythonVersion: creatorRuntimeManifest.ytDlp?.pythonVersion,
+  macSigningMode: macSigning.mode,
+  appleTeamId: macSigning.teamId ?? null
 };
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`[desktop-package] 构建清单：${manifestPath}`);
@@ -188,7 +203,13 @@ await runStage('验证桌面包', process.execPath, [
   env: {
     ...builderEnv,
     OPENCREATOR_DESKTOP_BUILD_MANIFEST: manifestPath,
-    OPENCREATOR_DESKTOP_PACKAGE_ROOT: packageRoot
+    OPENCREATOR_DESKTOP_PACKAGE_ROOT: packageRoot,
+    ...(macSigning.mode === 'developer-id'
+      ? {
+          OPENCREATOR_REQUIRE_DEVELOPER_ID: '1',
+          OPENCREATOR_APPLE_TEAM_ID: macSigning.teamId
+        }
+      : {})
   },
   timeoutMs: 5 * 60_000
 });
@@ -208,15 +229,35 @@ function normalizePlatform(value) {
   throw new Error(`Unsupported OpenCreator Desktop platform: ${value}`);
 }
 
-function electronBuilderArguments(packageMode, targetPlatform, targetArch, baseEnv) {
+function electronBuilderArguments(
+  packageMode,
+  targetPlatform,
+  targetArch,
+  baseEnv,
+  options
+) {
   const args = ['--publish', 'never'];
-  const nextEnv = { ...baseEnv };
+  let nextEnv = { ...baseEnv };
+  let macSigning = {
+    mode: targetPlatform === 'darwin' ? 'adhoc' : 'not-applicable',
+    teamId: undefined,
+    identity: undefined
+  };
   if (packageMode === 'dir') {
     args.push('--dir', platformFlag(targetPlatform), `--${targetArch}`);
-    if (targetPlatform === 'darwin') {
-      args.push('--config.mac.identity=null', '--config.mac.notarize=false');
-      nextEnv.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
-    }
+    const configured = configureMacDirectorySigning({
+      platform: targetPlatform,
+      env: nextEnv,
+      signed: options.signedDirectoryRequested,
+      teamId: options.appleTeamId
+    });
+    args.push(...configured.args);
+    nextEnv = configured.builderEnv;
+    macSigning = {
+      mode: configured.mode,
+      teamId: configured.teamId,
+      identity: configured.identity
+    };
   } else if (targetPlatform === 'darwin') {
     args.push('--mac', 'dmg', 'zip', `--${targetArch}`);
     if (targetArch === 'x64') {
@@ -257,7 +298,7 @@ function electronBuilderArguments(packageMode, targetPlatform, targetArch, baseE
   ) {
     args.push(`--config.electronDist=${installedElectronDist}`);
   }
-  return { args, builderEnv: nextEnv };
+  return { args, builderEnv: nextEnv, macSigning };
 }
 
 function platformFlag(targetPlatform) {

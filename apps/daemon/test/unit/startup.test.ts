@@ -45,13 +45,15 @@ describe('daemon production startup', () => {
       OPENCREATOR_CODEX_BIN: ' /tmp/fake-codex ',
       CODEX_HOME: ' /tmp/opencreator-codex-home ',
       OPENCREATOR_DEFAULT_CWD: ' /tmp/default-workspace ',
-      OPENCREATOR_DEFAULT_PROJECT_ROOT: ' /tmp/Documents '
+      OPENCREATOR_DEFAULT_PROJECT_ROOT: ' /tmp/Documents ',
+      OPENCREATOR_YT_DLP_PATH: ' /tmp/yt-dlp '
     })).toEqual({
       dataDir: '/tmp/opencreator-data',
       codexBin: '/tmp/fake-codex',
       codexHome: '/tmp/opencreator-codex-home',
       defaultCwd: '/tmp/default-workspace',
-      defaultProjectRoot: '/tmp/Documents'
+      defaultProjectRoot: '/tmp/Documents',
+      creatorYtDlpPath: '/tmp/yt-dlp'
     });
 
     expect(resolveProductionServerEnvironment({
@@ -59,7 +61,8 @@ describe('daemon production startup', () => {
       OPENCREATOR_CODEX_BIN: '',
       CODEX_HOME: '\t',
       OPENCREATOR_DEFAULT_CWD: '\n',
-      OPENCREATOR_DEFAULT_PROJECT_ROOT: ' '
+      OPENCREATOR_DEFAULT_PROJECT_ROOT: ' ',
+      OPENCREATOR_YT_DLP_PATH: ''
     })).toEqual({});
   });
 

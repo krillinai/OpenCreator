@@ -1,6 +1,7 @@
 import type {
   CreateCreatorJobRequest,
   CreatorActionRequest,
+  CreatorArtifactImportRequest,
   CreatorAgentApprovalDecisionRequest,
   CreatorAgentEvent,
   CreatorAgentHistoryResponse,
@@ -46,6 +47,10 @@ import {
 import type { CreatorProjectCoverService } from '../creator/project-cover.js';
 import type { CreatorStageRunner } from '../creator/stage-runner.js';
 import {
+  CreatorArtifactImportError,
+  type CreatorArtifactImportService
+} from '../creator/artifact-import.js';
+import {
   CREATOR_REFERENCE_IMAGE_CONTENT_TYPE,
   CreatorReferenceImageUploadError,
   type CreatorReferenceImageUploadService
@@ -68,6 +73,7 @@ export async function registerCreatorRoutes(
     projectCoverService?: CreatorProjectCoverService;
     referenceImageUploadService?: CreatorReferenceImageUploadService;
     sourceUploadService?: CreatorSourceUploadService;
+    artifactImportService?: CreatorArtifactImportService;
     dispatcher: CreatorCommandDispatcher;
     stageRunner?: Pick<CreatorStageRunner, 'cancel'>;
   }
@@ -132,6 +138,38 @@ export async function registerCreatorRoutes(
               : readQueryInteger(query.lastModified, 'lastModified'),
             source: request.body
           });
+          events.publish({
+            id: `snapshot:${response.job.revision}`,
+            jobId: response.job.id,
+            revision: response.job.revision,
+            kind: 'snapshot_changed',
+            payload: { revision: response.job.revision }
+          });
+          return reply.code(response.deduplicated ? 200 : 201).send(response);
+        } catch (error) {
+          return sendCreatorError(reply, error);
+        }
+      }
+    );
+  }
+
+  if (options.artifactImportService !== undefined) {
+    server.post<{ Body: unknown }>(
+      '/creator/jobs/:id/import-artifact',
+      async (request, reply) => {
+        const { id } = request.params as { id: string };
+        try {
+          const body = readObject(request.body);
+          const kind = readString(body.kind, 'kind');
+          if (kind !== 'source_video') {
+            throw new TypeError('kind must be source_video');
+          }
+          const response = await options.artifactImportService!.importArtifact(id, {
+            expectedRevision: readInteger(body.expectedRevision, 'expectedRevision'),
+            sourceJobId: readString(body.sourceJobId, 'sourceJobId'),
+            artifactId: readString(body.artifactId, 'artifactId'),
+            kind
+          } satisfies CreatorArtifactImportRequest);
           events.publish({
             id: `snapshot:${response.job.revision}`,
             jobId: response.job.id,
@@ -318,6 +356,12 @@ export async function registerCreatorRoutes(
             : {}),
           ...(typeof target.progress.targetResultVersion === 'number'
             ? { targetResultVersion: target.progress.targetResultVersion }
+            : {}),
+          ...(typeof target.progress.optionId === 'string'
+            ? { optionId: target.progress.optionId }
+            : {}),
+          ...(typeof target.progress.mediaType === 'string'
+            ? { mediaType: target.progress.mediaType }
             : {}),
           resumedFromStageRunId: target.id
         }
@@ -754,6 +798,10 @@ function readCreatorAgentSandbox(
 }
 
 function sendCreatorError(reply: FastifyReply, error: unknown) {
+  if (error instanceof CreatorArtifactImportError) {
+    return reply.code(error.statusCode)
+      .send(apiError(error.code, error.message));
+  }
   if (error instanceof CreatorReferenceImageUploadError) {
     return reply.code(error.statusCode)
       .send(apiError(error.code as RuntimeErrorCode, error.message));

@@ -28,6 +28,7 @@ import VideoDownloadWorkspace from './VideoDownloadWorkspace.js';
 import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
 import VideoGenerationWorkspace from './VideoGenerationWorkspace.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
+import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
 import { CreatorSessionProvider } from './creator-session-store.js';
 import type {
   CreatorRuntimeWorkspace,
@@ -180,7 +181,9 @@ export default function DashboardPage(props: {
   jobId?: string;
   projectId?: string;
   creatorService?: CreatorWebService | null;
+  runtimeDependencies?: RuntimeDependenciesController;
   onJobCreated?(job: CreatorJob): void;
+  onOpenRuntimeComponents?(): void;
   onWorkspaceNavigate?(
     workspace: CreatorWorkspace | null,
     jobId?: string,
@@ -194,6 +197,7 @@ export default function DashboardPage(props: {
   const [activePromptHint, setActivePromptHint] = useState(
     () => props.skillLaunch?.promptHint
   );
+  const [activeJobId, setActiveJobId] = useState(props.jobId);
   const [workspaceOrigin, setWorkspaceOrigin] = useState<'home' | 'dashboard'>(
     () => props.skillLaunch === undefined ? 'dashboard' : 'home'
   );
@@ -228,9 +232,14 @@ export default function DashboardPage(props: {
     setActiveWorkspace(props.workspace ?? null);
   }, [props.skillLaunch?.promptHint, props.skillLaunch?.workspace, props.workspace]);
 
+  useEffect(() => {
+    setActiveJobId(props.jobId);
+  }, [props.jobId]);
+
   const closeWorkspace = () => {
     setActiveWorkspace(null);
     setActivePromptHint(undefined);
+    setActiveJobId(undefined);
     if (workspaceOrigin === 'home') {
       props.onBackToHome?.();
     } else {
@@ -241,11 +250,13 @@ export default function DashboardPage(props: {
   const openWorkspace = (workspace: CreatorWorkspace) => {
     setWorkspaceOrigin('dashboard');
     setActivePromptHint(undefined);
+    setActiveJobId(undefined);
     setActiveWorkspace(workspace);
     props.onWorkspaceNavigate?.(workspace);
   };
 
   const handleJobCreated = (workspace: CreatorRuntimeWorkspace, job: CreatorJob) => {
+    setActiveJobId(job.id);
     props.onJobCreated?.(job);
     props.onWorkspaceNavigate?.(workspace, job.id, { replace: true });
   };
@@ -264,7 +275,7 @@ export default function DashboardPage(props: {
         projectId={props.projectId}
         service={props.creatorService}
         templateId={creatorTemplateForWorkspace(workspace)}
-        jobId={props.jobId}
+        jobId={activeJobId}
         onJobCreated={job => handleJobCreated(workspace, job)}
         onBack={closeWorkspace}
       >
@@ -288,6 +299,8 @@ export default function DashboardPage(props: {
     return renderCreatorWorkspace('video-download', (
       <VideoDownloadWorkspace
         promptHint={activePromptHint}
+        runtimeDependencies={props.runtimeDependencies}
+        onOpenRuntimeComponents={props.onOpenRuntimeComponents}
         onBack={closeWorkspace}
       />
     ));

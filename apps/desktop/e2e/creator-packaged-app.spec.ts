@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync
@@ -56,6 +58,14 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     ) as {
       platform: string;
       arch: string;
+      ytDlp: {
+        mode: 'python';
+        version: string;
+        pythonVersion: string;
+        executable: string;
+        script: string;
+        certificateBundle: string;
+      };
       resources: Array<{ path: string; kind: string }>;
     };
     expect(runtimeManifest).toMatchObject({
@@ -67,9 +77,26 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         executableResource('bin/krillinai-cli'),
         executableResource('bin/ffmpeg'),
         executableResource('bin/ffprobe'),
-        executableResource('bin/yt-dlp')
+        runtimeManifest.ytDlp.executable,
+        runtimeManifest.ytDlp.script,
+        runtimeManifest.ytDlp.certificateBundle
       ])
     );
+    expect(runtimeManifest.ytDlp).toMatchObject({
+      mode: 'python',
+      version: '2026.08.29.232711',
+      pythonVersion: '3.13.15'
+    });
+    expect(runtimeManifest.resources.some(resource => (
+      resource.path.endsWith('.pyc')
+      || resource.path.includes('/__pycache__/')
+    ))).toBe(false);
+    const ytDlpStartup = packagedYtDlpVersion(runtimeRoot, runtimeManifest.ytDlp);
+    expect(ytDlpStartup.version).toBe(runtimeManifest.ytDlp.version);
+    expect(ytDlpStartup.elapsedMs).toBeLessThan(10_000);
+    expect(containsPythonBytecodeCache(
+      join(runtimeRoot, 'yt-dlp-runtime', 'python')
+    )).toBe(false);
     expect(runtimeManifest.resources.some(resource => resource.kind === 'model')).toBe(false);
     expect(runtimeManifest.resources.some(resource => /whisper/i.test(resource.path))).toBe(false);
     expect(hasWhisperKitDependency(fixture.root)).toBe(false);
@@ -103,6 +130,23 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         'stickman-video'
       ])
     );
+    const ytDlpStatus = await runtimeRequest<{
+      ytDlp: {
+        channel: string;
+        source: string;
+        currentVersion: string;
+        bundledVersion: string;
+        updateAvailable: boolean;
+      };
+    }>(currentApp.page, 'GET', '/creator/yt-dlp/status');
+    expect(ytDlpStatus.status).toBe(200);
+    expect(ytDlpStatus.body.ytDlp).toMatchObject({
+      channel: 'nightly',
+      source: 'bundled',
+      currentVersion: '2026.08.29.232711',
+      bundledVersion: '2026.08.29.232711',
+      updateAvailable: false
+    });
 
     const aliyunVoices = await runtimeRequest<{
       provider: string;
@@ -331,6 +375,83 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         candidateCount: 2
       }
     });
+    const downloadJob = await runtimeRequest<{
+      job: { id: string; revision: number };
+    }>(currentApp.page, 'POST', '/creator/jobs', {
+      projectId: createdProject.body.project.id,
+      templateId: 'video-download',
+      state: {
+        sourceUrl: 'https://www.youtube.com/watch?v=C4gJinSiuG4'
+      }
+    });
+    expect(downloadJob.status).toBe(201);
+    const probeStarted = await runtimeRequest<{
+      job: { revision: number };
+    }>(
+      currentApp.page,
+      'POST',
+      `/creator/jobs/${downloadJob.body.job.id}/actions`,
+      {
+        action: 'run-stage',
+        expectedRevision: downloadJob.body.job.revision,
+        input: {
+          stageId: 'probe'
+        }
+      }
+    );
+    expect(probeStarted.status).toBe(200);
+    await expect.poll(async () => {
+      const response = await runtimeRequest<{
+        job: {
+          stages: Array<{
+            stageId: string;
+            status: string;
+            errorCode: string | null;
+            errorMessage: string | null;
+          }>;
+        };
+      }>(
+        currentApp.page,
+        'GET',
+        `/creator/jobs/${downloadJob.body.job.id}`
+      );
+      const probe = response.body.job.stages.find(
+        stage => stage.stageId === 'probe'
+      );
+      if (probe?.status === 'failed') {
+        throw new Error(
+          `Packaged video probe failed: ${probe.errorCode} ${probe.errorMessage}`
+        );
+      }
+      return probe?.status;
+    }, { timeout: 60_000 }).toBe('succeeded');
+    const probedDownloadJob = await runtimeRequest<{
+      job: {
+        artifacts: Array<{
+          kind: string;
+          status: string;
+          metadata: Record<string, unknown>;
+        }>;
+      };
+    }>(
+      currentApp.page,
+      'GET',
+      `/creator/jobs/${downloadJob.body.job.id}`
+    );
+    expect(probedDownloadJob.body.job.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'download_probe',
+          status: 'completed',
+          metadata: expect.objectContaining({
+            id: 'C4gJinSiuG4'
+          })
+        })
+      ])
+    );
+    expect(containsPythonBytecodeCache(
+      join(runtimeRoot, 'yt-dlp-runtime', 'python')
+    )).toBe(false);
     expect(hasWhisperKitDependency(fixture.root)).toBe(false);
   } finally {
     await currentApp.page.evaluate(async () => {
@@ -517,6 +638,57 @@ function packagedRuntimeRoot(): string {
 
 function executableResource(path: string): string {
   return process.platform === 'win32' ? `${path}.exe` : path;
+}
+
+function packagedYtDlpVersion(
+  runtimeRoot: string,
+  descriptor: {
+    mode: 'python';
+    executable: string;
+    script: string;
+    certificateBundle: string;
+  }
+): {
+  version: string;
+  elapsedMs: number;
+} {
+  const executable = join(runtimeRoot, descriptor.executable);
+  const script = join(runtimeRoot, descriptor.script);
+  const certificateBundle = join(runtimeRoot, descriptor.certificateBundle);
+  const startedAt = performance.now();
+  const result = spawnSync(executable, ['-I', '-B', script, '--version'], {
+    cwd: runtimeRoot,
+    env: {
+      ...process.env,
+      SSL_CERT_FILE: certificateBundle
+    },
+    encoding: 'utf8',
+    timeout: 15_000,
+    windowsHide: true
+  });
+  const elapsedMs = performance.now() - startedAt;
+  if (result.status !== 0) {
+    throw new Error(
+      `Packaged yt-dlp failed: ${result.error?.message ?? result.stderr.trim()}`
+    );
+  }
+  return {
+    version: result.stdout.trim(),
+    elapsedMs
+  };
+}
+
+function containsPythonBytecodeCache(root: string): boolean {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.name === '__pycache__' || entry.name.endsWith('.pyc')) return true;
+    if (
+      entry.isDirectory()
+      && containsPythonBytecodeCache(join(root, entry.name))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function packagedCreatorAgentRuntimeFiles(): string[] {

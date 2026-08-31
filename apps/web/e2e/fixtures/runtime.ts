@@ -122,6 +122,12 @@ export const test = base.extend<TestFixtures>({
     mkdirSync(codexHome, { recursive: true });
     mkdirSync(stateDir, { recursive: true });
     mkdirSync(projectDir, { recursive: true });
+    const ytDlpStateDir = join(dataDir, 'creator-runtime', 'yt-dlp');
+    mkdirSync(ytDlpStateDir, { recursive: true });
+    writeFileSync(join(ytDlpStateDir, 'state.json'), JSON.stringify({
+      version: 1,
+      lastCheckAttemptAt: new Date().toISOString()
+    }));
     writeFileSync(configPath, JSON.stringify({
       invocations: [{ message: 'E2E 默认结果' }],
       threads: [],

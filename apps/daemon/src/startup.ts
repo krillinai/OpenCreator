@@ -21,6 +21,7 @@ export function resolveProductionServerEnvironment(
   | 'codexHome'
   | 'defaultCwd'
   | 'defaultProjectRoot'
+  | 'creatorYtDlpPath'
 > {
   assertEnterpriseEnvironmentUnused(env);
   return {
@@ -34,6 +35,10 @@ export function resolveProductionServerEnvironment(
     ...optionalEnvironmentValue(
       'defaultProjectRoot',
       env.OPENCREATOR_DEFAULT_PROJECT_ROOT
+    ),
+    ...optionalEnvironmentValue(
+      'creatorYtDlpPath',
+      env.OPENCREATOR_YT_DLP_PATH
     )
   };
 }

@@ -5,7 +5,9 @@ export function createAutoClipTemplate(): CreatorTemplateDefinition {
   return {
     id: 'auto-clip', version: 1, renderer: 'auto-clips',
     inputSchema: z.object({
+      sourceType: z.enum(['url', 'file']).default('url'),
       sourceUrl: z.string().default(''),
+      sourceArtifactId: z.string().nullable().default(null),
       formatId: z.string().default('bestvideo+bestaudio/best'),
       sourceLanguage: z.string().default('auto'),
       targetLanguage: z.string().default('zh-CN'),

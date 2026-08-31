@@ -24,12 +24,13 @@ export type AppRoute =
   | { view: 'capabilities' }
   | {
       view: 'settings';
-      tab?: 'ai-services';
+      tab?: SettingsRouteTab;
       section?: AiServicesSection;
     }
   | { view: 'files'; threadId?: string; path?: string };
 
 export type AiServicesSection = 'text' | 'transcription' | 'tts' | 'image' | 'video';
+export type SettingsRouteTab = 'ai-services' | 'local-components';
 
 export function parseRoute(hash: string): AppRoute {
   const [path = '', query = ''] = hash.split('?', 2);
@@ -106,7 +107,11 @@ export function parseRoute(hash: string): AppRoute {
     }
     return {
       view: 'settings',
-      ...(tab === 'ai-services' || section !== undefined ? { tab: 'ai-services' as const } : {}),
+      ...(tab === 'local-components'
+        ? { tab: 'local-components' as const }
+        : tab === 'ai-services' || section !== undefined
+          ? { tab: 'ai-services' as const }
+          : {}),
       ...(section === undefined ? {} : { section })
     };
   }
@@ -171,8 +176,8 @@ export function formatRoute(route: AppRoute): string {
     case 'capabilities':
       return '#/capabilities';
     case 'settings': {
-      if (route.tab !== 'ai-services') return '#/settings';
-      const query = new URLSearchParams({ tab: 'ai-services' });
+      if (route.tab === undefined) return '#/settings';
+      const query = new URLSearchParams({ tab: route.tab });
       if (route.section !== undefined) query.set('section', route.section);
       return `#/settings?${query.toString()}`;
     }

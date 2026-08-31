@@ -34,6 +34,7 @@ describe('KrillinAI CLI runner', () => {
     const source = join(jobsRoot, 'job-1', 'imports', 'source.mp4');
     const cli = join(resourceRoot, 'bin', process.platform === 'win32' ? 'krillinai-cli.exe' : 'krillinai-cli');
     const ffmpeg = join(resourceRoot, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    const ytDlp = join(tempDir, 'managed-yt-dlp');
     const whisperKit = join(
       dependencyRoot,
       'bin',
@@ -46,6 +47,7 @@ describe('KrillinAI CLI runner', () => {
     writeFileSync(source, 'fixture-video');
     writeFileSync(cli, `#!${process.execPath}\n${FAKE_CLI}`);
     writeFileSync(ffmpeg, 'fixture-ffmpeg');
+    writeFileSync(ytDlp, 'fixture-yt-dlp');
     writeFileSync(whisperKit, 'fixture-whisperkit');
     if (process.platform !== 'win32') chmodSync(cli, 0o755);
 
@@ -95,6 +97,13 @@ describe('KrillinAI CLI runner', () => {
         targetLanguage: 'zh_cn',
         captionSource: 'any',
         bilingualTop: false
+      },
+      ytDlpRuntime: {
+        version: '2026.08.31.120000',
+        executable: process.execPath,
+        prefixArgs: ['-I', '-B', ytDlp],
+        env: { SSL_CERT_FILE: '/tmp/opencreator-cacert.pem' },
+        script: ytDlp
       }
     });
 
@@ -121,7 +130,8 @@ describe('KrillinAI CLI runner', () => {
       bin: join(realpathSync(workdir), '.krillin-cli', 'bin'),
       models: realpathSync(join(dependencyRoot, 'models')),
       ffmpeg: realpathSync(ffmpeg),
-      whisperKit: realpathSync(whisperKit)
+      whisperKit: realpathSync(whisperKit),
+      ytDlp: realpathSync(ytDlp)
     });
     expect(existsSync(join(workdir, '.krillin-cli'))).toBe(false);
     expect(existsSync(join(dependencyRoot, 'bin', '.yt-dlp-last-check'))).toBe(true);
@@ -411,7 +421,12 @@ if (args[0] === 'tts') {
     bin: realpathSync(join(process.cwd(), 'bin')),
     models: realpathSync(join(process.cwd(), 'models')),
     ffmpeg: realpathSync(join(process.env.KRILLINAI_RESOURCE_ROOT, 'bin', 'ffmpeg')),
-    whisperKit: realpathSync(join(process.env.KRILLINAI_RESOURCE_ROOT, 'bin', 'whisperkit-cli'))
+    whisperKit: realpathSync(join(process.env.KRILLINAI_RESOURCE_ROOT, 'bin', 'whisperkit-cli')),
+    ytDlp: realpathSync(join(
+      process.env.KRILLINAI_RESOURCE_ROOT,
+      'bin',
+      process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
+    ))
   }));
   outputs = {
     origin_video: join(workdir, 'origin_video.mp4'),

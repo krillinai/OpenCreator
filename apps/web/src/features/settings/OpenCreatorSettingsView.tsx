@@ -28,6 +28,8 @@ import {
   type MemoryScopeOption,
   type MemorySettingsService
 } from './MemorySettingsView.js';
+import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
+import { RuntimeComponentsSettingsView } from './RuntimeComponentsSettingsView.js';
 import './settings-management.css';
 
 export type RuntimeStatus = {
@@ -65,13 +67,23 @@ export type OpenCreatorSettingsViewProps = {
   memoryService?: MemorySettingsService | null;
   memoryProjects?: MemoryScopeOption[];
   memoryThreads?: MemoryScopeOption[];
+  runtimeDependencies?: RuntimeDependenciesController;
   codexStatus?: CodexStatusResponse;
-  initialTab?: 'general' | 'ai-services';
+  initialTab?: 'general' | 'ai-services' | 'local-components';
   initialSection?: CreatorServicesSection;
   onBack(): void;
 };
 
-type SettingsTab = 'general' | 'ai-services' | 'plugins' | 'memory' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
+type SettingsTab =
+  | 'general'
+  | 'ai-services'
+  | 'local-components'
+  | 'plugins'
+  | 'memory'
+  | 'profiles'
+  | 'cleanup'
+  | 'diagnostics'
+  | 'about';
 
 export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => props.initialTab ?? 'general');
@@ -79,6 +91,7 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: 'general', label: t('settings.tab.general') },
     { id: 'ai-services', label: t('settings.tab.aiServices') },
+    { id: 'local-components', label: t('settings.tab.runtimeComponents') },
     { id: 'plugins', label: t('settings.tab.plugins') },
     { id: 'memory', label: t('settings.tab.memory') },
     { id: 'profiles', label: t('settings.tab.profiles') },
@@ -86,6 +99,10 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
     { id: 'diagnostics', label: t('settings.tab.diagnostics') },
     { id: 'about', label: t('settings.tab.about') }
   ];
+
+  useEffect(() => {
+    if (props.initialTab !== undefined) setActiveTab(props.initialTab);
+  }, [props.initialTab]);
 
   return (
     <div className="settings-page">
@@ -112,6 +129,13 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
+              {tab.id === 'local-components'
+                && props.runtimeDependencies?.ytDlpStatus?.updateAvailable ? (
+                  <span
+                    className="settings-nav-update-dot"
+                    aria-label={t('settings.runtimeComponents.updateAvailable')}
+                  />
+                ) : null}
             </button>
           ))}
         </nav>
@@ -140,6 +164,12 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
             service={props.creatorServicesService ?? null}
             modelService={props.codexRuntimeService ?? null}
             initialSection={props.initialSection}
+          />
+        ) : null}
+        {activeTab === 'local-components' && props.runtimeDependencies !== undefined ? (
+          <RuntimeComponentsSettingsView
+            connected={props.runtimeStatus.connected}
+            controller={props.runtimeDependencies}
           />
         ) : null}
         {activeTab === 'plugins' ? <PluginSettings runtimeStatus={props.runtimeStatus} /> : null}

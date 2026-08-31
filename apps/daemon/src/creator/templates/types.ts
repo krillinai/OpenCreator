@@ -10,6 +10,7 @@ export type CreatorTemplateStage = {
   executor: string;
   dependsOn?: string[];
   optional?: boolean;
+  completesJob?: boolean;
   resultVersionPolicy?: 'snapshot' | 'none';
   invalidateDependentArtifacts?: boolean;
   allowedJobStatuses: CreatorJobStatus[];

@@ -51,6 +51,12 @@ describe('creator web service', () => {
       }),
       expectedRevision: 8
     });
+    await service.importArtifact('job_1', {
+      expectedRevision: 9,
+      sourceJobId: 'source job',
+      artifactId: 'artifact source',
+      kind: 'source_video'
+    });
     await service.openProjectCover('job_1');
     await service.openArtifact('job_1', 'artifact 1');
 
@@ -82,6 +88,16 @@ describe('creator web service', () => {
       '/creator/jobs/job_1/reference-image?expectedRevision=8&fileName=reference.png&mime=image%2Fpng&lastModified=456',
       expect.any(File),
       'application/vnd.opencreator.creator-reference-image'
+    );
+    expect(client.post).toHaveBeenNthCalledWith(
+      9,
+      '/creator/jobs/job_1/import-artifact',
+      {
+        expectedRevision: 9,
+        sourceJobId: 'source job',
+        artifactId: 'artifact source',
+        kind: 'source_video'
+      }
     );
     expect(client.rawGet).toHaveBeenCalledWith('/creator/jobs/job_1/cover');
     expect(client.rawGet).toHaveBeenCalledWith('/creator/jobs/job_1/artifacts/artifact%201/content');

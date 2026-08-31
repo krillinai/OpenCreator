@@ -1493,6 +1493,99 @@
   white-space: nowrap;
 }
 
+.video-download-runtime-notice {
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.video-download-runtime-notice[data-tone="warning"] {
+  border-color: color-mix(in srgb, #b7791f 36%, var(--border));
+  background: color-mix(in srgb, #b7791f 6%, var(--surface));
+}
+
+.video-download-runtime-notice[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+}
+
+.video-download-runtime-notice > span {
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+.video-download-runtime-notice[data-tone="warning"] > span {
+  color: #9a6517;
+}
+
+.video-download-runtime-notice[data-tone="danger"] > span {
+  color: var(--danger);
+}
+
+.video-download-runtime-notice > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.video-download-runtime-notice strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.video-download-runtime-notice small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.video-download-runtime-notice button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.video-download-runtime-notice button:disabled {
+  cursor: wait;
+  opacity: 0.64;
+}
+
+.video-download-runtime-notice > .video-download-runtime-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+@media (max-width: 700px) {
+  .video-download-runtime-notice {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .video-download-runtime-notice > .video-download-runtime-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
 .creator-tool-field {
   min-width: 0;
   display: grid;
@@ -3261,6 +3354,17 @@
   border-radius: 7px;
 }
 
+.video-download-preview-placeholder {
+  width: 180px;
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
 .video-download-preview span {
   color: var(--accent);
   font-size: 11px;
@@ -3315,6 +3419,10 @@
   color: var(--accent);
 }
 
+.video-download-options > label[data-downloaded="true"] {
+  background: color-mix(in srgb, var(--success) 5%, transparent);
+}
+
 .video-download-options button {
   height: 32px;
   display: inline-flex;
@@ -3328,6 +3436,27 @@
   font-size: 12px;
 }
 
+.video-download-options button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.video-download-option-complete {
+  height: 32px;
+  display: inline-flex !important;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 5px !important;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--success) 34%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .download-result-workspace {
   height: auto;
   min-height: 480px;
@@ -3336,6 +3465,72 @@
 .download-record-list {
   display: grid;
   gap: 8px;
+}
+
+.video-result-file-row > .video-download-file-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  gap: 6px;
+}
+
+.video-download-file-actions button {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.video-download-progress-row[data-status="running"] {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+
+.video-download-progress-row[data-status="failed"] {
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+}
+
+.video-download-progress-row[data-status="failed"] > span:first-child,
+.video-download-progress-row[data-status="failed"] > .video-download-row-status {
+  color: var(--danger);
+}
+
+.video-download-row-progress {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+
+.video-download-row-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.video-download-row-progress[data-indeterminate="true"] > span,
+.creator-collaboration-stage-progress[data-indeterminate="true"] > span {
+  width: 34%;
+  animation: creator-progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+.video-result-file-row > .video-download-row-status {
+  width: auto;
+  height: auto;
+  display: block;
+  justify-self: end;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .stickman-character-picker {
@@ -6808,6 +7003,25 @@
   border-radius: inherit;
   background: var(--accent);
   transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes creator-progress-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-download-row-progress[data-indeterminate="true"] > span,
+  .creator-collaboration-stage-progress[data-indeterminate="true"] > span {
+    width: 100%;
+    animation: none;
+    opacity: 0.45;
+  }
 }
 
 .creator-collaboration-stage[data-status="failed"] .creator-collaboration-stage-progress > span {

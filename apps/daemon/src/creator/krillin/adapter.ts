@@ -31,6 +31,7 @@ import { createKrillinCliExecutionPlan } from './execution-plan.js';
 import { readKrillinRuntimeManifest, resolveInside } from './manifest.js';
 import type { KrillinRuntimeHost } from './runtime-host.js';
 import { KrillinServiceError, type KrillinServiceClient } from './service-client.js';
+import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
 
 export function createKrillinExecutor(input: {
   resourceRoot: string;
@@ -38,6 +39,7 @@ export function createKrillinExecutor(input: {
   dependencyLoader: KrillinDependencyLoader;
   runtimeHost: KrillinRuntimeHost;
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
+  getYtDlpRuntime?(): YtDlpRuntime | undefined;
   now?: () => number;
   inactivityTimeoutMs?: number;
   stageTimeoutMs?: number;
@@ -80,7 +82,8 @@ export function createKrillinExecutor(input: {
                 stage,
                 config: preflight.config,
                 artifacts: materializedArtifacts,
-                options: attempt.options
+                options: attempt.options,
+                ytDlpRuntime: input.getYtDlpRuntime?.()
               });
               break;
             } catch (error) {

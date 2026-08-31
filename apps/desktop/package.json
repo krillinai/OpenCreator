@@ -17,6 +17,7 @@
     "install:creator-runtime-dependencies": "node scripts/install-creator-runtime-dependencies.mjs",
     "prepare:creator-runtime": "node scripts/prepare-creator-runtime.mjs",
     "package": "node scripts/package-release.mjs --dir",
+    "package:signed": "node scripts/package-release.mjs --dir --signed",
     "dist": "node scripts/package-release.mjs --dist",
     "release": "node scripts/package-release.mjs --release",
     "verify:release-tag": "node scripts/verify-desktop-release-tag.mjs",

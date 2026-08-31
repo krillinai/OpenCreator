@@ -129,9 +129,7 @@ export default function CreatorCollaborationPanel(props: {
     [session?.job.stages]
   );
   const activeTaskStage = useMemo(
-    () => [...(session?.job.stages ?? [])].reverse().find(stage => (
-      stage.status === 'queued' || stage.status === 'running'
-    )),
+    () => activeStageRun(session?.job.stages ?? []),
     [session?.job.stages]
   );
   const latestTaskStage = session?.job.stages.at(-1);
@@ -409,7 +407,9 @@ function CollaborationStageView(props: {
   const percent = progress.percent === null
     ? null
     : Math.max(0, Math.min(100, Math.round(progress.percent)));
-  const hasProgress = percent !== null;
+  const indeterminate = stage.status === 'running'
+    && progress.indeterminate === true;
+  const hasProgress = percent !== null || indeterminate;
   return (
     <article className="creator-collaboration-stage" data-status={stage.status}>
       <header>
@@ -419,7 +419,7 @@ function CollaborationStageView(props: {
           <strong>{stageProgressText(stage, progress, adapter, l)}</strong>
         </div>
         <div className="creator-collaboration-stage-controls">
-          {hasProgress ? <b>{percent}%</b> : null}
+          {percent !== null ? <b>{percent}%</b> : null}
           {props.onCancel !== undefined ? (
             <button
               type="button"
@@ -447,14 +447,19 @@ function CollaborationStageView(props: {
       {hasProgress ? (
         <div
           className="creator-collaboration-stage-progress"
+          data-indeterminate={indeterminate || undefined}
           role="progressbar"
           aria-label={l(`${label}进度`, `${label} progress`)}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={percent}
-          aria-valuetext={stageProgressAriaText(stage, percent, l)}
+          aria-valuenow={percent ?? undefined}
+          aria-valuetext={indeterminate
+            ? stageProgressText(stage, progress, adapter, l)
+            : percent === null
+              ? undefined
+              : stageProgressAriaText(stage, percent, l)}
         >
-          <span style={{ width: `${percent}%` }} />
+          <span style={percent === null ? undefined : { width: `${percent}%` }} />
         </div>
       ) : null}
     </article>
@@ -614,14 +619,25 @@ function actorLabel(
 }
 
 function latestStageRuns(stages: CreatorStageRun[]): CreatorStageRun[] {
-  const latestByStage = new Map<string, CreatorStageRun>();
+  const runsByStage = new Map<string, CreatorStageRun[]>();
   for (const stage of stages) {
-    latestByStage.set(stage.stageId, stage);
+    const runs = runsByStage.get(stage.stageId) ?? [];
+    runs.push(stage);
+    runsByStage.set(stage.stageId, runs);
   }
-  return [...latestByStage.values()].sort((left, right) => (
+  return [...runsByStage.values()].map(runs => (
+    [...runs].reverse().find(stage => stage.status === 'running')
+      ?? runs.at(-1)!
+  )).sort((left, right) => (
     (left.startedAt ?? '').localeCompare(right.startedAt ?? '')
     || left.stageId.localeCompare(right.stageId)
   ));
+}
+
+function activeStageRun(stages: CreatorStageRun[]): CreatorStageRun | undefined {
+  const latestFirst = [...stages].reverse();
+  return latestFirst.find(stage => stage.status === 'running')
+    ?? latestFirst.find(stage => stage.status === 'queued');
 }
 
 function stageActor(
@@ -651,7 +667,11 @@ function stageProgressText(
   )) return l('正在终止当前阶段', 'Stopping current stage');
   if (stage.status === 'queued') return l('等待执行', 'Queued');
   if (stage.status === 'succeeded') return l('已完成，结果已同步到工作台', 'Completed and synced to Workbench');
-  if (stage.status === 'failed') return stage.errorMessage ?? l('执行失败', 'Failed');
+  if (stage.status === 'failed') {
+    return adapter.failedProgressText?.(stage, l)
+      ?? stage.errorMessage
+      ?? l('执行失败', 'Failed');
+  }
   if (stage.status === 'interrupted') return l('已中断，可继续', 'Interrupted. Ready to resume');
   if (stage.status === 'canceled') return l('已终止，可继续', 'Stopped. Ready to resume');
   const formatted = adapter.runningProgressText?.(stage, progress, l);

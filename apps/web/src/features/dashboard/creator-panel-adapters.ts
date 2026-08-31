@@ -13,6 +13,7 @@ export type NormalizedCreatorActivity = {
 
 export type CreatorStageProgressView = {
   percent: number | null;
+  indeterminate?: boolean;
   phase: string | null;
   message: string | null;
   completed: number | null;
@@ -34,6 +35,10 @@ export type CreatorPanelAdapter = {
   runningProgressText?(
     stage: CreatorStageRun,
     progress: CreatorStageProgressView,
+    l: CreatorPanelLocalize
+  ): string | null;
+  failedProgressText?(
+    stage: CreatorStageRun,
     l: CreatorPanelLocalize
   ): string | null;
 };
@@ -172,8 +177,83 @@ export const coverPanelAdapter: CreatorPanelAdapter = {
   }
 };
 
+export const videoDownloadPanelAdapter: CreatorPanelAdapter = {
+  id: 'video-download',
+  composerPlaceholder: l => l(
+    '询问解析或下载状态，或描述要下载的视频和音频规格',
+    'Ask about analysis or download status, or describe the video or audio format you need'
+  ),
+  stageLabel(stageId, l) {
+    if (stageId === 'probe') return l('解析视频信息', 'Analyze video information');
+    if (stageId === 'download') return l('下载到项目', 'Download to project');
+    return l('视频下载任务', 'Video download task');
+  },
+  phaseLabel(phase, l) {
+    const labels: Record<string, string> = {
+      validating: l('检查视频链接', 'Checking the video URL'),
+      probing_source: l('读取视频信息与可用规格', 'Reading video information and formats'),
+      preparing_download: l('准备下载规格', 'Preparing the selected format'),
+      downloading: l('下载媒体文件', 'Downloading the media file'),
+      merging_media: l('合并视频与音频', 'Merging video and audio'),
+      extracting_audio: l('转换 MP3 音频', 'Converting MP3 audio'),
+      normalizing_media: l('转换为本机兼容格式', 'Converting for local playback'),
+      validating_output: l('检查下载文件', 'Checking the downloaded file'),
+      completed: l('文件已保存到项目', 'File saved to the project')
+    };
+    return labels[phase] ?? genericPhaseLabel(phase, l);
+  },
+  activityStageId: readActivityStageId,
+  normalizeActivity(activity, l) {
+    if (activity.action === 'run-stage') {
+      const stageId = readActivityStageId(activity);
+      if (stageId === 'probe') {
+        return { label: l('开始解析视频链接', 'Started analyzing the video URL'), fields: [] };
+      }
+      if (stageId === 'download') {
+        return { label: l('开始下载到项目', 'Started downloading to the project'), fields: [] };
+      }
+    }
+    return normalizeCommonActivity(
+      activity,
+      l,
+      videoDownloadPanelAdapter,
+      {},
+      videoDownloadFieldLabel
+    );
+  },
+  readStageProgress(stage) {
+    const progress = readStandardProgress(stage);
+    if (stage.stageId === 'download') {
+      return {
+        ...progress,
+        percent: null,
+        indeterminate: false
+      };
+    }
+    return progress.phase === 'validating'
+      || progress.phase === 'probing_source'
+      ? { ...progress, percent: null, indeterminate: true }
+      : progress;
+  },
+  runningProgressText(_stage, progress, l) {
+    return progress.phase === null
+      ? null
+      : videoDownloadPanelAdapter.phaseLabel(progress.phase, l);
+  },
+  failedProgressText(stage, l) {
+    if (stage.errorCode === 'network_unavailable') {
+      return l(
+        '无法连接视频平台，请检查网络或代理设置后重试',
+        'Unable to connect to the video platform. Check the network or proxy settings and try again.'
+      );
+    }
+    return null;
+  }
+};
+
 export function creatorPanelAdapterFor(templateId: string): CreatorPanelAdapter {
   if (templateId === 'video-translation') return videoTranslationPanelAdapter;
+  if (templateId === 'video-download') return videoDownloadPanelAdapter;
   if (templateId === 'cover') return coverPanelAdapter;
   return genericAdapter;
 }
@@ -265,6 +345,19 @@ function coverFieldLabel(
     quality: l('生成质量', 'Generation quality'),
     provider: l('图像服务', 'Image provider'),
     referenceImageArtifactId: l('参考图', 'Reference image')
+  };
+  return labels[field] ?? null;
+}
+
+function videoDownloadFieldLabel(
+  field: string,
+  l: CreatorPanelLocalize
+): string | null {
+  const labels: Record<string, string> = {
+    sourceUrl: l('视频链接', 'Video URL'),
+    mediaType: l('媒体类型', 'Media type'),
+    selectedOptionId: l('下载规格', 'Download format'),
+    formatId: l('下载规格', 'Download format')
   };
   return labels[field] ?? null;
 }

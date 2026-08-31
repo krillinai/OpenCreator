@@ -80,6 +80,11 @@ export default function AutoClipWorkspace(props: {
   const draftInitializedRef = useRef(false);
   const [videoUrl, setVideoUrl] = useState(() => typeof session?.state.sourceUrl === 'string' ? session.state.sourceUrl : '');
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [sourceArtifactId, setSourceArtifactId] = useState(
+    () => typeof session?.state.sourceArtifactId === 'string'
+      ? session.state.sourceArtifactId
+      : ''
+  );
   const [focus, setFocus] = useState<AnalysisFocus>(() => session?.state.focus === 'viral' || session?.state.focus === 'knowledge' ? session.state.focus : 'balanced');
   const [duration, setDuration] = useState<ClipDuration>(() => session?.state.duration === '15-30' || session?.state.duration === '60-90' ? session.state.duration : '30-60');
   const [clipCount, setClipCount] = useState(() => typeof session?.state.clipCount === 'number' ? session.state.clipCount : 10);
@@ -94,7 +99,19 @@ export default function AutoClipWorkspace(props: {
   const [resultTab, setResultTab] = useState<AutoClipResultTab>('candidates');
   const [resultVersion, setResultVersion] = useState(0);
   const [resultVersions, setResultVersions] = useState<AutoClipResultVersion[]>([]);
-  const hasSource = videoFile !== null || isValidUrl(videoUrl);
+  const importedSourceArtifact = session?.job.artifacts.find(artifact => (
+    artifact.id === sourceArtifactId
+    && artifact.kind === 'source_video'
+    && artifact.status === 'completed'
+  ));
+  const importedSourceName = importedSourceArtifact === undefined
+    ? ''
+    : typeof importedSourceArtifact.metadata.fileName === 'string'
+      ? importedSourceArtifact.metadata.fileName
+      : l('项目视频', 'Project video');
+  const hasSource = importedSourceArtifact !== undefined
+    || videoFile !== null
+    || isValidUrl(videoUrl);
   const selectedResult = resultVersions.find(version => version.value === resultVersion);
   const resultClips = useMemo(
     () => clips.slice(0, selectedResult?.clipCount ?? clipCount),
@@ -102,7 +119,15 @@ export default function AutoClipWorkspace(props: {
   );
   const orderedClips = useMemo(() => [...resultClips].sort(sort === 'score' ? (left, right) => totalScore(right) - totalScore(left) : (left, right) => left.id - right.id), [resultClips, sort]);
   const currentClip = resultClips.find(clip => clip.id === activeClip) ?? resultClips[0] ?? clips[0]!;
-  const signature = createAnalysisSignature({ videoUrl, videoFile, focus, duration, clipCount, sourceOrientation });
+  const signature = createAnalysisSignature({
+    videoUrl,
+    videoFile,
+    sourceArtifactId,
+    focus,
+    duration,
+    clipCount,
+    sourceOrientation
+  });
   const hasPendingChanges = selectedResult !== undefined && selectedResult.signature !== signature;
   const nextVersion = resultVersions.reduce((highest, version) => Math.max(highest, version.value), 0) + 1;
 
@@ -110,6 +135,8 @@ export default function AutoClipWorkspace(props: {
     if (session === null) return;
     session.updateDraft({
       sourceUrl: videoUrl,
+      sourceType: sourceArtifactId ? 'file' : videoFile ? 'file' : 'url',
+      sourceArtifactId: sourceArtifactId || null,
       focus,
       duration,
       clipCount,
@@ -117,7 +144,7 @@ export default function AutoClipWorkspace(props: {
       selectedCandidateIds: selected.map(String)
     }, { persist: draftInitializedRef.current });
     draftInitializedRef.current = true;
-  }, [clipCount, duration, focus, selected, session?.updateDraft, sourceOrientation, videoUrl]);
+  }, [clipCount, duration, focus, selected, session?.updateDraft, sourceArtifactId, sourceOrientation, videoFile, videoUrl]);
 
   const steps = [l('添加视频', 'Add video'), l('分析设置', 'Analysis settings'), l('选择与导出', 'Select and export')];
 
@@ -133,7 +160,10 @@ export default function AutoClipWorkspace(props: {
 
   function chooseVideo(file: File | null) {
     setVideoFile(file);
-    if (file) setVideoUrl('');
+    if (file) {
+      setVideoUrl('');
+      setSourceArtifactId('');
+    }
     setSourceOrientation('landscape');
     setNotice('');
   }
@@ -141,6 +171,7 @@ export default function AutoClipWorkspace(props: {
   function clearCurrentSource() {
     setVideoFile(null);
     setVideoUrl('');
+    setSourceArtifactId('');
     setSourceOrientation('landscape');
     setNotice('');
   }
@@ -152,12 +183,24 @@ export default function AutoClipWorkspace(props: {
   function analyze(sourceOverride?: { url: string; file: File | null }) {
     const nextUrl = sourceOverride?.url ?? videoUrl;
     const nextFile = sourceOverride?.file ?? videoFile;
-    if (nextFile === null && !isValidUrl(nextUrl)) {
+    if (
+      nextFile === null
+      && !isValidUrl(nextUrl)
+      && importedSourceArtifact === undefined
+    ) {
       setCurrentStep(0);
       setNotice(l('请先上传视频或填写公开视频链接', 'Upload a video or enter a public video link first'));
       return false;
     }
-    const nextSignature = createAnalysisSignature({ videoUrl: nextUrl, videoFile: nextFile, focus, duration, clipCount, sourceOrientation });
+    const nextSignature = createAnalysisSignature({
+      videoUrl: nextUrl,
+      videoFile: nextFile,
+      sourceArtifactId,
+      focus,
+      duration,
+      clipCount,
+      sourceOrientation
+    });
     if (session !== null) {
       void session.applyAction({ actor: 'user', action: 'run-stage', input: { stageId: 'analyze' } });
     }
@@ -282,22 +325,44 @@ export default function AutoClipWorkspace(props: {
 
         {currentStep === 0 ? (
           <>
-            <VideoSourceInput
-              file={videoFile}
-              sourceType={videoFile ? 'file' : 'url'}
-              url={videoUrl}
-              hasSource={hasSource}
-              metadataService={props.videoMetadataService}
-              onFileChange={chooseVideo}
-              onUrlChange={url => {
-                setVideoUrl(url);
-                setVideoFile(null);
-                setSourceOrientation('landscape');
-                setNotice('');
-              }}
-              onClear={clearCurrentSource}
-              onDimensions={updateSourceOrientation}
-            />
+            {importedSourceArtifact === undefined ? (
+              <VideoSourceInput
+                file={videoFile}
+                sourceType={videoFile ? 'file' : 'url'}
+                url={videoUrl}
+                hasSource={hasSource}
+                metadataService={props.videoMetadataService}
+                onFileChange={chooseVideo}
+                onUrlChange={url => {
+                  setVideoUrl(url);
+                  setVideoFile(null);
+                  setSourceArtifactId('');
+                  setSourceOrientation('landscape');
+                  setNotice('');
+                }}
+                onClear={clearCurrentSource}
+                onDimensions={updateSourceOrientation}
+              />
+            ) : (
+              <section className="creator-tool-panel" aria-labelledby="auto-clip-imported-source-title">
+                <div className="creator-tool-panel-heading">
+                  <div>
+                    <h2 id="auto-clip-imported-source-title">{l('项目视频', 'Project video')}</h2>
+                    <p>{l('已从视频下载任务导入，无需重新访问源网站', 'Imported from a video download job without fetching the source website again')}</p>
+                  </div>
+                </div>
+                <div className="video-result-file-row">
+                  <span><FileVideo size={18} strokeWidth={1.7} /></span>
+                  <div>
+                    <strong>{importedSourceName}</strong>
+                    <small>{l('已关联到当前自动剪辑任务', 'Attached to this auto clip job')}</small>
+                  </div>
+                  <button type="button" onClick={clearCurrentSource}>
+                    {l('更换', 'Change')}
+                  </button>
+                </div>
+              </section>
+            )}
             <div className="creator-tool-actions"><button className="creator-tool-primary" type="button" disabled={!hasSource} onClick={continueToSettings}>{l('下一步：分析设置', 'Next: Analysis settings')}</button></div>
           </>
         ) : null}
@@ -317,7 +382,7 @@ export default function AutoClipWorkspace(props: {
             <CreatorTaskSummary
               sourceIcon={FileVideo}
               sourceLabel={l('视频来源', 'Video source')}
-              sourceValue={videoFile?.name ?? videoUrl}
+              sourceValue={videoFile?.name ?? (importedSourceName || videoUrl)}
               items={[
                 { label: l('内容偏好', 'Content focus'), value: focusLabel(focus, l) },
                 { label: l('目标时长', 'Target duration'), value: `${duration} ${l('秒', 'sec')}` },
@@ -431,6 +496,6 @@ function clampClipCount(value: number) {
   return Math.min(clips.length, Math.max(1, Math.round(value)));
 }
 
-function createAnalysisSignature(input: { videoUrl: string; videoFile: File | null; focus: AnalysisFocus; duration: ClipDuration; clipCount: number; sourceOrientation: VideoOrientation }) {
-  return JSON.stringify({ url: input.videoUrl.trim(), file: input.videoFile ? { name: input.videoFile.name, size: input.videoFile.size, type: input.videoFile.type, lastModified: input.videoFile.lastModified } : null, focus: input.focus, duration: input.duration, clipCount: input.clipCount, sourceOrientation: input.sourceOrientation });
+function createAnalysisSignature(input: { videoUrl: string; videoFile: File | null; sourceArtifactId: string; focus: AnalysisFocus; duration: ClipDuration; clipCount: number; sourceOrientation: VideoOrientation }) {
+  return JSON.stringify({ url: input.videoUrl.trim(), sourceArtifactId: input.sourceArtifactId, file: input.videoFile ? { name: input.videoFile.name, size: input.videoFile.size, type: input.videoFile.type, lastModified: input.videoFile.lastModified } : null, focus: input.focus, duration: input.duration, clipCount: input.clipCount, sourceOrientation: input.sourceOrientation });
 }

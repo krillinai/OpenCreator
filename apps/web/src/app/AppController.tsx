@@ -157,6 +157,7 @@ import {
 import { createNotificationService } from '../services/notification-service.js';
 import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
+import { createRuntimeDependencyService } from '../services/runtime-dependency-service.js';
 import { createScheduleService } from '../services/schedule-service.js';
 import { createSearchService } from '../services/search-service.js';
 import { createSmartDubbingService } from '../services/smart-dubbing-service.js';
@@ -184,6 +185,7 @@ import {
 } from '../styles/color-mode.js';
 import { initialAppState, reduceAppState, type ActiveView, type AppState } from './app-state.js';
 import { formatRoute, type AppRoute } from './routes.js';
+import { useRuntimeDependencies } from './use-runtime-dependencies.js';
 
 type AppFileService = {
   listTree(): Promise<FileTreeNode[]>;
@@ -621,6 +623,14 @@ export function AppController(props: AppControllerProps) {
     () => runtimeClient === null ? null : createCreatorService(runtimeClient),
     [runtimeClient]
   );
+  const runtimeDependencyService = useMemo(
+    () => runtimeClient === null ? null : createRuntimeDependencyService(runtimeClient),
+    [runtimeClient]
+  );
+  const runtimeDependencies = useRuntimeDependencies({
+    connected: connectionState.status === 'connected',
+    service: runtimeDependencyService
+  });
   const memoryService = useMemo(
     () => runtimeClient === null ? null : createMemoryService(runtimeClient),
     [runtimeClient]
@@ -5092,11 +5102,16 @@ export function AppController(props: AppControllerProps) {
       onWorkspaceModeChange={handleCreatorWorkspaceModeChange}
       projectId={state.currentProjectId}
       creatorService={creatorService}
+      runtimeDependencies={runtimeDependencies}
       creatorServicesService={creatorServicesService}
       smartDubbingService={smartDubbingService}
       workspace={props.route.view === 'workbench' ? props.route.tool : undefined}
       jobId={props.route.view === 'workbench' ? props.route.jobId : undefined}
       onJobCreated={rememberCreatorJob}
+      onOpenRuntimeComponents={() => {
+        dispatch({ type: 'open_settings' });
+        navigateToRoute({ view: 'settings', tab: 'local-components' });
+      }}
       onWorkspaceNavigate={(workspace, jobId, options) => navigateToRoute({
         view: 'workbench',
         ...(workspace === null ? {} : { tool: workspace }),
@@ -5249,6 +5264,7 @@ export function AppController(props: AppControllerProps) {
       memoryService={memoryService}
       memoryProjects={memoryProjectOptions}
       memoryThreads={memoryThreadOptions}
+      runtimeDependencies={runtimeDependencies}
       codexStatus={connectionState.status === 'connected' ? connectionState.codexStatus : undefined}
       initialTab={props.route.view === 'settings' ? props.route.tab : undefined}
       initialSection={props.route.view === 'settings' ? props.route.section : undefined}

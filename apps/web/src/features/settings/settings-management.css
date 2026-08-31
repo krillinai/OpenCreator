@@ -314,6 +314,146 @@
   animation: settings-spin 900ms linear infinite;
 }
 
+.runtime-component-empty {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.runtime-component-item {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.runtime-component-heading,
+.runtime-component-footer {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.runtime-component-heading > div,
+.runtime-component-footer > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.runtime-component-heading > svg[data-status="current"] {
+  color: var(--success);
+}
+
+.runtime-component-heading > svg[data-status="update"] {
+  color: var(--accent);
+}
+
+.runtime-component-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.runtime-component-title h2 {
+  padding: 0;
+  font-size: 16px;
+}
+
+.runtime-component-title span {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.runtime-component-title span[data-status="current"] {
+  border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+  color: var(--success);
+}
+
+.runtime-component-title span[data-status="update"] {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  color: var(--accent);
+}
+
+.runtime-component-details {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--border);
+}
+
+.runtime-component-details > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  background: var(--surface-2);
+}
+
+.runtime-component-details dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.runtime-component-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: 12px/1.4 var(--font-mono);
+}
+
+.runtime-component-footer {
+  align-items: center;
+}
+
+.runtime-component-footer strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.runtime-component-footer small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.runtime-component-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 700px) {
+  .runtime-component-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .runtime-component-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .runtime-component-actions {
+    flex-wrap: wrap;
+  }
+}
+
 .cleanup-controls {
   min-width: 0;
   display: flex;

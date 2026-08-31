@@ -208,7 +208,7 @@ export function createCreatorStageRunner(input: {
         updateJob(
           input.repository,
           latest,
-          'completed',
+          stage.completesJob === false ? 'draft' : 'completed',
           { currentStage: stageId, ...snapshotPatch },
           input.onJobChanged
         );

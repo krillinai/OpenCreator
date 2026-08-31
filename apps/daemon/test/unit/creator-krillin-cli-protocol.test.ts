@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   createKrillinCliEnvironment,
@@ -20,11 +21,21 @@ describe('KrillinAI CLI protocol', () => {
     const inherited = process.platform === 'win32'
       ? { SystemRoot: 'C:\\Windows' }
       : { HOME: '/Users/opencreator' };
+    const ytDlpExecutable = process.platform === 'win32'
+      ? 'C:\\OpenCreator\\python\\python.exe'
+      : '/opt/opencreator/python/bin/python3';
     const env = createKrillinCliEnvironment(
       { ...inherited, SECRET_VALUE: 'hidden' },
       'D:\\runtime\\bin',
       'D:\\resources',
-      'D:\\dependencies\\bin'
+      'D:\\dependencies\\bin',
+      {
+        version: '2026.08.31.120000',
+        executable: ytDlpExecutable,
+        prefixArgs: ['-I', '-B', '/runtime/yt-dlp'],
+        env: { SSL_CERT_FILE: '/runtime/cacert.pem' },
+        script: '/runtime/yt-dlp'
+      }
     );
     expect(env).toMatchObject({
       ...inherited,
@@ -33,7 +44,9 @@ describe('KrillinAI CLI protocol', () => {
       OPENCREATOR_KRILLINAI_CLI: '1'
     });
     expect(String(env.PATH)).toContain('D:\\dependencies\\bin');
+    expect(String(env.PATH)).toContain(dirname(ytDlpExecutable));
     expect(String(env.PATH)).toContain('D:\\runtime\\bin');
+    expect(env.SSL_CERT_FILE).toBe('/runtime/cacert.pem');
     expect(env.SECRET_VALUE).toBeUndefined();
   });
 

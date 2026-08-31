@@ -214,6 +214,19 @@ export type CreatorSourceUploadResponse = {
   deduplicated: boolean;
 };
 
+export type CreatorArtifactImportRequest = {
+  expectedRevision: number;
+  sourceJobId: string;
+  artifactId: string;
+  kind: 'source_video';
+};
+
+export type CreatorArtifactImportResponse = {
+  job: CreatorJob;
+  artifact: CreatorArtifact;
+  deduplicated: boolean;
+};
+
 export type CreateCreatorJobRequest = {
   projectId: string;
   templateId: string;
@@ -224,6 +237,23 @@ export type CreateCreatorJobRequest = {
 
 export type CreatorJobListResponse = { jobs: CreatorJob[] };
 export type CreatorTemplateListResponse = { templates: CreatorTemplateSummary[] };
+
+export type CreatorYtDlpStatus = {
+  channel: 'nightly';
+  source: 'bundled' | 'managed';
+  currentVersion: string;
+  bundledVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  checkDue: boolean;
+  lastCheckedAt: string | null;
+  lastCheckAttemptAt: string | null;
+  installedAt: string | null;
+};
+
+export type CreatorYtDlpStatusResponse = {
+  ytDlp: CreatorYtDlpStatus;
+};
 
 export type CreatorSelection = {
   kind: string;

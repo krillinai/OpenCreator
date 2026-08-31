@@ -45,6 +45,11 @@ import { readKrillinRuntimeManifest, resolveInside, verifyKrillinRuntimeManifest
 import { createKrillinRuntimeHost } from '../creator/krillin/runtime-host.js';
 import { createKrillinTtsService } from '../creator/krillin/tts-service.js';
 import { createDownloadExecutor } from '../creator/download/executor.js';
+import { resolveYtDlpRuntime } from '../creator/yt-dlp/runtime.js';
+import {
+  createYtDlpUpdateManager,
+  type YtDlpUpdateManager
+} from '../creator/yt-dlp/update-manager.js';
 import { createCoverAnalysisExecutor } from '../creator/cover/executor.js';
 import {
   createFfmpegCoverImageNormalizer,
@@ -61,6 +66,7 @@ import {
   createCreatorSourceUploadService,
   type CreatorSourceUploadService
 } from '../creator/source-upload.js';
+import { createCreatorArtifactImportService } from '../creator/artifact-import.js';
 import { validateMediaFile, type MediaProbe } from '../creator/validators/media.js';
 import {
   createCoverWorkflow,
@@ -216,6 +222,7 @@ import { registerCodexRoutes } from './routes.codex.js';
 import { registerCleanupRoutes } from './routes.cleanup.js';
 import { registerCreatorServicesRoutes } from './routes.creator-services.js';
 import { registerCreatorRoutes } from './routes.creator.js';
+import { registerCreatorRuntimeRoutes } from './routes.creator-runtime.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerMcpRoutes } from './routes.mcp.js';
 import { registerMemoryRoutes } from './routes.memory.js';
@@ -280,6 +287,8 @@ export type BuildServerInput = {
   creatorSourceUploadService?: CreatorSourceUploadService;
   creatorSourceMediaProbe?(path: string): Promise<MediaProbe>;
   creatorSourceMaxSizeBytes?: number;
+  creatorYtDlpPath?: string;
+  creatorYtDlpUpdateManager?: YtDlpUpdateManager;
   creatorExecutors?: CreatorExecutor[];
   creatorAgentRuntime?: AgentRuntimeAdapter;
   allowedWebOrigins?: string[];
@@ -625,17 +634,9 @@ export async function buildServer(input: BuildServerInput) {
     ttsService: krillinTtsService
   });
   const creatorExecutors: CreatorExecutor[] = input.creatorExecutors ?? [];
-  if (input.creatorExecutors === undefined) {
-    creatorExecutors.push(createKrillinExecutor({
-      resourceRoot: creatorRuntimeRoot,
-      jobsRoot: creatorJobsRoot,
-      dependencyLoader: krillinDependencyLoader,
-      runtimeHost: krillinRuntimeHost,
-      configStore: creatorServicesConfigStore
-    }));
-  }
   let creatorFfmpegPath: string | undefined;
   let creatorFfprobePath: string | undefined;
+  let creatorYtDlpUpdateManager = input.creatorYtDlpUpdateManager;
   try {
     const runtimeManifest = readKrillinRuntimeManifest(creatorRuntimeRoot);
     verifyKrillinRuntimeManifest(creatorRuntimeRoot, runtimeManifest);
@@ -647,14 +648,65 @@ export async function buildServer(input: BuildServerInput) {
     };
     creatorFfmpegPath = executable(/(?:^|\/)ffmpeg(?:\.exe)?$/i);
     creatorFfprobePath = executable(/(?:^|\/)ffprobe(?:\.exe)?$/i);
-    const ytDlpPath = executable(/(?:^|\/)yt-dlp(?:\.exe)?$/i);
-    if (input.creatorExecutors === undefined && ytDlpPath && creatorFfprobePath) {
-      creatorExecutors.push(createDownloadExecutor({ ytDlpPath, ffprobePath: creatorFfprobePath }));
+    const ytDlp = resolveYtDlpRuntime({
+      resourceRoot: creatorRuntimeRoot,
+      manifest: runtimeManifest,
+      ...(input.creatorYtDlpPath === undefined
+        ? {}
+        : { overridePath: input.creatorYtDlpPath })
+    });
+    if (
+      creatorYtDlpUpdateManager === undefined
+      && input.creatorYtDlpPath === undefined
+      && ytDlp?.script !== undefined
+    ) {
+      try {
+        creatorYtDlpUpdateManager = await createYtDlpUpdateManager({
+          root: join(dataDir, 'creator-runtime', 'yt-dlp'),
+          bundledRuntime: ytDlp,
+          async readProxy() {
+            return (await creatorServicesConfigStore.read()).proxy.trim();
+          }
+        });
+      } catch (error) {
+        console.warn(`yt-dlp updater is unavailable: ${formatError(error)}`);
+      }
     }
-    if (input.creatorExecutors === undefined && ytDlpPath) {
+    const getYtDlpRuntime = () =>
+      creatorYtDlpUpdateManager?.getRuntime() ?? ytDlp;
+    if (input.creatorExecutors === undefined) {
+      creatorExecutors.push(createKrillinExecutor({
+        resourceRoot: creatorRuntimeRoot,
+        jobsRoot: creatorJobsRoot,
+        dependencyLoader: krillinDependencyLoader,
+        runtimeHost: krillinRuntimeHost,
+        configStore: creatorServicesConfigStore,
+        getYtDlpRuntime
+      }));
+    }
+    if (
+      input.creatorExecutors === undefined
+      && ytDlp
+      && creatorFfmpegPath
+      && creatorFfprobePath
+    ) {
+      creatorExecutors.push(createDownloadExecutor({
+        configStore: creatorServicesConfigStore,
+        ytDlpPath: ytDlp.executable,
+        ytDlpPrefixArgs: ytDlp.prefixArgs,
+        ytDlpEnv: ytDlp.env,
+        getYtDlpRuntime: () => getYtDlpRuntime()!,
+        ffmpegPath: creatorFfmpegPath,
+        ffprobePath: creatorFfprobePath
+      }));
+    }
+    if (input.creatorExecutors === undefined && ytDlp) {
       creatorExecutors.push(createCoverAnalysisExecutor({
         configStore: creatorServicesConfigStore,
-        ytDlpPath
+        ytDlpPath: ytDlp.executable,
+        ytDlpPrefixArgs: ytDlp.prefixArgs,
+        ytDlpEnv: ytDlp.env,
+        getYtDlpRuntime: () => getYtDlpRuntime()!
       }));
     }
     if (input.creatorExecutors === undefined && creatorFfmpegPath && creatorFfprobePath) {
@@ -701,6 +753,10 @@ export async function buildServer(input: BuildServerInput) {
         creator: creatorService,
         maxSizeBytes: input.creatorReferenceImageMaxSizeBytes
       });
+  const creatorArtifactImportService = createCreatorArtifactImportService({
+    jobsRoot: creatorJobsRoot,
+    creator: creatorService
+  });
   let coverWorkflow: CoverWorkflow | undefined;
   let videoTranslationWorkflow: VideoTranslationWorkflow | undefined;
   const creatorStageRunner = input.creatorService === undefined
@@ -1130,6 +1186,7 @@ export async function buildServer(input: BuildServerInput) {
     }
   );
   await registerSmartDubbingRoutes(server, smartDubbingService);
+  await registerCreatorRuntimeRoutes(server, creatorYtDlpUpdateManager);
   await registerCreatorRoutes(server, creatorService, creatorEvents, {
     sseHeartbeatMs: input.sseHeartbeatMs,
     agentService: creatorAgentService,
@@ -1138,6 +1195,7 @@ export async function buildServer(input: BuildServerInput) {
     projectCoverService: creatorProjectCoverService,
     referenceImageUploadService: creatorReferenceImageUploadService,
     sourceUploadService: creatorSourceUploadService,
+    artifactImportService: creatorArtifactImportService,
     dispatcher: creatorCommandDispatcher,
     stageRunner: creatorStageRunner
   });

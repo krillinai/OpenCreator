@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { basename, delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
   CreatorJson,
   CreatorServicesConfig,
@@ -14,6 +14,7 @@ import {
   resolveInside,
   type KrillinRuntimeManifest
 } from './manifest.js';
+import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
 
 export type MaterializedKrillinArtifact = {
   id: string;
@@ -63,6 +64,7 @@ type RunKrillinCliInput = {
   config: CreatorServicesConfig;
   artifacts: MaterializedKrillinArtifact[];
   options: Record<string, unknown>;
+  ytDlpRuntime?: YtDlpRuntime;
 };
 
 export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinResultArtifact[]> {
@@ -82,7 +84,8 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
     resourceRoot: input.resourceRoot,
     dependencyRoot: input.dependencyRoot,
     launcherRoot,
-    useOnDemandTranscription: input.config.transcription.provider === 'whisperkit'
+    useOnDemandTranscription: input.config.transcription.provider === 'whisperkit',
+    ytDlpRuntime: input.ytDlpRuntime
   });
   const cliConfig = stageConfig(input.config, input.stage.stageRun.stageId, input.options);
   await writeFile(
@@ -115,6 +118,7 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
       runtimeBin,
       resourceRoot: cliResourceRoot,
       dependencyBin,
+      ytDlpRuntime: input.ytDlpRuntime,
       reportProgress: progress => input.stage.reportProgress(progress),
       signal: input.stage.signal
     });
@@ -270,6 +274,7 @@ function executeCli(input: {
   runtimeBin: string;
   resourceRoot: string;
   dependencyBin: string;
+  ytDlpRuntime?: YtDlpRuntime;
   reportProgress(progress: Record<string, CreatorJson>): void;
   signal: AbortSignal;
 }): Promise<KrillinCliResponse> {
@@ -280,7 +285,8 @@ function executeCli(input: {
         process.env,
         input.runtimeBin,
         input.resourceRoot,
-        input.dependencyBin
+        input.dependencyBin,
+        input.ytDlpRuntime
       ),
       stdio: ['ignore', 'pipe', 'pipe']
     }, input.signal);
@@ -379,16 +385,21 @@ export function createKrillinCliEnvironment(
   env: NodeJS.ProcessEnv,
   runtimeBin: string,
   resourceRoot: string,
-  dependencyBin: string
+  dependencyBin: string,
+  ytDlpRuntime?: YtDlpRuntime
 ): NodeJS.ProcessEnv {
   const names = process.platform === 'win32'
     ? ['SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA']
     : ['HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'SSL_CERT_FILE', 'SSL_CERT_DIR'];
+  const runtimePaths = ytDlpRuntime === undefined
+    ? []
+    : [dirname(ytDlpRuntime.executable)];
   const executablePath = process.platform === 'win32'
-    ? [dependencyBin, runtimeBin].join(delimiter)
-    : [dependencyBin, runtimeBin, '/usr/bin', '/bin'].join(delimiter);
+    ? [dependencyBin, ...runtimePaths, runtimeBin].join(delimiter)
+    : [dependencyBin, ...runtimePaths, runtimeBin, '/usr/bin', '/bin'].join(delimiter);
   return {
     ...Object.fromEntries(names.flatMap(name => env[name] === undefined ? [] : [[name, env[name]]])),
+    ...ytDlpRuntime?.env,
     PATH: executablePath,
     Path: executablePath,
     KRILLINAI_RESOURCE_ROOT: resourceRoot,
@@ -455,6 +466,7 @@ async function prepareCliResourceRoot(input: {
   dependencyRoot: string;
   launcherRoot: string;
   useOnDemandTranscription: boolean;
+  ytDlpRuntime?: YtDlpRuntime;
 }): Promise<string> {
   const dependencyBin = join(input.dependencyRoot, 'bin');
   const dependencyModels = join(input.dependencyRoot, 'models');
@@ -462,19 +474,26 @@ async function prepareCliResourceRoot(input: {
   await mkdir(dependencyModels, { recursive: true });
   const type = process.platform === 'win32' ? 'junction' : 'dir';
   await symlink(dependencyModels, join(input.launcherRoot, 'models'), type);
-  if (!input.useOnDemandTranscription) {
-    await symlink(dependencyBin, join(input.launcherRoot, 'bin'), type);
-    return input.resourceRoot;
-  }
-
   const overlayBin = join(input.launcherRoot, 'bin');
   await mkdir(overlayBin, { recursive: true });
   await linkDirectoryEntries(join(input.resourceRoot, 'bin'), overlayBin);
-  const whisperKitName = process.platform === 'win32' ? 'whisperkit-cli.exe' : 'whisperkit-cli';
-  await linkFile(
-    join(dependencyBin, whisperKitName),
-    join(overlayBin, whisperKitName)
-  );
+  if (input.ytDlpRuntime !== undefined) {
+    const ytDlpName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+    const ytDlpSource = process.platform === 'win32'
+      && input.ytDlpRuntime.prefixArgs.length === 0
+      ? input.ytDlpRuntime.executable
+      : input.ytDlpRuntime.script;
+    if (ytDlpSource !== undefined) {
+      await linkFile(ytDlpSource, join(overlayBin, ytDlpName));
+    }
+  }
+  if (input.useOnDemandTranscription) {
+    const whisperKitName = process.platform === 'win32' ? 'whisperkit-cli.exe' : 'whisperkit-cli';
+    await linkFile(
+      join(dependencyBin, whisperKitName),
+      join(overlayBin, whisperKitName)
+    );
+  }
   return input.launcherRoot;
 }
 

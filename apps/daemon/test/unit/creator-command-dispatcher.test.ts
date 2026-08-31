@@ -89,6 +89,74 @@ describe('creator command dispatcher', () => {
     fixture.db.close();
   });
 
+  it('snapshots each video download option and permits different queued formats', () => {
+    const fixture = setupDownload();
+    const dispatcher = createCreatorCommandDispatcher({
+      service: fixture.service,
+      repository: fixture.repository,
+      receipts: fixture.receipts
+    });
+
+    const first = dispatcher.dispatch(fixture.jobId, {
+      action: 'run-stage',
+      expectedRevision: 0,
+      idempotencyKey: 'download-1080',
+      input: {
+        stageId: 'download',
+        optionId: 'video-1080-1',
+        mediaType: 'video',
+        sourceUrl: 'https://www.youtube.com/watch?v=multi-download'
+      }
+    }, 'user');
+    const advanced = fixture.service.getJob(fixture.jobId)!;
+    fixture.repository.updateJob({
+      id: advanced.id,
+      status: 'running',
+      revision: advanced.revision + 1,
+      state: advanced.state
+    });
+    const second = dispatcher.dispatch(fixture.jobId, {
+      action: 'run-stage',
+      expectedRevision: first.job.revision,
+      idempotencyKey: 'download-720',
+      input: {
+        stageId: 'download',
+        optionId: 'video-720-2',
+        mediaType: 'video',
+        sourceUrl: 'https://www.youtube.com/watch?v=multi-download'
+      }
+    }, 'user');
+
+    expect(first.job.stages).toHaveLength(1);
+    expect(first.job.stages[0]?.progress).toMatchObject({
+      optionId: 'video-1080-1',
+      mediaType: 'video',
+      sourceUrl: 'https://www.youtube.com/watch?v=multi-download',
+      probeArtifactId: 'creator_artifact_1'
+    });
+    expect(second.job.stages).toHaveLength(2);
+    expect(second.job.stages.map(stage => stage.progress.optionId)).toEqual([
+      'video-1080-1',
+      'video-720-2'
+    ]);
+    expect(() => dispatcher.dispatch(fixture.jobId, {
+      action: 'run-stage',
+      expectedRevision: second.job.revision,
+      idempotencyKey: 'download-1080-duplicate',
+      input: {
+        stageId: 'download',
+        optionId: 'video-1080-1',
+        mediaType: 'video',
+        sourceUrl: 'https://www.youtube.com/watch?v=multi-download'
+      }
+    }, 'user')).toThrowError(expect.objectContaining({
+      code: 'creator_action_invalid',
+      message: 'This download option is already queued or running'
+    }));
+    expect(fixture.service.getJob(fixture.jobId)?.revision).toBe(3);
+    fixture.db.close();
+  });
+
   it('persists a revision conflict receipt and replays the same failure', () => {
     const fixture = setup();
     const dispatcher = createCreatorCommandDispatcher({
@@ -131,6 +199,62 @@ function setup() {
     projectId: 'project-1',
     templateId: 'video-translation',
     state: { sourceUrl: 'https://www.youtube.com/watch?v=test' }
+  });
+  return {
+    db,
+    repository,
+    service,
+    receipts: createCreatorAgentRepository(db),
+    jobId: job.id
+  };
+}
+
+function setupDownload() {
+  tempDir = mkdtempSync(join(tmpdir(), 'creator-command-download-'));
+  const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+  let artifactSequence = 0;
+  const repository = createCreatorRepository(db, {
+    idFactory(prefix) {
+      if (prefix === 'creator_artifact') {
+        artifactSequence += 1;
+        return `creator_artifact_${artifactSequence}`;
+      }
+      return `${prefix}_${Math.random().toString(36).slice(2)}`;
+    }
+  });
+  const service = createCreatorService({
+    repository,
+    templates: createDefaultCreatorTemplateRegistry()
+  });
+  const sourceUrl = 'https://www.youtube.com/watch?v=multi-download';
+  const job = service.createJob({
+    projectId: 'project-1',
+    templateId: 'video-download',
+    state: { sourceUrl }
+  });
+  repository.insertArtifact({
+    jobId: job.id,
+    kind: 'download_probe',
+    status: 'completed',
+    path: join(tempDir, 'probe.json'),
+    sourceArtifactIds: [],
+    metadata: {
+      id: 'multi-download',
+      title: 'Multi Download',
+      requestedUrl: sourceUrl,
+      url: sourceUrl,
+      platform: 'youtube',
+      formats: [],
+      options: [{
+        id: 'video-1080-1',
+        mediaType: 'video',
+        container: 'mp4'
+      }, {
+        id: 'video-720-2',
+        mediaType: 'video',
+        container: 'mp4'
+      }]
+    }
   });
   return {
     db,

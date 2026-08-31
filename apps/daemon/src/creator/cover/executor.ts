@@ -12,6 +12,7 @@ import type {
 import { CreatorExecutorError } from '../executor.js';
 import { spawnCreatorProcess } from '../process-tree.js';
 import { validateImageFile } from '../validators/image.js';
+import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
 import {
   generateCoverBrief,
   parseCoverSourceMetadata
@@ -20,6 +21,9 @@ import {
 export function createCoverAnalysisExecutor(input: {
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
   ytDlpPath: string;
+  ytDlpPrefixArgs?: string[];
+  ytDlpEnv?: NodeJS.ProcessEnv;
+  getYtDlpRuntime?(): YtDlpRuntime;
 }): CreatorExecutor {
   return {
     id: 'cover-analysis',
@@ -43,7 +47,7 @@ export function createCoverAnalysisExecutor(input: {
 
       stage.reportProgress({ phase: 'reading_source', percent: 10 });
       const metadata = parseCoverSourceMetadata(JSON.parse(
-        await runYtDlp(input.ytDlpPath, sourceUrl, stage)
+        await runYtDlp(input, sourceUrl, stage)
       ));
       stage.reportProgress({ phase: 'analyzing_source', percent: 45 });
       const brief = await generateCoverBrief({
@@ -126,15 +130,38 @@ export function createCoverAnalysisExecutor(input: {
 }
 
 function runYtDlp(
-  binary: string,
+  input: {
+    ytDlpPath: string;
+    ytDlpPrefixArgs?: string[];
+    ytDlpEnv?: NodeJS.ProcessEnv;
+    getYtDlpRuntime?(): YtDlpRuntime;
+  },
   url: string,
   stage: CreatorExecutorInput
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    const ytDlp = input.getYtDlpRuntime?.() ?? {
+      version: 'configured',
+      executable: input.ytDlpPath,
+      prefixArgs: input.ytDlpPrefixArgs ?? [],
+      env: input.ytDlpEnv ?? {}
+    };
     const child = spawnCreatorProcess(
-      binary,
-      ['--dump-single-json', '--no-playlist', url],
-      { cwd: stage.workdir, stdio: ['ignore', 'pipe', 'pipe'] },
+      ytDlp.executable,
+      [
+        ...ytDlp.prefixArgs,
+        '--dump-single-json',
+        '--no-playlist',
+        url
+      ],
+      {
+        cwd: stage.workdir,
+        env: {
+          ...process.env,
+          ...ytDlp.env
+        },
+        stdio: ['ignore', 'pipe', 'pipe']
+      },
       stage.signal
     );
     let stdout = '';
@@ -217,6 +244,16 @@ function classifyYtDlpError(stderr: string): string {
   if (text.includes('private video')) return 'source_private';
   if (text.includes('copyright') || text.includes('not available')) {
     return 'region_or_copyright_restricted';
+  }
+  if (
+    text.includes('please update')
+    || text.includes('confirm you are on the latest version')
+    || text.includes('signature extraction failed')
+    || text.includes('nsig extraction failed')
+    || text.includes('unable to extract')
+    || text.includes('extractor error')
+  ) {
+    return 'yt_dlp_update_recommended';
   }
   return 'cover_source_analysis_failed';
 }

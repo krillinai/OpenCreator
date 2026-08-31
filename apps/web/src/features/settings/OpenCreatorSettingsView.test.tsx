@@ -254,6 +254,40 @@ describe('OpenCreatorSettingsView', () => {
     expect(screen.getByText('本地能力已就绪')).toBeInTheDocument();
   });
 
+  it('opens local components directly and marks an available yt-dlp update', () => {
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <OpenCreatorSettingsView
+          runtimeStatus={runtimeStatus}
+          initialTab="local-components"
+          runtimeDependencies={{
+            ytDlpStatus: {
+              channel: 'nightly',
+              source: 'bundled',
+              currentVersion: '2026.08.29.232711',
+              bundledVersion: '2026.08.29.232711',
+              latestVersion: '2026.08.31.120000',
+              updateAvailable: true,
+              checkDue: false,
+              lastCheckedAt: '2026-08-31T00:00:00.000Z',
+              lastCheckAttemptAt: '2026-08-31T00:00:00.000Z',
+              installedAt: null
+            },
+            phase: 'idle',
+            checkYtDlpUpdate: vi.fn(),
+            updateYtDlp: vi.fn()
+          }}
+          onBack={vi.fn()}
+        />
+      </LanguageProvider>
+    );
+
+    expect(screen.getByRole('button', { name: /本机组件/ }))
+      .toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('heading', { name: 'yt-dlp nightly' })).toBeInTheDocument();
+    expect(screen.getAllByLabelText('有可用更新')).not.toHaveLength(0);
+  });
+
   it('shows Codex CLI details only in the about advanced information section', () => {
     render(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
 

@@ -184,6 +184,112 @@ export function createCreatorService(input: {
         };
       });
     },
+    registerImportedSourceVideo(jobId: string, input: {
+      expectedRevision: number;
+      sourceJobId: string;
+      sourceArtifactId: string;
+      path: string;
+      metadata: Record<string, CreatorJson>;
+    }): {
+      job: CreatorJob;
+      artifact: CreatorArtifact;
+      deduplicated: boolean;
+    } {
+      return repository.transaction(() => {
+        const current = repository.getJob(jobId);
+        if (current === undefined) {
+          throw new CreatorServiceError('creator_job_not_found', 'Creator job not found');
+        }
+        if (current.revision !== input.expectedRevision) {
+          throw new CreatorServiceError(
+            'creator_revision_conflict',
+            'Creator job revision changed',
+            current.revision
+          );
+        }
+        if (
+          current.templateId !== 'video-translation'
+          && current.templateId !== 'auto-clip'
+        ) {
+          throw new CreatorServiceError(
+            'creator_artifact_import_unsupported',
+            'Video artifacts can only be imported into video translation or auto clip jobs'
+          );
+        }
+        const duplicate = [...current.artifacts].reverse().find(artifact => (
+          artifact.kind === 'source_video'
+          && artifact.status === 'completed'
+          && artifact.metadata.importedFromArtifactId === input.sourceArtifactId
+        ));
+        if (
+          duplicate !== undefined
+          && current.state.sourceArtifactId === duplicate.id
+        ) {
+          return { job: current, artifact: duplicate, deduplicated: true };
+        }
+
+        const artifact = duplicate ?? repository.insertArtifact({
+          jobId,
+          kind: 'source_video',
+          status: 'completed',
+          path: input.path,
+          sourceArtifactIds: [input.sourceArtifactId],
+          metadata: {
+            ...input.metadata,
+            source: 'artifact-import',
+            importedFromJobId: input.sourceJobId,
+            importedFromArtifactId: input.sourceArtifactId
+          }
+        });
+        const fileName = typeof artifact.metadata.fileName === 'string'
+          ? artifact.metadata.fileName
+          : 'OpenCreator-video.mp4';
+        const size = typeof artifact.metadata.size === 'number'
+          ? artifact.metadata.size
+          : typeof artifact.metadata.bytes === 'number'
+            ? artifact.metadata.bytes
+            : null;
+        const sha256 = typeof artifact.metadata.sha256 === 'string'
+          ? artifact.metadata.sha256
+          : null;
+        const revision = current.revision + 1;
+        const template = templates.get(current.templateId, current.templateVersion);
+        repository.updateJob({
+          id: jobId,
+          status: 'draft',
+          revision,
+          state: template.inputSchema.parse({
+            ...current.state,
+            sourceType: 'file',
+            sourceUrl: '',
+            sourceArtifactId: artifact.id,
+            sourceFileName: fileName,
+            sourceFileSize: size,
+            sourceFileLastModified: null,
+            sourceFileSha256: sha256,
+            currentStage: null
+          }) as Record<string, CreatorJson>
+        });
+        repository.insertActivity({
+          jobId,
+          revision,
+          actor: 'user',
+          action: 'import-source-video',
+          summary: '从项目文件导入视频',
+          details: {
+            objectId: fileName,
+            sourceJobId: input.sourceJobId,
+            sourceArtifactId: input.sourceArtifactId,
+            affectedArtifactIds: [artifact.id]
+          }
+        });
+        return {
+          job: repository.getJob(jobId)!,
+          artifact,
+          deduplicated: duplicate !== undefined
+        };
+      });
+    },
     registerReferenceImage(jobId: string, input: {
       expectedRevision: number;
       path: string;

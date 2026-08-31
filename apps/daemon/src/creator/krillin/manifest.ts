@@ -17,6 +17,22 @@ const resourceSchema = z.object({
   model: z.string().optional()
 }).strict();
 
+const ytDlpRuntimeSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('standalone'),
+    version: z.string().min(1),
+    executable: z.string().min(1)
+  }).strict(),
+  z.object({
+    mode: z.literal('python'),
+    version: z.string().min(1),
+    pythonVersion: z.string().min(1),
+    executable: z.string().min(1),
+    script: z.string().min(1),
+    certificateBundle: z.string().min(1)
+  }).strict()
+]);
+
 const manifestSchema = z.object({
   version: z.number().int().positive(),
   runtimeMode: z.enum(['cli', 'service']).optional(),
@@ -28,6 +44,7 @@ const manifestSchema = z.object({
   platform: z.string().min(1),
   arch: z.string().min(1),
   upstreamCommit: z.string().optional(),
+  ytDlp: ytDlpRuntimeSchema.optional(),
   resources: z.array(resourceSchema)
 }).strict();
 

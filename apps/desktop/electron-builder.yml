@@ -74,6 +74,8 @@ mac:
     - zip
   hardenedRuntime: true
   gatekeeperAssess: false
+  signIgnore:
+    - '.*/Contents/Resources/(?!daemon/.*\.node$).*'
   entitlements: resources/entitlements.mac.plist
   entitlementsInherit: resources/entitlements.mac.plist
   icon: resources/icon.png

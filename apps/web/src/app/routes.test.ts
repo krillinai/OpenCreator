@@ -45,6 +45,12 @@ describe('app routes', () => {
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
     expect(parseRoute('#/settings?tab=ai-services')).toEqual({ view: 'settings', tab: 'ai-services' });
     expect(formatRoute({ view: 'settings', tab: 'ai-services' })).toBe('#/settings?tab=ai-services');
+    expect(parseRoute('#/settings?tab=local-components')).toEqual({
+      view: 'settings',
+      tab: 'local-components'
+    });
+    expect(formatRoute({ view: 'settings', tab: 'local-components' }))
+      .toBe('#/settings?tab=local-components');
     expect(parseRoute('#/settings?tab=ai-services&section=tts')).toEqual({
       view: 'settings',
       tab: 'ai-services',

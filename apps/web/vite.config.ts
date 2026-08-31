@@ -102,6 +102,7 @@ function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 function startRuntimeProcess(): RuntimeProcess {
   const creatorRuntimeRoot = resolveDevCreatorRuntimeRoot();
+  const ytDlpPath = resolveDevYtDlpPath();
   const packageManager = packageManagerCommand(
     process.env.OPENCREATOR_RUNTIME_DEV_PREPARED === '1'
       ? [
@@ -126,7 +127,10 @@ function startRuntimeProcess(): RuntimeProcess {
       ...process.env,
       ...(creatorRuntimeRoot === undefined
         ? {}
-        : { OPENCREATOR_CREATOR_RUNTIME_ROOT: creatorRuntimeRoot })
+        : { OPENCREATOR_CREATOR_RUNTIME_ROOT: creatorRuntimeRoot }),
+      ...(ytDlpPath === undefined
+        ? {}
+        : { OPENCREATOR_YT_DLP_PATH: ytDlpPath })
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -198,6 +202,11 @@ function resolveDevCreatorRuntimeRoot(): string | undefined {
     join(candidate, 'bin', `krillinai-cli${executableSuffix}`)
   ];
   return requiredAssets.every(path => existsSync(path)) ? candidate : undefined;
+}
+
+function resolveDevYtDlpPath(): string | undefined {
+  const configured = process.env.OPENCREATOR_YT_DLP_PATH?.trim();
+  return configured ? resolve(configured) : undefined;
 }
 
 function terminateRuntimeProcess(child: RuntimeProcess['child']): void {

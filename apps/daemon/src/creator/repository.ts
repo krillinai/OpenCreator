@@ -147,7 +147,7 @@ export function createCreatorRepository(
              progress_json, error_code, error_message, started_at, finished_at
       FROM creator_stage_runs
       WHERE job_id = ?
-      ORDER BY created_at ASC, id ASC
+      ORDER BY created_at ASC, rowid ASC
     `).all(jobId) as StageRow[]
   ).map(row => ({
     id: row.id,
@@ -432,7 +432,7 @@ export function createCreatorRepository(
         FROM creator_stage_runs
         WHERE dispatch_status = 'queued'
            OR (dispatch_status = 'claimed' AND claim_expires_at <= ?)
-        ORDER BY created_at ASC, id ASC
+        ORDER BY created_at ASC, rowid ASC
         LIMIT ?
       `).all(timestamp, limit) as StageRow[]).map(hydrateStageRun);
     },

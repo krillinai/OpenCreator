@@ -6767,12 +6767,24 @@ html.is-pane-resizing * {
 .settings-nav button {
   width: 100%;
   min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 0 10px;
   border-radius: 6px;
   color: var(--text);
   text-align: left;
   font-size: 13px;
   font-weight: 600;
+}
+
+.settings-nav-update-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 .settings-nav button[aria-current="page"] {

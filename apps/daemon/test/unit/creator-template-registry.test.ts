@@ -3,6 +3,7 @@ import {
   createCoverTemplate,
   createImageGenerationTemplate,
   createCreatorTemplateRegistry,
+  createVideoDownloadTemplate,
   createVideoTranslationTemplate
 } from '../../src/creator/templates/registry.js';
 
@@ -58,6 +59,33 @@ describe('creator template registry', () => {
       quality: 'medium',
       candidateCount: 2
     });
+  });
+
+  it('registers video download v2 with a non-final probe and controlled choices', () => {
+    const template = createVideoDownloadTemplate();
+
+    expect(template.version).toBe(2);
+    expect(template.inputSchema.parse({})).toMatchObject({
+      sourceUrl: '',
+      mediaType: 'video',
+      selectedOptionId: null
+    });
+    expect(template.stages).toMatchObject([
+      {
+        id: 'probe',
+        completesJob: false,
+        resultVersionPolicy: 'none',
+        invalidateDependentArtifacts: false
+      },
+      {
+        id: 'download',
+        outputArtifacts: [
+          { kind: 'source_video', status: 'completed' },
+          { kind: 'source_audio', status: 'completed' }
+        ]
+      }
+    ]);
+    expect(template.inputSchema.parse({})).not.toHaveProperty('formatId');
   });
 
   it('resolves the video translation stale graph from target subtitles only', () => {

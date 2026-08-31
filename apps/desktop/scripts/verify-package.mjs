@@ -325,6 +325,9 @@ function assertCreatorRuntime() {
     || manifest.krillinUpstreamCommit !== runtime.upstreamCommit
     || manifest.krillinIntegrationPatchSha256 !== runtime.integrationPatchSha256
     || manifest.krillinProtocolSha256 !== runtime.protocolSha256
+    || manifest.ytDlpRuntimeMode !== runtime.ytDlp?.mode
+    || manifest.ytDlpVersion !== runtime.ytDlp?.version
+    || manifest.ytDlpPythonVersion !== runtime.ytDlp?.pythonVersion
   ) {
     throw new Error('Packaged Creator Runtime does not match the Desktop build manifest');
   }
@@ -472,6 +475,9 @@ function verifyMacPackageMetadata() {
       + `${signature.stderr || signature.stdout}`
     );
   }
+  if (process.env.OPENCREATOR_REQUIRE_DEVELOPER_ID === '1') {
+    verifyDeveloperIdSignature();
+  }
   const plist = spawnSync('plutil', [
     '-extract',
     'ElectronAsarIntegrity',
@@ -494,6 +500,37 @@ function verifyMacPackageMetadata() {
     || typeof integrity?.['Resources/app.asar']?.hash !== 'string'
   ) {
     throw new Error('Packaged app.asar integrity metadata is invalid');
+  }
+}
+
+function verifyDeveloperIdSignature() {
+  const details = spawnSync('codesign', [
+    '--display',
+    '--verbose=4',
+    packageRoot
+  ], {
+    encoding: 'utf8',
+    timeout: 30_000
+  });
+  if (details.status !== 0) {
+    throw new Error(
+      `Unable to inspect packaged macOS signature: `
+      + `${details.stderr || details.stdout}`
+    );
+  }
+  const output = `${details.stdout}\n${details.stderr}`;
+  const expectedTeamId = process.env.OPENCREATOR_APPLE_TEAM_ID?.trim();
+  if (
+    !output.includes('Authority=Developer ID Application:')
+    || (
+      expectedTeamId
+      && !output.includes(`TeamIdentifier=${expectedTeamId}`)
+    )
+  ) {
+    throw new Error(
+      'Packaged macOS app is not signed with the expected Developer ID '
+      + `identity for Team ${expectedTeamId ?? '<unspecified>'}`
+    );
   }
 }
 

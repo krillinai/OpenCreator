@@ -9,6 +9,8 @@ import type {
   CreatorAgentTimelineResponse,
   CreatorAgentTurn,
   CreatorAgentTurnRequest,
+  CreatorArtifactImportRequest,
+  CreatorArtifactImportResponse,
   CreatorEventEnvelope,
   CreatorJob,
   CreatorJobListResponse,
@@ -90,6 +92,15 @@ export function createCreatorService(client: ClientLike) {
         input.file,
         CREATOR_REFERENCE_IMAGE_CONTENT_TYPE
       ) as Promise<CreatorSourceUploadResponse>;
+    },
+    importArtifact(
+      jobId: string,
+      request: CreatorArtifactImportRequest
+    ): Promise<CreatorArtifactImportResponse> {
+      return client.post(
+        `/creator/jobs/${encodeURIComponent(jobId)}/import-artifact`,
+        request
+      ) as Promise<CreatorArtifactImportResponse>;
     },
     openProjectCover(jobId: string): Promise<Response> {
       if (client.rawGet === undefined) throw new Error('Creator project cover transport is unavailable');

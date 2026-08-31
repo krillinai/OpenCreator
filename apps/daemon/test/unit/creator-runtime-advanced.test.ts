@@ -138,6 +138,51 @@ describe('creator runtime advanced contracts', () => {
     db.close();
   });
 
+  it('keeps a video download job in draft after the non-final probe stage', async () => {
+    const { db, repository, service, templates } = setup();
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{
+        id: 'download',
+        async run() {
+          return {
+            outputs: [{
+              kind: 'download_probe',
+              status: 'completed' as const,
+              path: join(tempDir, 'probe.json'),
+              metadata: {
+                requestedUrl: 'https://www.youtube.com/watch?v=probe-only',
+                options: []
+              }
+            }],
+            progress: { phase: 'completed', percent: 100 }
+          };
+        }
+      }],
+      workRoot: join(tempDir, 'work')
+    });
+    const job = service.createJob({
+      projectId: 'p1',
+      templateId: 'video-download',
+      state: {
+        sourceUrl: 'https://www.youtube.com/watch?v=probe-only'
+      }
+    });
+
+    const stage = await runner.run(job.id, 'probe');
+    const probed = service.getJob(job.id)!;
+
+    expect(stage.status).toBe('succeeded');
+    expect(probed.status).toBe('draft');
+    expect(probed.state).not.toHaveProperty('latestResultVersion');
+    expect(probed.artifacts).toEqual([
+      expect.objectContaining({ kind: 'download_probe', status: 'completed' })
+    ]);
+    await runner.close();
+    db.close();
+  });
+
   it('keeps provider configuration failures actionable as needs_input jobs', async () => {
     const { db, repository, service, templates } = setup();
     const runner = createCreatorStageRunner({

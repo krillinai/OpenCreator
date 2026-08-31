@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readSync,
   readFileSync,
   rmSync,
@@ -39,12 +40,10 @@ const defaultCliVersion = '2.1.0';
 const configuredKrillinCliPath = process.env.OPENCREATOR_KRILLINAI_CLI_PATH?.trim();
 const configuredKrillinCliVersion = process.env.OPENCREATOR_KRILLINAI_CLI_VERSION?.trim();
 const configuredKrillinUpstreamCommit = process.env.OPENCREATOR_KRILLINAI_UPSTREAM_COMMIT?.trim();
+const configuredYtDlpPath = process.env.OPENCREATOR_YT_DLP_PATH?.trim();
 const protocolVersion = 1;
 const protocolSchemaSource = join(rootDir, 'packages', 'protocol', 'contracts', 'krillin-opencreator-v1.schema.json');
 const runtimeMode = 'cli';
-const ytDlpVerificationTimeoutMs = process.platform === 'darwin'
-  ? 180_000
-  : 60_000;
 
 ensureCliDependencies();
 const vendorVersions = readVendorVersions();
@@ -78,18 +77,18 @@ verifyStandaloneKrillinCli(primaryExecutablePath);
 
 const externalInputs = [
   ['ffmpeg', process.env.OPENCREATOR_FFMPEG_PATH, join(vendorRoot, `ffmpeg${executableSuffix}`)],
-  ['ffprobe', process.env.OPENCREATOR_FFPROBE_PATH, join(vendorRoot, `ffprobe${executableSuffix}`)],
-  ['yt-dlp', process.env.OPENCREATOR_YT_DLP_PATH, join(vendorRoot, `yt-dlp${executableSuffix}`)]
+  ['ffprobe', process.env.OPENCREATOR_FFPROBE_PATH, join(vendorRoot, `ffprobe${executableSuffix}`)]
 ];
 for (const [name, configured, vendored] of externalInputs) {
   const source = resolveExecutable(name, configured, vendored);
   const target = join(binDir, `${name}${executableSuffix}`);
   copyExecutable(source, target);
-  if (name === 'yt-dlp') verifyStandaloneYtDlp(target);
 }
+const ytDlpRuntime = prepareYtDlpRuntime(vendorVersions);
 for (const path of [
   primaryExecutablePath,
-  ...externalInputs.map(([name]) => join(binDir, `${name}${executableSuffix}`))
+  ...externalInputs.map(([name]) => join(binDir, `${name}${executableSuffix}`)),
+  ...ytDlpRuntime.executablePaths
 ]) {
   clearMacOSFileMetadata(path);
 }
@@ -107,6 +106,7 @@ const buildRecord = {
   cliVersion,
   protocolVersion,
   protocolSha256,
+  ytDlp: ytDlpRuntime.descriptor,
   upstreamCommit,
   integrationPatchSha256: hashFiles([
     join(scriptDir, 'install-creator-runtime-dependencies.mjs'),
@@ -127,6 +127,7 @@ writeFileSync(buildRecordPath, `${JSON.stringify(buildRecord, null, 2)}\n`);
 const resourcePaths = [
   primaryExecutablePath,
   ...externalInputs.map(([name]) => join(binDir, `${name}${executableSuffix}`)),
+  ...ytDlpRuntime.resourcePaths,
   subtitleStylePath,
   protocolSchemaPath,
   buildRecordPath
@@ -142,10 +143,13 @@ const manifest = {
   platform: targetPlatform,
   arch: targetArch,
   upstreamCommit: buildRecord.upstreamCommit,
+  ytDlp: ytDlpRuntime.descriptor,
   resources: resourcePaths.map(path => ({
     path: relative(outputRoot, path).replaceAll('\\', '/'),
     sha256: hashFile(path),
-    kind: path.startsWith(binDir) ? 'executable' : 'asset'
+    kind: path.startsWith(binDir) || ytDlpRuntime.executablePaths.includes(path)
+      ? 'executable'
+      : 'asset'
   }))
 };
 writeFileSync(join(outputRoot, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -156,7 +160,9 @@ function ensureCliDependencies() {
     [configuredKrillinCliPath, join(vendorRoot, `krillinai-cli${executableSuffix}`)],
     [process.env.OPENCREATOR_FFMPEG_PATH, join(vendorRoot, `ffmpeg${executableSuffix}`)],
     [process.env.OPENCREATOR_FFPROBE_PATH, join(vendorRoot, `ffprobe${executableSuffix}`)],
-    [process.env.OPENCREATOR_YT_DLP_PATH, join(vendorRoot, `yt-dlp${executableSuffix}`)]
+    [configuredYtDlpPath, join(vendorRoot, 'yt-dlp')],
+    [configuredYtDlpPath, join(vendorRoot, 'python-runtime.tar.gz')],
+    [configuredYtDlpPath, join(vendorRoot, 'cacert.pem')]
   ];
   if (required.every(([configured, vendored]) => configured || existsSync(vendored))) return;
   execFileSync(process.execPath, [join(scriptDir, 'install-creator-runtime-dependencies.mjs')], {
@@ -203,9 +209,121 @@ function copyExecutable(source, target) {
   if (process.platform !== 'win32') chmodSync(target, 0o755);
 }
 
-function clearMacOSFileMetadata(path) {
+function prepareYtDlpRuntime(vendorVersions) {
+  if (configuredYtDlpPath) {
+    const target = join(binDir, `yt-dlp${executableSuffix}`);
+    copyExecutable(
+      resolveExecutable('yt-dlp', configuredYtDlpPath),
+      target
+    );
+    const version = verifyStandaloneYtDlp(target);
+    return {
+      descriptor: {
+        mode: 'standalone',
+        version,
+        executable: relative(outputRoot, target).replaceAll('\\', '/')
+      },
+      resourcePaths: [target],
+      executablePaths: [target]
+    };
+  }
+
+  const runtimeRoot = join(outputRoot, 'yt-dlp-runtime');
+  mkdirSync(runtimeRoot, { recursive: true });
+  extractPythonRuntime(
+    join(vendorRoot, 'python-runtime.tar.gz'),
+    runtimeRoot
+  );
+  removePythonBytecodeCaches(join(runtimeRoot, 'python'));
+  const script = join(runtimeRoot, 'yt-dlp');
+  const certificateBundle = join(runtimeRoot, 'cacert.pem');
+  copyFileSync(join(vendorRoot, 'yt-dlp'), script);
+  copyFileSync(join(vendorRoot, 'cacert.pem'), certificateBundle);
+  const executable = portablePythonExecutable(
+    join(runtimeRoot, 'python'),
+    targetPlatform
+  );
+  if (!existsSync(executable)) {
+    throw new Error(`Portable Python executable is missing: ${executable}`);
+  }
+  clearMacOSFileMetadata(runtimeRoot, true);
+  const ytDlpVersion = vendorVersions?.dependencies?.ytDlp?.version;
+  const pythonVersion = vendorVersions?.dependencies?.pythonRuntime?.version;
+  if (!ytDlpVersion || !pythonVersion) {
+    throw new Error('Portable yt-dlp dependency versions are missing');
+  }
+  verifyPortableYtDlp({
+    executable,
+    script,
+    certificateBundle,
+    expectedVersion: ytDlpVersion
+  });
+  return {
+    descriptor: {
+      mode: 'python',
+      version: ytDlpVersion,
+      pythonVersion,
+      executable: relative(outputRoot, executable).replaceAll('\\', '/'),
+      script: relative(outputRoot, script).replaceAll('\\', '/'),
+      certificateBundle: relative(outputRoot, certificateBundle).replaceAll('\\', '/')
+    },
+    resourcePaths: listFiles(runtimeRoot),
+    executablePaths: [executable]
+  };
+}
+
+function extractPythonRuntime(archive, destination) {
+  execFileSync(process.platform === 'win32' ? 'tar.exe' : 'tar', [
+    '-xzf',
+    archive,
+    '-C',
+    destination
+  ], {
+    cwd: rootDir,
+    stdio: 'ignore'
+  });
+}
+
+function portablePythonExecutable(pythonRoot, platform) {
+  return platform === 'win32'
+    ? join(pythonRoot, 'python.exe')
+    : join(pythonRoot, 'bin', 'python3.13');
+}
+
+function listFiles(root) {
+  const files = [];
+  visit(root);
+  return files.sort();
+
+  function visit(current) {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile()) files.push(path);
+    }
+  }
+}
+
+function removePythonBytecodeCaches(root) {
+  visit(root);
+
+  function visit(current) {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory() && entry.name === '__pycache__') {
+        rmSync(path, { recursive: true, force: true });
+      } else if (entry.isDirectory()) {
+        visit(path);
+      } else if (entry.isFile() && entry.name.endsWith('.pyc')) {
+        rmSync(path, { force: true });
+      }
+    }
+  }
+}
+
+function clearMacOSFileMetadata(path, recursive = false) {
   if (process.platform !== 'darwin') return;
-  execFileSync('xattr', ['-c', path], {
+  execFileSync('xattr', [recursive ? '-cr' : '-c', path], {
     cwd: rootDir,
     stdio: 'ignore'
   });
@@ -244,7 +362,7 @@ function verifyStandaloneYtDlp(path) {
       env: minimalRuntimeEnvironment(process.env),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: ytDlpVerificationTimeoutMs,
+      timeout: 60_000,
       windowsHide: true
     }).trim();
   } catch (error) {
@@ -258,6 +376,41 @@ function verifyStandaloneYtDlp(path) {
   if (!/^\d{4}\.\d{2}\.\d{2}(?:\.\d{6})?$/.test(version)) {
     throw new Error(
       `yt-dlp must be an official stable or nightly build: ${version}`
+    );
+  }
+  return version;
+}
+
+function verifyPortableYtDlp(input) {
+  if (targetPlatform !== process.platform || targetArch !== process.arch) return;
+  let version;
+  try {
+    version = execFileSync(
+      input.executable,
+      ['-I', '-B', input.script, '--version'],
+      {
+        cwd: outputRoot,
+        env: {
+          ...minimalRuntimeEnvironment(process.env),
+          SSL_CERT_FILE: input.certificateBundle
+        },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 20_000,
+        windowsHide: true
+      }
+    ).trim();
+  } catch (error) {
+    const detail = error instanceof Error
+      ? `${error.message}\n${String(error.stderr ?? '')}`.trim().slice(-2_000)
+      : String(error);
+    throw new Error(
+      `Portable yt-dlp runtime failed its packaged environment check: ${detail}`
+    );
+  }
+  if (version !== input.expectedVersion) {
+    throw new Error(
+      `Portable yt-dlp returned ${version}; expected ${input.expectedVersion}`
     );
   }
 }
