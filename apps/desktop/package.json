@@ -16,6 +16,7 @@
     "prepare:codex-runtime": "node scripts/prepare-codex-runtime.mjs",
     "install:creator-runtime-dependencies": "node scripts/install-creator-runtime-dependencies.mjs",
     "prepare:creator-runtime": "node scripts/prepare-creator-runtime.mjs",
+    "prepare:stickman-runtime": "node scripts/prepare-stickman-runtime.mjs",
     "package": "node scripts/package-release.mjs --dir",
     "package:signed": "node scripts/package-release.mjs --dir --signed",
     "dist": "node scripts/package-release.mjs --dist",

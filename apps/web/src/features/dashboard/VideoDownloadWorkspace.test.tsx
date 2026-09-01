@@ -271,6 +271,8 @@ describe('VideoDownloadWorkspace', () => {
         claimExpiresAt: null,
         attempt: 1,
         idempotencyKey: null,
+        scopeKey: null,
+        inputFingerprint: null,
         progress: {
           phase: 'probing_source',
           percent: 20
@@ -442,6 +444,7 @@ function job(patch: Partial<CreatorJob> = {}): CreatorJob {
     stages: [],
     artifacts: [],
     activities: [],
+    providerRequests: [],
     createdAt,
     updatedAt: createdAt,
     ...patch
@@ -456,6 +459,9 @@ function probeArtifact(): CreatorArtifact {
     version: 1,
     status: 'completed',
     path: '/tmp/probe.json',
+    scopeKey: null,
+    inputFingerprint: null,
+    sha256: null,
     sourceArtifactIds: [],
     metadata: {
       id: 'demo',
@@ -522,6 +528,8 @@ function downloadStage(
     claimExpiresAt: null,
     attempt: status === 'queued' ? 0 : 1,
     idempotencyKey: null,
+    scopeKey: null,
+    inputFingerprint: null,
     progress: {
       optionId,
       mediaType: 'video',
@@ -545,6 +553,9 @@ function videoArtifact(): CreatorArtifact {
     version: 1,
     status: 'completed',
     path: '/tmp/Creator Download.mp4',
+    scopeKey: null,
+    inputFingerprint: null,
+    sha256: null,
     sourceArtifactIds: ['probe_artifact'],
     metadata: {
       fileName: 'Creator Download.mp4',

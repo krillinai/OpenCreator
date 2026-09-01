@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -29,6 +31,7 @@ import {
 const e2eDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(e2eDir, '..');
 const fakeCodexScript = join(e2eDir, 'fixtures', 'fake-codex.mjs');
+const fakeCodexLauncherSource = join(e2eDir, 'fixtures', 'fake-codex-launcher.go');
 const OVERSIZED_WAVE_PCM_BYTES = 10 * 1024 * 1024 + 4096;
 const OVERSIZED_WAVE_FILE_BYTES = OVERSIZED_WAVE_PCM_BYTES + 44;
 const enterpriseServer = new FakeEnterpriseAuthServer();
@@ -104,6 +107,38 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       'SKILL.md',
       'manifest.json'
     ]);
+    const stickmanRuntimeRoot = packagedStickmanRuntimeRoot();
+    const stickmanRuntimeManifest = JSON.parse(
+      readFileSync(join(stickmanRuntimeRoot, 'manifest.json'), 'utf8')
+    ) as {
+      platform: string;
+      arch: string;
+      remotionVersion: string;
+      chromiumVersion: string;
+      browserExecutable: string;
+      resources: Array<{ path: string; kind: string; platform: string; arch: string }>;
+    };
+    expect(stickmanRuntimeManifest).toMatchObject({
+      platform: process.platform,
+      arch: process.arch,
+      remotionVersion: '4.0.473',
+      browserExecutable: executableResource('browser/chrome-headless-shell')
+    });
+    expect(stickmanRuntimeManifest.chromiumVersion).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+    expect(stickmanRuntimeManifest.resources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: stickmanRuntimeManifest.browserExecutable,
+        kind: 'browser',
+        platform: process.platform,
+        arch: process.arch
+      }),
+      expect.objectContaining({
+        path: 'fonts/NotoSansSC-Bold.woff2',
+        kind: 'font',
+        platform: process.platform,
+        arch: process.arch
+      })
+    ]));
 
     const projectDir = join(fixture.root, 'creator-workspace');
     mkdirSync(projectDir, { recursive: true });
@@ -136,6 +171,7 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         source: string;
         currentVersion: string;
         bundledVersion: string;
+        latestVersion: string | null;
         updateAvailable: boolean;
       };
     }>(currentApp.page, 'GET', '/creator/yt-dlp/status');
@@ -144,9 +180,12 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       channel: 'nightly',
       source: 'bundled',
       currentVersion: '2026.08.29.232711',
-      bundledVersion: '2026.08.29.232711',
-      updateAvailable: false
+      bundledVersion: '2026.08.29.232711'
     });
+    expect(ytDlpStatus.body.ytDlp.updateAvailable).toBe(
+      ytDlpStatus.body.ytDlp.latestVersion !== null
+      && ytDlpStatus.body.ytDlp.latestVersion > ytDlpStatus.body.ytDlp.currentVersion
+    );
 
     const aliyunVoices = await runtimeRequest<{
       provider: string;
@@ -224,7 +263,7 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       message: '合成横屏视频',
       sandbox: 'danger-full-access'
     });
-    expect(agentTurn.status).toBe(200);
+    expect(agentTurn.status, JSON.stringify(agentTurn.body)).toBe(200);
     expect(agentTurn.body.turn).toMatchObject({
       role: 'assistant',
       status: 'completed',
@@ -326,6 +365,60 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         ratio: '9:16',
         quality: 'high',
         candidateCount: 2
+      }
+    });
+    const stickmanJob = await runtimeRequest<{
+      job: {
+        id: string;
+        revision: number;
+        templateVersion: number;
+        state: Record<string, unknown>;
+      };
+    }>(currentApp.page, 'POST', '/creator/jobs', {
+      projectId: createdProject.body.project.id,
+      templateId: 'stickman-video',
+      state: {
+        sourceType: 'url',
+        sourceUrl: 'https://www.youtube.com/watch?v=creator-stickman-package-smoke',
+        selectedPresetId: 'default',
+        characterPrompt: '统一的极简火柴人角色',
+        style: '极简黑白线稿',
+        ratio: '16:9',
+        targetDurationSeconds: 20,
+        targetLanguage: 'zh-CN',
+        voice: 'alloy'
+      }
+    });
+    expect(stickmanJob.status).toBe(201);
+    expect(stickmanJob.body.job).toMatchObject({
+      revision: 0,
+      templateVersion: 2,
+      state: {
+        sourceType: 'url',
+        sourceUrl: 'https://www.youtube.com/watch?v=creator-stickman-package-smoke',
+        selectedPresetId: 'default'
+      }
+    });
+    const updatedStickmanJob = await runtimeRequest<{
+      job: { id: string; revision: number; state: Record<string, unknown> };
+    }>(currentApp.page, 'POST', `/creator/jobs/${stickmanJob.body.job.id}/actions`, {
+      action: 'update-settings',
+      expectedRevision: stickmanJob.body.job.revision,
+      input: {
+        patch: {
+          selectedPresetId: 'tech-guy',
+          characterPrompt: '戴简洁眼镜的科技火柴人',
+          style: '白底黑线知识动画'
+        }
+      }
+    });
+    expect(updatedStickmanJob.status).toBe(200);
+    expect(updatedStickmanJob.body.job).toMatchObject({
+      revision: 1,
+      state: {
+        selectedPresetId: 'tech-guy',
+        characterPrompt: '戴简洁眼镜的科技火柴人',
+        style: '白底黑线知识动画'
       }
     });
 
@@ -452,6 +545,32 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     expect(containsPythonBytecodeCache(
       join(runtimeRoot, 'yt-dlp-runtime', 'python')
     )).toBe(false);
+    const restoredStickmanJob = await runtimeRequest<{
+      job: { id: string; revision: number; templateVersion: number; state: Record<string, unknown> };
+    }>(currentApp.page, 'GET', `/creator/jobs/${stickmanJob.body.job.id}`);
+    expect(restoredStickmanJob.status).toBe(200);
+    expect(restoredStickmanJob.body.job).toMatchObject({
+      id: stickmanJob.body.job.id,
+      templateVersion: 2,
+      state: {
+        sourceType: 'url',
+        sourceUrl: 'https://www.youtube.com/watch?v=creator-stickman-package-smoke',
+        selectedPresetId: 'tech-guy',
+        characterPrompt: '戴简洁眼镜的科技火柴人',
+        style: '白底黑线知识动画'
+      }
+    });
+    expect(restoredStickmanJob.body.job.revision)
+      .toBeGreaterThanOrEqual(updatedStickmanJob.body.job.revision);
+    await currentApp.page.getByRole('button', { name: '我的项目' }).click();
+    await currentApp.page.getByRole('button', {
+      name: '打开项目 youtube.com · creator-stickman-package-smoke'
+    }).click();
+    await expect(currentApp.page.getByRole('heading', { name: '火柴人动画' })).toBeVisible();
+    await expect(currentApp.page.getByRole('radio', { name: '科技男' })).toBeChecked();
+    await expect(currentApp.page.getByRole('textbox', { name: '角色描述' }))
+      .toHaveValue('戴简洁眼镜的科技火柴人');
+    await expect(currentApp.page.locator('.creator-collaboration-panel')).toHaveCount(1);
     expect(hasWhisperKitDependency(fixture.root)).toBe(false);
   } finally {
     await currentApp.page.evaluate(async () => {
@@ -524,6 +643,8 @@ async function launchCreatorDesktop(): Promise<{
       OPENCREATOR_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
       OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir,
       OPENCREATOR_E2E_FAKE_CODEX_MODE: 'success',
+      OPENCREATOR_E2E_NODE_BINARY: process.execPath,
+      OPENCREATOR_E2E_FAKE_CODEX_SCRIPT: fakeCodexScript,
       OPENCREATOR_ENTERPRISE_E2E_RUN_ID: enterpriseRunId
     },
     timeoutMs: 45_000
@@ -636,6 +757,13 @@ function packagedRuntimeRoot(): string {
     : join(packageRoot, 'resources', 'creator-runtime', 'krillinai');
 }
 
+function packagedStickmanRuntimeRoot(): string {
+  const packageRoot = dirname(packagedExecutable(desktopDir));
+  return process.platform === 'darwin'
+    ? resolve(packageRoot, '..', 'Resources', 'stickman-runtime')
+    : join(packageRoot, 'resources', 'stickman-runtime');
+}
+
 function executableResource(path: string): string {
   return process.platform === 'win32' ? `${path}.exe` : path;
 }
@@ -715,15 +843,29 @@ function packagedCreatorAgentRuntimeFiles(): string[] {
 function writeCodexShim(binDir: string): string {
   mkdirSync(binDir, { recursive: true });
   const scriptPath = process.platform === 'win32'
-    ? join(binDir, 'codex.cmd')
+    ? join(binDir, 'codex.exe')
     : join(binDir, 'codex');
+  if (process.platform === 'win32') {
+    const cacheDir = join(desktopDir, '.cache', 'e2e');
+    const cachedLauncher = join(cacheDir, 'fake-codex-launcher.exe');
+    mkdirSync(cacheDir, { recursive: true });
+    if (
+      !existsSync(cachedLauncher)
+      || statSync(cachedLauncher).mtimeMs < statSync(fakeCodexLauncherSource).mtimeMs
+    ) {
+      execFileSync('go', ['build', '-trimpath', '-o', cachedLauncher, fakeCodexLauncherSource], {
+        cwd: desktopDir,
+        stdio: 'inherit'
+      });
+    }
+    copyFileSync(cachedLauncher, scriptPath);
+    return scriptPath;
+  }
   writeFileSync(
     scriptPath,
-    process.platform === 'win32'
-      ? `@echo off\r\n"${process.execPath}" "${fakeCodexScript}" %*\r\n`
-      : `#!/bin/sh\nexec "${process.execPath}" "${fakeCodexScript}" "$@"\n`
+    `#!/bin/sh\nexec "${process.execPath}" "${fakeCodexScript}" "$@"\n`
   );
-  if (process.platform !== 'win32') chmodSync(scriptPath, 0o755);
+  chmodSync(scriptPath, 0o755);
   return scriptPath;
 }
 

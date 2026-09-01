@@ -29,8 +29,7 @@ const legacyResultArtifactKinds = new Set([
   'vertical_video',
   'cover_image',
   'generated_image',
-  'clip_video',
-  'stickman_video'
+  'clip_video'
 ]);
 
 export function nextCreatorResultVersion(job: CreatorJob): number {
@@ -134,7 +133,7 @@ function legacyArtifactRefs(artifacts: CreatorArtifact[], excludedIds: Set<strin
   const refs: Record<string, string[]> = {};
   for (const artifact of artifacts) {
     if (excludedIds.has(artifact.id) || !['completed', 'stale'].includes(artifact.status)) continue;
-    refs[artifact.kind] = [artifact.id];
+    refs[artifact.kind] = [...(refs[artifact.kind] ?? []), artifact.id];
   }
   return refs;
 }

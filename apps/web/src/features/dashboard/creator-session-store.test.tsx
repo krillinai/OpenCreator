@@ -19,6 +19,7 @@ function job(revision: number, state: Record<string, any>): CreatorJob {
     agentThreadId: null,
     stages: [],
     artifacts: [],
+    providerRequests: [],
     activities: [],
     createdAt: '2026-08-20T00:00:00.000Z',
     updatedAt: '2026-08-20T00:00:00.000Z'

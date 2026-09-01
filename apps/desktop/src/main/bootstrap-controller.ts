@@ -43,6 +43,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
     dataDir: string;
     codexRuntimeRoot: string;
     creatorRuntimeRoot: string;
+    stickmanRuntimeRoot: string;
     defaultProjectRoot: string;
     development: boolean;
     enterpriseConfigPath: string;
@@ -319,6 +320,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
       codexHome: environment.codexHome,
       dataDir: this.input.dataDir,
       creatorRuntimeRoot: this.input.creatorRuntimeRoot,
+      stickmanRuntimeRoot: this.input.stickmanRuntimeRoot,
       codexRuntimeRoot: this.input.codexRuntimeRoot,
       codexRuntimeMode: environment.source,
       defaultCwd: environment.defaultCwd,

@@ -32,6 +32,7 @@ export type CreatorPanelAdapter = {
     l: CreatorPanelLocalize
   ): NormalizedCreatorActivity | null;
   readStageProgress(stage: CreatorStageRun): CreatorStageProgressView;
+  aggregateStages?(stages: CreatorStageRun[]): CreatorStageRun[];
   runningProgressText?(
     stage: CreatorStageRun,
     progress: CreatorStageProgressView,
@@ -251,10 +252,125 @@ export const videoDownloadPanelAdapter: CreatorPanelAdapter = {
   }
 };
 
+export const stickmanVideoPanelAdapter: CreatorPanelAdapter = {
+  id: 'stickman-video',
+  composerPlaceholder: l => l(
+    '询问状态，或描述要调整的脚本、镜头、角色和成片要求',
+    'Ask about status or describe script, shot, character, and delivery changes'
+  ),
+  stageLabel(stageId, l) {
+    const labels: Record<string, string> = {
+      'acquire-source': l('获取 YouTube 来源', 'Acquire YouTube source'),
+      'source-transcript': l('提取来源字幕', 'Extract source transcript'),
+      'source-brief': l('生成来源摘要', 'Create source brief'),
+      'content-plan': l('规划内容结构', 'Plan content structure'),
+      script: l('生成脚本', 'Generate script'),
+      storyboard: l('生成分镜', 'Generate storyboard'),
+      images: l('生成镜头画面', 'Generate shot visuals'),
+      narration: l('生成旁白', 'Generate narration'),
+      'visual-validation': l('校验画面', 'Validate visuals'),
+      timeline: l('编排时间线', 'Build timeline'),
+      'render-clean': l('渲染纯净视频', 'Render clean video'),
+      cover: l('生成 YouTube 封面', 'Generate YouTube cover'),
+      subtitles: l('生成双语字幕', 'Generate bilingual subtitles'),
+      'publish-copy': l('生成发布文案', 'Generate publish copy'),
+      'bilingual-render': l('渲染双语视频', 'Render bilingual video'),
+      'package-validation': l('校验固定交付', 'Validate delivery package')
+    };
+    return labels[stageId] ?? l('火柴人视频任务', 'Stickman video task');
+  },
+  phaseLabel(phase, l) {
+    const labels: Record<string, string> = {
+      validating: l('检查任务输入', 'Checking task input'),
+      downloading: l('下载 YouTube 视频', 'Downloading YouTube video'),
+      transcribing: l('提取来源字幕', 'Extracting source transcript'),
+      analyzing: l('理解来源内容', 'Analyzing source content'),
+      planning: l('规划内容结构', 'Planning content structure'),
+      writing: l('生成创作内容', 'Writing creative content'),
+      submitting: l('提交图像生成服务', 'Submitting to the image provider'),
+      generating: l('生成镜头画面', 'Generating shot visuals'),
+      synthesizing: l('合成旁白音频', 'Synthesizing narration'),
+      rendering: l('渲染视频', 'Rendering video'),
+      packaging: l('整理固定交付', 'Packaging deliverables'),
+      failed: l('阶段执行失败', 'Stage failed'),
+      completed: l('阶段已完成', 'Stage completed')
+    };
+    return labels[phase] ?? genericPhaseLabel(phase, l);
+  },
+  activityStageId: readActivityStageId,
+  normalizeActivity(activity, l) {
+    const labels: Record<string, string> = {
+      'approve-script': l('审核通过了脚本', 'Approved the script'),
+      'edit-script': l('保存了脚本修改', 'Saved script changes'),
+      'edit-shot': l('保存了镜头修改', 'Saved shot changes'),
+      'approve-storyboard': l('审核通过了分镜', 'Approved the storyboard'),
+      'regenerate-shot': l('重新生成了单个镜头', 'Regenerated one shot'),
+      'approve-visuals': l('确认了镜头画面', 'Approved shot visuals'),
+      'retry-stage': l('重试了失败阶段', 'Retried a failed stage'),
+      'commit-version': l('保存了新的交付版本', 'Committed a new delivery version')
+    };
+    if (activity.action === 'resolve-provider-request') {
+      const decision = readString(activity.details.decision);
+      if (decision === 'confirm-resubmit') {
+        return { label: l('用户确认了可能重复计费的重提', 'User confirmed a potentially duplicate billed resubmission'), fields: [] };
+      }
+      if (decision === 'cancel-scope') {
+        return { label: l('用户取消了状态未知的镜头请求', 'User canceled the unresolved shot request'), fields: [] };
+      }
+      return { label: l('查询了状态未知的 Provider 请求', 'Queried an unresolved provider request'), fields: [] };
+    }
+    return normalizeCommonActivity(
+      activity,
+      l,
+      stickmanVideoPanelAdapter,
+      labels,
+      stickmanFieldLabel
+    );
+  },
+  readStageProgress: readStandardProgress,
+  aggregateStages(stages) {
+    const otherStages = stages.filter(stage => stage.stageId !== 'images');
+    const imageStages = stages.filter(stage => stage.stageId === 'images');
+    if (imageStages.length === 0) return stages;
+    const latestByScope = new Map<string, CreatorStageRun>();
+    for (const stage of imageStages) latestByScope.set(stage.scopeKey ?? stage.id, stage);
+    const current = [...latestByScope.values()];
+    const representative = current.sort((left, right) => (
+      (left.startedAt ?? '').localeCompare(right.startedAt ?? '')
+    )).at(-1)!;
+    const completed = current.filter(stage => stage.status === 'succeeded').length;
+    const failed = current.filter(stage => stage.status === 'failed').length;
+    const running = current.some(stage => stage.status === 'running' || stage.status === 'queued');
+    const aggregate: CreatorStageRun = {
+      ...representative,
+      id: `stickman-images:${current.map(stage => stage.id).sort().join(':')}`,
+      scopeKey: null,
+      inputFingerprint: null,
+      status: running ? 'running' : failed > 0 ? 'failed' : 'succeeded',
+      progress: {
+        ...representative.progress,
+        completed,
+        failed,
+        total: current.length,
+        percent: current.length === 0 ? 0 : Math.round((completed / current.length) * 100)
+      }
+    };
+    return [...otherStages, aggregate];
+  },
+  runningProgressText(_stage, progress, l) {
+    if (progress.total === null || progress.completed === null) return null;
+    return l(
+      `镜头完成 ${progress.completed}/${progress.total}${progress.failed ? `，失败 ${progress.failed}` : ''}`,
+      `${progress.completed}/${progress.total} shots completed${progress.failed ? `, ${progress.failed} failed` : ''}`
+    );
+  }
+};
+
 export function creatorPanelAdapterFor(templateId: string): CreatorPanelAdapter {
   if (templateId === 'video-translation') return videoTranslationPanelAdapter;
   if (templateId === 'video-download') return videoDownloadPanelAdapter;
   if (templateId === 'cover') return coverPanelAdapter;
+  if (templateId === 'stickman-video') return stickmanVideoPanelAdapter;
   return genericAdapter;
 }
 
@@ -358,6 +474,22 @@ function videoDownloadFieldLabel(
     mediaType: l('媒体类型', 'Media type'),
     selectedOptionId: l('下载规格', 'Download format'),
     formatId: l('下载规格', 'Download format')
+  };
+  return labels[field] ?? null;
+}
+
+function stickmanFieldLabel(
+  field: string,
+  l: CreatorPanelLocalize
+): string | null {
+  const labels: Record<string, string> = {
+    sourceUrl: l('YouTube 来源', 'YouTube source'),
+    selectedPresetId: l('角色预设', 'Character preset'),
+    characterPrompt: l('角色描述', 'Character prompt'),
+    style: l('视觉风格', 'Visual style'),
+    targetDurationSeconds: l('目标时长', 'Target duration'),
+    targetLanguage: l('目标语言', 'Target language'),
+    voice: l('旁白音色', 'Narration voice')
   };
   return labels[field] ?? null;
 }

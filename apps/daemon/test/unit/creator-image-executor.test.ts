@@ -186,6 +186,9 @@ describe('creator image executor', () => {
         version: 1,
         status: 'completed',
         path: referencePath,
+        scopeKey: null,
+        inputFingerprint: null,
+        sha256: null,
         sourceArtifactIds: [],
         metadata: {},
         createdAt: '2026-08-26T00:00:00.000Z'
@@ -232,6 +235,7 @@ function stageInput(
     agentThreadId: null,
     stages: [],
     artifacts: jobPatch.artifacts ?? [],
+    providerRequests: [],
     activities: [],
     createdAt,
     updatedAt: createdAt
@@ -247,6 +251,8 @@ function stageInput(
     claimExpiresAt: null,
     attempt: 1,
     idempotencyKey: null,
+    scopeKey: null,
+    inputFingerprint: null,
     progress: {},
     errorCode: null,
     errorMessage: null,

@@ -12,6 +12,7 @@ export type CreatorTemplateStage = {
   optional?: boolean;
   completesJob?: boolean;
   resultVersionPolicy?: 'snapshot' | 'none';
+  jobCompletionPolicy?: 'complete' | 'continue';
   invalidateDependentArtifacts?: boolean;
   allowedJobStatuses: CreatorJobStatus[];
   inputArtifacts: Array<{

@@ -15,23 +15,26 @@
     "verify:schedule-upgrade": "node --import tsx scripts/verify-scheduled-task-upgrade.ts"
   },
   "dependencies": {
-    "@opencreator/protocol": "workspace:*",
-    "@opencreator/skill-market": "workspace:*",
     "@fastify/cors": "^11.0.1",
     "@iarna/toml": "2.2.5",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@opencreator/protocol": "workspace:*",
+    "@opencreator/skill-market": "workspace:*",
+    "@remotion/renderer": "4.0.473",
     "better-sqlite3": "^12.11.1",
     "cron-parser": "^5.6.1",
     "cross-spawn": "^7.0.6",
     "fastify": "^5.2.1",
     "https-proxy-agent": "^7.0.6",
     "nanoid": "^5.0.9",
+    "sharp": "0.34.3",
     "toml": "^3.0.0",
     "yaml": "^2.8.1",
     "yauzl": "3.4.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@remotion/bundler": "4.0.473",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cross-spawn": "^6.0.6",
     "@types/yauzl": "3.4.0"

@@ -31,6 +31,17 @@ export const creatorArtifactStatuses = [
   'stale'
 ] as const;
 
+export const creatorProviderRequestStatuses = [
+  'registered',
+  'submitting',
+  'waiting_remote',
+  'succeeded',
+  'failed',
+  'unknown_remote_acceptance',
+  'abandoned_unknown',
+  'canceled'
+] as const;
+
 export const creatorEventKinds = [
   'snapshot_changed',
   'activity_changed',
@@ -95,6 +106,7 @@ export type CreatorJobStatus = typeof creatorJobStatuses[number];
 export type CreatorStageRunStatus = typeof creatorStageRunStatuses[number];
 export type CreatorStageDispatchStatus = typeof creatorStageDispatchStatuses[number];
 export type CreatorArtifactStatus = typeof creatorArtifactStatuses[number];
+export type CreatorProviderRequestStatus = typeof creatorProviderRequestStatuses[number];
 export type CreatorEventKind = typeof creatorEventKinds[number];
 export type CreatorAgentSessionStatus = typeof creatorAgentSessionStatuses[number];
 export type CreatorAgentTurnStatus = typeof creatorAgentTurnStatuses[number];
@@ -114,6 +126,9 @@ export type CreatorArtifact = {
   version: number;
   status: CreatorArtifactStatus;
   path: string | null;
+  scopeKey: string | null;
+  inputFingerprint: string | null;
+  sha256: string | null;
   sourceArtifactIds: string[];
   metadata: Record<string, CreatorJson>;
   createdAt: string;
@@ -131,6 +146,24 @@ export type CreatorResultSnapshot = {
   state: Record<string, CreatorJson>;
 };
 
+export type CreatorProviderRequest = {
+  id: string;
+  jobId: string;
+  provider: string;
+  stageRunId: string;
+  scopeKey: string | null;
+  requestKey: string;
+  requestHash: string;
+  remoteTaskId: string | null;
+  billingSideEffect: boolean;
+  status: CreatorProviderRequestStatus;
+  resultArtifactId: string | null;
+  generation: number;
+  resubmissionOf: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CreatorStageRun = {
   id: string;
   jobId: string;
@@ -142,6 +175,8 @@ export type CreatorStageRun = {
   claimExpiresAt: string | null;
   attempt: number;
   idempotencyKey: string | null;
+  scopeKey: string | null;
+  inputFingerprint: string | null;
   progress: Record<string, CreatorJson>;
   errorCode: string | null;
   errorMessage: string | null;
@@ -171,6 +206,7 @@ export type CreatorJob = {
   agentThreadId: string | null;
   stages: CreatorStageRun[];
   artifacts: CreatorArtifact[];
+  providerRequests: CreatorProviderRequest[];
   activities: CreatorActivity[];
   createdAt: string;
   updatedAt: string;

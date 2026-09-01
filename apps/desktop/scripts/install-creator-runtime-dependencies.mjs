@@ -200,22 +200,22 @@ function creatorRuntimeRelease(input) {
       expected: /krillinai-cli <command>/
     },
     ffmpeg: {
-      version: '6.0',
+      version: '6.1.1',
       fileName: `ffmpeg${suffix}`,
       url: `https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-${input.mediaTarget}`,
       sha256: input.ffmpegSha256,
       executable: true,
       verify: ['-version'],
-      expected: /^ffmpeg version 6\.0/m
+      expected: /^ffmpeg version 6\.1\.1/m
     },
     ffprobe: {
-      version: '6.0',
+      version: '6.1.1',
       fileName: `ffprobe${suffix}`,
       url: `https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-${input.mediaTarget}`,
       sha256: input.ffprobeSha256,
       executable: true,
       verify: ['-version'],
-      expected: /^ffprobe version 6\.0/m
+      expected: /^ffprobe version 6\.1\.1/m
     },
     ytDlp: {
       version: ytDlpVersion,

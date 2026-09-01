@@ -15,7 +15,12 @@ type TestResponse = { statusCode: number; json(): any };
 afterEach(async () => {
   await server?.close();
   server = undefined;
-  if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+  if (tempDir) rmSync(tempDir, {
+    recursive: true,
+    force: true,
+    maxRetries: 30,
+    retryDelay: 100
+  });
   tempDir = '';
 });
 

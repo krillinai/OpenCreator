@@ -10,6 +10,8 @@ import type {
   CreatorJson
 } from '@opencreator/protocol';
 import type { CreatorRepository } from './repository.js';
+import { CreatorProviderRequestLedger } from './provider-requests.js';
+import { handleStickmanAction } from './stickman/action-handler.js';
 import {
   appendCreatorResultSnapshot,
   creatorResultSnapshotForVersion,
@@ -34,8 +36,11 @@ export class CreatorServiceError extends Error {
 export function createCreatorService(input: {
   repository: CreatorRepository;
   templates: CreatorTemplateRegistry;
+  providerRequestLedger?: CreatorProviderRequestLedger;
 }) {
   const { repository, templates } = input;
+  const providerRequestLedger = input.providerRequestLedger
+    ?? new CreatorProviderRequestLedger(repository);
 
   const getJob = (id: string): CreatorJob | undefined => repository.getJob(id);
 
@@ -397,6 +402,8 @@ export function createCreatorService(input: {
       deepLink?: string;
       resumeStageId?: string;
       workflow?: boolean;
+      reviewKind?: 'approve-script' | 'approve-storyboard' | 'approve-visuals';
+      artifactId?: string;
     }): CreatorJob {
       return repository.transaction(() => {
         const current = repository.getJob(jobId);
@@ -416,6 +423,8 @@ export function createCreatorService(input: {
                 ? {}
                 : { resumeStageId: input.resumeStageId }),
               ...(input.workflow === undefined ? {} : { workflow: input.workflow })
+              , ...(input.reviewKind === undefined ? {} : { kind: input.reviewKind })
+              , ...(input.artifactId === undefined ? {} : { artifactId: input.artifactId })
             }
           }
         });
@@ -458,8 +467,23 @@ export function createCreatorService(input: {
         let nextState = { ...current.state };
         let nextStatus: CreatorJobStatus = current.status;
         const affectedArtifactIds: string[] = [];
+        const stickmanAction = handleStickmanAction({
+          repository,
+          current,
+          action: request.action,
+          parsedInput,
+          actor,
+          newRevision
+        });
+        if (stickmanAction.handled) {
+          nextState = stickmanAction.state;
+          nextStatus = stickmanAction.status;
+          affectedArtifactIds.push(...stickmanAction.affectedArtifactIds);
+        }
 
-        if (request.action === 'update-settings' || request.action === 'undo-action') {
+        if (stickmanAction.handled) {
+          // Template-specific mutations have already produced the authoritative state.
+        } else if (request.action === 'update-settings' || request.action === 'undo-action') {
           const patch = readNonEmptyRecord(parsedInput.patch, 'patch');
           nextState = { ...nextState, ...patch };
           if (current.templateId === 'video-translation' && nextState.sourceType === 'url') {
@@ -531,53 +555,6 @@ export function createCreatorService(input: {
               state: nextState
             })
           };
-        } else if (request.action === 'edit-script-segment') {
-          const artifactId = readString(parsedInput.artifactId, 'artifactId');
-          const source = current.artifacts.find(artifact => artifact.id === artifactId);
-          if (source === undefined || source.kind !== 'script_segment') {
-            throw new CreatorServiceError('creator_artifact_not_found', 'Script segment artifact was not found');
-          }
-          const invalidKinds = new Set(
-            templates.resolveInvalidatedArtifactKinds(
-              current.templateId,
-              current.templateVersion,
-              request.action
-            )
-          );
-          const resultVersion = nextCreatorResultVersion(current);
-          for (const artifact of dependentArtifacts(current.artifacts, artifactId)) {
-            if (!invalidKinds.has(artifact.kind) || artifact.status === 'stale') continue;
-            repository.setArtifactStatus(artifact.id, 'stale');
-            affectedArtifactIds.push(artifact.id);
-          }
-          const nextSegment = repository.insertArtifact({
-            jobId,
-            kind: 'script_segment',
-            status: 'completed',
-            path: source.path,
-            sourceArtifactIds: source.sourceArtifactIds,
-            metadata: {
-              ...source.metadata,
-              narration: readString(parsedInput.narration, 'narration'),
-              ...(typeof parsedInput.visualPrompt === 'string'
-                ? { visualPrompt: parsedInput.visualPrompt }
-                : {}),
-              editedFromArtifactId: source.id,
-              resultVersion
-            }
-          });
-          affectedArtifactIds.push(nextSegment.id);
-          nextState = {
-            ...nextState,
-            ...appendCreatorResultSnapshot({
-              job: current,
-              version: resultVersion,
-              changedArtifacts: [nextSegment],
-              staleArtifactIds: affectedArtifactIds.filter(id => id !== nextSegment.id),
-              action: request.action,
-              description: '保存脚本修改'
-            })
-          };
         } else if (request.action === 'commit-version') {
           const baseResultVersion = readResultVersion(
             current,
@@ -611,6 +588,59 @@ export function createCreatorService(input: {
           nextState = { ...nextState, currentStage: stageId };
           delete nextState.needsInput;
           nextStatus = 'running';
+        } else if (request.action === 'retry-stage') {
+          const stageId = readString(parsedInput.stageId, 'stageId');
+          const scopeKey = typeof parsedInput.scopeKey === 'string'
+            ? parsedInput.scopeKey
+            : null;
+          if (providerRequestLedger.unresolvedForStage({ jobId, stageId, scopeKey }).length > 0) {
+            throw new CreatorServiceError(
+              'creator_provider_resolution_required',
+              'Provider request acceptance must be resolved before retrying this stage'
+            );
+          }
+          nextState = { ...nextState, currentStage: stageId };
+          delete nextState.needsInput;
+          nextStatus = 'running';
+        } else if (request.action === 'resolve-provider-request') {
+          const ledgerId = readString(parsedInput.ledgerId, 'ledgerId');
+          const ledger = current.providerRequests.find(item => item.id === ledgerId);
+          if (ledger === undefined) {
+            throw new CreatorServiceError(
+              'creator_provider_request_not_found',
+              'Creator provider request was not found'
+            );
+          }
+          const decision = readString(parsedInput.decision, 'decision');
+          if (decision === 'confirm-resubmit') {
+            if (actor !== 'user' || parsedInput.acceptDuplicateBilling !== true) {
+              throw new CreatorServiceError(
+                'creator_provider_confirmation_required',
+                'Only a user can confirm a potentially duplicate billed request'
+              );
+            }
+            providerRequestLedger.confirmResubmit(ledgerId);
+            nextStatus = 'running';
+            delete nextState.needsInput;
+          } else if (decision === 'cancel-scope') {
+            providerRequestLedger.cancelScope(ledgerId);
+            const stage = current.stages.find(item => item.id === ledger.stageRunId);
+            if (stage !== undefined && !['succeeded', 'failed', 'canceled', 'interrupted'].includes(stage.status)) {
+              repository.updateStageRun({
+                id: stage.id,
+                status: 'canceled',
+                errorCode: 'creator_provider_scope_canceled',
+                errorMessage: 'Provider request scope was canceled by the user'
+              });
+            }
+          } else if (decision === 'query') {
+            nextStatus = 'needs_input';
+          } else {
+            throw new CreatorServiceError(
+              'creator_action_invalid',
+              'Unsupported provider request decision'
+            );
+          }
         }
 
         repository.updateJob({
@@ -679,6 +709,11 @@ function writeActivity(input: {
   if (input.action === 'run-stage' && typeof input.input.stageId === 'string') {
     details.stageId = input.input.stageId;
   }
+  if (input.action === 'resolve-provider-request') {
+    details.ledgerId = input.input.ledgerId ?? null;
+    details.decision = input.input.decision ?? null;
+    details.revision = input.input.revision ?? null;
+  }
   if (
     input.action === 'update-settings'
     && details.objectId === ''
@@ -725,6 +760,13 @@ function activityInputFor(
   action: string,
   input: Record<string, CreatorJson>
 ): Record<string, CreatorJson> {
+  if (action === 'resolve-provider-request') {
+    return {
+      ledgerId: input.ledgerId ?? null,
+      decision: input.decision ?? null,
+      revision: input.revision ?? null
+    };
+  }
   if (action !== 'update-settings') return input;
   const patch = input.patch;
   if (patch === null || Array.isArray(patch) || typeof patch !== 'object') return input;
@@ -756,6 +798,8 @@ function summarizeAction(action: string, input: Record<string, CreatorJson>): st
   if (action === 'edit-subtitle') return '更新字幕并保留下游旧版本';
   if (action === 'commit-version') return '保存项目版本设置';
   if (action === 'run-stage') return `启动阶段 ${String(input.stageId ?? '')}`.trim();
+  if (action === 'retry-stage') return `重试阶段 ${String(input.stageId ?? '')}`.trim();
+  if (action === 'resolve-provider-request') return '处置计费服务请求';
   if (action === 'undo-action') return '撤销上一次创作修改';
   return '更新创作设置';
 }

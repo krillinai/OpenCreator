@@ -187,6 +187,8 @@ describe('CoverGeneratorWorkspace', () => {
         claimExpiresAt: null,
         attempt: 1,
         idempotencyKey: 'cover-stage-running',
+        scopeKey: null,
+        inputFingerprint: null,
         progress: {
           phase: 'generating_candidates',
           percent: 53,
@@ -262,6 +264,7 @@ function createFixture() {
     agentThreadId: null,
     stages: [],
     artifacts: [],
+    providerRequests: [],
     activities: [],
     createdAt,
     updatedAt: createdAt
@@ -342,6 +345,9 @@ function createFixture() {
       version: 1,
       status: 'completed',
       path: '/tmp/reference.png',
+      scopeKey: null,
+      inputFingerprint: null,
+      sha256: null,
       sourceArtifactIds: [],
       metadata: {
         fileName: input.file.name,
@@ -386,6 +392,9 @@ function coverArtifact(
     version: candidate,
     status: 'completed',
     path: `/tmp/cover-${candidate}.png`,
+    scopeKey: null,
+    inputFingerprint: null,
+    sha256: null,
     sourceArtifactIds: [],
     metadata: {
       candidate,

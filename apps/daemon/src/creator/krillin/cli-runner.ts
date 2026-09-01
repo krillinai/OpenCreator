@@ -87,7 +87,7 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
     useOnDemandTranscription: input.config.transcription.provider === 'whisperkit',
     ytDlpRuntime: input.ytDlpRuntime
   });
-  const cliConfig = stageConfig(input.config, input.stage.stageRun.stageId, input.options);
+  const cliConfig = stageConfig(input.config, krillinCliStageId(input.stage.stageRun.stageId), input.options);
   await writeFile(
     join(configDir, 'config.toml'),
     createKrillinConfigToml(cliConfig),
@@ -100,7 +100,7 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
   if (stylePath !== undefined) {
     await writeFile(stylePath, `${JSON.stringify(style, null, 2)}\n`, { mode: 0o600 });
   }
-  if (input.stage.stageRun.stageId !== 'subtitle') {
+  if (krillinCliStageId(input.stage.stageRun.stageId) !== 'subtitle') {
     await writeInitialManifest(input.stage, input.options);
   }
 
@@ -175,7 +175,7 @@ function commandArguments(
   options: Record<string, unknown>,
   stylePath: string | undefined
 ): string[] {
-  const command = stage.stageRun.stageId;
+  const command = krillinCliStageId(stage.stageRun.stageId);
   const common = ['--workdir', stage.workdir, '--task-id', stage.stageRun.id];
   if (command === 'subtitle') {
     const source = resolveKrillinCliSource(artifacts, options);
@@ -366,6 +366,10 @@ async function collectArtifacts(
 }
 
 export function outputMappings(stageId: string): Array<[string, string]> {
+  if (stageId === 'source-transcript') return [['origin_srt', 'source_subtitle']];
+  if (stageId === 'narration') return [['tts_audio', 'narration_audio']];
+  if (stageId === 'subtitles') return [['bilingual_srt', 'bilingual_subtitle']];
+  if (stageId === 'bilingual-render') return [['horizontal_video', 'bilingual_video']];
   if (stageId === 'subtitle') {
     return [
       ['origin_video', 'source_video'],
@@ -379,6 +383,13 @@ export function outputMappings(stageId: string): Array<[string, string]> {
   if (stageId === 'render-horizontal') return [['horizontal_video', 'horizontal_video']];
   if (stageId === 'render-vertical') return [['vertical_video', 'vertical_video']];
   return [];
+}
+
+function krillinCliStageId(stageId: string): string {
+  if (stageId === 'source-transcript' || stageId === 'subtitles') return 'subtitle';
+  if (stageId === 'narration') return 'tts';
+  if (stageId === 'bilingual-render') return 'render-horizontal';
+  return stageId;
 }
 
 export function createKrillinCliEnvironment(

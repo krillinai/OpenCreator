@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CreatorArtifact, CreatorJob, CreatorJson, CreatorStageRun } from '@opencreator/protocol';
 import type { CreatorExecutor } from './executor.js';
@@ -26,7 +27,7 @@ export function createCreatorStageRunner(input: {
 }) {
   const executors = new Map(input.executors.map(executor => [executor.id, executor]));
   const active = new Map<string, AbortController>();
-  const jobTails = new Map<string, Promise<unknown>>();
+  const laneTails = new Map<string, Promise<unknown>>();
   const waiters: Array<() => void> = [];
   let running = 0;
   let closed = false;
@@ -56,13 +57,16 @@ export function createCreatorStageRunner(input: {
       throw new CreatorExecutorError('creator_stage_not_found', 'Creator stage run was not found');
     }
     const jobId = queued.jobId;
-    const previous = jobTails.get(jobId) ?? Promise.resolve();
+    const laneKey = queued.scopeKey === null
+      ? jobId
+      : `${jobId}:${queued.stageId}:${queued.scopeKey}`;
+    const previous = laneTails.get(laneKey) ?? Promise.resolve();
     const work = previous.catch(() => undefined).then(() => execute(stageRunId));
-    jobTails.set(jobId, work);
+    laneTails.set(laneKey, work);
     try {
       return await work;
     } finally {
-      if (jobTails.get(jobId) === work) jobTails.delete(jobId);
+      if (laneTails.get(laneKey) === work) laneTails.delete(laneKey);
     }
   }
 
@@ -142,7 +146,20 @@ export function createCreatorStageRunner(input: {
         if (declaredOutputs.get(output.kind) !== output.status) {
           throw new CreatorExecutorError('creator_executor_output_invalid', `Executor returned undeclared output ${output.kind}/${output.status}`);
         }
+        if (
+          (output.scopeKey !== undefined && output.scopeKey !== stageRun.scopeKey)
+          || (output.inputFingerprint !== undefined
+            && output.inputFingerprint !== stageRun.inputFingerprint)
+        ) {
+          throw new CreatorExecutorError(
+            'creator_artifact_scope_mismatch',
+            'Executor output scope does not match the current stage run'
+          );
+        }
       }
+      const outputHashes = await Promise.all(result.outputs.map(async output => (
+        output.path === null ? null : sha256File(output.path)
+      )));
       input.repository.transaction(() => {
         const beforeOutputs = requireJob(input.repository, jobId);
         const createsResultVersion = stage.resultVersionPolicy !== 'none';
@@ -160,12 +177,15 @@ export function createCreatorStageRunner(input: {
         for (const artifactId of staleArtifactIds) {
           input.repository.setArtifactStatus(artifactId, 'stale');
         }
-        for (const output of result.outputs) {
+        for (const [outputIndex, output] of result.outputs.entries()) {
           insertedArtifacts.push(input.repository.insertArtifact({
             jobId,
             kind: output.kind,
             status: output.status,
             path: output.path,
+            scopeKey: stageRun!.scopeKey,
+            inputFingerprint: stageRun!.inputFingerprint,
+            sha256: outputHashes[outputIndex] ?? null,
             sourceArtifactIds: output.sourceArtifactIds ?? resolved.artifacts.map(artifact => artifact.id),
             metadata: {
               ...(output.metadata ?? {}),
@@ -188,6 +208,9 @@ export function createCreatorStageRunner(input: {
             : {}),
           ...(job.templateId === 'video-translation'
             ? videoTranslationArtifactRefsPatch(job.state, stageId)
+            : {}),
+          ...(job.templateId === 'stickman-video' && stageId === 'package-validation'
+            ? exactArtifactRefsPatch(latest, insertedArtifacts)
             : {})
         };
         const baseResultVersion = readPositiveInteger(stageRun!.progress.baseResultVersion);
@@ -205,11 +228,25 @@ export function createCreatorStageRunner(input: {
               description: resultSnapshotDescription(stageId, job.templateId),
               state: job.state
             });
+        const unresolvedScopedFailure = stageRun!.scopeKey !== null
+          && hasUnresolvedScopedFailure(latest, stageId);
         updateJob(
           input.repository,
           latest,
-          stage.completesJob === false ? 'draft' : 'completed',
-          { currentStage: stageId, ...snapshotPatch },
+          unresolvedScopedFailure
+            ? 'needs_input'
+            : stage.jobCompletionPolicy === 'continue'
+              ? 'running'
+              : stage.completesJob === false
+                ? 'draft'
+                : 'completed',
+          {
+            currentStage: stageId,
+            ...snapshotPatch,
+            ...(!unresolvedScopedFailure && stageRun!.scopeKey !== null
+              ? { needsInput: null }
+              : {})
+          },
           input.onJobChanged
         );
       });
@@ -239,13 +276,29 @@ export function createCreatorStageRunner(input: {
         });
         const job = input.repository.getJob(jobId);
         if (job !== undefined) {
+          const scopedFailure = stageRun.scopeKey !== null && !canceled;
           updateJob(
             input.repository,
             job,
-            canceled ? 'canceled' : configurationInput === null ? 'failed' : 'needs_input',
+            canceled
+              ? 'canceled'
+              : scopedFailure || configurationInput !== null
+                ? 'needs_input'
+                : 'failed',
             {
               currentStage: stageId,
-              ...(configurationInput === null ? {} : { needsInput: configurationInput })
+              ...(configurationInput !== null
+                ? { needsInput: configurationInput }
+                : scopedFailure
+                  ? {
+                      needsInput: {
+                        code: failureCode,
+                        message: failureMessage,
+                        stageId,
+                        scopeKey: stageRun.scopeKey
+                      }
+                    }
+                  : {})
             },
             input.onJobChanged
           );
@@ -280,7 +333,28 @@ export function createCreatorStageRunner(input: {
   return {
     run,
     runStageRun,
+    cancelJob(jobId: string): CreatorStageRun[] {
+      return input.repository.listStageRuns(jobId)
+        .filter(stage => stage.status === 'queued' || stage.status === 'running')
+        .map(stage => cancelStage(stage.id))
+        .filter((stage): stage is CreatorStageRun => stage !== undefined);
+    },
     cancel(stageRunId: string): CreatorStageRun | undefined {
+      return cancelStage(stageRunId);
+    },
+    retry(stageRunId: string): Promise<CreatorStageRun> {
+      const stage = input.repository.getStageRun(stageRunId);
+      if (stage !== undefined) return run(stage.jobId, stage.stageId);
+      throw new CreatorExecutorError('creator_stage_not_found', 'Creator stage run was not found');
+    },
+    async close() {
+      closed = true;
+      for (const controller of active.values()) controller.abort();
+      await Promise.allSettled([...laneTails.values()]);
+    }
+  };
+
+  function cancelStage(stageRunId: string): CreatorStageRun | undefined {
       const stage = input.repository.getStageRun(stageRunId);
       if (stage === undefined) return undefined;
       if (['succeeded', 'failed', 'canceled', 'interrupted'].includes(stage.status)) {
@@ -323,18 +397,7 @@ export function createCreatorStageRunner(input: {
         }
       });
       return canceled;
-    },
-    retry(stageRunId: string): Promise<CreatorStageRun> {
-      const stage = input.repository.getStageRun(stageRunId);
-      if (stage !== undefined) return run(stage.jobId, stage.stageId);
-      throw new CreatorExecutorError('creator_stage_not_found', 'Creator stage run was not found');
-    },
-    async close() {
-      closed = true;
-      for (const controller of active.values()) controller.abort();
-      await Promise.allSettled([...jobTails.values()]);
-    }
-  };
+  }
 
   async function acquire(): Promise<void> {
     if (running < maxConcurrency) {
@@ -349,6 +412,11 @@ export function createCreatorStageRunner(input: {
     running -= 1;
     waiters.shift()?.();
   }
+}
+
+async function sha256File(path: string): Promise<string> {
+  const content = await readFile(path);
+  return createHash('sha256').update(content).digest('hex');
 }
 
 function resolveInputs(
@@ -383,6 +451,18 @@ function resolveInputs(
       && requirement.stateKey !== undefined
       ? job.state[requirement.stateKey]
       : undefined;
+    if (
+      job.templateId === 'stickman-video'
+      && requirement.selector === 'latest-completed'
+      && requirement.kind === 'shot_image'
+    ) {
+      const scoped = job.artifacts.filter(candidate => (
+        candidate.kind === requirement.kind && candidate.status === 'completed'
+      ));
+      if (scoped.length > 0) artifacts.push(...scoped);
+      else if (requirement.optional !== true) missing.push(requirement.kind);
+      continue;
+    }
     const artifact = requirement.selector === 'state-artifact-id'
       ? typeof selectedId === 'string'
         ? job.artifacts.find(candidate => (
@@ -444,6 +524,32 @@ function artifactRefsByKind(artifacts: CreatorArtifact[]): Record<string, string
     refs.set(artifact.kind, [...(refs.get(artifact.kind) ?? []), artifact.id]);
   }
   return Object.fromEntries(refs);
+}
+
+function exactArtifactRefsPatch(
+  job: CreatorJob,
+  artifacts: CreatorArtifact[]
+): Record<string, string[]> {
+  return {
+    ...Object.fromEntries(
+      [...new Set(job.artifacts.map(artifact => artifact.kind))].map(kind => [kind, []])
+    ),
+    ...artifactRefsByKind(artifacts)
+  };
+}
+
+function hasUnresolvedScopedFailure(job: CreatorJob, stageId: string): boolean {
+  return job.stages.some(stage => (
+    stage.stageId === stageId
+    && stage.scopeKey !== null
+    && stage.inputFingerprint !== null
+    && (stage.status === 'failed' || stage.status === 'interrupted')
+    && !job.artifacts.some(artifact => (
+      artifact.status === 'completed'
+      && artifact.scopeKey === stage.scopeKey
+      && artifact.inputFingerprint === stage.inputFingerprint
+    ))
+  ));
 }
 
 function readPositiveInteger(value: CreatorJson | undefined): number | undefined {

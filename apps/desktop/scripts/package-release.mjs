@@ -18,6 +18,11 @@ import {
 } from './enterprise-package-contract-2026-07-30.mjs';
 import { configureMacDirectorySigning } from './mac-signing.mjs';
 import { runStage } from './script-utils.mjs';
+import {
+  hashDirectory as hashStickmanDirectory,
+  hashFile as hashStickmanFile,
+  verifyStickmanRuntime
+} from './stickman-runtime-contract.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(scriptDir, '..');
@@ -106,6 +111,13 @@ await runStage('准备 Creator Runtime', process.execPath, [
   env,
   timeoutMs: 25 * 60_000
 });
+await runStage('准备 Stickman Runtime', process.execPath, [
+  resolve(scriptDir, 'prepare-stickman-runtime.mjs')
+], {
+  cwd: rootDir,
+  env,
+  timeoutMs: 25 * 60_000
+});
 await runStage('准备 Codex Runtime', process.execPath, [
   resolve(scriptDir, 'prepare-codex-runtime.mjs')
 ], {
@@ -152,6 +164,16 @@ const creatorRuntimeManifest = JSON.parse(readFileSync(
   resolve(desktopDir, '.pack', 'creator-runtime', 'krillinai', 'manifest.json'),
   'utf8'
 ));
+const stickmanRuntimeRoot = resolve(desktopDir, '.pack', 'stickman-runtime');
+const stickmanRuntimeManifest = verifyStickmanRuntime(
+  stickmanRuntimeRoot,
+  platform,
+  arch
+);
+const stickmanRuntime = hashStickmanDirectory(stickmanRuntimeRoot);
+const stickmanRuntimeManifestSha256 = hashStickmanFile(
+  resolve(stickmanRuntimeRoot, 'manifest.json')
+);
 const manifest = {
   version: 1,
   commit: gitOutput(['rev-parse', 'HEAD']) || 'unknown',
@@ -171,6 +193,11 @@ const manifest = {
   webFileCount: webBuild.fileCount,
   creatorAgentRuntimeHash: creatorAgentRuntime.hash,
   creatorAgentRuntimeFileCount: creatorAgentRuntime.fileCount,
+  stickmanRuntimeHash: stickmanRuntime.hash,
+  stickmanRuntimeFileCount: stickmanRuntime.fileCount,
+  stickmanRuntimeManifestSha256,
+  remotionVersion: stickmanRuntimeManifest.remotionVersion,
+  chromiumVersion: stickmanRuntimeManifest.chromiumVersion,
   codexRuntimeVersion: codexRuntimeManifest.version,
   codexRuntimeCommit: codexRuntimeManifest.commit,
   codexRuntimeBinarySha256: codexRuntimeManifest.binary.sha256,

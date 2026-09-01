@@ -50,6 +50,8 @@ extraResources:
     to: creator-runtime
   - from: .pack/codex-runtime
     to: codex-runtime
+  - from: .pack/stickman-runtime
+    to: stickman-runtime
   - from: ../web/dist
     to: web
   - from: resources

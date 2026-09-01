@@ -366,6 +366,8 @@ export function migrate(db: Database.Database): void {
       claim_expires_at TEXT,
       attempt INTEGER NOT NULL DEFAULT 0,
       idempotency_key TEXT,
+      scope_key TEXT,
+      input_fingerprint TEXT,
       progress_json TEXT NOT NULL DEFAULT '{}',
       error_code TEXT,
       error_message TEXT,
@@ -382,11 +384,37 @@ export function migrate(db: Database.Database): void {
       version INTEGER NOT NULL,
       status TEXT NOT NULL,
       path TEXT,
+      scope_key TEXT,
+      input_fingerprint TEXT,
+      sha256 TEXT,
       source_artifact_ids_json TEXT NOT NULL DEFAULT '[]',
       metadata_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE,
       UNIQUE(job_id, kind, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_provider_requests (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      stage_run_id TEXT NOT NULL,
+      scope_key TEXT,
+      request_key TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      remote_task_id TEXT,
+      billing_side_effect INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL,
+      result_artifact_id TEXT,
+      generation INTEGER NOT NULL DEFAULT 1,
+      resubmission_of TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY(stage_run_id) REFERENCES creator_stage_runs(id) ON DELETE CASCADE,
+      FOREIGN KEY(result_artifact_id) REFERENCES creator_artifacts(id) ON DELETE SET NULL,
+      FOREIGN KEY(resubmission_of) REFERENCES creator_provider_requests(id) ON DELETE SET NULL,
+      UNIQUE(provider, request_key, generation)
     );
 
     CREATE TABLE IF NOT EXISTS creator_activities (
@@ -597,6 +625,8 @@ export function migrate(db: Database.Database): void {
       ON creator_stage_runs(job_id, created_at ASC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_creator_artifacts_job_kind_version
       ON creator_artifacts(job_id, kind, version DESC);
+    CREATE INDEX IF NOT EXISTS idx_creator_provider_requests_job_scope_status
+      ON creator_provider_requests(job_id, scope_key, status, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_creator_activities_job_revision
       ON creator_activities(job_id, revision ASC, created_at ASC, id ASC);
     CREATE INDEX IF NOT EXISTS idx_creator_agent_turns_session_created
@@ -650,6 +680,11 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'creator_stage_runs', 'claim_expires_at', 'claim_expires_at TEXT');
   ensureColumn(db, 'creator_stage_runs', 'attempt', 'attempt INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'creator_stage_runs', 'idempotency_key', 'idempotency_key TEXT');
+  ensureColumn(db, 'creator_stage_runs', 'scope_key', 'scope_key TEXT');
+  ensureColumn(db, 'creator_stage_runs', 'input_fingerprint', 'input_fingerprint TEXT');
+  ensureColumn(db, 'creator_artifacts', 'scope_key', 'scope_key TEXT');
+  ensureColumn(db, 'creator_artifacts', 'input_fingerprint', 'input_fingerprint TEXT');
+  ensureColumn(db, 'creator_artifacts', 'sha256', 'sha256 TEXT');
   ensureColumn(db, 'creator_jobs', 'creation_key', 'creation_key TEXT');
   db.prepare(`
     UPDATE schedules
@@ -692,6 +727,11 @@ export function migrate(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_creator_stage_runs_job_idempotency
       ON creator_stage_runs(job_id, idempotency_key)
       WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_creator_stage_runs_active_scope_identity
+      ON creator_stage_runs(job_id, stage_id, scope_key, input_fingerprint)
+      WHERE scope_key IS NOT NULL
+        AND input_fingerprint IS NOT NULL
+        AND status IN ('queued', 'running');
     CREATE UNIQUE INDEX IF NOT EXISTS idx_creator_jobs_creation_key
       ON creator_jobs(creation_key)
       WHERE creation_key IS NOT NULL;

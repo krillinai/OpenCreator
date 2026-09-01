@@ -10,6 +10,8 @@ export type CreatorExecutorOutput = {
   kind: string;
   status: CreatorArtifactStatus;
   path: string | null;
+  scopeKey?: string | null;
+  inputFingerprint?: string | null;
   sourceArtifactIds?: string[];
   metadata?: Record<string, CreatorJson>;
 };

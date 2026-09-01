@@ -41,13 +41,47 @@ export function createCreatorCommandDispatcher(input: {
   function dispatch(
     jobId: string,
     request: CreatorCommandRequest,
-    actor: CreatorActor
+    actor: CreatorActor,
+    workflowIdentity?: {
+      scopeKey?: string | null;
+      inputFingerprint?: string | null;
+      parentStageRunId?: string;
+      resumedFromStageRunId?: string;
+    }
+  ): CreatorCommandDispatchResult {
+    return dispatchCommand(jobId, request, actor, workflowIdentity);
+  }
+
+  function dispatchWorkflow(
+    jobId: string,
+    request: CreatorCommandRequest,
+    identity: {
+      scopeKey?: string | null;
+      inputFingerprint?: string | null;
+      parentStageRunId?: string;
+      resumedFromStageRunId?: string;
+    } = {}
+  ): CreatorCommandDispatchResult {
+    return dispatchCommand(jobId, request, 'system', identity);
+  }
+
+  function dispatchCommand(
+    jobId: string,
+    request: CreatorCommandRequest,
+    actor: CreatorActor,
+    workflowIdentity?: {
+      scopeKey?: string | null;
+      inputFingerprint?: string | null;
+      parentStageRunId?: string;
+      resumedFromStageRunId?: string;
+    }
   ): CreatorCommandDispatchResult {
     const normalized = {
       action: request.action,
       expectedRevision: request.expectedRevision,
       actor,
-      input: normalizeJson(request.input)
+      input: normalizeJson(request.input),
+      ...(workflowIdentity === undefined ? {} : { workflowIdentity })
     };
     const requestHash = createHash('sha256')
       .update(stableStringify(normalized))
@@ -107,13 +141,27 @@ export function createCreatorCommandDispatcher(input: {
             status: 'queued',
             dispatchStatus: 'queued',
             idempotencyKey: `${request.idempotencyKey}:stage`,
+            ...(workflowIdentity !== undefined
+              ? {
+                  scopeKey: workflowIdentity.scopeKey ?? null,
+                  inputFingerprint: workflowIdentity.inputFingerprint ?? null
+                }
+              : request.input.workflow === true
+              ? scopedStageIdentity(request.input)
+              : {}),
             progress: {
               commandIdempotencyKey: request.idempotencyKey,
-              ...(request.input.workflow === true ? { workflow: true } : {}),
-              ...(typeof request.input.workflowParentStageRunId === 'string'
+              ...(workflowIdentity !== undefined || request.input.workflow === true
+                ? { workflow: true }
+                : {}),
+              ...(workflowIdentity?.parentStageRunId !== undefined
+                ? { workflowParentStageRunId: workflowIdentity.parentStageRunId }
+                : typeof request.input.workflowParentStageRunId === 'string'
                 ? { workflowParentStageRunId: request.input.workflowParentStageRunId }
                 : {}),
-              ...(typeof request.input.resumedFromStageRunId === 'string'
+              ...(workflowIdentity?.resumedFromStageRunId !== undefined
+                ? { resumedFromStageRunId: workflowIdentity.resumedFromStageRunId }
+                : typeof request.input.resumedFromStageRunId === 'string'
                 ? { resumedFromStageRunId: request.input.resumedFromStageRunId }
                 : {}),
               ...stageRequestProgress(actionResponse.job, stageId, request.input),
@@ -177,7 +225,20 @@ export function createCreatorCommandDispatcher(input: {
     }
   }
 
-  return { dispatch };
+  return { dispatch, dispatchWorkflow };
+}
+
+function scopedStageIdentity(
+  input: Record<string, CreatorJson>
+): { scopeKey?: string; inputFingerprint?: string } {
+  const scopeKey = input.scopeKey;
+  const inputFingerprint = input.inputFingerprint;
+  return {
+    ...(typeof scopeKey === 'string' && scopeKey.length > 0 ? { scopeKey } : {}),
+    ...(typeof inputFingerprint === 'string' && /^[a-f0-9]{64}$/i.test(inputFingerprint)
+      ? { inputFingerprint: inputFingerprint.toLowerCase() }
+      : {})
+  };
 }
 
 function serializeResult(result: CreatorActionResponse): Record<string, CreatorJson> {

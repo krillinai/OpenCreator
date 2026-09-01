@@ -10,6 +10,8 @@ import type {
   CreatorJob,
   CreatorJobStatus,
   CreatorJson,
+  CreatorProviderRequest,
+  CreatorProviderRequestStatus,
   CreatorStageRun,
   CreatorStageDispatchStatus,
   CreatorStageRunStatus
@@ -36,6 +38,9 @@ type InsertArtifactInput = {
   kind: string;
   status: CreatorArtifactStatus;
   path: string | null;
+  scopeKey?: string | null;
+  inputFingerprint?: string | null;
+  sha256?: string | null;
   sourceArtifactIds: string[];
   metadata: Record<string, CreatorJson>;
 };
@@ -57,6 +62,21 @@ type CreateStageRunInput = {
   progress?: Record<string, CreatorJson>;
   dispatchStatus?: CreatorStageDispatchStatus;
   idempotencyKey?: string | null;
+  scopeKey?: string | null;
+  inputFingerprint?: string | null;
+};
+
+type CreateProviderRequestInput = {
+  jobId: string;
+  provider: string;
+  stageRunId: string;
+  scopeKey?: string | null;
+  requestKey: string;
+  requestHash: string;
+  billingSideEffect?: boolean;
+  status?: CreatorProviderRequestStatus;
+  generation?: number;
+  resubmissionOf?: string | null;
 };
 
 export type CreatorRepository = {
@@ -100,6 +120,15 @@ export type CreatorRepository = {
   }): CreatorStageRun | undefined;
   renewStageRunClaim(input: { id: string; owner: string; expiresAt: string }): boolean;
   finishStageRunDispatch(id: string, owner: string): boolean;
+  createProviderRequest(input: CreateProviderRequestInput): CreatorProviderRequest;
+  getProviderRequest(id: string): CreatorProviderRequest | undefined;
+  listProviderRequests(jobId: string): CreatorProviderRequest[];
+  updateProviderRequest(input: {
+    id: string;
+    status: CreatorProviderRequestStatus;
+    remoteTaskId?: string | null;
+    resultArtifactId?: string | null;
+  }): CreatorProviderRequest;
   listArtifacts(jobId: string): CreatorArtifact[];
   listActivities(jobId: string): CreatorActivity[];
 };
@@ -135,6 +164,7 @@ export function createCreatorRepository(
     agentThreadId: row.agent_thread_id,
     stages: listStageRuns(row.id),
     artifacts: listArtifacts(row.id),
+    providerRequests: listProviderRequests(row.id),
     activities: listActivities(row.id),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at)
@@ -144,6 +174,7 @@ export function createCreatorRepository(
     db.prepare(`
       SELECT id, job_id, stage_id, executor, status, dispatch_status,
              claim_owner, claim_expires_at, attempt, idempotency_key,
+             scope_key, input_fingerprint,
              progress_json, error_code, error_message, started_at, finished_at
       FROM creator_stage_runs
       WHERE job_id = ?
@@ -160,6 +191,8 @@ export function createCreatorRepository(
     claimExpiresAt: nullableIso(row.claim_expires_at),
     attempt: row.attempt,
     idempotencyKey: row.idempotency_key,
+    scopeKey: row.scope_key,
+    inputFingerprint: row.input_fingerprint,
     progress: parseJsonRecord(row.progress_json),
     errorCode: row.error_code,
     errorMessage: row.error_message,
@@ -170,6 +203,7 @@ export function createCreatorRepository(
   const listArtifacts = (jobId: string): CreatorArtifact[] => (
     db.prepare(`
       SELECT id, job_id, kind, version, status, path,
+             scope_key, input_fingerprint, sha256,
              source_artifact_ids_json, metadata_json, created_at
       FROM creator_artifacts
       WHERE job_id = ?
@@ -182,6 +216,9 @@ export function createCreatorRepository(
     version: row.version,
     status: row.status,
     path: row.path,
+    scopeKey: row.scope_key,
+    inputFingerprint: row.input_fingerprint,
+    sha256: row.sha256,
     sourceArtifactIds: parseStringArray(row.source_artifact_ids_json),
     metadata: parseJsonRecord(row.metadata_json),
     createdAt: toIso(row.created_at)
@@ -205,6 +242,17 @@ export function createCreatorRepository(
     createdAt: toIso(row.created_at)
   }));
 
+  const listProviderRequests = (jobId: string): CreatorProviderRequest[] => (
+    db.prepare(`
+      SELECT id, job_id, provider, stage_run_id, scope_key, request_key, request_hash,
+             remote_task_id, billing_side_effect, status, result_artifact_id,
+             generation, resubmission_of, created_at, updated_at
+      FROM creator_provider_requests
+      WHERE job_id = ?
+      ORDER BY created_at ASC, generation ASC, id ASC
+    `).all(jobId) as ProviderRequestRow[]
+  ).map(hydrateProviderRequest);
+
   const insertArtifact = (input: InsertArtifactInput): CreatorArtifact => {
     const id = idFactory('creator_artifact');
     const versionRow = db.prepare(`
@@ -216,8 +264,9 @@ export function createCreatorRepository(
     db.prepare(`
       INSERT INTO creator_artifacts (
         id, job_id, kind, version, status, path,
+        scope_key, input_fingerprint, sha256,
         source_artifact_ids_json, metadata_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.jobId,
@@ -225,6 +274,9 @@ export function createCreatorRepository(
       versionRow.version,
       input.status,
       input.path,
+      input.scopeKey ?? null,
+      input.inputFingerprint ?? null,
+      input.sha256 ?? null,
       JSON.stringify(input.sourceArtifactIds),
       JSON.stringify(input.metadata),
       createdAt
@@ -349,9 +401,10 @@ export function createCreatorRepository(
       db.prepare(`
         INSERT INTO creator_stage_runs (
           id, job_id, stage_id, executor, status, dispatch_status,
-          claim_owner, claim_expires_at, attempt, idempotency_key, progress_json,
+          claim_owner, claim_expires_at, attempt, idempotency_key,
+          scope_key, input_fingerprint, progress_json,
           started_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         input.jobId,
@@ -360,6 +413,8 @@ export function createCreatorRepository(
         input.status,
         input.dispatchStatus ?? (isTerminalStage(input.status) ? 'finished' : 'queued'),
         input.idempotencyKey ?? null,
+        input.scopeKey ?? null,
+        input.inputFingerprint ?? null,
         JSON.stringify(input.progress ?? {}),
         input.status === 'running' ? timestamp : null,
         timestamp
@@ -370,6 +425,7 @@ export function createCreatorRepository(
       const row = db.prepare(`
         SELECT id, job_id, stage_id, executor, status, dispatch_status,
                claim_owner, claim_expires_at, attempt, idempotency_key,
+               scope_key, input_fingerprint,
                progress_json, error_code, error_message, started_at, finished_at
         FROM creator_stage_runs WHERE id = ?
       `).get(id) as StageRow | undefined;
@@ -385,6 +441,8 @@ export function createCreatorRepository(
         claimExpiresAt: nullableIso(row.claim_expires_at),
         attempt: row.attempt,
         idempotencyKey: row.idempotency_key,
+        scopeKey: row.scope_key,
+        inputFingerprint: row.input_fingerprint,
         progress: parseJsonRecord(row.progress_json),
         errorCode: row.error_code,
         errorMessage: row.error_message,
@@ -428,6 +486,7 @@ export function createCreatorRepository(
       return (db.prepare(`
         SELECT id, job_id, stage_id, executor, status, dispatch_status,
                claim_owner, claim_expires_at, attempt, idempotency_key,
+               scope_key, input_fingerprint,
                progress_json, error_code, error_message, started_at, finished_at
         FROM creator_stage_runs
         WHERE dispatch_status = 'queued'
@@ -450,6 +509,7 @@ export function createCreatorRepository(
       const row = db.prepare(`
         SELECT id, job_id, stage_id, executor, status, dispatch_status,
                claim_owner, claim_expires_at, attempt, idempotency_key,
+               scope_key, input_fingerprint,
                progress_json, error_code, error_message, started_at, finished_at
         FROM creator_stage_runs WHERE id = ?
       `).get(input.id) as StageRow;
@@ -467,6 +527,61 @@ export function createCreatorRepository(
         SET dispatch_status = 'finished', claim_expires_at = NULL
         WHERE id = ? AND dispatch_status = 'claimed' AND claim_owner = ?
       `).run(id, owner).changes === 1;
+    },
+    createProviderRequest(providerInput): CreatorProviderRequest {
+      const id = idFactory('creator_provider_request');
+      const timestamp = now();
+      db.prepare(`
+        INSERT INTO creator_provider_requests (
+          id, job_id, provider, stage_run_id, scope_key, request_key, request_hash,
+          remote_task_id, billing_side_effect, status, result_artifact_id,
+          generation, resubmission_of, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?)
+      `).run(
+        id,
+        providerInput.jobId,
+        providerInput.provider,
+        providerInput.stageRunId,
+        providerInput.scopeKey ?? null,
+        providerInput.requestKey,
+        providerInput.requestHash,
+        providerInput.billingSideEffect === false ? 0 : 1,
+        providerInput.status ?? 'registered',
+        providerInput.generation ?? 1,
+        providerInput.resubmissionOf ?? null,
+        timestamp,
+        timestamp
+      );
+      return listProviderRequests(providerInput.jobId).find(item => item.id === id)!;
+    },
+    getProviderRequest(id): CreatorProviderRequest | undefined {
+      const row = db.prepare(`
+        SELECT id, job_id, provider, stage_run_id, scope_key, request_key, request_hash,
+               remote_task_id, billing_side_effect, status, result_artifact_id,
+               generation, resubmission_of, created_at, updated_at
+        FROM creator_provider_requests
+        WHERE id = ?
+      `).get(id) as ProviderRequestRow | undefined;
+      return row === undefined ? undefined : hydrateProviderRequest(row);
+    },
+    listProviderRequests,
+    updateProviderRequest(providerInput): CreatorProviderRequest {
+      const current = this.getProviderRequest(providerInput.id);
+      if (current === undefined) throw new Error('Creator provider request not found');
+      db.prepare(`
+        UPDATE creator_provider_requests
+        SET status = ?, remote_task_id = ?, result_artifact_id = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        providerInput.status,
+        providerInput.remoteTaskId === undefined ? current.remoteTaskId : providerInput.remoteTaskId,
+        providerInput.resultArtifactId === undefined
+          ? current.resultArtifactId
+          : providerInput.resultArtifactId,
+        now(),
+        providerInput.id
+      );
+      return this.getProviderRequest(providerInput.id)!;
     },
     listArtifacts,
     listActivities
@@ -713,6 +828,8 @@ type StageRow = {
   claim_expires_at: string | null;
   attempt: number;
   idempotency_key: string | null;
+  scope_key: string | null;
+  input_fingerprint: string | null;
   progress_json: string;
   error_code: string | null;
   error_message: string | null;
@@ -732,6 +849,8 @@ function hydrateStageRun(row: StageRow): CreatorStageRun {
     claimExpiresAt: nullableIso(row.claim_expires_at),
     attempt: row.attempt,
     idempotencyKey: row.idempotency_key,
+    scopeKey: row.scope_key,
+    inputFingerprint: row.input_fingerprint,
     progress: parseJsonRecord(row.progress_json),
     errorCode: row.error_code,
     errorMessage: row.error_message,
@@ -751,10 +870,51 @@ type ArtifactRow = {
   version: number;
   status: CreatorArtifactStatus;
   path: string | null;
+  scope_key: string | null;
+  input_fingerprint: string | null;
+  sha256: string | null;
   source_artifact_ids_json: string;
   metadata_json: string;
   created_at: string;
 };
+
+type ProviderRequestRow = {
+  id: string;
+  job_id: string;
+  provider: string;
+  stage_run_id: string;
+  scope_key: string | null;
+  request_key: string;
+  request_hash: string;
+  remote_task_id: string | null;
+  billing_side_effect: 0 | 1;
+  status: CreatorProviderRequestStatus;
+  result_artifact_id: string | null;
+  generation: number;
+  resubmission_of: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function hydrateProviderRequest(row: ProviderRequestRow): CreatorProviderRequest {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    provider: row.provider,
+    stageRunId: row.stage_run_id,
+    scopeKey: row.scope_key,
+    requestKey: row.request_key,
+    requestHash: row.request_hash,
+    remoteTaskId: row.remote_task_id,
+    billingSideEffect: row.billing_side_effect === 1,
+    status: row.status,
+    resultArtifactId: row.result_artifact_id,
+    generation: row.generation,
+    resubmissionOf: row.resubmission_of,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at)
+  };
+}
 
 type LegacyTargetSubtitleRow = {
   id: string;

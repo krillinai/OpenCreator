@@ -9,10 +9,15 @@ export type MediaProbe = {
   hasAudio: boolean;
 };
 
-export async function validateMediaFile(path: string, ffprobe: string): Promise<MediaProbe> {
+export async function validateMediaFile(
+  path: string,
+  ffprobe: string,
+  ffprobePrefixArgs: string[] = []
+): Promise<MediaProbe> {
   const info = await stat(path);
   if (!info.isFile() || info.size === 0) throw new Error('invalid_media: empty file');
   const output = await execFileText(ffprobe, [
+    ...ffprobePrefixArgs,
     '-v', 'error',
     '-show_entries', 'format=duration:stream=codec_type,width,height',
     '-of', 'json',

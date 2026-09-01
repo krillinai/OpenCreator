@@ -525,7 +525,8 @@ function buildCollaborationTimeline(
   events: SyncEvent[],
   adapter: CreatorPanelAdapter
 ): CollaborationTimelineItem[] {
-  const stages = latestStageRuns(job?.stages ?? []);
+  const stages = adapter.aggregateStages?.(latestStageRuns(job?.stages ?? []))
+    ?? latestStageRuns(job?.stages ?? []);
   const representedStageIds = new Set(stages.map(stage => stage.stageId));
   const items: CollaborationTimelineItem[] = messages.map(message => ({
     id: message.id,
@@ -621,9 +622,10 @@ function actorLabel(
 function latestStageRuns(stages: CreatorStageRun[]): CreatorStageRun[] {
   const runsByStage = new Map<string, CreatorStageRun[]>();
   for (const stage of stages) {
-    const runs = runsByStage.get(stage.stageId) ?? [];
+    const key = `${stage.stageId}:${stage.scopeKey ?? ''}`;
+    const runs = runsByStage.get(key) ?? [];
     runs.push(stage);
-    runsByStage.set(stage.stageId, runs);
+    runsByStage.set(key, runs);
   }
   return [...runsByStage.values()].map(runs => (
     [...runs].reverse().find(stage => stage.status === 'running')

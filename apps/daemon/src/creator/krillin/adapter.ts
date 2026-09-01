@@ -67,7 +67,7 @@ export function createKrillinExecutor(input: {
         let artifacts: KrillinResultArtifact[];
         try {
           const attempts = createKrillinCliExecutionPlan(
-            stage.stageRun.stageId,
+            resolveKrillinStageContract(stage).stageType,
             resolveKrillinCliSource(materializedArtifacts, options),
             options
           );
@@ -289,7 +289,7 @@ function createTaskRequest(
   inputArtifactIds: string[],
   providerConfig: CreatorServicesConfig
 ): CreateKrillinTaskRequest {
-  const stageType = krillinStageType(input.stageRun.stageId);
+  const stageType = resolveKrillinStageContract(input).stageType;
   const requestIdentity = {
     protocolVersion: 1 as const,
     jobId: input.job.id,
@@ -313,11 +313,15 @@ function stageOptions(input: CreatorExecutorInput): Record<string, unknown> {
     originLanguage: typeof state.sourceLanguage === 'string' ? state.sourceLanguage : undefined,
     targetLanguage: typeof state.targetLanguage === 'string' ? state.targetLanguage : undefined,
     captionSource: state.preferPlatformCaptions === false ? 'whisper' : 'any',
-    bilingual: state.bilingual === true,
+    bilingual: input.stageRun.stageId === 'subtitles' || state.bilingual === true,
     bilingualTop: state.subtitlePosition === 'top',
     ttsProvider: typeof state.ttsProvider === 'string' ? state.ttsProvider : undefined,
     ttsModel: typeof state.ttsModel === 'string' ? state.ttsModel : undefined,
-    voiceCode: typeof state.voiceCode === 'string' ? state.voiceCode : undefined,
+    voiceCode: typeof state.voiceCode === 'string'
+      ? state.voiceCode
+      : input.stageRun.stageId === 'narration' && typeof state.voice === 'string'
+        ? state.voice
+        : undefined,
     verticalTitle: typeof state.verticalTitle === 'string' ? state.verticalTitle : undefined,
     verticalSubtitle: typeof state.verticalSubtitle === 'string' ? state.verticalSubtitle : undefined,
     dubbed: state.dubbing === true || state.dubbed === true,
@@ -350,13 +354,6 @@ export function buildKrillinSubtitleStyle(value: CreatorJson | undefined): Recor
   };
 }
 
-function krillinStageType(stageId: string): CreateKrillinTaskRequest['stageType'] {
-  if (stageId === 'subtitle' || stageId === 'tts' || stageId === 'render-horizontal' || stageId === 'render-vertical') {
-    return stageId;
-  }
-  throw new CreatorExecutorError('creator_stage_not_supported', `Unsupported KrillinAI stage ${stageId}`);
-}
-
 async function writeArtifactIndex(
   jobsRoot: string,
   input: CreatorExecutorInput
@@ -369,7 +366,7 @@ async function writeArtifactIndex(
     const path = await materializeArtifact(jobRoot, artifact);
     entries.push({
       id: artifact.id,
-      kind: artifact.kind,
+      kind: krillinInputKind(input, artifact.kind),
       relativePath: relative(jobRoot, path).replaceAll('\\', '/'),
       path
     });
@@ -404,19 +401,21 @@ async function materializeArtifact(jobRoot: string, artifact: CreatorArtifact): 
   return actual;
 }
 
-async function validateResultArtifacts(input: {
+export async function validateResultArtifacts(input: {
   stage: CreatorExecutorInput;
   jobsRoot: string;
   artifacts: KrillinResultArtifact[];
   ffprobe: string;
 }): Promise<CreatorExecutorOutput[]> {
-  const expected = expectedOutputKinds(input.stage.stageRun.stageId);
+  const contract = resolveKrillinStageContract(input.stage);
   const outputs: CreatorExecutorOutput[] = [];
   const jobRoot = await realpath(resolve(input.jobsRoot, input.stage.job.id));
   for (const artifact of input.artifacts) {
-    if (!expected.has(artifact.kind)) {
+    if (!contract.allowedOutputKinds.has(artifact.kind)) {
       throw new CreatorExecutorError('krillin_output_mismatch', `KrillinAI returned undeclared output ${artifact.kind}`);
     }
+    const outputKind = contract.outputAliases[artifact.kind];
+    if (outputKind === undefined) continue;
     const path = await realpath(resolve(input.jobsRoot, artifact.relativePath));
     if (!isInside(jobRoot, path)) {
       throw new CreatorExecutorError('krillin_output_escape', 'KrillinAI output escapes the current Job root');
@@ -427,9 +426,9 @@ async function validateResultArtifacts(input: {
       sha256: artifact.sha256 ?? null,
       bytes: artifact.size ?? null
     };
-    if (artifact.kind.includes('subtitle')) {
+    if (outputKind.includes('subtitle')) {
       const cues = await validateSrtFile(path, {
-        allowOverlaps: artifact.kind === 'vertical_subtitle'
+        allowOverlaps: outputKind === 'vertical_subtitle'
       });
       metadata = {
         ...metadata,
@@ -444,9 +443,9 @@ async function validateResultArtifacts(input: {
     } else {
       metadata = { ...metadata, ...(await validateMediaFile(path, input.ffprobe)) };
     }
-    outputs.push({ kind: artifact.kind, status: 'completed', path, metadata });
+    outputs.push({ kind: outputKind, status: 'completed', path, metadata });
   }
-  for (const required of requiredOutputKinds(input.stage.stageRun.stageId)) {
+  for (const required of contract.requiredOutputKinds) {
     if (!outputs.some(output => output.kind === required)) {
       throw new CreatorExecutorError('krillin_output_missing', `KrillinAI did not produce ${required}`);
     }
@@ -498,6 +497,69 @@ function executablePath(resourceRoot: string, pattern: RegExp): string {
   const resource = manifest.resources.find(candidate => candidate.kind === 'executable' && pattern.test(candidate.path));
   if (resource === undefined) throw new CreatorExecutorError('dependency_not_packaged', `Missing runtime executable: ${pattern}`);
   return resolveInside(resourceRoot, resource.path);
+}
+
+export type KrillinStageContract = {
+  stageType: CreateKrillinTaskRequest['stageType'];
+  allowedOutputKinds: Set<string>;
+  outputAliases: Record<string, string | undefined>;
+  requiredOutputKinds: string[];
+};
+
+export function resolveKrillinStageContract(
+  input: Pick<CreatorExecutorInput, 'job' | 'stageRun'>
+): KrillinStageContract {
+  const stageId = input.stageRun.stageId;
+  if (input.job.templateId === 'stickman-video') {
+    if (stageId === 'source-transcript') return {
+      stageType: 'subtitle',
+      allowedOutputKinds: new Set(['source_video', 'source_subtitle', 'target_subtitle', 'bilingual_subtitle', 'vertical_subtitle']),
+      outputAliases: { source_subtitle: 'source_subtitle' },
+      requiredOutputKinds: ['source_subtitle']
+    };
+    if (stageId === 'narration') return {
+      stageType: 'tts',
+      allowedOutputKinds: new Set(['dubbed_audio', 'dubbed_video', 'narration_audio']),
+      outputAliases: { dubbed_audio: 'narration_audio', narration_audio: 'narration_audio' },
+      requiredOutputKinds: ['narration_audio']
+    };
+    if (stageId === 'subtitles') return {
+      stageType: 'subtitle',
+      allowedOutputKinds: new Set(['source_video', 'source_subtitle', 'target_subtitle', 'bilingual_subtitle', 'vertical_subtitle']),
+      outputAliases: { bilingual_subtitle: 'bilingual_subtitle' },
+      requiredOutputKinds: ['bilingual_subtitle']
+    };
+    if (stageId === 'bilingual-render') return {
+      stageType: 'render-horizontal',
+      allowedOutputKinds: new Set(['horizontal_video', 'bilingual_video']),
+      outputAliases: { horizontal_video: 'bilingual_video', bilingual_video: 'bilingual_video' },
+      requiredOutputKinds: ['bilingual_video']
+    };
+  }
+  if (stageId === 'subtitle' || stageId === 'tts' || stageId === 'render-horizontal' || stageId === 'render-vertical') {
+    const expected = expectedOutputKinds(stageId);
+    return {
+      stageType: stageId,
+      allowedOutputKinds: expected,
+      outputAliases: Object.fromEntries([...expected].map(kind => [kind, kind])),
+      requiredOutputKinds: requiredOutputKinds(stageId)
+    };
+  }
+  throw new CreatorExecutorError('creator_stage_not_supported', `Unsupported KrillinAI stage ${stageId}`);
+}
+
+function krillinInputKind(input: CreatorExecutorInput, kind: string): string {
+  if (input.job.templateId !== 'stickman-video') return kind;
+  if (input.stageRun.stageId === 'narration' && kind === 'narration_subtitle') {
+    return 'target_subtitle';
+  }
+  if (
+    (input.stageRun.stageId === 'subtitles' || input.stageRun.stageId === 'bilingual-render')
+    && kind === 'clean_video'
+  ) {
+    return 'source_video';
+  }
+  return kind;
 }
 
 function expectedOutputKinds(stageId: string): Set<string> {

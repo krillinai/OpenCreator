@@ -8467,6 +8467,7 @@ function handleDefaultCreatorApiRequest(
       agentThreadId: null,
       stages: [],
       artifacts: [],
+      providerRequests: [],
       activities: [],
       createdAt: now,
       updatedAt: now
@@ -8506,6 +8507,9 @@ function handleDefaultCreatorApiRequest(
       version: 1,
       status: 'completed' as const,
       path: `/tmp/${fileName}`,
+      scopeKey: null,
+      inputFingerprint: null,
+      sha256: 'test-source-sha256',
       sourceArtifactIds: [],
       metadata: {
         fileName,
@@ -8561,6 +8565,9 @@ function handleDefaultCreatorApiRequest(
             version: 1,
             status: 'completed',
             path: '/tmp/translated.srt',
+            scopeKey: null,
+            inputFingerprint: null,
+            sha256: null,
             sourceArtifactIds: [],
             metadata: {
               cues: [

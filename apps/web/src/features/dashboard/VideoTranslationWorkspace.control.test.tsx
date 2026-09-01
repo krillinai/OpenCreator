@@ -176,6 +176,7 @@ function job(input: {
     agentThreadId: null,
     stages: input.stages,
     artifacts: [],
+    providerRequests: [],
     activities: [],
     createdAt: '2026-08-28T06:00:00.000Z',
     updatedAt: '2026-08-28T06:00:00.000Z'
@@ -201,6 +202,8 @@ function stage(input: {
       : null,
     attempt: input.status === 'queued' ? 0 : 1,
     idempotencyKey: input.id,
+    scopeKey: null,
+    inputFingerprint: null,
     progress: input.progress,
     errorCode: null,
     errorMessage: null,

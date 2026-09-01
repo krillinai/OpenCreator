@@ -35,13 +35,17 @@ function createInMemoryCreatorService(): CreatorWebService {
       id: `creator_test_job_${++sequence}`,
       projectId: request.projectId,
       templateId: request.templateId,
-      templateVersion: 1,
+      templateVersion: request.templateId === 'video-download'
+        || request.templateId === 'stickman-video'
+        ? 2
+        : 1,
       status: 'draft',
       revision: 0,
       state: request.state ?? {},
       agentThreadId: null,
       stages: [],
       artifacts: [],
+      providerRequests: [],
       activities: [],
       createdAt: now,
       updatedAt: now
@@ -70,6 +74,12 @@ function createInMemoryCreatorService(): CreatorWebService {
         state: { ...current.state, ...patch },
         updatedAt: new Date().toISOString()
       };
+    } else if (
+      current.templateId === 'video-download'
+      && request.action === 'run-stage'
+      && typeof request.input.stageId === 'string'
+    ) {
+      job = completeVideoDownloadStage(current, request.input.stageId, request.input);
     } else if (current.templateId === 'video-translation' && request.action === 'edit-subtitle') {
       job = editTranslationSubtitles(current, request.input);
     } else if (current.templateId === 'video-translation' && request.action === 'commit-version') {
@@ -109,6 +119,133 @@ function createInMemoryCreatorService(): CreatorWebService {
       throw new Error('Agent turns require an explicit test fixture');
     })
   } as unknown as CreatorWebService;
+}
+
+function completeVideoDownloadStage(
+  current: CreatorJob,
+  stageId: string,
+  input: Record<string, CreatorJson>
+): CreatorJob {
+  const now = new Date().toISOString();
+  if (stageId === 'probe') {
+    const requestedUrl = typeof current.state.sourceUrl === 'string'
+      ? current.state.sourceUrl
+      : 'https://www.youtube.com/watch?v=download-test';
+    const artifact: CreatorArtifact = {
+      id: `download_probe_${current.artifacts.length + 1}`,
+      jobId: current.id,
+      kind: 'download_probe',
+      version: 1,
+      status: 'completed',
+      path: '/tmp/download-probe.json',
+      scopeKey: null,
+      inputFingerprint: null,
+      sha256: null,
+      sourceArtifactIds: [],
+      metadata: {
+        id: 'download-test',
+        title: 'YouTube',
+        requestedUrl,
+        url: requestedUrl,
+        platform: 'youtube',
+        uploader: 'OpenCreator',
+        thumbnailUrl: null,
+        duration: 120,
+        width: 1920,
+        height: 1080,
+        formats: [],
+        options: [{
+          id: 'video-1080-1',
+          mediaType: 'video',
+          container: 'mp4',
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          estimatedBytes: 88_080_384,
+          videoFormatId: '137',
+          audioFormatId: '140'
+        }, {
+          id: 'audio-mp3-320',
+          mediaType: 'audio',
+          container: 'mp3',
+          bitrateKbps: 320,
+          estimatedBytes: 4_800_000,
+          audioFormatId: '140',
+          transcode: 'mp3'
+        }]
+      },
+      createdAt: now
+    };
+    return {
+      ...current,
+      status: 'draft',
+      revision: current.revision + 1,
+      state: { ...current.state, currentStage: 'probe' },
+      stages: [...current.stages, {
+        id: `download_probe_stage_${current.stages.length + 1}`,
+        jobId: current.id,
+        stageId: 'probe',
+        executor: 'download',
+        status: 'succeeded',
+        dispatchStatus: 'finished',
+        claimOwner: null,
+        claimExpiresAt: null,
+        attempt: 1,
+        idempotencyKey: null,
+        scopeKey: null,
+        inputFingerprint: null,
+        progress: { phase: 'completed', percent: 100 },
+        errorCode: null,
+        errorMessage: null,
+        startedAt: now,
+        finishedAt: now
+      }],
+      artifacts: [...current.artifacts, artifact],
+      updatedAt: now
+    };
+  }
+  if (stageId !== 'download') return current;
+  const optionId = typeof input.optionId === 'string'
+    ? input.optionId
+    : 'video-1080-1';
+  const mediaType = input.mediaType === 'audio' ? 'audio' : 'video';
+  const sourceUrl = typeof input.sourceUrl === 'string'
+    ? input.sourceUrl
+    : current.state.sourceUrl;
+  const probeArtifact = [...current.artifacts].reverse().find(
+    artifact => artifact.kind === 'download_probe'
+  );
+  return {
+    ...current,
+    status: 'running',
+    revision: current.revision + 1,
+    state: { ...current.state, currentStage: 'download' },
+    stages: [...current.stages, {
+      id: `download_stage_${current.stages.length + 1}`,
+      jobId: current.id,
+      stageId: 'download',
+      executor: 'download',
+      status: 'queued',
+      dispatchStatus: 'queued',
+      claimOwner: null,
+      claimExpiresAt: null,
+      attempt: 0,
+      idempotencyKey: null,
+      scopeKey: null,
+      inputFingerprint: null,
+      progress: {
+        optionId,
+        mediaType,
+        ...(typeof sourceUrl === 'string' ? { sourceUrl } : {}),
+        ...(probeArtifact === undefined ? {} : { probeArtifactId: probeArtifact.id })
+      },
+      errorCode: null,
+      errorMessage: null,
+      startedAt: null,
+      finishedAt: null
+    }],
+    updatedAt: now
+  };
 }
 
 function createTtsServices(options?: {
@@ -307,6 +444,8 @@ function completeTranslationStage(
         claimExpiresAt: null,
         attempt: 1,
         idempotencyKey: null,
+        scopeKey: null,
+        inputFingerprint: null,
         progress: {
           workflow: true,
           resultVersion: version,
@@ -345,6 +484,9 @@ function translationArtifact(
     version: input.version,
     status: 'completed',
     path: `/tmp/${input.fileName}`,
+    scopeKey: null,
+    inputFingerprint: null,
+    sha256: null,
     sourceArtifactIds: [],
     metadata: {
       resultVersion: input.version,
@@ -491,6 +633,7 @@ describe('DashboardPage', () => {
         agentThreadId: null,
         stages: [],
         artifacts: [],
+        providerRequests: [],
         activities: [],
         createdAt,
         updatedAt: createdAt
@@ -780,7 +923,7 @@ describe('DashboardPage', () => {
       expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
     });
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('来源平台YouTube');
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('当前规格1080p');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('当前选择1080p');
     expect(screen.getByLabelText('任务摘要')).toHaveClass('video-translation-summary', 'creator-task-summary');
     expect(screen.getByLabelText('任务摘要')).not.toHaveClass('is-compact');
     expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-result-layout');
@@ -794,187 +937,34 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: '下载规格' }));
     fireEvent.click(screen.getByRole('tab', { name: /MP4 视频/ }));
     fireEvent.click(screen.getByRole('button', { name: '下载 1080p' }));
-    expect(screen.getByRole('tab', { name: '下载记录' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('status')).toHaveTextContent('YouTube MP4 1080p 已加入下载队列');
-    expect(screen.getByRole('region', { name: '视频下载结果' })).toHaveTextContent('YouTube MP4 1080p');
-    expect(screen.getByRole('region', { name: '视频下载结果' })).toHaveTextContent('已加入下载队列');
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: '项目文件' }))
+        .toHaveAttribute('aria-selected', 'true');
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('下载任务已加入队列');
+    expect(screen.getByRole('region', { name: '视频下载结果' }))
+      .toHaveTextContent('YouTube · 1080p');
+    expect(screen.getByRole('region', { name: '视频下载结果' }))
+      .toHaveTextContent('MP4 · 1920 x 1080');
+    expect(screen.getByRole('region', { name: '视频下载结果' }))
+      .toHaveTextContent('等待前面的规格下载完成');
   });
 
-  it('generates a stickman character before storyboard and video', () => {
-    render(<DashboardPage onSelectPrompt={vi.fn()} />);
+  it('opens the persistent stickman-video@2 workspace without legacy demo state', () => {
+    const { container } = render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: '打开火柴人动画' }));
 
     expect(screen.getByRole('heading', { name: '火柴人动画' })).toBeInTheDocument();
-    const stickmanSteps = screen.getByRole('navigation', { name: '火柴人生成流程' });
-    expect(within(stickmanSteps).getByRole('button', { name: '1 选择角色' })).toHaveAttribute('aria-current', 'step');
-    expect(within(stickmanSteps).getByRole('button', { name: '2 故事与分镜' })).toBeDisabled();
-    expect(within(stickmanSteps).getByRole('button', { name: '3 确认分镜' })).toBeDisabled();
-    expect(within(stickmanSteps).getByRole('button', { name: '4 配音与音乐' })).toBeDisabled();
-    expect(screen.getByRole('tab', { name: '默认角色' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: '生成角色' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '上传角色' })).toBeInTheDocument();
-    const characterPresets = screen.getByRole('radiogroup', { name: '默认角色' });
-    expect(within(characterPresets).getAllByRole('radio')).toHaveLength(10);
-    const defaultCharacter = within(characterPresets).getByRole('radio', { name: /默认角色/ });
-    expect(defaultCharacter).toBeChecked();
-    expect(screen.queryByText('简洁造型，适合通用叙事')).not.toBeInTheDocument();
-    const selectedCharacterPreview = screen.getByRole('complementary', { name: '已选角色全身预览' });
-    expect(within(selectedCharacterPreview).getByRole('img', { name: '默认角色' })).toHaveAttribute(
-      'src',
-      '/dashboard/characters/default.png'
-    );
-    expect(within(characterPresets).getByRole('radio', { name: /^健身$/ })).toBeInTheDocument();
-    expect(within(characterPresets).getByRole('radio', { name: /^嘻哈$/ })).toBeInTheDocument();
-    fireEvent.click(within(characterPresets).getByRole('radio', { name: /科技男/ }));
-    expect(within(characterPresets).getByRole('radio', { name: /科技男/ })).toBeChecked();
-    expect(within(selectedCharacterPreview).getByRole('img', { name: '科技男' })).toHaveAttribute(
-      'src',
-      '/dashboard/characters/tech-guy.png'
-    );
-    fireEvent.click(screen.getByRole('tab', { name: '上传角色' }));
-    expect(screen.getByRole('complementary', { name: '角色图片上传建议' })).toHaveTextContent(
-      '人物全身完整可见，背景干净简洁，保持单人清晰且无遮挡。'
-    );
-    fireEvent.click(screen.getByRole('tab', { name: '生成角色' }));
-    const generateCharacterButton = screen.getByRole('button', { name: '生成角色形象' });
-    const characterActions = generateCharacterButton.closest('footer');
-    expect(characterActions).toHaveClass('stickman-wizard-actions');
-    expect(within(characterActions!).getByRole('button', { name: '下一步：故事与分镜' })).toBeEnabled();
-    fireEvent.click(generateCharacterButton);
-    expect(screen.getByRole('img', { name: '生成的火柴人角色形象' })).toHaveAttribute(
-      'src',
-      '/dashboard/characters/default.png'
-    );
-    fireEvent.click(screen.getByRole('tab', { name: '默认角色' }));
-    fireEvent.click(screen.getByRole('radio', { name: /科技男/ }));
-    expect(screen.queryByRole('heading', { name: '生成分镜' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '下一步：故事与分镜' }));
-    expect(screen.queryByRole('heading', { name: '准备主角' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '生成分镜' })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: '故事创意' })).toHaveAttribute('rows', '5');
-    fireEvent.click(screen.getByRole('button', { name: '上一步' }));
-    expect(screen.getByRole('heading', { name: '准备主角' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '下一步：故事与分镜' }));
-    fireEvent.click(screen.getByRole('button', { name: '生成分镜图' }));
-    expect(within(stickmanSteps).getByRole('button', { name: /确认分镜$/ })).toHaveAttribute('aria-current', 'step');
-    expect(screen.getByRole('heading', { name: '确认故事分镜' })).toBeInTheDocument();
-    expect(screen.getByText('建立场景')).toBeInTheDocument();
-    expect(screen.getAllByText(/s$/)).toHaveLength(4);
-    const firstSubtitle = screen.getByRole('textbox', { name: '分镜 1 字幕' });
-    expect(firstSubtitle).toHaveValue('灵感来了，就别让它从手中溜走。');
-    fireEvent.change(firstSubtitle, { target: { value: '灵感来了，马上抓住它。' } });
-    fireEvent.click(screen.getByRole('button', { name: '查看分镜 1 提示词' }));
-    const promptDialog = screen.getByRole('dialog', { name: '画面提示词' });
-    const imagePrompt = within(promptDialog).getByRole('textbox', { name: '分镜 1 画面提示词' });
-    const imagePromptValue = (imagePrompt as HTMLTextAreaElement).value;
-    expect(imagePromptValue).toContain('镜头主题：建立场景');
-    expect(imagePromptValue).toContain('主角：科技男');
-    expect(imagePromptValue).toContain('画面比例：16:9');
-    expect(imagePromptValue).toContain('不要在画面中渲染字幕');
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: '画面提示词' })).not.toBeInTheDocument();
-    const regenerateFirstShot = screen.getByRole('button', { name: '重新生成分镜 1 图片' });
-    expect(regenerateFirstShot).toHaveTextContent('重新生成');
-    fireEvent.click(regenerateFirstShot);
-    const regenerateDialog = screen.getByRole('dialog', { name: '重新生成图片' });
-    expect(screen.getByRole('img', { name: '分镜 1：建立场景' })).toHaveAttribute('data-image-version', '0');
-    const editablePrompt = within(regenerateDialog).getByRole('textbox', { name: '分镜 1 画面提示词' });
-    expect(editablePrompt).not.toHaveAttribute('readonly');
-    fireEvent.change(editablePrompt, { target: { value: '自定义镜头提示词：角色在城市天台抓住手稿，不要生成文字。' } });
-    fireEvent.click(within(regenerateDialog).getByRole('button', { name: '确认重新生成' }));
-    expect(screen.queryByRole('dialog', { name: '重新生成图片' })).not.toBeInTheDocument();
-    expect(screen.getByRole('img', { name: '分镜 1：建立场景' })).toHaveAttribute('data-image-version', '1');
-    expect(screen.getByRole('status')).toHaveTextContent('分镜 1 的图片已重新生成');
-    fireEvent.click(screen.getByRole('button', { name: '查看分镜 1 提示词' }));
-    expect(screen.getByRole('textbox', { name: '分镜 1 画面提示词' })).toHaveValue('自定义镜头提示词：角色在城市天台抓住手稿，不要生成文字。');
-    expect(screen.getByRole('textbox', { name: '分镜 1 画面提示词' })).toHaveAttribute('readonly');
-    fireEvent.click(screen.getByRole('button', { name: '关闭提示词' }));
-    expect(screen.queryByLabelText('任务摘要')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '下一步：配音与音乐' }));
-    expect(within(stickmanSteps).getByRole('button', { name: /配音与音乐$/ })).toHaveAttribute('aria-current', 'step');
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('角色科技男');
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('分镜4 个镜头');
-    expect(screen.getByLabelText('任务摘要')).not.toHaveClass('is-compact');
-    expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-task-final-grid');
-    expect(screen.getByRole('switch', { name: '生成旁白配音' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.change(screen.getByRole('combobox', { name: '配音音色' }), { target: { value: 'energetic' } });
-    const backgroundMusic = new File(['music'], 'city-theme.mp3', { type: 'audio/mpeg' });
-    fireEvent.change(screen.getByLabelText('上传背景音乐'), { target: { files: [backgroundMusic] } });
-    fireEvent.change(screen.getByRole('slider', { name: '背景音乐音量' }), { target: { value: '35' } });
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('配音自动匹配 · 活力青年');
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('背景音乐city-theme.mp3 · 35%');
-    fireEvent.click(screen.getByRole('button', { name: /根据分镜生成视频/ }));
-    expect(screen.getByText('火柴人动画-V1.mp4')).toBeInTheDocument();
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('当前版本V1');
-    expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-result-layout');
-    expect(screen.getByRole('button', { name: '项目 V1' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '成片' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: '分镜' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '角色' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '任务设置' })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('tab', { name: '分镜' }));
-    expect(screen.getByRole('heading', { name: '故事分镜' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '调整分镜' })).toBeInTheDocument();
-    expect(screen.getByText('灵感来了，马上抓住它。')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '调整分镜' }));
-    expect(screen.getByRole('textbox', { name: '分镜 1 字幕' })).toHaveValue('灵感来了，马上抓住它。');
-    fireEvent.click(within(stickmanSteps).getByRole('button', { name: /配音与音乐$/ }));
-    fireEvent.click(screen.getByRole('tab', { name: '角色' }));
-    expect(screen.getByRole('img', { name: '科技男' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '更换角色' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
-    expect(screen.getByRole('heading', { name: '当前版本设置' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '调整角色' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '调整故事与画面' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '调整配音与音乐' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: '火柴人项目产出' })).toHaveTextContent('city-theme.mp3 · 35%');
-
-    fireEvent.click(within(stickmanSteps).getByRole('button', { name: /故事与分镜$/ }));
-    fireEvent.change(screen.getByRole('textbox', { name: '故事创意' }), {
-      target: { value: '一个商务角色在会议中用图表解释新产品。' }
-    });
-    fireEvent.click(screen.getByRole('button', { name: '生成分镜图' }));
-    fireEvent.click(screen.getByRole('button', { name: '下一步：配音与音乐' }));
-    expect(screen.getByText('正在基于 V1 调整')).toBeInTheDocument();
-    expect(screen.getByText('原版本的角色、分镜和成片仍可查看')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
-
-    expect(screen.getByText('火柴人动画-V2.mp4')).toBeInTheDocument();
-    expect(screen.getByText('V2 已生成完成，之前的版本仍可查看')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '项目 V2' }));
-    const stickmanVersionMenu = screen.getByRole('menu');
-    expect(within(stickmanVersionMenu).getByText('项目 V1')).toBeInTheDocument();
-    expect(within(stickmanVersionMenu).getByText('项目 V2')).toBeInTheDocument();
-    fireEvent.click(within(stickmanVersionMenu).getByText('项目 V1').closest('button') as HTMLButtonElement);
-    expect(screen.getByText('火柴人动画-V1.mp4')).toBeInTheDocument();
-
-    fireEvent.click(within(screen.getByRole('navigation', { name: '火柴人生成流程' })).getByRole('button', { name: /故事与分镜$/ }));
-    fireEvent.change(screen.getByRole('combobox', { name: '视频比例' }), {
-      target: { value: '9:16' }
-    });
-    fireEvent.click(screen.getByRole('button', { name: '生成分镜图' }));
-    fireEvent.click(screen.getByRole('button', { name: '下一步：配音与音乐' }));
-    fireEvent.click(screen.getByRole('button', { name: '生成 V3' }));
-    expect(screen.getByText('火柴人动画-V3.mp4')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '项目 V3' }));
-    expect(screen.getByRole('menu')).toHaveTextContent('基于 V1 调整，当前查看');
+    expect(screen.getByRole('navigation', { name: '火柴人视频制作步骤' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'YouTube 链接' })).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: '角色预设' }))
+      .toHaveAttribute('aria-label', '角色预设');
+    expect(screen.getAllByRole('radio')).toHaveLength(6);
+    expect(container.querySelectorAll('.creator-collaboration-panel')).toHaveLength(1);
+    expect(screen.queryByRole('navigation', { name: '火柴人生成流程' }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText(/火柴人动画-V\d+\.mp4/)).not.toBeInTheDocument();
   });
-
-  it('uses the same transparent stickman artwork in dark and light themes', () => {
-    document.documentElement.dataset.theme = 'dark';
-    render(<DashboardPage onSelectPrompt={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: '打开火柴人动画' }));
-
-    const defaultCharacter = screen.getByRole('radio', { name: /默认角色/ });
-    const artwork = defaultCharacter.querySelector<HTMLImageElement>('.stickman-character-artwork');
-    expect(artwork).toHaveAttribute('src', '/dashboard/characters/default.png');
-
-    document.documentElement.dataset.theme = 'light';
-    expect(artwork).toHaveAttribute('src', '/dashboard/characters/default.png');
-    document.documentElement.dataset.theme = 'dark';
-  });
-
   it('previews an Auto Clips video from a link or local upload', async () => {
     const createObjectURL = vi.fn(() => 'blob:auto-clips-preview');
     Object.defineProperty(URL, 'createObjectURL', {
@@ -1839,6 +1829,7 @@ describe('DashboardPage', () => {
       agentThreadId: null,
       stages: [],
       artifacts: [],
+      providerRequests: [],
       activities: [],
       createdAt,
       updatedAt: createdAt
@@ -1867,6 +1858,9 @@ describe('DashboardPage', () => {
           version,
           status: 'completed',
           path: `/tmp/image-${candidate}.png`,
+          scopeKey: null,
+          inputFingerprint: null,
+          sha256: null,
           sourceArtifactIds: [],
           metadata: {
             provider: 'openai',
@@ -1921,6 +1915,8 @@ describe('DashboardPage', () => {
             claimExpiresAt: null,
             attempt: 1,
             idempotencyKey: null,
+            scopeKey: null,
+            inputFingerprint: null,
             progress: { status: 'succeeded' },
             errorCode: null,
             errorMessage: null,

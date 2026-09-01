@@ -36,7 +36,14 @@ const jobs = [
     id: 'job_stickman',
     templateId: 'stickman-video',
     state: { topic: '如何建立内容创作流程' },
-    updatedAt: '2026-08-19T10:00:00.000Z'
+    updatedAt: '2026-08-19T10:00:00.000Z',
+    artifacts: [
+      artifact('job_stickman', 'clean_video', 'landscape-clean.mp4'),
+      artifact('job_stickman', 'cover_image', 'youtube-cover.png'),
+      artifact('job_stickman', 'publish_copy', 'publish-copy-youtube.md'),
+      artifact('job_stickman', 'bilingual_video', 'horizontal-bilingual.mp4'),
+      artifact('job_stickman', 'bilingual_subtitle', 'bilingual.srt')
+    ]
   })
 ];
 
@@ -271,9 +278,18 @@ describe('ProjectsPage', () => {
       .getByRole('tab', { name: '产出中心' }));
 
     const outputList = screen.getByRole('list', { name: '产出列表' });
-    expect(within(outputList).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(outputList).getAllByRole('listitem')).toHaveLength(7);
     expect(screen.getByText('target.srt')).toBeInTheDocument();
     expect(screen.getByText('translated.mp4')).toBeInTheDocument();
+    for (const fileName of [
+      'landscape-clean.mp4',
+      'youtube-cover.png',
+      'publish-copy-youtube.md',
+      'horizontal-bilingual.mp4',
+      'bilingual.srt'
+    ]) {
+      expect(screen.getByText(fileName)).toBeInTheDocument();
+    }
     expect(screen.queryByText(/最终成片|方案 01|配音音轨/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '在项目中打开产出 translated.mp4' }));
@@ -302,9 +318,11 @@ describe('ProjectsPage', () => {
 
     fireEvent.click(within(screen.getByRole('tablist', { name: '内容维度' }))
       .getByRole('tab', { name: '产出中心' }));
-    expect(screen.getByRole('button', { name: '在项目中打开产出 generated-image.png' }))
-      .toBeInTheDocument();
-    expect(screen.getByText('PNG')).toBeInTheDocument();
+    const output = screen.getByRole('button', {
+      name: '在项目中打开产出 generated-image.png'
+    });
+    expect(output).toBeInTheDocument();
+    expect(within(output).getByText('PNG')).toBeInTheDocument();
   });
 
   it('shows loading and runtime errors explicitly', () => {
@@ -331,13 +349,14 @@ function creatorJob(input: {
     id: input.id,
     projectId: 'workspace_1',
     templateId: input.templateId,
-    templateVersion: 1,
+    templateVersion: input.templateId === 'stickman-video' ? 2 : 1,
     status: input.artifacts === undefined ? 'draft' : 'completed',
     revision: 0,
     state: input.state,
     agentThreadId: null,
     stages: [],
     artifacts: input.artifacts ?? [],
+    providerRequests: [],
     activities: [],
     createdAt: input.updatedAt,
     updatedAt: input.updatedAt
@@ -352,6 +371,9 @@ function artifact(jobId: string, kind: string, fileName: string): CreatorJob['ar
     version: 1,
     status: 'completed',
     path: `/outputs/${fileName}`,
+    scopeKey: null,
+    inputFingerprint: null,
+    sha256: null,
     sourceArtifactIds: [],
     metadata: { fileName },
     createdAt: '2026-08-17T10:00:00.000Z'

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -40,6 +41,90 @@ function setup() {
 }
 
 describe('creator runtime advanced contracts', () => {
+  it('runs distinct shot scopes concurrently while keeping unscoped stages serial', async () => {
+    const { db, repository, service, templates } = setup();
+    let active = 0;
+    let peak = 0;
+    const releases: Array<() => void> = [];
+    const executor: CreatorExecutor = {
+      id: 'image',
+      async run({ stageRun, workdir }) {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise<void>(resolve => releases.push(resolve));
+        active -= 1;
+        const outputPath = join(workdir, 'generated.png');
+        writeFileSync(outputPath, stageRun.scopeKey ?? 'unscoped');
+        return {
+          outputs: [{
+            kind: 'generated_image',
+            status: 'completed',
+            path: outputPath
+          }]
+        };
+      }
+    };
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [executor],
+      workRoot: join(tempDir, 'work'),
+      maxConcurrency: 4
+    });
+    const scopedJob = service.createJob({
+      projectId: 'p1',
+      templateId: 'image-generation',
+      state: { prompt: 'scoped' }
+    });
+    const scopedRuns = ['shot-01', 'shot-02'].map(scopeKey => repository.createStageRun({
+      jobId: scopedJob.id,
+      stageId: 'generate',
+      executor: 'image',
+      status: 'queued',
+      scopeKey,
+      inputFingerprint: scopeKey === 'shot-01' ? '1'.repeat(64) : '2'.repeat(64)
+    }));
+    const scopedExecution = scopedRuns.map(stage => runner.runStageRun(stage.id));
+    await expect.poll(() => active).toBe(2);
+    expect(peak).toBe(2);
+    releases.splice(0).forEach(release => release());
+    await Promise.all(scopedExecution);
+    const scopedArtifacts = repository.getJob(scopedJob.id)!.artifacts;
+    expect(scopedArtifacts).toHaveLength(2);
+    for (const artifact of scopedArtifacts) {
+      expect(artifact.scopeKey).toMatch(/^shot-0[12]$/);
+      expect(artifact.inputFingerprint).toMatch(/^[12]{64}$/);
+      expect(artifact.sha256).toBe(createHash('sha256')
+        .update(artifact.scopeKey!)
+        .digest('hex'));
+    }
+
+    active = 0;
+    peak = 0;
+    const unscopedJob = service.createJob({
+      projectId: 'p1',
+      templateId: 'image-generation',
+      state: { prompt: 'unscoped' }
+    });
+    const unscopedRuns = [1, 2].map(() => repository.createStageRun({
+      jobId: unscopedJob.id,
+      stageId: 'generate',
+      executor: 'image',
+      status: 'queued'
+    }));
+    const unscopedExecution = unscopedRuns.map(stage => runner.runStageRun(stage.id));
+    await expect.poll(() => active).toBe(1);
+    expect(peak).toBe(1);
+    releases.shift()?.();
+    await expect.poll(() => active).toBe(1);
+    expect(peak).toBe(1);
+    releases.shift()?.();
+    await Promise.all(unscopedExecution);
+
+    await runner.close();
+    db.close();
+  });
+
   it('cancels queued and running stage runs without committing partial outputs', async () => {
     const { db, repository, dispatcher, service, templates } = setup();
     const queuedJob = service.createJob({
@@ -140,6 +225,8 @@ describe('creator runtime advanced contracts', () => {
 
   it('keeps a video download job in draft after the non-final probe stage', async () => {
     const { db, repository, service, templates } = setup();
+    const probePath = join(tempDir, 'probe.json');
+    writeFileSync(probePath, '{}');
     const runner = createCreatorStageRunner({
       repository,
       templates,
@@ -150,7 +237,7 @@ describe('creator runtime advanced contracts', () => {
             outputs: [{
               kind: 'download_probe',
               status: 'completed' as const,
-              path: join(tempDir, 'probe.json'),
+              path: probePath,
               metadata: {
                 requestedUrl: 'https://www.youtube.com/watch?v=probe-only',
                 options: []
@@ -278,6 +365,8 @@ describe('creator runtime advanced contracts', () => {
       executors: [{
         id: 'cover-analysis',
         async run() {
+          writeFileSync(join(tempDir, 'cover-brief.json'), '{}');
+          writeFileSync(join(tempDir, 'source-keyframe.jpg'), 'jpeg');
           return {
             outputs: [
               {
@@ -354,6 +443,7 @@ describe('creator runtime advanced contracts', () => {
         id: 'krillinai',
         async run({ stageRun }) {
           if (stageRun.stageId === 'subtitle') {
+            writeFileSync(join(tempDir, 'subtitle-v1.srt'), '1\n00:00:00,000 --> 00:00:01,000\nTest\n');
             return {
               outputs: [{
                 kind: 'target_subtitle',
@@ -364,6 +454,7 @@ describe('creator runtime advanced contracts', () => {
             };
           }
           if (stageRun.stageId === 'render-horizontal') {
+            writeFileSync(join(tempDir, 'horizontal-v1.mp4'), 'video');
             return {
               outputs: [{
                 kind: 'horizontal_video',
@@ -372,6 +463,7 @@ describe('creator runtime advanced contracts', () => {
               }]
             };
           }
+          writeFileSync(join(tempDir, 'voice-v1.wav'), 'audio');
           return {
             outputs: [{
               kind: 'dubbed_audio',
@@ -484,6 +576,7 @@ describe('creator runtime advanced contracts', () => {
         id: 'krillinai',
         async run({ inputArtifacts }) {
           observedInputIds = inputArtifacts.map(artifact => artifact.id);
+          writeFileSync(join(tempDir, 'branched-horizontal.mp4'), 'video');
           return {
             outputs: [{
               kind: 'horizontal_video',
@@ -812,26 +905,4 @@ describe('creator runtime advanced contracts', () => {
     }] }, 12)).toThrow(/invalid_clip_range/);
   });
 
-  it('stales only the edited stickman segment assets and the final render', () => {
-    const { db, repository, service } = setup();
-    const job = service.createJob({ projectId: 'p1', templateId: 'stickman-video', state: { topic: '测试' } });
-    const segmentA = repository.insertArtifact({ jobId: job.id, kind: 'script_segment', status: 'completed', path: null, sourceArtifactIds: [], metadata: { id: 's1', narration: 'A', visualPrompt: 'A', durationSeconds: 2 } });
-    const segmentB = repository.insertArtifact({ jobId: job.id, kind: 'script_segment', status: 'completed', path: null, sourceArtifactIds: [], metadata: { id: 's2', narration: 'B', visualPrompt: 'B', durationSeconds: 2 } });
-    const imageA = repository.insertArtifact({ jobId: job.id, kind: 'storyboard_image', status: 'completed', path: 'a.png', sourceArtifactIds: [segmentA.id], metadata: { segmentId: 's1' } });
-    const imageB = repository.insertArtifact({ jobId: job.id, kind: 'storyboard_image', status: 'completed', path: 'b.png', sourceArtifactIds: [segmentB.id], metadata: { segmentId: 's2' } });
-    const audioA = repository.insertArtifact({ jobId: job.id, kind: 'segment_audio', status: 'completed', path: 'a.mp3', sourceArtifactIds: [segmentA.id], metadata: { segmentId: 's1' } });
-    const audioB = repository.insertArtifact({ jobId: job.id, kind: 'segment_audio', status: 'completed', path: 'b.mp3', sourceArtifactIds: [segmentB.id], metadata: { segmentId: 's2' } });
-    const final = repository.insertArtifact({ jobId: job.id, kind: 'stickman_video', status: 'completed', path: 'final.mp4', sourceArtifactIds: [imageA.id, imageB.id, audioA.id, audioB.id], metadata: {} });
-    service.applyAction(job.id, {
-      actor: 'user', action: 'edit-script-segment', expectedRevision: 0,
-      input: { artifactId: segmentB.id, narration: 'B2' }
-    });
-    const artifacts = service.getJob(job.id)!.artifacts;
-    expect(artifacts.find(item => item.id === imageA.id)?.status).toBe('completed');
-    expect(artifacts.find(item => item.id === audioA.id)?.status).toBe('completed');
-    expect(artifacts.find(item => item.id === imageB.id)?.status).toBe('stale');
-    expect(artifacts.find(item => item.id === audioB.id)?.status).toBe('stale');
-    expect(artifacts.find(item => item.id === final.id)?.status).toBe('stale');
-    db.close();
-  });
 });

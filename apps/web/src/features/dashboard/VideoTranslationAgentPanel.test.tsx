@@ -333,6 +333,8 @@ describe('VideoTranslationAgentPanel', () => {
       claimExpiresAt: '2026-08-21T00:01:00.000Z',
       attempt: 1,
       idempotencyKey: 'subtitle_1',
+      scopeKey: null,
+      inputFingerprint: null,
       progress: {
         krillinStatus: 'running',
         krillinEventPayload: {
@@ -378,6 +380,8 @@ describe('VideoTranslationAgentPanel', () => {
       claimExpiresAt: '2026-08-28T06:01:00.000Z',
       attempt: 1,
       idempotencyKey: 'stage-control',
+      scopeKey: null,
+      inputFingerprint: null,
       progress: { percent: 25 },
       errorCode: null,
       errorMessage: null,
@@ -459,6 +463,8 @@ describe('VideoTranslationAgentPanel', () => {
       claimExpiresAt: null,
       attempt: 1,
       idempotencyKey: 'subtitle_failed_1',
+      scopeKey: null,
+      inputFingerprint: null,
       progress: {
         percent: 67,
         phase: 'translating_subtitles',
@@ -728,6 +734,7 @@ function job(): CreatorJob {
     agentThreadId: null,
     stages: [],
     artifacts: [],
+    providerRequests: [],
     activities: [
       {
         id: 'activity_1',

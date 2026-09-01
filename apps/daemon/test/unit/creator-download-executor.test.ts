@@ -360,6 +360,52 @@ describe('creator download executor', () => {
     })]);
   });
 
+  it('downloads a YouTube source for stickman video without a probe artifact', async () => {
+    const binaries = await fakeBinaries();
+    const workdir = join(tempDir, 'stickman-source-work');
+    await mkdir(workdir, { recursive: true });
+    const reportProgress = vi.fn();
+    const executor = createDownloadExecutor(binaries);
+
+    const result = await executor.run(stageInput({
+      workdir,
+      stageId: 'acquire-source',
+      state: {
+        sourceUrl: 'https://www.youtube.com/watch?v=stickman-demo'
+      },
+      reportProgress
+    }));
+
+    const args = JSON.parse(
+      await readFile(join(workdir, 'args.json'), 'utf8')
+    ) as string[];
+    expect(args).toEqual(expect.arrayContaining([
+      '--proxy',
+      'http://127.0.0.1:7897',
+      '--ffmpeg-location',
+      binaries.ffmpegPath,
+      '-f',
+      'bestvideo+bestaudio/best',
+      '--merge-output-format',
+      'mp4'
+    ]));
+    expect(result.outputs).toEqual([expect.objectContaining({
+      kind: 'source_video',
+      status: 'completed',
+      metadata: expect.objectContaining({
+        source: 'stickman-video',
+        sourceUrl: 'https://www.youtube.com/watch?v=stickman-demo',
+        mimeType: 'video/mp4',
+        playbackCompatible: true
+      })
+    })]);
+    expect(reportProgress).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'succeeded',
+      phase: 'completed',
+      percent: 100
+    }));
+  });
+
   it('rejects a stale probe after the source URL changes', async () => {
     const binaries = await fakeBinaries();
     const workdir = join(tempDir, 'stale-work');
@@ -600,15 +646,17 @@ async function fakeBinaries(input?: {
   ytDlpPrefixArgs?: string[];
   ytDlpEnv?: NodeJS.ProcessEnv;
   ffmpegPath: string;
+  ffmpegPrefixArgs?: string[];
   ffprobePath: string;
+  ffprobePrefixArgs?: string[];
 }> {
   tempDir = await mkdtemp(join(tmpdir(), 'creator-download-executor-'));
-  const ytDlpPath = join(tempDir, 'yt-dlp');
-  const ffmpegPath = join(tempDir, 'ffmpeg');
-  const ffprobePath = join(tempDir, 'ffprobe');
+  const ytDlpScriptPath = join(tempDir, 'yt-dlp.mjs');
+  const ffmpegScriptPath = join(tempDir, 'ffmpeg.mjs');
+  const ffprobeScriptPath = join(tempDir, 'ffprobe.mjs');
   const failure = input?.failure;
   const videoCodec = input?.videoCodec ?? 'h264';
-  await writeExecutable(ytDlpPath, `#!/usr/bin/env node
+  await writeExecutable(ytDlpScriptPath, `#!/usr/bin/env node
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const args = process.argv.slice(2);
@@ -647,7 +695,7 @@ if (args.includes('--progress')) {
 process.stderr.write(audio ? '[ExtractAudio] Destination\\n' : '[Merger] Merging formats\\n');
 process.stdout.write(output + '\\n');
 `);
-  await writeExecutable(ffmpegPath, `#!/usr/bin/env node
+  await writeExecutable(ffmpegScriptPath, `#!/usr/bin/env node
 import { copyFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const args = process.argv.slice(2);
@@ -656,7 +704,7 @@ const inputIndex = args.indexOf('-i');
 copyFileSync(args[inputIndex + 1], args.at(-1));
 process.stderr.write('out_time=00:00:06.000000\\n');
 `);
-  await writeExecutable(ffprobePath, `#!/usr/bin/env node
+  await writeExecutable(ffprobeScriptPath, `#!/usr/bin/env node
 const path = process.argv.at(-1) ?? '';
 const audio = path.endsWith('.mp3');
 const compatible = path.endsWith('.playable.mp4');
@@ -680,17 +728,22 @@ process.stdout.write(JSON.stringify({
   config.proxy = 'http://127.0.0.1:7897';
   return {
     configStore: { read: async () => config },
-    ytDlpPath: input?.portableRuntime ? process.execPath : ytDlpPath,
+    ytDlpPath: process.execPath,
+    ytDlpPrefixArgs: [
+      ytDlpScriptPath,
+      ...(input?.portableRuntime ? ['--portable-runtime'] : [])
+    ],
     ...(input?.portableRuntime
       ? {
-          ytDlpPrefixArgs: [ytDlpPath, '--portable-runtime'],
           ytDlpEnv: {
             SSL_CERT_FILE: '/runtime/cacert.pem'
           }
         }
       : {}),
-    ffmpegPath,
-    ffprobePath
+    ffmpegPath: process.execPath,
+    ffmpegPrefixArgs: [ffmpegScriptPath],
+    ffprobePath: process.execPath,
+    ffprobePrefixArgs: [ffprobeScriptPath]
   };
 }
 
@@ -712,6 +765,9 @@ async function writeProbeArtifact(
     version: 1,
     status: 'completed',
     path,
+    scopeKey: null,
+    inputFingerprint: null,
+    sha256: null,
     sourceArtifactIds: [],
     metadata: {},
     createdAt: '2026-08-30T00:00:00.000Z'
@@ -720,7 +776,7 @@ async function writeProbeArtifact(
 
 function stageInput(input: {
   workdir: string;
-  stageId: 'probe' | 'download';
+  stageId: 'probe' | 'download' | 'acquire-source';
   state: CreatorJob['state'];
   progress?: CreatorStageRun['progress'];
   inputArtifacts?: CreatorArtifact[];
@@ -730,7 +786,9 @@ function stageInput(input: {
   const job: CreatorJob = {
     id: 'download_job',
     projectId: 'project_1',
-    templateId: 'video-download',
+    templateId: input.stageId === 'acquire-source'
+      ? 'stickman-video'
+      : 'video-download',
     templateVersion: 2,
     status: 'running',
     revision: 1,
@@ -739,6 +797,7 @@ function stageInput(input: {
     stages: [],
     artifacts: input.inputArtifacts ?? [],
     activities: [],
+    providerRequests: [],
     createdAt,
     updatedAt: createdAt
   };
@@ -753,6 +812,8 @@ function stageInput(input: {
     claimExpiresAt: null,
     attempt: 1,
     idempotencyKey: null,
+    scopeKey: null,
+    inputFingerprint: null,
     progress: input.progress ?? {},
     errorCode: null,
     errorMessage: null,

@@ -33,11 +33,13 @@ const projectArtifactKinds = new Set([
   'horizontal_video',
   'vertical_video',
   'auto_clip_video',
+  'clean_video',
+  'bilingual_video',
   'cover_image',
   'generated_image',
-  'stickman_video',
+  'publish_copy',
   'script_manifest',
-  'storyboard_image',
+  'shot_image',
   'clip_candidates'
 ]);
 const projectCoverArtifactKinds = new Set([
@@ -48,7 +50,8 @@ const projectCoverArtifactKinds = new Set([
   'vertical_video',
   'dubbed_video',
   'auto_clip_video',
-  'stickman_video',
+  'clean_video',
+  'bilingual_video',
   'clip_video'
 ]);
 
@@ -564,7 +567,10 @@ function artifactName(artifact: CreatorArtifact, l: LocalizeCopy): string {
     auto_clip_video: l('剪辑成片', 'Edited video'),
     cover_image: l('封面图片', 'Thumbnail'),
     generated_image: l('生成图片', 'Generated image'),
-    stickman_video: l('火柴人成片', 'Stick figure video')
+    clean_video: l('火柴人纯净视频', 'Stickman clean video'),
+    bilingual_video: l('火柴人双语视频', 'Stickman bilingual video'),
+    publish_copy: l('发布文案', 'Publish copy'),
+    shot_image: l('火柴人镜头画面', 'Stickman shot visual')
   };
   return labels[artifact.kind] ?? artifact.kind;
 }

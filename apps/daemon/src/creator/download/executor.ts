@@ -26,7 +26,9 @@ type DownloadExecutorOptions = {
   ytDlpEnv?: NodeJS.ProcessEnv;
   getYtDlpRuntime?(): YtDlpRuntime;
   ffmpegPath: string;
+  ffmpegPrefixArgs?: string[];
   ffprobePath: string;
+  ffprobePrefixArgs?: string[];
 };
 
 type PlaybackCodecs = {
@@ -63,6 +65,15 @@ export function createDownloadExecutor(
           && stage.job.templateVersion >= 2
           ? downloadSelectedOption(input, url, proxy, stage)
           : downloadLegacy(input, url, proxy, stage);
+      }
+      if (stage.stageRun.stageId === 'acquire-source') {
+        if (!isYoutube(url)) {
+          throw new CreatorExecutorError(
+            'unsupported_source',
+            'Stickman video accepts public YouTube URLs only'
+          );
+        }
+        return downloadStickmanSource(input, url, proxy, stage);
       }
       throw new CreatorExecutorError(
         'creator_stage_not_supported',
@@ -239,7 +250,7 @@ async function downloadSelectedOption(
       };
   const metadata = await outputMetadata(
     output.path,
-    input.ffprobePath,
+    input,
     probe,
     option,
     output
@@ -259,6 +270,111 @@ async function downloadSelectedOption(
       status: 'completed',
       path: output.path,
       metadata
+    }],
+    progress
+  };
+}
+
+async function downloadStickmanSource(
+  input: DownloadExecutorOptions,
+  url: string,
+  proxy: string,
+  stage: CreatorExecutorInput
+): Promise<CreatorExecutorResult> {
+  stage.reportProgress({
+    status: 'running',
+    phase: 'preparing_download',
+    percent: 2,
+    message: 'Preparing the YouTube source'
+  });
+  const outputTemplate = join(stage.workdir, 'source.%(ext)s');
+  const ytDlp = currentYtDlpRuntime(input);
+  const stdout = await run(
+    ytDlp.executable,
+    [
+      ...ytDlp.prefixArgs,
+      ...withProxy([
+        '--no-playlist',
+        '--newline',
+        '--windows-filenames',
+        '--ffmpeg-location',
+        input.ffmpegPath,
+        '--print',
+        'after_move:filepath',
+        '--progress',
+        '--progress-delta',
+        '0.5',
+        '-f',
+        'bestvideo+bestaudio/best',
+        '--merge-output-format',
+        'mp4',
+        '--remux-video',
+        'mp4',
+        '-o',
+        outputTemplate,
+        url
+      ], proxy)
+    ],
+    stage,
+    createDownloadProgressReporter(stage, 'video', [1]),
+    ytDlp.env
+  );
+  const reportedPath = printedOutputPath(stdout);
+  if (reportedPath === undefined) {
+    throw new CreatorExecutorError(
+      'download_output_missing',
+      'yt-dlp did not report an output path'
+    );
+  }
+  const downloadedPath = await safeOutputPath(stage.workdir, reportedPath);
+  stage.reportProgress({
+    status: 'running',
+    phase: 'validating_output',
+    percent: 97,
+    message: 'Checking the YouTube source'
+  });
+  const output = await normalizeVideoForPlayback(
+    downloadedPath,
+    input,
+    stage,
+    null
+  );
+  const [media, info, sha256] = await Promise.all([
+    validateMediaFile(
+      output.path,
+      input.ffprobePath,
+      input.ffprobePrefixArgs
+    ),
+    stat(output.path),
+    sha256File(output.path)
+  ]);
+  const progress = {
+    status: 'succeeded',
+    phase: 'completed',
+    percent: 100,
+    message: 'YouTube source downloaded'
+  };
+  stage.reportProgress(progress);
+  return {
+    outputs: [{
+      kind: 'source_video',
+      status: 'completed',
+      path: output.path,
+      metadata: {
+        ...media,
+        fileName: output.fileName,
+        size: info.size,
+        bytes: info.size,
+        sha256,
+        mimeType: mimeTypeFor(output.path),
+        source: 'stickman-video',
+        sourceUrl: url,
+        videoCodec: output.videoCodec,
+        audioCodec: output.audioCodec,
+        pixelFormat: output.pixelFormat,
+        playbackCompatible: isPlaybackCompatible(output),
+        normalizedForPlayback: output.normalizedForPlayback
+      }
     }],
     progress
   };
@@ -318,7 +434,11 @@ async function downloadLegacy(
     );
   }
   const path = await safeOutputPath(stage.workdir, reportedPath);
-  const media = await validateMediaFile(path, input.ffprobePath);
+  const media = await validateMediaFile(
+    path,
+    input.ffprobePath,
+    input.ffprobePrefixArgs
+  );
   const info = await stat(path);
   return {
     outputs: [{
@@ -473,13 +593,13 @@ function withProxy(args: string[], proxy: string): string[] {
 
 async function outputMetadata(
   path: string,
-  ffprobePath: string,
+  input: DownloadExecutorOptions,
   probe: DownloadProbe,
   option: DownloadOption,
   playback: PlaybackOutput
 ): Promise<Record<string, CreatorJson>> {
   const [media, info, sha256] = await Promise.all([
-    validateMediaFile(path, ffprobePath),
+    validateMediaFile(path, input.ffprobePath, input.ffprobePrefixArgs),
     stat(path),
     sha256File(path)
   ]);
@@ -526,7 +646,7 @@ async function normalizeVideoForPlayback(
   duration: number | null
 ): Promise<PlaybackOutput> {
   const fileName = basename(path);
-  const codecs = await readPlaybackCodecs(path, input.ffprobePath, stage);
+  const codecs = await readPlaybackCodecs(path, input, stage);
   if (isPlaybackCompatible(codecs)) {
     return {
       path,
@@ -583,12 +703,16 @@ async function normalizeVideoForPlayback(
   try {
     await run(
       input.ffmpegPath,
-      args,
+      [...(input.ffmpegPrefixArgs ?? []), ...args],
       stage,
       line => reportPlaybackConversionProgress(stage, line, duration)
     );
-    await validateMediaFile(outputPath, input.ffprobePath);
-    const normalized = await readPlaybackCodecs(outputPath, input.ffprobePath, stage);
+    await validateMediaFile(
+      outputPath,
+      input.ffprobePath,
+      input.ffprobePrefixArgs
+    );
+    const normalized = await readPlaybackCodecs(outputPath, input, stage);
     if (!isPlaybackCompatible(normalized)) {
       throw new CreatorExecutorError(
         'download_playback_conversion_failed',
@@ -632,10 +756,11 @@ function reportPlaybackConversionProgress(
 
 async function readPlaybackCodecs(
   path: string,
-  ffprobePath: string,
+  input: DownloadExecutorOptions,
   stage: CreatorExecutorInput
 ): Promise<PlaybackCodecs> {
-  const stdout = await run(ffprobePath, [
+  const stdout = await run(input.ffprobePath, [
+    ...(input.ffprobePrefixArgs ?? []),
     '-v',
     'error',
     '-show_entries',
@@ -996,6 +1121,21 @@ function isSupported(value: string): boolean {
         || host === 'b23.tv'
         || host === 'bilibili.com'
         || host.endsWith('.bilibili.com')
+      );
+  } catch {
+    return false;
+  }
+}
+
+function isYoutube(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return parsed.protocol === 'https:'
+      && (
+        host === 'youtu.be'
+        || host === 'youtube.com'
+        || host.endsWith('.youtube.com')
       );
   } catch {
     return false;

@@ -97,6 +97,8 @@ function job(): CreatorJob {
         claimExpiresAt: null,
         attempt: 1,
         idempotencyKey: null,
+        scopeKey: null,
+        inputFingerprint: null,
         progress: {
           percent: 100,
           krillinStatus: 'succeeded',
@@ -118,6 +120,8 @@ function job(): CreatorJob {
         claimExpiresAt: null,
         attempt: 1,
         idempotencyKey: null,
+        scopeKey: null,
+        inputFingerprint: null,
         progress: {},
         errorCode: null,
         errorMessage: null,
@@ -132,6 +136,9 @@ function job(): CreatorJob {
       version: 1,
       status: 'completed',
       path: 'D:\\private\\jobs\\translated.mp4',
+      scopeKey: null,
+      inputFingerprint: null,
+      sha256: null,
       sourceArtifactIds: [],
       metadata: {
         fileName: 'translated.mp4',
@@ -142,6 +149,7 @@ function job(): CreatorJob {
       },
       createdAt
     }],
+    providerRequests: [],
     activities: [],
     createdAt,
     updatedAt: createdAt

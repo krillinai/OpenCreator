@@ -266,6 +266,8 @@ function coverJob(): CreatorJob {
       claimExpiresAt: null,
       attempt: 1,
       idempotencyKey: 'cover-generate-1',
+      scopeKey: null,
+      inputFingerprint: null,
       progress: {
         phase: 'generating_candidates',
         percent: 50,
@@ -278,6 +280,7 @@ function coverJob(): CreatorJob {
       startedAt: '2026-08-30T08:00:05.000Z',
       finishedAt: null
     }],
+    providerRequests: [],
     artifacts: [],
     activities: [
       {
@@ -363,6 +366,8 @@ function downloadJob(): CreatorJob {
       claimExpiresAt: null,
       attempt: 1,
       idempotencyKey: 'download-1',
+      scopeKey: null,
+      inputFingerprint: null,
       progress: {
         phase: 'downloading',
         percent: 42,
@@ -374,6 +379,7 @@ function downloadJob(): CreatorJob {
       finishedAt: null
     }],
     artifacts: [],
+    providerRequests: [],
     activities: [
       {
         id: 'activity_ui',

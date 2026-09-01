@@ -4,10 +4,34 @@ import {
   createImageGenerationTemplate,
   createCreatorTemplateRegistry,
   createVideoDownloadTemplate,
+  createDefaultCreatorTemplateRegistry,
+  createStickmanVideoTemplate,
   createVideoTranslationTemplate
 } from '../../src/creator/templates/registry.js';
 
 describe('creator template registry', () => {
+  it('exposes only stickman-video version 2 and rejects v2 in an old registry fixture', () => {
+    const production = createDefaultCreatorTemplateRegistry();
+    const stickman = production.list().filter(template => template.id === 'stickman-video');
+
+    expect(stickman).toHaveLength(1);
+    expect(stickman[0]).toMatchObject({
+      version: 2,
+      stages: expect.arrayContaining([
+        expect.objectContaining({ id: 'images', jobCompletionPolicy: 'continue' }),
+        expect.objectContaining({ id: 'package-validation', jobCompletionPolicy: 'complete' })
+      ])
+    });
+    const v2 = createStickmanVideoTemplate();
+    const oldRegistry = createCreatorTemplateRegistry([{
+      ...v2,
+      version: 1,
+      stages: [],
+      actions: []
+    }]);
+    expect(() => oldRegistry.get('stickman-video', 2)).toThrow(/unknown creator template/i);
+  });
+
   it('registers the current cover workflow with real source and artifact stages', () => {
     const template = createCoverTemplate();
 
