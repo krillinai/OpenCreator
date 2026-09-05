@@ -11,6 +11,8 @@
 
 <p>من النصوص إلى الفيديو والصور والصوت والصور الرمزية والترجمة والتحرير، تدفع Agents عملية الإبداع كاملة إلى الأمام في مساحة عمل واحدة.</p>
 
+<p><strong>كان OpenCreator يُعرف سابقًا باسم KrillinAI.</strong></p>
+
 <a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="OpenCreator (المعروف سابقًا باسم KrillinAI): المستودع رقم 1 لهذا اليوم على Trendshift" width="250" height="55" /></a>
 
 [English](../../README.md) | [简体中文](../zh/README.md) | [日本語](../ja/README.md) | [한국어](../ko/README.md) | [Bahasa Indonesia](../id/README.md) | [Español](../es/README.md) | [Français](../fr/README.md) | [Deutsch](../de/README.md) | [Português](../pt/README.md) | [Русский](../ru/README.md) | **العربية**

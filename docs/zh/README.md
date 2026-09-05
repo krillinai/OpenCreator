@@ -11,6 +11,8 @@
 
 <p>从脚本到视频、图像、语音、数字人、翻译与剪辑，Agent 在一个工作空间内推动整个创作流程。</p>
 
+<p><strong>OpenCreator 原名 KrillinAI。</strong></p>
+
 <a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="OpenCreator（原 KrillinAI）：Trendshift 单日排名第一仓库" width="250" height="55" /></a>
 
 [English](../../README.md) | **简体中文** | [日本語](../ja/README.md) | [한국어](../ko/README.md) | [Bahasa Indonesia](../id/README.md) | [Español](../es/README.md) | [Français](../fr/README.md) | [Deutsch](../de/README.md) | [Português](../pt/README.md) | [Русский](../ru/README.md) | [العربية](../ar/README.md)

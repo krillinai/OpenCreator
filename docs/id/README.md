@@ -11,6 +11,8 @@
 
 <p>Dari naskah hingga video, gambar, suara, avatar, penerjemahan, dan penyuntingan, Agent membantu menjalankan seluruh proses kreatif dalam satu ruang kerja.</p>
 
+<p><strong>OpenCreator sebelumnya bernama KrillinAI.</strong></p>
+
 <a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="OpenCreator (sebelumnya KrillinAI): Repositori Terbaik Hari Ini peringkat 1 di Trendshift" width="250" height="55" /></a>
 
 [English](../../README.md) | [简体中文](../zh/README.md) | [日本語](../ja/README.md) | [한국어](../ko/README.md) | **Bahasa Indonesia** | [Español](../es/README.md) | [Français](../fr/README.md) | [Deutsch](../de/README.md) | [Português](../pt/README.md) | [Русский](../ru/README.md) | [العربية](../ar/README.md)

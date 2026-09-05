@@ -11,6 +11,8 @@
 
 <p>From scripts to video, images, voice, avatars, translation, and editing, Agents move the whole creative process forward in one workspace.</p>
 
+<p><strong>OpenCreator was formerly known as KrillinAI.</strong></p>
+
 <a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="OpenCreator, formerly KrillinAI: #1 Repository of the Day on Trendshift" width="250" height="55" /></a>
 
 **English** | [简体中文](./docs/zh/README.md) | [日本語](./docs/ja/README.md) | [한국어](./docs/ko/README.md) | [Bahasa Indonesia](./docs/id/README.md) | [Español](./docs/es/README.md) | [Français](./docs/fr/README.md) | [Deutsch](./docs/de/README.md) | [Português](./docs/pt/README.md) | [Русский](./docs/ru/README.md) | [العربية](./docs/ar/README.md)
