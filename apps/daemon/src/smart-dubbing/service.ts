@@ -12,18 +12,10 @@ import {
   KrillinTtsServiceError,
   type KrillinTtsService
 } from '../creator/krillin/tts-service.js';
+import { smartDubbingInstructions } from './styles.js';
 
 const MAX_TEXT_LENGTH = 5_000;
 const SAFE_RESULT_ID = /^[A-Za-z0-9_-]{12,64}$/;
-
-const styleInstructions: Record<SmartDubbingStyle, string> = {
-  natural: 'Speak naturally with clear articulation and balanced pacing.',
-  professional: 'Use a polished, confident, professional presentation style.',
-  warm: 'Use a warm, friendly, approachable tone with gentle pacing.',
-  energetic: 'Use an energetic, upbeat delivery while keeping every word clear.',
-  calm: 'Use a calm, steady, reassuring tone with measured pauses.',
-  storytelling: 'Use an expressive storytelling cadence with natural emphasis and pauses.'
-};
 
 export type SmartDubbingService = {
   generate(request: CreateSmartDubbingRequest): Promise<SmartDubbingResult>;
@@ -85,7 +77,7 @@ export function createSmartDubbingService(input: {
         voiceId: request.voice.trim(),
         format: request.format,
         speed: request.speed,
-        instructions: styleInstructions[request.style]
+        instructions: smartDubbingInstructions(request.style)
       });
     } catch (error) {
       throw mapTtsError(error);

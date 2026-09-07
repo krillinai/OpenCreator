@@ -5,6 +5,7 @@ import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import CreatorCollaborationPanel from './CreatorCollaborationPanel.js';
 import {
   coverPanelAdapter,
+  smartDubbingPanelAdapter,
   videoDownloadPanelAdapter
 } from './creator-panel-adapters.js';
 import { CreatorSessionProvider } from './creator-session-store.js';
@@ -388,7 +389,134 @@ describe('CreatorCollaborationPanel', () => {
     expect(screen.getByText('无法连接视频平台，请检查网络或代理设置后重试'))
       .toBeInTheDocument();
   });
+
+  it('语义化智能配音动态并显示真实 TTS 阶段进度', () => {
+    const onCancelTask = vi.fn();
+    const { container } = render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          initialJob={smartDubbingJob()}
+          service={{
+            applyAction: vi.fn(),
+            runAgentTurn: vi.fn()
+          } as never}
+        >
+          <CreatorCollaborationPanel
+            adapter={smartDubbingPanelAdapter}
+            stepLabel="正在生成配音"
+            contextSummary="Nova · 温暖 · 1.05x"
+            onCancelTask={onCancelTask}
+          />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    expect(screen.getAllByText('更新了创作设置')).toHaveLength(1);
+    expect(screen.getByText('配音文案、音色、表达风格')).toBeInTheDocument();
+    expect(screen.getByText('2 次修改')).toBeInTheDocument();
+    expect(screen.queryByText(/currentStep|furthestStep/)).not.toBeInTheDocument();
+    expect(screen.queryByText('启动阶段 tts')).not.toBeInTheDocument();
+    expect(screen.getByText(/系统 · 生成配音/)).toBeInTheDocument();
+    expect(screen.getByText('生成配音音频')).toBeInTheDocument();
+    expect(screen.getByText('20%')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '生成配音进度' }))
+      .toHaveAttribute('aria-valuenow', '20');
+    expect(screen.getByRole('button', { name: '终止生成配音' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.creator-collaboration-stage')).toHaveLength(1);
+  });
 });
+
+function smartDubbingJob(): CreatorJob {
+  const createdAt = '2026-09-07T08:00:00.000Z';
+  return {
+    id: 'smart_dubbing_job',
+    projectId: 'project_1',
+    templateId: 'smart-dubbing',
+    templateVersion: 1,
+    status: 'running',
+    revision: 4,
+    state: {
+      text: '这是一段智能配音文案。',
+      ttsProvider: 'openai',
+      ttsModel: 'gpt-4o-mini-tts',
+      voiceCode: 'nova',
+      voiceName: 'Nova',
+      style: 'warm',
+      speed: 1.05,
+      format: 'mp3',
+      currentStage: 'tts'
+    },
+    agentThreadId: null,
+    stages: [{
+      id: 'smart_dubbing_stage',
+      jobId: 'smart_dubbing_job',
+      stageId: 'tts',
+      executor: 'smart-dubbing',
+      status: 'running',
+      dispatchStatus: 'claimed',
+      claimOwner: 'scheduler_1',
+      claimExpiresAt: null,
+      attempt: 1,
+      idempotencyKey: 'smart-dubbing-1',
+      progress: {
+        phase: 'generating_voice',
+        percent: 20,
+        completed: 0,
+        failed: 0,
+        total: 1
+      },
+      errorCode: null,
+      errorMessage: null,
+      startedAt: '2026-09-07T08:00:03.000Z',
+      finishedAt: null
+    }],
+    artifacts: [],
+    activities: [
+      {
+        id: 'activity_ui',
+        jobId: 'smart_dubbing_job',
+        revision: 1,
+        actor: 'user',
+        action: 'update-settings:draft',
+        summary: '更新创作设置',
+        details: { objectId: 'currentStep,furthestStep' },
+        createdAt: '2026-09-07T08:00:01.000Z'
+      },
+      {
+        id: 'activity_text',
+        jobId: 'smart_dubbing_job',
+        revision: 2,
+        actor: 'user',
+        action: 'update-settings:draft',
+        summary: '更新创作设置',
+        details: { objectId: 'text' },
+        createdAt: '2026-09-07T08:00:02.000Z'
+      },
+      {
+        id: 'activity_voice',
+        jobId: 'smart_dubbing_job',
+        revision: 3,
+        actor: 'user',
+        action: 'update-settings:draft',
+        summary: '更新创作设置',
+        details: { objectId: 'voiceCode,style' },
+        createdAt: '2026-09-07T08:00:03.000Z'
+      },
+      {
+        id: 'activity_run',
+        jobId: 'smart_dubbing_job',
+        revision: 4,
+        actor: 'user',
+        action: 'run-stage',
+        summary: '启动阶段 tts',
+        details: { stageId: 'tts' },
+        createdAt: '2026-09-07T08:00:04.000Z'
+      }
+    ],
+    createdAt,
+    updatedAt: '2026-09-07T08:00:04.000Z'
+  };
+}
 
 function coverJob(): CreatorJob {
   const createdAt = '2026-08-30T08:00:00.000Z';

@@ -3,6 +3,7 @@ import {
   createCoverTemplate,
   createImageGenerationTemplate,
   createCreatorTemplateRegistry,
+  createSmartDubbingTemplate,
   createVideoDownloadTemplate,
   createVideoTranslationTemplate
 } from '../../src/creator/templates/registry.js';
@@ -67,6 +68,31 @@ describe('creator template registry', () => {
       candidateCount: 2,
       referenceImageArtifactId: null
     });
+  });
+
+  it('registers smart dubbing as a persisted TTS workflow', () => {
+    const template = createSmartDubbingTemplate();
+
+    expect(template).toMatchObject({
+      id: 'smart-dubbing',
+      version: 1,
+      renderer: 'smart-dubbing',
+      stages: [{
+        id: 'tts',
+        executor: 'smart-dubbing',
+        outputArtifacts: [{ kind: 'dubbed_audio', status: 'completed' }]
+      }],
+      outputs: [{ kind: 'dubbed_audio', required: true }]
+    });
+    expect(template.inputSchema.parse({})).toMatchObject({
+      text: '',
+      style: 'natural',
+      speed: 1,
+      format: 'mp3',
+      currentStep: 0,
+      furthestStep: 0
+    });
+    expect(template.inputSchema.parse({})).not.toHaveProperty('ttsProvider');
   });
 
   it('registers video download v2 with a non-final probe and controlled choices', () => {

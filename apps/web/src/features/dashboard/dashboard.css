@@ -2851,12 +2851,27 @@
 
 .smart-dubbing-error {
   min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 10px 0 0;
   padding: 8px 11px;
   border-left: 2px solid #c94b4b;
   background: color-mix(in srgb, #c94b4b 7%, var(--surface));
   color: #b33d3d;
   font-size: 12px;
+}
+
+.smart-dubbing-error a {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-weight: 620;
+  text-decoration: none;
+}
+
+.smart-dubbing-error a:hover {
+  text-decoration: underline;
 }
 
 .smart-dubbing-actions {

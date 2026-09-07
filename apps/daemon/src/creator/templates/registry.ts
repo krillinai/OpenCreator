@@ -10,6 +10,7 @@ import {
 } from './image-generation.js';
 import { createAutoClipTemplate } from './auto-clip.js';
 import { createStickmanVideoTemplate } from './stickman-video.js';
+import { createSmartDubbingTemplate } from './smart-dubbing.js';
 import type {
   CreatorTemplateDefinition,
   CreatorTemplateRegistry
@@ -22,6 +23,7 @@ export {
   createImageGenerationTemplate,
   createLegacyImageGenerationTemplate,
   createStickmanVideoTemplate,
+  createSmartDubbingTemplate,
   createLegacyVideoDownloadTemplate,
   createVideoDownloadTemplate,
   createVideoTranslationTemplate
@@ -36,6 +38,7 @@ export function createDefaultCreatorTemplateRegistry(): CreatorTemplateRegistry 
     createCoverTemplate(),
     createLegacyImageGenerationTemplate(),
     createImageGenerationTemplate(),
+    createSmartDubbingTemplate(),
     createAutoClipTemplate(),
     createStickmanVideoTemplate()
   ]);

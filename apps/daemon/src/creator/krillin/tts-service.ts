@@ -48,6 +48,7 @@ type ExecuteUtilityInput = {
   config: CreatorServicesConfig;
   args: string[];
   launcherRoot: string;
+  signal?: AbortSignal;
 };
 
 export type KrillinTtsSynthesisRequest = {
@@ -58,6 +59,7 @@ export type KrillinTtsSynthesisRequest = {
   format?: 'mp3' | 'wav';
   speed?: number;
   instructions?: string;
+  signal?: AbortSignal;
 };
 
 export type KrillinTtsSynthesisResult = {
@@ -188,7 +190,8 @@ export function createKrillinTtsService(input: {
       const response = await executeUtility({
         config: prepared.config,
         args,
-        launcherRoot
+        launcherRoot,
+        ...(request.signal === undefined ? {} : { signal: request.signal })
       });
       ensureSuccessfulResponse(response);
       const content = await readFile(outputPath);
@@ -311,6 +314,13 @@ async function executePackagedKrillinUtility(input: ExecuteUtilityInput & {
   resourceRoot: string;
   timeoutMs: number;
 }): Promise<KrillinUtilityResponse> {
+  if (input.signal?.aborted) {
+    throw new KrillinTtsServiceError(
+      'creator_tts_upstream_error',
+      'Speech synthesis was canceled',
+      499
+    );
+  }
   let manifest;
   try {
     manifest = readKrillinRuntimeManifest(input.resourceRoot);
@@ -368,6 +378,15 @@ async function executePackagedKrillinUtility(input: ExecuteUtilityInput & {
       ));
     }, input.timeoutMs);
     timeout.unref();
+    const abort = () => {
+      child.kill('SIGTERM');
+      fail(new KrillinTtsServiceError(
+        'creator_tts_upstream_error',
+        'Speech synthesis was canceled',
+        499
+      ));
+    };
+    input.signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', chunk => {
       stdout = appendBounded(stdout, String(chunk));
     });
@@ -397,6 +416,7 @@ async function executePackagedKrillinUtility(input: ExecuteUtilityInput & {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', abort);
       resolvePromise(response);
     }
 
@@ -404,6 +424,7 @@ async function executePackagedKrillinUtility(input: ExecuteUtilityInput & {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', abort);
       reject(error);
     }
   });

@@ -24,6 +24,7 @@ export const creatorWorkspaces = [
 export const visibleCreatorWorkspaces = [
   'video-translation',
   'video-download',
+  'smart-dubbing',
   'cover-generator',
   'image-generation'
 ] as const satisfies readonly CreatorWorkspace[];
@@ -33,6 +34,7 @@ export const creatorRuntimeWorkspaces = [
   'video-download',
   'stickman-video',
   'auto-clips',
+  'smart-dubbing',
   'cover-generator',
   'image-generation'
 ] as const satisfies readonly CreatorWorkspace[];
@@ -44,6 +46,7 @@ const templateByWorkspace: Record<CreatorRuntimeWorkspace, string> = {
   'video-download': 'video-download',
   'stickman-video': 'stickman-video',
   'auto-clips': 'auto-clip',
+  'smart-dubbing': 'smart-dubbing',
   'cover-generator': 'cover',
   'image-generation': 'image-generation'
 };

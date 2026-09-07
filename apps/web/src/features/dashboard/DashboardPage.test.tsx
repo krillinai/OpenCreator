@@ -80,6 +80,12 @@ function createInMemoryCreatorService(): CreatorWebService {
       && typeof request.input.stageId === 'string'
     ) {
       job = completeTranslationStage(current, request.input.stageId, request.input);
+    } else if (
+      current.templateId === 'smart-dubbing'
+      && request.action === 'run-stage'
+      && request.input.stageId === 'tts'
+    ) {
+      job = completeSmartDubbingStage(current);
     } else {
       job = current;
     }
@@ -109,6 +115,79 @@ function createInMemoryCreatorService(): CreatorWebService {
       throw new Error('Agent turns require an explicit test fixture');
     })
   } as unknown as CreatorWebService;
+}
+
+function completeSmartDubbingStage(current: CreatorJob): CreatorJob {
+  const now = new Date().toISOString();
+  const version = current.artifacts.filter(artifact => artifact.kind === 'dubbed_audio').length + 1;
+  const fileName = `OpenCreator-dubbing-V${version}.mp3`;
+  const artifact: CreatorArtifact = {
+    id: `smart_dubbing_audio_v${version}`,
+    jobId: current.id,
+    kind: 'dubbed_audio',
+    version,
+    status: 'completed',
+    path: `/tmp/${fileName}`,
+    sourceArtifactIds: [],
+    metadata: {
+      resultVersion: version,
+      fileName,
+      mime: 'audio/mpeg',
+      bytes: 2048,
+      provider: 'openai',
+      model: 'gpt-4o-mini-tts',
+      voiceCode: current.state.voiceCode ?? 'nova',
+      voiceName: current.state.voiceName ?? '星语',
+      style: current.state.style ?? 'natural',
+      speed: current.state.speed ?? 1,
+      format: current.state.format ?? 'mp3',
+      characterCount: typeof current.state.text === 'string' ? [...current.state.text].length : 0,
+      settingsSnapshot: current.state
+    },
+    createdAt: now
+  };
+  return {
+    ...current,
+    status: 'completed',
+    revision: current.revision + 2,
+    state: {
+      ...current.state,
+      currentStage: 'tts',
+      resultVersion: version,
+      latestResultVersion: version
+    },
+    stages: [...current.stages, {
+      id: `smart_dubbing_stage_v${version}`,
+      jobId: current.id,
+      stageId: 'tts',
+      executor: 'smart-dubbing',
+      status: 'succeeded',
+      dispatchStatus: 'finished',
+      claimOwner: null,
+      claimExpiresAt: null,
+      attempt: 1,
+      idempotencyKey: null,
+      progress: {
+        phase: 'completed',
+        percent: 100,
+        completed: 1,
+        failed: 0,
+        total: 1,
+        resultVersion: version
+      },
+      errorCode: null,
+      errorMessage: null,
+      startedAt: now,
+      finishedAt: now
+    }],
+    artifacts: [
+      ...current.artifacts.map(existing => existing.kind === 'dubbed_audio'
+        ? { ...existing, status: 'stale' as const }
+        : existing),
+      artifact
+    ],
+    updatedAt: now
+  };
 }
 
 function createTtsServices(options?: {
@@ -648,16 +727,17 @@ describe('DashboardPage', () => {
     expect(within(videoTranslationCard).getByText('HOT')).toBeInTheDocument();
     expect(within(videoTranslationCard).queryByText('NEW')).not.toBeInTheDocument();
     const appCards = Array.from(container.querySelectorAll('.dashboard-app-card'));
-    expect(appCards).toHaveLength(4);
+    expect(appCards).toHaveLength(5);
     expect(appCards.map(card => card.querySelector('strong')?.textContent)).toEqual([
       '视频翻译',
       '视频下载',
       '封面生成',
+      '智能配音',
       '图像生成'
     ]);
     expect(screen.queryByRole('button', { name: /^火柴人动画/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^自动剪辑/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^智能配音/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^智能配音/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^视频生成/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^数字人口播/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^视频转格式/ })).not.toBeInTheDocument();
@@ -1758,6 +1838,10 @@ describe('DashboardPage', () => {
     expect(screen.getByText('没有找到相关应用')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看全部应用' }));
     expect(screen.getByRole('tab', { name: '全部' })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.click(screen.getByRole('tab', { name: '音频处理' }));
+    expect(within(directory).getByRole('button', { name: /^智能配音/ })).toBeInTheDocument();
+    expect(directory.querySelectorAll('.dashboard-app-card')).toHaveLength(1);
   });
 
   it('creates downloadable audio in the smart dubbing workspace', async () => {
@@ -1771,29 +1855,15 @@ describe('DashboardPage', () => {
     });
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
     const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
-    const result = {
-      id: 'result_123456',
-      fileName: 'OpenCreator-dubbing-result_123456.mp3',
-      mime: 'audio/mpeg' as const,
-      size: 2048,
-      provider: 'openai' as const,
-      model: 'gpt-4o-mini-tts',
-      voice: 'nova' as const,
-      style: 'warm' as const,
-      speed: 1,
-      format: 'mp3' as const,
-      characterCount: 10,
-      createdAt: '2026-08-20T00:00:00.000Z'
-    };
-    const generate = vi.fn(async () => ({ result }));
-    const preview = vi.fn();
-    const openContent = vi.fn(async () => new Response(new Blob(['audio'], { type: 'audio/mpeg' })));
     const tts = createTtsServices({ voiceId: 'nova', voiceName: '星语' });
+    const creatorService = createInMemoryCreatorService();
+    const applyAction = vi.spyOn(creatorService, 'applyAction');
+    const openArtifact = vi.spyOn(creatorService, 'openArtifact');
     render(
       <DashboardPage
         onSelectPrompt={vi.fn()}
         workspace="smart-dubbing"
-        smartDubbingService={{ generate, preview, openContent }}
+        creatorService={creatorService}
         creatorServicesService={tts.service}
       />
     );
@@ -1811,7 +1881,6 @@ describe('DashboardPage', () => {
       model: 'gpt-4o-mini-tts',
       voiceId: 'nova'
     });
-    expect(preview).not.toHaveBeenCalled();
     expect(play).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: '暂停音色试听' }));
     expect(pause).toHaveBeenCalled();
@@ -1826,14 +1895,56 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
 
     expect(await screen.findByLabelText('智能配音试听')).toHaveAttribute('src', 'blob:smart-dubbing');
-    expect(screen.getByText(result.fileName)).toBeInTheDocument();
-    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
-      voice: 'nova',
-      style: 'warm',
-      speed: 1,
-      format: 'mp3'
-    }));
-    expect(openContent).toHaveBeenCalledWith(result.id);
+    expect(screen.getByText('OpenCreator-dubbing-V1.mp3')).toBeInTheDocument();
+    expect(screen.queryByText('Creator Runtime 未连接，Agent 不会生成替代回复。')).not.toBeInTheDocument();
+    expect(applyAction).toHaveBeenCalledWith(
+      expect.stringMatching(/^creator_test_job_/),
+      expect.objectContaining({
+        action: 'run-stage',
+        input: { stageId: 'tts' }
+      })
+    );
+    expect(openArtifact).toHaveBeenCalledWith(
+      expect.stringMatching(/^creator_test_job_/),
+      'smart_dubbing_audio_v1'
+    );
+  });
+
+  it('links TTS configuration errors to voice service settings', async () => {
+    const tts = createTtsServices({ voiceId: 'nova', voiceName: '星语' });
+    const creatorService = createInMemoryCreatorService();
+    const applyAction = creatorService.applyAction.bind(creatorService);
+    vi.spyOn(creatorService, 'applyAction').mockImplementation(async (jobId, request) => {
+      if (request.action === 'run-stage') {
+        throw Object.assign(new Error('TTS API key is missing'), {
+          code: 'creator_tts_config_missing'
+        });
+      }
+      return applyAction(jobId, request);
+    });
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        workspace="smart-dubbing"
+        creatorService={creatorService}
+        creatorServicesService={tts.service}
+      />
+    );
+
+    fireEvent.change(screen.getByRole('textbox', { name: '配音文案内容' }), {
+      target: { value: '这是一段需要配置服务后生成的配音文案。' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    expect(await screen.findByRole('combobox', { name: '配音音色' })).toHaveValue('nova');
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+
+    expect(await screen.findAllByText('请先在设置的配音服务中配置当前服务商的 API Key'))
+      .toHaveLength(2);
+    expect(screen.getByRole('link', { name: '打开配音服务设置' })).toHaveAttribute(
+      'href',
+      '#/settings?tab=ai-services&section=tts'
+    );
   });
 
   it('generates image assets through the Creator Runtime', async () => {

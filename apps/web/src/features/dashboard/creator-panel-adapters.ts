@@ -310,9 +310,53 @@ export const videoDownloadPanelAdapter: CreatorPanelAdapter = {
   }
 };
 
+export const smartDubbingPanelAdapter: CreatorPanelAdapter = {
+  id: 'smart-dubbing',
+  composerPlaceholder: l => l(
+    '询问生成状态，或调整文案、音色、风格和语速',
+    'Ask about progress or adjust the script, voice, delivery, and speed'
+  ),
+  stageLabel(stageId, l) {
+    if (stageId === 'tts') return l('生成配音', 'Generate dubbing');
+    return l('智能配音任务', 'AI dubbing task');
+  },
+  phaseLabel(phase, l) {
+    const labels: Record<string, string> = {
+      validating: l('检查配音设置', 'Checking dubbing settings'),
+      generating_voice: l('生成配音音频', 'Generating dubbing audio'),
+      finalizing_output: l('整理配音文件', 'Finalizing the dubbing file'),
+      completed: l('配音音频已生成', 'Dubbing audio generated')
+    };
+    return labels[phase] ?? genericPhaseLabel(phase, l);
+  },
+  activityStageId: readActivityStageId,
+  normalizeActivity(activity, l) {
+    if (activity.action === 'run-stage') {
+      return { label: l('开始生成配音', 'Started generating dubbing'), fields: [] };
+    }
+    return normalizeCommonActivity(
+      activity,
+      l,
+      smartDubbingPanelAdapter,
+      {},
+      smartDubbingFieldLabel
+    );
+  },
+  readStageProgress: readStandardProgress,
+  runningProgressText(_stage, progress, l) {
+    return progress.phase === null
+      ? null
+      : smartDubbingPanelAdapter.phaseLabel(progress.phase, l);
+  },
+  succeededProgressText(_stage, l) {
+    return l('配音音频已生成', 'Dubbing audio generated');
+  }
+};
+
 export function creatorPanelAdapterFor(templateId: string): CreatorPanelAdapter {
   if (templateId === 'video-translation') return videoTranslationPanelAdapter;
   if (templateId === 'video-download') return videoDownloadPanelAdapter;
+  if (templateId === 'smart-dubbing') return smartDubbingPanelAdapter;
   if (templateId === 'cover') return coverPanelAdapter;
   return genericAdapter;
 }
@@ -422,6 +466,23 @@ function videoDownloadFieldLabel(
     mediaType: l('媒体类型', 'Media type'),
     selectedOptionId: l('下载规格', 'Download format'),
     formatId: l('下载规格', 'Download format')
+  };
+  return labels[field] ?? null;
+}
+
+function smartDubbingFieldLabel(
+  field: string,
+  l: CreatorPanelLocalize
+): string | null {
+  const labels: Record<string, string> = {
+    text: l('配音文案', 'Dubbing script'),
+    ttsProvider: l('配音服务', 'TTS provider'),
+    ttsModel: l('配音模型', 'TTS model'),
+    voiceCode: l('音色', 'Voice'),
+    voiceName: l('音色名称', 'Voice name'),
+    style: l('表达风格', 'Delivery style'),
+    speed: l('语速', 'Speaking rate'),
+    format: l('音频格式', 'Audio format')
   };
   return labels[field] ?? null;
 }

@@ -40,7 +40,6 @@ import {
   isVisibleCreatorWorkspace
 } from './creator-workspace.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
-import type { SmartDubbingService } from '../../services/smart-dubbing-service.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { VideoGenerationService } from '../../services/video-generation-service.js';
 
@@ -162,7 +161,7 @@ const creatorTools: DashboardEntry[] = [
   },
 ];
 
-const categories = ['全部', '视频编辑', '图像创作'] as const;
+const categories = ['全部', '视频编辑', '图像创作', '音频处理'] as const;
 type CategoryFilter = typeof categories[number];
 
 const CREATOR_JOB_LOAD_TIMEOUT_MS = 15_000;
@@ -176,7 +175,6 @@ export default function DashboardPage(props: {
   onBackToHome?(): void;
   onWorkspaceModeChange?(active: boolean): void;
   skillLaunch?: CreatorSkillLaunch;
-  smartDubbingService?: SmartDubbingService;
   creatorServicesService?: CreatorServicesSettingsService | null;
   videoGenerationService?: VideoGenerationService;
   videoMetadataService?: VideoMetadataService;
@@ -311,14 +309,13 @@ export default function DashboardPage(props: {
   }
 
   if (activeWorkspace === 'smart-dubbing') {
-    return (
+    return renderCreatorWorkspace('smart-dubbing', (
       <SmartDubbingWorkspace
         promptHint={activePromptHint}
-        service={props.smartDubbingService}
         creatorServicesService={props.creatorServicesService}
         onBack={closeWorkspace}
       />
-    );
+    ));
   }
 
   if (activeWorkspace === 'image-generation') {
