@@ -1,3 +1,75 @@
+@font-face {
+  font-family: "OpenCreator Sans Regular";
+  src: url("/fonts/opencreator/OpenCreatorSans-Regular.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "OpenCreator Sans Medium";
+  src: url("/fonts/opencreator/OpenCreatorSans-Medium.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "OpenCreator Sans Bold";
+  src: url("/fonts/opencreator/OpenCreatorSans-Bold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: "OpenCreator Serif Regular";
+  src: url("/fonts/opencreator/OpenCreatorSerif-Regular.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "OpenCreator Serif Medium";
+  src: url("/fonts/opencreator/OpenCreatorSerif-Medium.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "OpenCreator Serif Bold";
+  src: url("/fonts/opencreator/OpenCreatorSerif-Bold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: "OpenCreator Rounded Regular";
+  src: url("/fonts/opencreator/OpenCreatorRounded-Regular.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "OpenCreator Rounded Medium";
+  src: url("/fonts/opencreator/OpenCreatorRounded-Medium.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "OpenCreator Rounded Bold";
+  src: url("/fonts/opencreator/OpenCreatorRounded-Bold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .creator-tools-page {
   height: 100%;
   overflow: auto;
@@ -966,7 +1038,7 @@
 .video-translation-subtitle-controls {
   display: grid;
   align-content: start;
-  gap: 18px;
+  gap: 16px;
 }
 
 .video-translation-style-control {
@@ -1062,6 +1134,25 @@
   border-radius: 50%;
 }
 
+.video-translation-style-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.video-translation-color-field input[type="color"] {
+  width: 100%;
+  min-height: 36px;
+  padding: 3px;
+}
+
+.video-translation-shadow-settings {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-hairline);
+}
+
 .video-translation-subtitle-preview {
   min-width: 0;
   display: grid;
@@ -1102,19 +1193,21 @@
   max-width: 100%;
   line-height: 1.35;
   overflow-wrap: anywhere;
-  text-shadow: 0 1px 3px #000000, 0 0 2px #000000;
+  -webkit-text-stroke: var(--subtitle-preview-outline-width) var(--subtitle-preview-outline-color);
+  paint-order: stroke fill;
+  text-shadow: var(--subtitle-preview-shadow);
 }
 
 .video-translation-subtitle-preview small {
-  color: #ffffff;
+  color: var(--subtitle-preview-secondary-color);
   font-size: 13px;
-  font-weight: 550;
+  font-weight: var(--subtitle-preview-font-weight);
 }
 
 .video-translation-subtitle-preview strong {
   color: var(--subtitle-preview-color);
   font-size: var(--subtitle-preview-font-size);
-  font-weight: 700;
+  font-weight: var(--subtitle-preview-font-weight);
 }
 
 .video-translation-summary {

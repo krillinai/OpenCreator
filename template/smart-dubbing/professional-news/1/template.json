@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "professional-news",
+  "version": 1,
+  "module": "smart-dubbing",
+  "runtimeTemplate": {
+    "id": "smart-dubbing",
+    "version": 1
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 61,
+  "title": {
+    "zh-CN": "专业资讯播报",
+    "en-US": "Professional News Read"
+  },
+  "description": {
+    "zh-CN": "使用稳定、清晰的专业表达生成资讯、课程和企业内容配音。",
+    "en-US": "Create clear, stable narration for news, courses, and corporate content."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "professional",
+    "news",
+    "corporate"
+  ],
+  "defaults": {
+    "text": "",
+    "voiceCode": "",
+    "voiceName": "",
+    "style": "professional",
+    "speed": 1,
+    "format": "mp3"
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "text": "欢迎收听本期资讯。接下来，我们将用清晰、准确的方式介绍今天最值得关注的内容。"
+    },
+    "en-US": {
+      "text": "Welcome to today's briefing. We will clearly and accurately explain the most important developments."
+    }
+  }
+}

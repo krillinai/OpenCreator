@@ -107,6 +107,57 @@ export type CreatorJson = null | boolean | number | string | CreatorJson[] | {
   [key: string]: CreatorJson;
 };
 
+export const creatorRuntimeWorkspaces = [
+  'video-translation',
+  'video-download',
+  'image-generation',
+  'video-generation',
+  'cover-generator',
+  'smart-dubbing'
+] as const;
+
+export type CreatorRuntimeWorkspace = typeof creatorRuntimeWorkspaces[number];
+
+export type CreatorPresetRef = {
+  module: CreatorRuntimeWorkspace;
+  id: string;
+  version: number;
+};
+
+export type CreatorPresetRequirements = {
+  service: 'tts' | 'image' | 'video';
+  provider: string;
+  model?: string;
+};
+
+export type CreatorPresetHighlight = {
+  text: string;
+  colors: string[];
+};
+
+export type CreatorPresetSummary = CreatorPresetRef & {
+  title: string;
+  description: string;
+  coverUrl: string;
+  tags: string[];
+  featured: boolean;
+  sortOrder: number;
+  requirements: CreatorPresetRequirements | null;
+  highlights: CreatorPresetHighlight[];
+};
+
+export type CreatorPresetListResponse = {
+  locale: 'zh-CN' | 'en-US';
+  catalogHash: string;
+  presets: CreatorPresetSummary[];
+};
+
+export type CreatorPresetOrigin = CreatorPresetRef & {
+  locale: 'zh-CN' | 'en-US';
+  title: string;
+  contentHash: string;
+};
+
 export type CreatorArtifact = {
   id: string;
   jobId: string;
@@ -168,6 +219,7 @@ export type CreatorJob = {
   status: CreatorJobStatus;
   revision: number;
   state: Record<string, CreatorJson>;
+  presetOrigin: CreatorPresetOrigin | null;
   agentThreadId: string | null;
   stages: CreatorStageRun[];
   artifacts: CreatorArtifact[];
@@ -227,13 +279,20 @@ export type CreatorArtifactImportResponse = {
   deduplicated: boolean;
 };
 
-export type CreateCreatorJobRequest = {
-  projectId: string;
-  templateId: string;
-  templateVersion?: number;
-  state?: Record<string, CreatorJson>;
-  creationKey?: string;
-};
+export type CreateCreatorJobRequest =
+  | {
+      projectId: string;
+      preset: CreatorPresetRef;
+      locale: 'zh-CN' | 'en-US';
+      creationKey: string;
+    }
+  | {
+      projectId: string;
+      templateId: string;
+      templateVersion?: number;
+      state?: Record<string, CreatorJson>;
+      creationKey: string;
+    };
 
 export type CreatorJobListResponse = { jobs: CreatorJob[] };
 export type CreatorTemplateListResponse = { templates: CreatorTemplateSummary[] };
@@ -479,6 +538,41 @@ export function isCreatorAgentApprovalStatus(value: unknown): value is CreatorAg
     && (creatorAgentApprovalStatuses as readonly string[]).includes(value);
 }
 
+export function isCreateCreatorJobRequest(value: unknown): value is CreateCreatorJobRequest {
+  if (!isUnknownRecord(value)) return false;
+  if (
+    !isNonEmptyString(value.projectId)
+    || !isNonEmptyString(value.creationKey)
+  ) {
+    return false;
+  }
+  if ('preset' in value) {
+    return hasOnlyKeys(value, ['projectId', 'preset', 'locale', 'creationKey'])
+      && isCreatorPresetRef(value.preset)
+      && (value.locale === 'zh-CN' || value.locale === 'en-US');
+  }
+  return hasOnlyKeys(value, [
+    'projectId',
+    'templateId',
+    'templateVersion',
+    'state',
+    'creationKey'
+  ])
+    && isNonEmptyString(value.templateId)
+    && (
+      value.templateVersion === undefined
+      || (
+        typeof value.templateVersion === 'number'
+        && Number.isInteger(value.templateVersion)
+        && value.templateVersion > 0
+      )
+    )
+    && (
+      value.state === undefined
+      || (isUnknownRecord(value.state) && isCreatorJsonValue(value.state))
+    );
+}
+
 export function readCreatorResultSnapshots(value: CreatorJson | undefined): CreatorResultSnapshot[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap(item => {
@@ -522,4 +616,45 @@ export function readCreatorResultSnapshots(value: CreatorJson | undefined): Crea
 
 function isCreatorJsonRecord(value: CreatorJson | undefined): value is Record<string, CreatorJson> {
   return value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isCreatorPresetRef(value: unknown): value is CreatorPresetRef {
+  return isUnknownRecord(value)
+    && hasOnlyKeys(value, ['module', 'id', 'version'])
+    && typeof value.module === 'string'
+    && (creatorRuntimeWorkspaces as readonly string[]).includes(value.module)
+    && isNonEmptyString(value.id)
+    && typeof value.version === 'number'
+    && Number.isInteger(value.version)
+    && value.version > 0;
+}
+
+function hasOnlyKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[]
+): boolean {
+  const allowedKeys = new Set(allowed);
+  return Object.keys(value).every(key => allowedKeys.has(key));
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isCreatorJsonValue(value: unknown): value is CreatorJson {
+  if (
+    value === null
+    || typeof value === 'boolean'
+    || typeof value === 'string'
+  ) {
+    return true;
+  }
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isCreatorJsonValue);
+  return isUnknownRecord(value)
+    && Object.values(value).every(isCreatorJsonValue);
 }

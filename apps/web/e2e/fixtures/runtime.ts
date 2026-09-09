@@ -56,9 +56,11 @@ export type OpenAppOptions = {
 
 export type RuntimeFixture = {
   origin: string;
+  dataDir: string;
   projectDir: string;
   projectId: string;
   ordinaryThreadId: string;
+  restart(options?: { presetCatalogRoot?: string }): Promise<void>;
   configureInvocations(invocations: FakeCodexInvocation[]): void;
   configureCodex(config: FakeCodexConfig): void;
   openApp(page: Page, options?: OpenAppOptions): Promise<void>;
@@ -156,39 +158,49 @@ export const test = base.extend<TestFixtures>({
         : undefined
     ].find(candidate => candidate !== undefined && existsSync(candidate));
     prepareDaemonDevelopment(packageManagerScript);
-    const child = spawn(
-      packageManagerScript === undefined ? 'pnpm' : process.execPath,
-      packageManagerScript === undefined
-        ? packageManagerArgs
-        : [packageManagerScript, ...packageManagerArgs],
-      {
-        cwd: repoRoot,
-        detached: process.platform !== 'win32',
-        env: {
-          ...process.env,
-          OPENCREATOR_DATA_DIR: dataDir,
-          OPENCREATOR_CODEX_BIN: wrapperPath,
-          CODEX_HOME: codexHome,
-          OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD: '0',
-          OPENCREATOR_RUNTIME_DEV_PREPARED: '1',
-          OPENCREATOR_E2E_FAKE_CODEX_CONFIG: configPath,
-          OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir,
-          OPENCREATOR_E2E_NODE_BINARY: process.execPath,
-          OPENCREATOR_E2E_FAKE_CODEX_SCRIPT: fakeCodexScript
-        },
-        stdio: ['ignore', 'pipe', 'pipe']
-      }
-    );
-    child.stdout?.on('data', chunk => {
-      serverLog += chunk.toString();
-    });
-    child.stderr?.on('data', chunk => {
-      serverLog += chunk.toString();
-    });
+    let presetCatalogRoot = process.env.OPENCREATOR_E2E_PRESET_CATALOG_ROOT;
+    const startRuntime = () => {
+      const next = spawn(
+        packageManagerScript === undefined ? 'pnpm' : process.execPath,
+        packageManagerScript === undefined
+          ? packageManagerArgs
+          : [packageManagerScript, ...packageManagerArgs],
+        {
+          cwd: repoRoot,
+          detached: process.platform !== 'win32',
+          env: {
+            ...process.env,
+            OPENCREATOR_DATA_DIR: dataDir,
+            OPENCREATOR_CODEX_BIN: wrapperPath,
+            CODEX_HOME: codexHome,
+            OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD: '0',
+            OPENCREATOR_RUNTIME_DEV_PREPARED: '1',
+            OPENCREATOR_E2E_FAKE_CODEX_CONFIG: configPath,
+            OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir,
+            OPENCREATOR_E2E_NODE_BINARY: process.execPath,
+            OPENCREATOR_E2E_FAKE_CODEX_SCRIPT: fakeCodexScript,
+            ...(presetCatalogRoot === undefined
+              ? {}
+              : { OPENCREATOR_PRESET_CATALOG_ROOT: presetCatalogRoot })
+          },
+          stdio: ['ignore', 'pipe', 'pipe']
+        }
+      );
+      next.stdout?.on('data', chunk => {
+        serverLog += chunk.toString();
+      });
+      next.stderr?.on('data', chunk => {
+        serverLog += chunk.toString();
+      });
+      return next;
+    };
+    let child = startRuntime();
 
     try {
-      const runtimeConfig = await waitForRuntime(origin, child, () => serverLog);
-      const runtimeBaseUrl = new URL(runtimeConfig.baseUrl, origin).toString().replace(/\/+$/, '');
+      let runtimeConfig = await waitForRuntime(origin, child, () => serverLog);
+      let runtimeBaseUrl = new URL(runtimeConfig.baseUrl, origin)
+        .toString()
+        .replace(/\/+$/, '');
       const api = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
         const response = await fetch(`${runtimeBaseUrl}${path}`, {
           method,
@@ -241,9 +253,21 @@ export const test = base.extend<TestFixtures>({
 
       const fixture: RuntimeFixture = {
         origin,
+        dataDir,
         projectDir,
         projectId: project.project.id,
         ordinaryThreadId: ordinary.thread.id,
+        async restart(options = {}) {
+          await stopProcessTree(child);
+          terminateRecordedFakeCodexProcesses(stateDir);
+          presetCatalogRoot = options.presetCatalogRoot ?? presetCatalogRoot;
+          serverLog += '\n[opencreator-e2e] restarting Vite and Daemon\n';
+          child = startRuntime();
+          runtimeConfig = await waitForRuntime(origin, child, () => serverLog);
+          runtimeBaseUrl = new URL(runtimeConfig.baseUrl, origin)
+            .toString()
+            .replace(/\/+$/, '');
+        },
         configureInvocations(invocations) {
           writeCodexConfig({ invocations });
         },

@@ -20,6 +20,7 @@ export function createCreatorStageRunner(input: {
   executors: CreatorExecutor[];
   workRoot: string;
   maxConcurrency?: number;
+  beforeRun?(job: CreatorJob, stageId: string): void | Promise<void>;
   onJobChanged?(job: CreatorJob): void;
   onStageChanged?(stage: CreatorStageRun): void;
   onStageSucceeded?(stage: CreatorStageRun): void;
@@ -117,6 +118,7 @@ export function createCreatorStageRunner(input: {
         updateJob(input.repository, job, 'needs_input', { currentStage: stageId }, input.onJobChanged);
         return input.repository.listStageRuns(jobId).find(candidate => candidate.id === stageRun!.id)!;
       }
+      await input.beforeRun?.(input.repository.getJob(jobId)!, stageId);
       const controller = new AbortController();
       active.set(stageRun.id, controller);
       const workdir = join(input.workRoot, jobId, stageRun.id);
@@ -230,7 +232,11 @@ export function createCreatorStageRunner(input: {
           : error instanceof Error
             ? error.message
             : 'Creator stage failed';
-        const configurationInput = creatorConfigurationInput(failureCode, failureMessage);
+        const configurationInput = creatorConfigurationInput(
+          error,
+          failureCode,
+          failureMessage
+        );
         updateStageRun({
           id: stageRun.id,
           status: canceled ? 'canceled' : 'failed',
@@ -492,7 +498,20 @@ function resultSnapshotDescription(stageId: string, templateId: string): string 
   return `完成 ${stageId}`;
 }
 
-function creatorConfigurationInput(code: string, message: string): Record<string, CreatorJson> | null {
+function creatorConfigurationInput(
+  error: unknown,
+  code: string,
+  message: string
+): Record<string, CreatorJson> | null {
+  const presetService = error instanceof CreatorExecutorError
+    && error.code === 'creator_preset_requirement_missing'
+    && (
+      error.details.service === 'tts'
+      || error.details.service === 'image'
+      || error.details.service === 'video'
+    )
+    ? error.details.service
+    : undefined;
   const section = code === 'creator_llm_config_missing'
     ? 'llm'
     : code === 'creator_transcription_config_missing'
@@ -503,7 +522,7 @@ function creatorConfigurationInput(code: string, message: string): Record<string
           ? 'image'
         : code === 'creator_video_config_missing'
           ? 'video'
-        : null;
+        : presetService ?? null;
   return section === null ? null : {
     code,
     message,

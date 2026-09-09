@@ -1,12 +1,21 @@
 import { z } from 'zod';
 import type { CreatorTemplateDefinition } from './types.js';
+import { creatorSubtitleStyleSchema } from '../presets/module-schemas.js';
 
 const jsonRecord = z.record(z.string(), z.unknown()) as never;
 
+export function createLegacyVideoTranslationTemplate(): CreatorTemplateDefinition {
+  return createVideoTranslationTemplateDefinition(1);
+}
+
 export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
+  return createVideoTranslationTemplateDefinition(2);
+}
+
+function createVideoTranslationTemplateDefinition(version: 1 | 2): CreatorTemplateDefinition {
   return {
     id: 'video-translation',
-    version: 1,
+    version,
     renderer: 'video-translation',
     inputSchema: z.object({
       sourceType: z.enum(['url', 'file']).default('url'),
@@ -17,6 +26,9 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
       preferPlatformCaptions: z.boolean().default(true),
       bilingual: z.boolean().default(true),
       subtitlePosition: z.enum(['top', 'bottom']).default('top'),
+      ...(version === 2
+        ? { subtitleStyle: creatorSubtitleStyleSchema }
+        : {}),
       dubbing: z.boolean().default(false),
       ttsProvider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax']).optional(),
       ttsModel: z.string().optional(),
@@ -24,6 +36,8 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
       voiceName: z.string().optional(),
       composeVideo: z.boolean().default(false),
       videoFormat: z.enum(['horizontal', 'vertical', 'all']).default('horizontal'),
+      verticalTitle: z.string().max(80).default(''),
+      verticalSubtitle: z.string().max(140).default(''),
       subtitleCues: z.array(z.object({
         id: z.union([z.string(), z.number()]),
         start: z.string(),
@@ -144,7 +158,9 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
     agentGuidance: [
       '帮助用户调整视频翻译内容与参数，修改前读取最新 revision。',
       '更新设置必须写入 input.patch。',
-      '字幕样式字段为 subtitleStyle，可包含 primaryColor、secondaryColor、outlineColor、outlineWidth；不要使用 subtitleColor 等未定义别名。',
+      version === 2
+        ? '字幕样式只使用完整的 subtitleStyle 结构，不要使用 subtitleFont、subtitleSize、subtitleColor 或任意 ASS 标签。'
+        : '历史任务可读取旧字幕样式字段，不要改变其模板版本。',
       '启动执行时使用 availableStageIds 中的 subtitle、tts、render-horizontal 或 render-vertical。'
     ].join(' ')
   };

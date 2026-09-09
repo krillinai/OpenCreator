@@ -621,6 +621,7 @@ function job(patch: Partial<CreatorJob> = {}): CreatorJob {
     templateVersion: 2,
     status: 'draft',
     revision: 0,
+    presetOrigin: null,
     state: {},
     agentThreadId: null,
     stages: [],

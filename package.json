@@ -22,6 +22,9 @@
     "desktop:dist": "pnpm --filter @opencreator/desktop dist",
     "desktop:release": "pnpm --filter @opencreator/desktop release",
     "desktop:test": "pnpm --filter @opencreator/desktop test",
+    "templates:validate": "pnpm --filter @opencreator/daemon templates:validate",
+    "templates:compile": "pnpm --filter @opencreator/daemon templates:compile",
+    "templates:ci": "pnpm templates:validate && pnpm templates:compile",
     "krillinai:build": "node scripts/build-krillinai.mjs",
     "krillinai:package": "node scripts/package-krillinai-release.mjs",
     "krillinai:test": "node scripts/build-krillinai.mjs --test-only"

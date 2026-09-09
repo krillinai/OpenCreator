@@ -443,6 +443,7 @@ function hasJsonContent(value: unknown): boolean {
 }
 
 function creatorProjectTitle(job: CreatorJob, type: string): string {
+  if (job.presetOrigin?.title.trim()) return shorten(job.presetOrigin.title, 54);
   const probeTitle = job.artifacts
     .find(artifact => artifact.kind === 'download_probe' && artifact.status !== 'stale')
     ?.metadata.title;

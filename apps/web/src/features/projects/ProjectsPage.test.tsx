@@ -136,6 +136,29 @@ describe('ProjectsPage', () => {
     }
   });
 
+  it('uses the localized preset origin title for a preset-created project', () => {
+    const job = creatorJob({
+      id: 'job_preset_title',
+      templateId: 'image-generation',
+      state: { prompt: '内部默认提示词不应成为标题' },
+      updatedAt: '2026-09-08T08:00:00.000Z',
+      presetOrigin: {
+        module: 'image-generation',
+        id: 'ecommerce-product',
+        version: 1,
+        locale: 'zh-CN',
+        title: '电商商品主图',
+        contentHash: 'a'.repeat(64)
+      }
+    });
+
+    render(<ProjectsPage jobs={[job]} workspaces={workspaces} onOpenJob={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: '打开项目 电商商品主图' }))
+      .toBeInTheDocument();
+    expect(screen.queryByText('内部默认提示词不应成为标题')).not.toBeInTheDocument();
+  });
+
   it('falls back from unavailable platform thumbnails to the authenticated runtime cover', async () => {
     const createObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
     const revokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
@@ -465,6 +488,7 @@ function creatorJob(input: {
   state: CreatorJob['state'];
   updatedAt: string;
   artifacts?: CreatorJob['artifacts'];
+  presetOrigin?: CreatorJob['presetOrigin'];
 }): CreatorJob {
   return {
     id: input.id,
@@ -473,6 +497,7 @@ function creatorJob(input: {
     templateVersion: 1,
     status: input.artifacts === undefined ? 'draft' : 'completed',
     revision: 0,
+    presetOrigin: input.presetOrigin ?? null,
     state: input.state,
     agentThreadId: null,
     stages: [],

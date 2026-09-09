@@ -50,6 +50,44 @@ describe('ImageGenerationWorkspace', () => {
     }
   });
 
+  it.each([
+    ['gemini', 'Gemini'],
+    ['jimeng', '即梦'],
+    ['kling', '可灵']
+  ] as const)('keeps the preset-selected %s provider', async (provider, label) => {
+    vi.useFakeTimers();
+    try {
+      const fixture = createFixture();
+      const initialJob: CreatorJob = {
+        ...fixture.currentJob(),
+        presetOrigin: {
+          module: 'image-generation',
+          id: `${provider}-preset`,
+          version: 1,
+          locale: 'zh-CN',
+          title: `${label} 模板`,
+          contentHash: 'a'.repeat(64)
+        },
+        state: {
+          ...fixture.currentJob().state,
+          provider,
+          currentStep: 1,
+          furthestStep: 1
+        }
+      };
+
+      renderWorkspace(fixture, initialJob);
+      expect(screen.getByRole('radio', { name: label })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      );
+      await act(() => vi.advanceTimersByTimeAsync(500));
+      expect(fixture.applyAction).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('restores a saved project at its second step', () => {
     const fixture = createFixture();
     const initialJob: CreatorJob = {
@@ -210,6 +248,7 @@ function createFixture(options: { pending?: boolean } = {}) {
     templateVersion: options.pending ? 1 : 2,
     status: 'draft',
     revision: 0,
+    presetOrigin: null,
     state: options.pending ? {} : {
       prompt: '',
       provider: 'openai',

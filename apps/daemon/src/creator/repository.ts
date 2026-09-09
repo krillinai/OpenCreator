@@ -10,6 +10,7 @@ import type {
   CreatorJob,
   CreatorJobStatus,
   CreatorJson,
+  CreatorPresetOrigin,
   CreatorStageRun,
   CreatorStageDispatchStatus,
   CreatorStageRunStatus
@@ -23,6 +24,8 @@ type RepositoryOptions = {
 
 type CreateJobInput = {
   creationKey?: string;
+  creationFingerprint?: string | null;
+  presetOrigin?: CreatorPresetOrigin | null;
   projectId: string;
   templateId: string;
   templateVersion: number;
@@ -64,6 +67,7 @@ export type CreatorRepository = {
   createJob(input: CreateJobInput): CreatorJob;
   getJob(id: string): CreatorJob | undefined;
   getJobByCreationKey(creationKey: string): CreatorJob | undefined;
+  getCreationFingerprint(id: string): string | null;
   listJobs(projectId?: string): CreatorJob[];
   deleteJob(id: string): boolean;
   updateJob(input: {
@@ -118,28 +122,33 @@ export function createCreatorRepository(
   const getJob = (id: string): CreatorJob | undefined => {
     const row = db.prepare(`
       SELECT id, project_id, template_id, template_version, status, revision,
-             state_json, agent_thread_id, created_at, updated_at
+             state_json, preset_origin_json, creation_fingerprint,
+             agent_thread_id, created_at, updated_at
       FROM creator_jobs
       WHERE id = ?
     `).get(id) as JobRow | undefined;
     return row === undefined ? undefined : hydrateJob(row);
   };
 
-  const hydrateJob = (row: JobRow): CreatorJob => ({
-    id: row.id,
-    projectId: row.project_id,
-    templateId: row.template_id,
-    templateVersion: row.template_version,
-    status: row.status,
-    revision: row.revision,
-    state: parseJsonRecord(row.state_json),
-    agentThreadId: row.agent_thread_id,
-    stages: listStageRuns(row.id),
-    artifacts: listArtifacts(row.id),
-    activities: listActivities(row.id),
-    createdAt: toIso(row.created_at),
-    updatedAt: toIso(row.updated_at)
-  });
+  const hydrateJob = (row: JobRow): CreatorJob => {
+    validateCreationFingerprint(row.id, row.creation_fingerprint);
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      templateId: row.template_id,
+      templateVersion: row.template_version,
+      status: row.status,
+      revision: row.revision,
+      state: parseJsonRecord(row.state_json),
+      presetOrigin: parsePresetOrigin(row.preset_origin_json),
+      agentThreadId: row.agent_thread_id,
+      stages: listStageRuns(row.id),
+      artifacts: listArtifacts(row.id),
+      activities: listActivities(row.id),
+      createdAt: toIso(row.created_at),
+      updatedAt: toIso(row.updated_at)
+    };
+  };
 
   const listStageRuns = (jobId: string): CreatorStageRun[] => (
     db.prepare(`
@@ -262,17 +271,22 @@ export function createCreatorRepository(
       const timestamp = now();
       db.prepare(`
         INSERT INTO creator_jobs (
-          id, creation_key, project_id, template_id, template_version, status, revision,
-          state_json, agent_thread_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+          id, creation_key, creation_fingerprint, project_id, template_id,
+          template_version, status, revision, state_json, preset_origin_json,
+          agent_thread_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
       `).run(
         id,
         input.creationKey ?? null,
+        input.creationFingerprint ?? null,
         input.projectId,
         input.templateId,
         input.templateVersion,
         input.status,
         JSON.stringify(input.state),
+        input.presetOrigin === undefined || input.presetOrigin === null
+          ? null
+          : JSON.stringify(input.presetOrigin),
         input.agentThreadId ?? null,
         timestamp,
         timestamp
@@ -288,17 +302,29 @@ export function createCreatorRepository(
       `).get(creationKey) as { id: string } | undefined;
       return row === undefined ? undefined : getJob(row.id);
     },
+    getCreationFingerprint(id: string): string | null {
+      const row = db.prepare(`
+        SELECT creation_fingerprint AS fingerprint
+        FROM creator_jobs
+        WHERE id = ?
+      `).get(id) as { fingerprint: string | null } | undefined;
+      if (row === undefined) return null;
+      validateCreationFingerprint(id, row.fingerprint);
+      return row.fingerprint;
+    },
     listJobs(projectId?: string): CreatorJob[] {
       const rows = projectId === undefined
         ? db.prepare(`
             SELECT id, project_id, template_id, template_version, status, revision,
-                   state_json, agent_thread_id, created_at, updated_at
+                   state_json, preset_origin_json, creation_fingerprint,
+                   agent_thread_id, created_at, updated_at
             FROM creator_jobs
             ORDER BY updated_at DESC, id DESC
           `).all()
         : db.prepare(`
             SELECT id, project_id, template_id, template_version, status, revision,
-                   state_json, agent_thread_id, created_at, updated_at
+                   state_json, preset_origin_json, creation_fingerprint,
+                   agent_thread_id, created_at, updated_at
             FROM creator_jobs
             WHERE project_id = ?
             ORDER BY updated_at DESC, id DESC
@@ -701,10 +727,21 @@ type JobRow = {
   status: CreatorJobStatus;
   revision: number;
   state_json: string;
+  preset_origin_json: string | null;
+  creation_fingerprint: string | null;
   agent_thread_id: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export class CreatorRepositoryDataError extends Error {
+  readonly code = 'creator_data_corrupt';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'CreatorRepositoryDataError';
+  }
+}
 
 type StageRow = {
   id: string;
@@ -787,6 +824,69 @@ function parseJsonRecord(value: string): Record<string, CreatorJson> {
     throw new Error('Invalid creator JSON record');
   }
   return parsed as Record<string, CreatorJson>;
+}
+
+function parsePresetOrigin(value: string | null): CreatorPresetOrigin | null {
+  if (value === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new CreatorRepositoryDataError('Creator preset origin contains invalid JSON');
+  }
+  if (
+    !isRecord(parsed)
+    || !hasExactKeys(parsed, [
+      'module',
+      'id',
+      'version',
+      'locale',
+      'title',
+      'contentHash'
+    ])
+    || ![
+      'video-translation',
+      'video-download',
+      'image-generation',
+      'video-generation',
+      'cover-generator',
+      'smart-dubbing'
+    ].includes(String(parsed.module))
+    || typeof parsed.id !== 'string'
+    || parsed.id.trim() === ''
+    || typeof parsed.version !== 'number'
+    || !Number.isInteger(parsed.version)
+    || parsed.version < 1
+    || (parsed.locale !== 'zh-CN' && parsed.locale !== 'en-US')
+    || typeof parsed.title !== 'string'
+    || typeof parsed.contentHash !== 'string'
+    || !/^[a-f0-9]{64}$/.test(parsed.contentHash)
+  ) {
+    throw new CreatorRepositoryDataError('Creator preset origin is invalid');
+  }
+  return parsed as unknown as CreatorPresetOrigin;
+}
+
+function validateCreationFingerprint(id: string, value: string | null): void {
+  if (value !== null && !/^[a-f0-9]{64}$/.test(value)) {
+    throw new CreatorRepositoryDataError(
+      `Creator job ${id} has an invalid creation fingerprint`
+    );
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[]
+): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length
+    && actual.every((key, index) => key === expected[index]);
 }
 
 function parseStringArray(value: string): string[] {

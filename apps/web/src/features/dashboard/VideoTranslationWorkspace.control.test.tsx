@@ -12,6 +12,166 @@ import { CreatorSessionProvider, useCreatorSession } from './creator-session-sto
 import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
 
 describe('VideoTranslationWorkspace task controls', () => {
+  it('restores a video translation v1 job from legacy subtitle fields', () => {
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          initialJob={job({
+            status: 'draft',
+            revision: 0,
+            stages: [],
+            state: {
+              currentStep: 2,
+              furthestStep: 2,
+              subtitleFont: 'serif',
+              subtitleSize: 'large',
+              subtitleColor: '#7EE7FF'
+            }
+          })}
+          service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+        >
+          <VideoTranslationWorkspace onBack={vi.fn()} />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    expect(screen.getByRole('combobox', { name: '字幕字体' })).toHaveValue('serif');
+    expect(screen.getByRole('radio', { name: '大' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: '#7EE7FF' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('edits every subtitle style field and persists one structured patch', async () => {
+    let currentJob = job({
+      status: 'draft',
+      revision: 0,
+      stages: [],
+      templateVersion: 2,
+      state: {
+        currentStep: 2,
+        furthestStep: 2,
+        subtitleStyle: {
+          fontPreset: 'sans',
+          fontWeight: 'bold',
+          fontSize: 'medium',
+          primaryColor: '#FFFFFF',
+          secondaryColor: '#FFD45C',
+          outlineColor: '#000000',
+          outlineWidth: 2,
+          shadow: {
+            enabled: false,
+            color: '#000000',
+            opacity: 0.65,
+            offsetX: 2,
+            offsetY: 2,
+            blur: 1
+          }
+        }
+      }
+    });
+    const applyAction = vi.fn(async (_jobId: string, request: {
+      action: string;
+      input: { patch?: Record<string, CreatorJson> };
+    }) => {
+      currentJob = {
+        ...currentJob,
+        revision: currentJob.revision + 1,
+        state: {
+          ...currentJob.state,
+          ...(request.input.patch ?? {})
+        }
+      };
+      return {
+        job: currentJob,
+        receipt: {
+          actor: 'user' as const,
+          action: request.action,
+          summary: request.action,
+          affectedArtifacts: [],
+          newRevision: currentJob.revision,
+          createdAt: currentJob.updatedAt
+        }
+      };
+    });
+
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          initialJob={currentJob}
+          service={{ applyAction, runAgentTurn: vi.fn() } as never}
+        >
+          <VideoTranslationWorkspace onBack={vi.fn()} />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    fireEvent.change(screen.getByRole('combobox', { name: '字幕字体' }), {
+      target: { value: 'rounded' }
+    });
+    fireEvent.click(screen.getByRole('radio', { name: '常规' }));
+    fireEvent.click(screen.getByRole('radio', { name: '小' }));
+    fireEvent.change(screen.getByLabelText('自定义译文颜色'), {
+      target: { value: '#123456' }
+    });
+    fireEvent.change(screen.getByLabelText('原文颜色'), {
+      target: { value: '#654321' }
+    });
+    fireEvent.change(screen.getByLabelText('描边颜色'), {
+      target: { value: '#111111' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '描边宽度' }), {
+      target: { value: '3.5' }
+    });
+    fireEvent.click(screen.getByRole('switch', { name: '字幕阴影' }));
+    fireEvent.change(screen.getByLabelText('阴影颜色'), {
+      target: { value: '#222222' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '不透明度' }), {
+      target: { value: '0.4' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '水平偏移' }), {
+      target: { value: '-4' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '垂直偏移' }), {
+      target: { value: '6' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '模糊' }), {
+      target: { value: '2.5' }
+    });
+
+    await waitFor(() => expect(applyAction).toHaveBeenCalledTimes(1));
+    expect(applyAction).toHaveBeenCalledWith(
+      'job_control',
+      expect.objectContaining({
+        action: 'update-settings',
+        input: expect.objectContaining({
+          patch: expect.objectContaining({
+            subtitleStyle: {
+              fontPreset: 'rounded',
+              fontWeight: 'regular',
+              fontSize: 'small',
+              primaryColor: '#123456',
+              secondaryColor: '#654321',
+              outlineColor: '#111111',
+              outlineWidth: 3.5,
+              shadow: {
+                enabled: true,
+                color: '#222222',
+                opacity: 0.4,
+                offsetX: -4,
+                offsetY: 6,
+                blur: 2.5
+              }
+            }
+          })
+        })
+      })
+    );
+    const persistedPatch = applyAction.mock.calls[0]?.[1].input.patch ?? {};
+    expect(persistedPatch).not.toHaveProperty('subtitleFont');
+    expect(persistedPatch).not.toHaveProperty('subtitleSize');
+    expect(persistedPatch).not.toHaveProperty('subtitleColor');
+  });
+
   it('offers the complete target language catalog without expanding unsupported source languages', () => {
     render(
       <LanguageProvider initialPreference="zh-CN">
@@ -661,6 +821,7 @@ function job(input: {
   status: CreatorJob['status'];
   revision: number;
   stages: CreatorStageRun[];
+  templateVersion?: number;
   state?: Record<string, CreatorJson>;
   artifacts?: CreatorArtifact[];
 }): CreatorJob {
@@ -668,9 +829,10 @@ function job(input: {
     id: 'job_control',
     projectId: 'project_1',
     templateId: 'video-translation',
-    templateVersion: 1,
+    templateVersion: input.templateVersion ?? 1,
     status: input.status,
     revision: input.revision,
+    presetOrigin: null,
     state: {
       sourceType: 'url',
       sourceUrl: 'https://www.youtube.com/watch?v=job-control',

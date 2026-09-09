@@ -63,6 +63,7 @@ function job(): CreatorJob {
     templateVersion: 1,
     status: 'completed',
     revision: 4,
+    presetOrigin: null,
     state: {
       sourceLanguage: 'en',
       targetLanguage: 'zh_cn',

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "portrait-editorial",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 31,
+  "title": {
+    "zh-CN": "人物杂志肖像",
+    "en-US": "Editorial Portrait"
+  },
+  "description": {
+    "zh-CN": "生成自然光、高质感、适合人物专题与个人品牌的竖版肖像。",
+    "en-US": "Create a high-quality vertical portrait for editorial stories and personal branding."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "portrait",
+    "editorial",
+    "personal-brand"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "真实人物杂志肖像，自然窗光，克制高级的背景，清晰面部细节与真实肤质，人物姿态放松，适合个人品牌和人物专题"
+    },
+    "en-US": {
+      "prompt": "Authentic editorial portrait, natural window light, restrained premium background, detailed face and realistic skin texture, relaxed pose, suitable for personal branding"
+    }
+  }
+}

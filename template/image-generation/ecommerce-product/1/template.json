@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "ecommerce-product",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 30,
+  "title": {
+    "zh-CN": "电商商品主图",
+    "en-US": "E-commerce Product Hero"
+  },
+  "description": {
+    "zh-CN": "生成干净、聚焦商品卖点的横向电商视觉。",
+    "en-US": "Generate clean landscape product visuals focused on the key selling point."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "ecommerce",
+    "image",
+    "product"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "medium",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "专业电商商品主图，主体清晰，干净背景，突出核心卖点，真实材质与自然光影，适合商品详情页首屏"
+    },
+    "en-US": {
+      "prompt": "Professional e-commerce product hero image, clean background, clear product focus, realistic materials and natural lighting, suitable for a product detail page"
+    }
+  }
+}

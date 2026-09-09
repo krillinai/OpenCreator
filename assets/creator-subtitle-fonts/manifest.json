@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "package": "@fontsource/noto-sans-sc",
+      "packageVersion": "5.3.0",
+      "fontVersion": "v40",
+      "license": "OFL-1.1"
+    },
+    {
+      "package": "@fontsource/noto-serif-sc",
+      "packageVersion": "5.3.0",
+      "fontVersion": "v35",
+      "license": "OFL-1.1"
+    },
+    {
+      "package": "@fontsource/m-plus-rounded-1c",
+      "packageVersion": "5.3.0",
+      "fontVersion": "v22",
+      "license": "OFL-1.1"
+    }
+  ],
+  "fonts": [
+    {
+      "preset": "sans",
+      "weight": "regular",
+      "weightValue": 400,
+      "family": "OpenCreator Sans Regular",
+      "fullName": "OpenCreator Sans Regular",
+      "desktopFile": "desktop/OpenCreatorSans-Regular.ttf",
+      "desktopSha256": "6f96a1f9ec103a83f6887cfb0c2531e99f2912d66606079c356e4bffea024edc",
+      "webFile": "web/OpenCreatorSans-Regular.woff2",
+      "webSha256": "80d80e670e9a61ce369a82be485e53995d736c8e72112f09899adeb579f61192",
+      "license": "licenses/OFL-Noto-Sans-SC.txt"
+    },
+    {
+      "preset": "sans",
+      "weight": "medium",
+      "weightValue": 500,
+      "family": "OpenCreator Sans Medium",
+      "fullName": "OpenCreator Sans Medium",
+      "desktopFile": "desktop/OpenCreatorSans-Medium.ttf",
+      "desktopSha256": "afe882c0e90ad48554ee286b7f20430b1338b698e170182c878418eebc33af7d",
+      "webFile": "web/OpenCreatorSans-Medium.woff2",
+      "webSha256": "96c8bd8b33f0aa2143f71245a3b8342da0767ef6e8e339c256d4d86b13eae5da",
+      "license": "licenses/OFL-Noto-Sans-SC.txt"
+    },
+    {
+      "preset": "sans",
+      "weight": "bold",
+      "weightValue": 700,
+      "family": "OpenCreator Sans Bold",
+      "fullName": "OpenCreator Sans Bold",
+      "desktopFile": "desktop/OpenCreatorSans-Bold.ttf",
+      "desktopSha256": "7bb50c8441e01d27bdd6f6fb9bce9085b1e2605ccf3ee1686ff12e8e19aa31fe",
+      "webFile": "web/OpenCreatorSans-Bold.woff2",
+      "webSha256": "3a10089e4c86318927d30c613f4307505cf5be5833e034cd4123117c0f842359",
+      "license": "licenses/OFL-Noto-Sans-SC.txt"
+    },
+    {
+      "preset": "serif",
+      "weight": "regular",
+      "weightValue": 400,
+      "family": "OpenCreator Serif Regular",
+      "fullName": "OpenCreator Serif Regular",
+      "desktopFile": "desktop/OpenCreatorSerif-Regular.ttf",
+      "desktopSha256": "88e90a8e9154a7235e6cc60aa92ca7a4cd4b163da0c29b10c56dbeda8c728293",
+      "webFile": "web/OpenCreatorSerif-Regular.woff2",
+      "webSha256": "1f8613ad8b50c42cf834b7dcaa24213c0abe27c761af33b64adc6859bca2d67a",
+      "license": "licenses/OFL-Noto-Serif-SC.txt"
+    },
+    {
+      "preset": "serif",
+      "weight": "medium",
+      "weightValue": 500,
+      "family": "OpenCreator Serif Medium",
+      "fullName": "OpenCreator Serif Medium",
+      "desktopFile": "desktop/OpenCreatorSerif-Medium.ttf",
+      "desktopSha256": "de7ee0bd5364fc0a683fb72ba469a6bbf3d27c10d967938af17bd6486f0761d5",
+      "webFile": "web/OpenCreatorSerif-Medium.woff2",
+      "webSha256": "0d2a91fd6f207e0d770f516e143c853a13cda7e08b660a665cd44683016d729c",
+      "license": "licenses/OFL-Noto-Serif-SC.txt"
+    },
+    {
+      "preset": "serif",
+      "weight": "bold",
+      "weightValue": 700,
+      "family": "OpenCreator Serif Bold",
+      "fullName": "OpenCreator Serif Bold",
+      "desktopFile": "desktop/OpenCreatorSerif-Bold.ttf",
+      "desktopSha256": "f870a1a50555b9d3a3e140b2bc9dce8ea813c4e1637d20d8cce360faaadd1417",
+      "webFile": "web/OpenCreatorSerif-Bold.woff2",
+      "webSha256": "efd24f5496348db066630798d07de89f4a363cae1d7bc3c1c41bd8b1adadad0f",
+      "license": "licenses/OFL-Noto-Serif-SC.txt"
+    },
+    {
+      "preset": "rounded",
+      "weight": "regular",
+      "weightValue": 400,
+      "family": "OpenCreator Rounded Regular",
+      "fullName": "OpenCreator Rounded Regular",
+      "desktopFile": "desktop/OpenCreatorRounded-Regular.ttf",
+      "desktopSha256": "4e7d7fe39e8d750e3b20cb3dbd3a9dc7ab0f5b01d49f72ffd8eb54913ad823d3",
+      "webFile": "web/OpenCreatorRounded-Regular.woff2",
+      "webSha256": "bb585e277e93cacd08608e028bdeb826e97f391158d9abdfbec222d09c9512db",
+      "license": "licenses/OFL-M-PLUS-Rounded-1c.txt"
+    },
+    {
+      "preset": "rounded",
+      "weight": "medium",
+      "weightValue": 500,
+      "family": "OpenCreator Rounded Medium",
+      "fullName": "OpenCreator Rounded Medium",
+      "desktopFile": "desktop/OpenCreatorRounded-Medium.ttf",
+      "desktopSha256": "45b87148483ca276cb4c7154dd19e67eef165222f3dbfba13384cc88eec3d0d3",
+      "webFile": "web/OpenCreatorRounded-Medium.woff2",
+      "webSha256": "40cb1f56165a0f1b14ef30e620c0bf7704d85a82662f80bbc4733b467cb22c5e",
+      "license": "licenses/OFL-M-PLUS-Rounded-1c.txt"
+    },
+    {
+      "preset": "rounded",
+      "weight": "bold",
+      "weightValue": 700,
+      "family": "OpenCreator Rounded Bold",
+      "fullName": "OpenCreator Rounded Bold",
+      "desktopFile": "desktop/OpenCreatorRounded-Bold.ttf",
+      "desktopSha256": "2b1f33466a4ffee8377572898e7e165028eb5997bc414af8bd8b2f108372d12a",
+      "webFile": "web/OpenCreatorRounded-Bold.woff2",
+      "webSha256": "a2315b8aef41747280896eee46373c9e38f1391b54f8f47c76f51cf36b578694",
+      "license": "licenses/OFL-M-PLUS-Rounded-1c.txt"
+    }
+  ],
+  "licenses": [
+    {
+      "file": "licenses/OFL-Noto-Sans-SC.txt",
+      "sha256": "18aabf190848725e2576eefb5c29ba06aac1029d02132252a7f312eac2e50cf3"
+    },
+    {
+      "file": "licenses/OFL-Noto-Serif-SC.txt",
+      "sha256": "18aabf190848725e2576eefb5c29ba06aac1029d02132252a7f312eac2e50cf3"
+    },
+    {
+      "file": "licenses/OFL-M-PLUS-Rounded-1c.txt",
+      "sha256": "64a7bd79d7e69545e66d003153e7e4999910cbb15249a19ae2a49c472637c7e0"
+    }
+  ]
+}

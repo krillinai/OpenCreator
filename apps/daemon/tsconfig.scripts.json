@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.test.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "@opencreator/protocol": ["packages/protocol/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts"]
+}

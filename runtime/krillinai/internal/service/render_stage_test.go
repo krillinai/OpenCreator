@@ -1,7 +1,12 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	subtitlestyle "krillin-ai/internal/subtitle_style"
 	"krillin-ai/internal/types"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,6 +68,111 @@ func TestBuildEmbedSubtitleArgsQuotesEscapedAssFilename(t *testing.T) {
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, `ass=filename='C\:/tasks/demo/formatted_horizontal.ass'`) {
 		t.Fatalf("args do not contain a quoted escaped ASS filename: %v", args)
+	}
+}
+
+func TestBuildEmbedSubtitleArgsEscapesAndPassesPackagedFontsDir(t *testing.T) {
+	resourceRoot := t.TempDir()
+	fontsDir := filepath.Join(resourceRoot, "fonts")
+	if err := os.MkdirAll(fontsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KRILLINAI_RESOURCE_ROOT", resourceRoot)
+	req := RenderVideoRequest{
+		Workdir:    filepath.Join(t.TempDir(), "task,one"),
+		InputVideo: "origin.mp4",
+		OutputFile: "output.mp4",
+		Horizontal: true,
+	}
+
+	args, _ := buildEmbedSubtitleArgs(req)
+	filter := args[4]
+	if !strings.Contains(filter, ":fontsdir='") {
+		t.Fatalf("filter does not contain fontsdir: %q", filter)
+	}
+	if !strings.Contains(filter, escapeAssFilterPath(fontsDir)) {
+		t.Fatalf("filter does not contain escaped fontsdir: %q", filter)
+	}
+}
+
+func TestBuildAssFilterExpressionEscapesWindowsFilenameAndFontsDir(t *testing.T) {
+	got := buildAssFilterExpression(
+		`C:\tasks\demo\formatted.ass`,
+		`C:\Program Files\OpenCreator\fonts`,
+	)
+	want := `ass=filename='C\:/tasks/demo/formatted.ass':fontsdir='C\:/Program Files/OpenCreator/fonts'`
+	if got != want {
+		t.Fatalf("buildAssFilterExpression() = %q, want %q", got, want)
+	}
+}
+
+func TestValidatePackagedSubtitleFontsRejectsMissingSelectedFont(t *testing.T) {
+	resourceRoot := t.TempDir()
+	fontsDir := filepath.Join(resourceRoot, "fonts")
+	if err := os.MkdirAll(fontsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("font")
+	hash := fmt.Sprintf("%x", sha256.Sum256(content))
+	manifest := map[string]any{
+		"version": 1,
+		"fonts": []map[string]any{{
+			"family": "OpenCreator Sans Regular",
+			"file":   "fonts/OpenCreatorSans-Regular.ttf",
+			"sha256": hash,
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fontsDir, "manifest.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fontsDir, "OpenCreatorSans-Regular.ttf"), content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KRILLINAI_RESOURCE_ROOT", resourceRoot)
+	style := subtitlestyle.DefaultStyleSet()
+	style.Horizontal.Major.FontName = "OpenCreator Serif Bold"
+
+	err = validatePackagedSubtitleFonts(style)
+	if err == nil || !strings.Contains(err.Error(), "alias unavailable") {
+		t.Fatalf("validatePackagedSubtitleFonts() error = %v, want missing alias error", err)
+	}
+}
+
+func TestValidatePackagedSubtitleFontsRejectsHashMismatch(t *testing.T) {
+	resourceRoot := t.TempDir()
+	fontsDir := filepath.Join(resourceRoot, "fonts")
+	if err := os.MkdirAll(fontsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := map[string]any{
+		"version": 1,
+		"fonts": []map[string]any{{
+			"family": "OpenCreator Sans Regular",
+			"file":   "fonts/OpenCreatorSans-Regular.ttf",
+			"sha256": strings.Repeat("0", 64),
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fontsDir, "manifest.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fontsDir, "OpenCreatorSans-Regular.ttf"), []byte("tampered"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KRILLINAI_RESOURCE_ROOT", resourceRoot)
+	style := subtitlestyle.DefaultStyleSet()
+	style.Horizontal.Major.FontName = "OpenCreator Sans Regular"
+
+	err = validatePackagedSubtitleFonts(style)
+	if err == nil || !strings.Contains(err.Error(), "hash mismatch") {
+		t.Fatalf("validatePackagedSubtitleFonts() error = %v, want hash mismatch", err)
 	}
 }
 

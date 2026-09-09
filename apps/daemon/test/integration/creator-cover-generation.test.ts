@@ -57,6 +57,7 @@ describe('creator cover generation', () => {
     const created = await jsonRequest('POST', '/creator/jobs', {
       projectId: 'project_cover',
       templateId: 'cover',
+      creationKey: 'cover-generation-flow',
       state: {
         prompt: 'A cinematic creator portrait',
         ratio: '16:9',

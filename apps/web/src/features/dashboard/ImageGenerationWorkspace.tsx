@@ -47,7 +47,10 @@ const qualities: Array<{ value: ImageGenerationQuality; zh: string; en: string }
 ];
 
 const providers: Array<{ value: ImageGenerationProvider; zh: string; en: string }> = [
-  { value: 'openai', zh: 'GPT Image', en: 'GPT Image' }
+  { value: 'openai', zh: 'GPT Image', en: 'GPT Image' },
+  { value: 'jimeng', zh: '即梦', en: 'Jimeng' },
+  { value: 'kling', zh: '可灵', en: 'Kling' },
+  { value: 'gemini', zh: 'Gemini', en: 'Gemini' }
 ];
 
 const samplePromptZh = '一间通透的现代创意工作室，清晨自然光从落地窗照入，桌面有相机、手稿和绿植，真实摄影质感，构图干净，细节丰富';
@@ -123,15 +126,6 @@ export default function ImageGenerationWorkspace(props: {
   useEffect(() => {
     if (latestVersion !== undefined) setResultVersion(latestVersion);
   }, [latestVersion]);
-
-  useEffect(() => {
-    if (session !== null && session.state.provider !== 'openai') {
-      session.updateDraft(
-        { provider: 'openai' },
-        { persist: !session.job.id.startsWith('pending:') }
-      );
-    }
-  }, [session?.job.id, session?.state.provider, session?.updateDraft]);
 
   useEffect(() => {
     if (referenceFile === null) {
@@ -716,8 +710,10 @@ function readArtifactString(
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
-function readProvider(_value: CreatorJson | undefined): ImageGenerationProvider {
-  return 'openai';
+function readProvider(value: CreatorJson | undefined): ImageGenerationProvider {
+  return value === 'jimeng' || value === 'kling' || value === 'gemini'
+    ? value
+    : 'openai';
 }
 
 function readSize(value: CreatorJson | undefined): ImageGenerationSize {

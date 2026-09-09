@@ -1,12 +1,25 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+  createDefaultCreatorServicesConfig,
+  videoGenerationModelIds,
+  type CreatorJson
+} from '@opencreator/protocol';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createCreatorStageRunner } from '../../src/creator/stage-runner.js';
 import { createCreatorRepository } from '../../src/creator/repository.js';
 import {
   CreatorServiceError,
   createCreatorService
 } from '../../src/creator/service.js';
+import { createCreatorPresetRegistry } from '../../src/creator/presets/catalog.js';
+import {
+  assertCreatorPresetStageRequirement
+} from '../../src/creator/presets/requirements.js';
+import type {
+  CompiledCreatorPreset
+} from '../../src/creator/presets/types.js';
 import { createDefaultCreatorTemplateRegistry } from '../../src/creator/templates/registry.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 
@@ -29,6 +42,256 @@ function setup() {
 }
 
 describe('creator service', () => {
+  it('creates a draft preset job with resolved editable state and no stage run', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    const { db, service } = setupPresetService([
+      preset({
+        module: 'image-generation',
+        id: 'ecommerce-product',
+        runtimeTemplate: { id: 'image-generation', version: 2 },
+        defaults: {
+          prompt: '中文商品主图',
+          size: '1536x1024',
+          quality: 'medium',
+          candidateCount: 2
+        },
+        defaultsByLocale: {
+          'en-US': { prompt: 'English product image' }
+        },
+        requirements: { service: 'image', provider: 'openai' }
+      })
+    ], config);
+
+    const job = await service.createJob({
+      projectId: 'project_preset',
+      preset: {
+        module: 'image-generation',
+        id: 'ecommerce-product',
+        version: 1
+      },
+      locale: 'en-US',
+      creationKey: 'preset-create-1'
+    });
+
+    expect(job).toMatchObject({
+      templateId: 'image-generation',
+      templateVersion: 2,
+      status: 'draft',
+      state: {
+        prompt: 'English product image',
+        provider: 'openai',
+        size: '1536x1024',
+        quality: 'medium',
+        candidateCount: 2
+      },
+      presetOrigin: {
+        module: 'image-generation',
+        id: 'ecommerce-product',
+        version: 1,
+        locale: 'en-US',
+        title: 'Preset title',
+        contentHash: 'a'.repeat(64)
+      },
+      stages: []
+    });
+    expect(job.activities[0]?.details).toMatchObject({
+      requirementService: 'image',
+      requirementProvider: 'openai'
+    });
+    expect(JSON.stringify(job)).not.toContain('apiKey');
+    db.close();
+  });
+
+  it('replays only an identical resolved preset creation fingerprint', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.video.seedance.model = videoGenerationModelIds.seedance[0];
+    const { db, service } = setupPresetService([
+      preset({
+        module: 'video-generation',
+        id: 'product-ad',
+        runtimeTemplate: { id: 'video-generation', version: 1 },
+        defaults: {
+          prompt: '中文广告',
+          size: '1280x720',
+          duration: 5
+        },
+        defaultsByLocale: {
+          'en-US': { prompt: 'English advertisement' }
+        }
+      })
+    ], config);
+    const request = {
+      projectId: 'project_preset',
+      preset: {
+        module: 'video-generation' as const,
+        id: 'product-ad',
+        version: 1
+      },
+      locale: 'zh-CN' as const,
+      creationKey: 'preset-idempotency'
+    };
+
+    const created = await service.createJob(request);
+    const replayed = await service.createJob(request);
+    expect(replayed.id).toBe(created.id);
+
+    await expect(service.createJob({
+      ...request,
+      locale: 'en-US'
+    })).rejects.toMatchObject({ code: 'creator_idempotency_key_reused' });
+
+    config.video.seedance.model = videoGenerationModelIds.seedance[1];
+    await expect(service.createJob(request)).rejects.toMatchObject({
+      code: 'creator_idempotency_key_reused'
+    });
+    expect(service.listJobs('project_preset')).toHaveLength(1);
+    db.close();
+  });
+
+  it('keeps edited preset state and avoids the executor when requirements are missing', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    const { db, repository, service, templates } = setupPresetService([
+      preset({
+        module: 'image-generation',
+        id: 'paid-image',
+        runtimeTemplate: { id: 'image-generation', version: 2 },
+        defaults: {
+          prompt: 'Initial prompt',
+          size: '1536x1024',
+          quality: 'medium',
+          candidateCount: 2
+        },
+        requirements: { service: 'image', provider: 'openai' }
+      })
+    ], config);
+    const created = await service.createJob({
+      projectId: 'project_preset',
+      preset: {
+        module: 'image-generation',
+        id: 'paid-image',
+        version: 1
+      },
+      locale: 'zh-CN',
+      creationKey: 'preset-requirement'
+    });
+    const edited = service.applyAction(created.id, {
+      action: 'update-settings',
+      expectedRevision: created.revision,
+      input: {
+        patch: { prompt: 'Edited before execution' },
+        objectId: 'prompt'
+      }
+    }).job;
+    const run = vi.fn(async () => ({ outputs: [] }));
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{ id: 'image', run }],
+      workRoot: join(tempDir, 'jobs'),
+      beforeRun(job, stageId) {
+        assertCreatorPresetStageRequirement({ job, stageId, services: config });
+      }
+    });
+
+    const stage = await runner.run(edited.id, 'generate');
+    const waiting = service.getJob(edited.id)!;
+
+    expect(stage).toMatchObject({
+      status: 'failed',
+      errorCode: 'creator_preset_requirement_missing'
+    });
+    expect(waiting).toMatchObject({
+      status: 'needs_input',
+      state: {
+        prompt: 'Edited before execution',
+        needsInput: {
+          code: 'creator_preset_requirement_missing',
+          deepLink: '#/settings?tab=ai-services&section=image'
+        }
+      }
+    });
+    expect(run).not.toHaveBeenCalled();
+    await runner.close();
+    db.close();
+  });
+
+  it('blocks execution when a preset-required TTS model is changed', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.tts.aliyun.apiKey = 'configured-aliyun-key';
+    config.tts.aliyun.model = 'configured-default-model';
+    const { db, repository, service, templates } = setupPresetService([
+      preset({
+        module: 'smart-dubbing',
+        id: 'required-voice-model',
+        runtimeTemplate: { id: 'smart-dubbing', version: 1 },
+        defaults: {
+          text: 'A required voice model',
+          style: 'natural',
+          speed: 1,
+          format: 'mp3'
+        },
+        requirements: {
+          service: 'tts',
+          provider: 'aliyun',
+          model: 'required-tts-model'
+        }
+      })
+    ], config);
+    const created = await service.createJob({
+      projectId: 'project_preset',
+      preset: {
+        module: 'smart-dubbing',
+        id: 'required-voice-model',
+        version: 1
+      },
+      locale: 'en-US',
+      creationKey: 'preset-required-tts-model'
+    });
+    expect(created.state).toMatchObject({
+      ttsProvider: 'aliyun',
+      ttsModel: 'required-tts-model'
+    });
+
+    const edited = service.applyAction(created.id, {
+      action: 'update-settings',
+      expectedRevision: created.revision,
+      input: {
+        patch: { ttsModel: 'tampered-tts-model' },
+        objectId: 'ttsModel'
+      }
+    }).job;
+    const run = vi.fn(async () => ({ outputs: [] }));
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{ id: 'smart-dubbing', run }],
+      workRoot: join(tempDir, 'jobs'),
+      beforeRun(job, stageId) {
+        assertCreatorPresetStageRequirement({ job, stageId, services: config });
+      }
+    });
+
+    const stage = await runner.run(edited.id, 'tts');
+    const waiting = service.getJob(edited.id)!;
+    expect(stage).toMatchObject({
+      status: 'failed',
+      errorCode: 'creator_preset_requirement_missing'
+    });
+    expect(waiting).toMatchObject({
+      status: 'needs_input',
+      state: {
+        ttsModel: 'tampered-tts-model',
+        needsInput: {
+          code: 'creator_preset_requirement_missing',
+          deepLink: '#/settings?tab=ai-services&section=tts'
+        }
+      }
+    });
+    expect(run).not.toHaveBeenCalled();
+    await runner.close();
+    db.close();
+  });
+
   it('deletes inactive jobs and rejects jobs with an active stage', () => {
     const { db, service } = setup();
     const inactive = service.createJob({
@@ -254,7 +517,22 @@ describe('creator service', () => {
     });
 
     expect(response.job.revision).toBe(1);
-    expect(response.job.state.subtitleStyle).toEqual({ primaryColor: '#F6C453' });
+    expect(response.job.state.subtitleStyle).toMatchObject({
+      fontPreset: 'sans',
+      fontWeight: 'bold',
+      fontSize: 'medium',
+      primaryColor: '#F6C453',
+      secondaryColor: '#D1D5DB',
+      outlineColor: '#000000',
+      outlineWidth: 2.5,
+      shadow: {
+        enabled: true,
+        opacity: 0.6,
+        offsetX: 1.5,
+        offsetY: 1.5,
+        blur: 0.5
+      }
+    });
     expect(response.job.activities.at(-1)?.details.objectId).toBe('subtitleStyle');
     db.close();
   });
@@ -654,3 +932,73 @@ describe('creator service', () => {
     db.close();
   });
 });
+
+function setupPresetService(
+  presets: CompiledCreatorPreset[],
+  config = createDefaultCreatorServicesConfig()
+) {
+  tempDir = mkdtempSync(join(tmpdir(), 'creator-service-preset-'));
+  const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+  const repository = createCreatorRepository(db);
+  const templates = createDefaultCreatorTemplateRegistry();
+  const service = createCreatorService({
+    repository,
+    templates,
+    presets: createCreatorPresetRegistry({
+      catalog: { schemaVersion: 1, presets },
+      catalogHash: 'f'.repeat(64)
+    }),
+    creatorServicesConfig: {
+      async read() {
+        return structuredClone(config);
+      }
+    }
+  });
+  return { db, repository, service, templates };
+}
+
+function preset(input: {
+  module: CompiledCreatorPreset['module'];
+  id: string;
+  runtimeTemplate: CompiledCreatorPreset['runtimeTemplate'];
+  defaults: Record<string, CreatorJson>;
+  defaultsByLocale?: CompiledCreatorPreset['defaultsByLocale'];
+  requirements?: CompiledCreatorPreset['requirements'];
+}): CompiledCreatorPreset {
+  return {
+    schemaVersion: 1,
+    module: input.module,
+    id: input.id,
+    version: 1,
+    runtimeTemplate: input.runtimeTemplate,
+    status: 'published',
+    featured: true,
+    sortOrder: 10,
+    title: {
+      'zh-CN': 'Preset title',
+      'en-US': 'Preset title'
+    },
+    description: {
+      'zh-CN': 'Preset description',
+      'en-US': 'Preset description'
+    },
+    tags: ['test'],
+    defaults: input.defaults,
+    ...(input.defaultsByLocale === undefined
+      ? {}
+      : { defaultsByLocale: input.defaultsByLocale }),
+    ...(input.requirements === undefined
+      ? {}
+      : { requirements: input.requirements }),
+    cover: {
+      source: `${input.module}/${input.id}/1/cover.webp`,
+      asset: `assets/${'b'.repeat(64)}.webp`,
+      sha256: 'b'.repeat(64),
+      mime: 'image/webp',
+      width: 1280,
+      height: 720,
+      size: 1024
+    },
+    contentHash: 'a'.repeat(64)
+  };
+}

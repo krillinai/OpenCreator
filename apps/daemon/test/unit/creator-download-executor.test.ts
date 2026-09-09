@@ -870,6 +870,7 @@ function stageInput(input: {
     templateVersion: 2,
     status: 'running',
     revision: 1,
+    presetOrigin: null,
     state: input.state,
     agentThreadId: null,
     stages: [],

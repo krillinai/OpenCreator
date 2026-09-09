@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "vertical-social",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 42,
+  "title": {
+    "zh-CN": "竖屏社交短片",
+    "en-US": "Vertical Social Clip"
+  },
+  "description": {
+    "zh-CN": "生成六秒竖屏短片，使用明确主体、快速节奏和移动端构图。",
+    "en-US": "Generate a six-second vertical clip with a clear subject and mobile-first composition."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "vertical",
+    "social",
+    "short-video"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "720x1280",
+    "duration": 6
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "竖屏社交媒体短片，主体居中且占据主要画面，节奏明快，镜头运动简洁，光线鲜明，适合手机全屏观看"
+    },
+    "en-US": {
+      "prompt": "Vertical social media clip, centered dominant subject, energetic pace, simple camera motion, vivid lighting, designed for full-screen mobile viewing"
+    }
+  }
+}

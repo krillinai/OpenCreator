@@ -631,6 +631,7 @@ test('打包 App 使用 Codex app-server 并持久化项目与会话', async ({}
     }>(fixture.page, 'POST', '/creator/jobs', {
       projectId: defaultProject.id,
       templateId: 'cover',
+      creationKey: 'desktop-default-cover',
       state: { prompt: '默认项目封面' }
     });
     expect(initialCreatorJob.status).toBe(201);
@@ -681,6 +682,7 @@ test('打包 App 使用 Codex app-server 并持久化项目与会话', async ({}
     }>(fixture.page, 'POST', '/creator/jobs', {
       projectId: createdProject.body.project.id,
       templateId: 'cover',
+      creationKey: 'desktop-persisted-cover',
       state: { prompt: '持久化项目封面' }
     });
     expect(createdCreatorJob.status).toBe(201);

@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { createHash } from 'node:crypto';
 
 export function migrate(db: Database.Database): void {
   db.exec(`
@@ -321,12 +322,16 @@ export function migrate(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS creator_jobs (
       id TEXT PRIMARY KEY,
       creation_key TEXT,
+      creation_fingerprint TEXT,
       project_id TEXT NOT NULL,
       template_id TEXT NOT NULL,
       template_version INTEGER NOT NULL,
       status TEXT NOT NULL,
       revision INTEGER NOT NULL DEFAULT 0,
       state_json TEXT NOT NULL,
+      preset_origin_json TEXT CHECK (
+        preset_origin_json IS NULL OR json_valid(preset_origin_json)
+      ),
       agent_thread_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -625,6 +630,14 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'creator_stage_runs', 'attempt', 'attempt INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'creator_stage_runs', 'idempotency_key', 'idempotency_key TEXT');
   ensureColumn(db, 'creator_jobs', 'creation_key', 'creation_key TEXT');
+  ensureColumn(
+    db,
+    'creator_jobs',
+    'preset_origin_json',
+    'preset_origin_json TEXT CHECK (preset_origin_json IS NULL OR json_valid(preset_origin_json))'
+  );
+  ensureColumn(db, 'creator_jobs', 'creation_fingerprint', 'creation_fingerprint TEXT');
+  backfillCreatorCreationFingerprints(db);
   db.prepare(`
     UPDATE schedules
     SET concurrency_policy = 'queue'
@@ -677,6 +690,56 @@ export function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_creator_stage_runs_dispatch
       ON creator_stage_runs(dispatch_status, claim_expires_at, created_at ASC);
   `);
+}
+
+function backfillCreatorCreationFingerprints(db: Database.Database): void {
+  const rows = db.prepare(`
+    SELECT id, project_id, template_id, template_version, state_json
+    FROM creator_jobs
+    WHERE creation_key IS NOT NULL
+      AND creation_fingerprint IS NULL
+  `).all() as Array<{
+    id: string;
+    project_id: string;
+    template_id: string;
+    template_version: number;
+    state_json: string;
+  }>;
+  if (rows.length === 0) return;
+  const update = db.prepare(`
+    UPDATE creator_jobs
+    SET creation_fingerprint = ?
+    WHERE id = ? AND creation_fingerprint IS NULL
+  `);
+  db.transaction(() => {
+    for (const row of rows) {
+      const parsed = JSON.parse(row.state_json) as unknown;
+      const stateHash = createHash('sha256')
+        .update(canonicalJson(parsed))
+        .digest('hex');
+      const fingerprint = createHash('sha256')
+        .update(canonicalJson({
+          mode: 'blank',
+          projectId: row.project_id,
+          templateId: row.template_id,
+          templateVersion: row.template_version,
+          resolvedStateHash: stateHash
+        }))
+        .digest('hex');
+      update.run(fingerprint, row.id);
+    }
+  })();
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function assertUniqueCodexThreadIds(db: Database.Database): void {

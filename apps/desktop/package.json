@@ -43,6 +43,7 @@
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
+    "fontkit": "2.0.4",
     "node-gyp": "13.0.2",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",

@@ -13,6 +13,7 @@ import type {
   CreatorStageRun,
   RuntimeErrorCode
 } from '@opencreator/protocol';
+import { isCreateCreatorJobRequest } from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { rm, stat } from 'node:fs/promises';
@@ -29,6 +30,7 @@ import {
   CreatorServiceError,
   type CreatorService
 } from '../creator/service.js';
+import { CreatorRepositoryDataError } from '../creator/repository.js';
 import { formatSseEvent } from './sse.js';
 import { apiError } from './errors.js';
 import type { CreatorAgentService } from '../creator/agent/agent-service.js';
@@ -60,6 +62,11 @@ import {
   CreatorSourceUploadError,
   type CreatorSourceUploadService
 } from '../creator/source-upload.js';
+import {
+  normalizeCreatorPresetLocale,
+  resolveCreatorPresetAsset
+} from '../creator/presets/catalog.js';
+import type { CreatorPresetRegistry } from '../creator/presets/types.js';
 
 export async function registerCreatorRoutes(
   server: FastifyInstance,
@@ -77,8 +84,33 @@ export async function registerCreatorRoutes(
     jobsRoot: string;
     dispatcher: CreatorCommandDispatcher;
     stageRunner?: Pick<CreatorStageRunner, 'cancel'>;
+    presets: CreatorPresetRegistry;
+    presetCatalogRoot: string;
   }
 ): Promise<void> {
+  server.get('/creator/presets', async request => {
+    const locale = normalizeCreatorPresetLocale(readObject(request.query).locale);
+    return {
+      locale,
+      catalogHash: options.presets.catalogHash,
+      presets: options.presets.listPublished(locale)
+    };
+  });
+
+  server.get('/creator-presets/:fileName', async (request, reply) => {
+    try {
+      const { fileName } = request.params as { fileName: string };
+      const file = resolveCreatorPresetAsset(options.presetCatalogRoot, fileName);
+      const info = await stat(file);
+      if (!info.isFile()) throw new Error('Preset asset is not a file');
+      reply.type(contentTypeForPresetAsset(fileName));
+      reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+      return reply.send(createReadStream(file));
+    } catch {
+      return reply.code(404).send(apiError('creator_preset_not_found', 'Creator preset asset not found'));
+    }
+  });
+
   if (options.sourceUploadService !== undefined) {
     server.addContentTypeParser(
       CREATOR_SOURCE_UPLOAD_CONTENT_TYPE,
@@ -197,18 +229,10 @@ export async function registerCreatorRoutes(
 
   server.post<{ Body: unknown }>('/creator/jobs', async (request, reply) => {
     try {
-      const body = readObject(request.body);
-      const job = service.createJob({
-        projectId: readString(body.projectId, 'projectId'),
-        templateId: readString(body.templateId, 'templateId'),
-        ...(body.templateVersion === undefined
-          ? {}
-          : { templateVersion: readInteger(body.templateVersion, 'templateVersion') }),
-        ...(body.state === undefined ? {} : { state: readObject(body.state) as CreateCreatorJobRequest['state'] }),
-        ...(body.creationKey === undefined
-          ? {}
-          : { creationKey: readString(body.creationKey, 'creationKey') })
-      });
+      if (!isCreateCreatorJobRequest(request.body)) {
+        throw new TypeError('Creator job request is invalid or mixes blank and preset fields');
+      }
+      const job = await service.createJob(request.body);
       events.publish({
         id: `snapshot:${job.revision}`,
         jobId: job.id,
@@ -236,12 +260,16 @@ export async function registerCreatorRoutes(
   });
 
   server.get('/creator/jobs/:id', async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const job = service.getJob(id);
-    if (job === undefined) {
-      return reply.code(404).send(apiError('creator_job_not_found', 'Creator job not found'));
+    try {
+      const { id } = request.params as { id: string };
+      const job = service.getJob(id);
+      if (job === undefined) {
+        return reply.code(404).send(apiError('creator_job_not_found', 'Creator job not found'));
+      }
+      return { job };
+    } catch (error) {
+      return sendCreatorError(reply, error);
     }
-    return { job };
   });
 
   server.delete('/creator/jobs/:id', async (request, reply) => {
@@ -688,6 +716,13 @@ export async function registerCreatorRoutes(
   });
 }
 
+function contentTypeForPresetAsset(fileName: string): string {
+  const extension = extname(fileName).toLowerCase();
+  if (extension === '.png') return 'image/png';
+  if (extension === '.webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
 function emptyAgentTimeline(): CreatorAgentHistoryResponse {
   return {
     session: null,
@@ -824,6 +859,9 @@ function readCreatorAgentSandbox(
 }
 
 function sendCreatorError(reply: FastifyReply, error: unknown) {
+  if (error instanceof CreatorRepositoryDataError) {
+    return reply.code(500).send(apiError('creator_data_corrupt', error.message));
+  }
   if (error instanceof CreatorArtifactImportError) {
     return reply.code(error.statusCode)
       .send(apiError(error.code, error.message));

@@ -78,6 +78,7 @@ function stageInput(
     templateVersion: 2,
     status: 'running',
     revision: 1,
+    presetOrigin: null,
     state: {
       sourceType: 'youtube',
       sourceUrl: 'https://www.youtube.com/watch?v=cover-test',

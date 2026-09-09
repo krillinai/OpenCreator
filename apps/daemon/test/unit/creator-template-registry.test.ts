@@ -164,7 +164,7 @@ describe('creator template registry', () => {
 
     expect(registry.resolveInvalidatedArtifactKinds(
       'video-translation',
-      1,
+      2,
       'edit-subtitle'
     )).toEqual([
       'dubbed_audio',
@@ -192,6 +192,35 @@ describe('creator template registry', () => {
     expect(state).not.toHaveProperty('ttsModel');
     expect(state).not.toHaveProperty('voiceCode');
     expect(state).not.toHaveProperty('voiceName');
+  });
+
+  it('creates video translation v2 with only structured subtitleStyle', () => {
+    const template = createVideoTranslationTemplate();
+    const state = template.inputSchema.parse({});
+
+    expect(template.version).toBe(2);
+    expect(state).toMatchObject({
+      subtitleStyle: {
+        fontPreset: 'sans',
+        fontWeight: 'bold',
+        fontSize: 'medium',
+        primaryColor: '#FFFFFF',
+        secondaryColor: '#D1D5DB',
+        outlineColor: '#000000',
+        outlineWidth: 2.5,
+        shadow: {
+          enabled: true,
+          color: '#000000',
+          opacity: 0.6,
+          offsetX: 1.5,
+          offsetY: 1.5,
+          blur: 0.5
+        }
+      }
+    });
+    expect(state).not.toHaveProperty('subtitleFont');
+    expect(state).not.toHaveProperty('subtitleSize');
+    expect(state).not.toHaveProperty('subtitleColor');
   });
 
   it('passes the dedicated short subtitle into vertical rendering when available', () => {

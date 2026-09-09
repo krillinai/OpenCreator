@@ -7,8 +7,10 @@ import type {
   CreatorArtifact,
   CreatorJob,
   CreatorJobStatus,
-  CreatorJson
+  CreatorJson,
+  CreatorPresetOrigin
 } from '@opencreator/protocol';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { writeFileSync } from 'node:fs';
 import { basename, extname, join, dirname } from 'node:path';
 import type { CreatorRepository } from './repository.js';
@@ -19,6 +21,14 @@ import {
 } from './result-snapshots.js';
 import type { CreatorTemplateRegistry } from './templates/types.js';
 import { videoTranslationArtifactRefsPatch } from './templates/video-translation-results.js';
+import {
+  createBlankCreationFingerprint,
+  createPresetCreationFingerprint
+} from './creation-fingerprint.js';
+import { getCreatorPresetModuleDefinition } from './presets/module-schemas.js';
+import { mergeCreatorPresetState } from './presets/requirements.js';
+import type { CreatorPresetRegistry } from './presets/types.js';
+import type { CreatorServicesConfigStore } from '../creator-services/config-store.js';
 
 export type CreatorService = ReturnType<typeof createCreatorService>;
 
@@ -36,52 +46,204 @@ export class CreatorServiceError extends Error {
 export function createCreatorService(input: {
   repository: CreatorRepository;
   templates: CreatorTemplateRegistry;
+  presets?: CreatorPresetRegistry;
+  creatorServicesConfig?: Pick<CreatorServicesConfigStore, 'read'>;
 }) {
   const { repository, templates } = input;
 
   const getJob = (id: string): CreatorJob | undefined => repository.getJob(id);
 
-  return {
-    templates,
-    createJob(request: CreateCreatorJobRequest): CreatorJob {
-      const template = templates.get(request.templateId, request.templateVersion);
-      const state = template.inputSchema.parse(request.state ?? {}) as Record<string, CreatorJson>;
-      return repository.transaction(() => {
-        if (request.creationKey !== undefined) {
-          const existing = repository.getJobByCreationKey(request.creationKey);
-          if (existing !== undefined) {
-            if (
-              existing.projectId !== request.projectId
-              || existing.templateId !== template.id
-              || existing.templateVersion !== template.version
-            ) {
-              throw new CreatorServiceError(
-                'creator_idempotency_key_reused',
-                'Creator creation key was already used with a different request'
-              );
-            }
-            return existing;
-          }
-        }
-        const job = repository.createJob({
-          ...(request.creationKey === undefined ? {} : { creationKey: request.creationKey }),
+  type PresetCreateRequest = Extract<CreateCreatorJobRequest, { preset: unknown }>;
+  type BlankCreateRequest = Omit<
+    Extract<CreateCreatorJobRequest, { templateId: string }>,
+    'creationKey'
+  > & { creationKey?: string };
+
+  function createJob(request: PresetCreateRequest): Promise<CreatorJob>;
+  function createJob(request: BlankCreateRequest): CreatorJob;
+  function createJob(request: CreateCreatorJobRequest): CreatorJob | Promise<CreatorJob>;
+  function createJob(
+    request: PresetCreateRequest | BlankCreateRequest
+  ): CreatorJob | Promise<CreatorJob> {
+    if ('preset' in request) return createPresetJob(request);
+    const template = templates.get(request.templateId, request.templateVersion);
+    const state = template.inputSchema.parse(request.state ?? {}) as Record<string, CreatorJson>;
+    const fingerprint = request.creationKey === undefined
+      ? null
+      : createBlankCreationFingerprint({
           projectId: request.projectId,
           templateId: template.id,
           templateVersion: template.version,
-          status: 'draft',
           state
         });
-        repository.insertActivity({
-          jobId: job.id,
-          revision: 0,
-          actor: 'user',
-          action: 'create-job',
-          summary: '创建创作任务',
-          details: { templateId: template.id, templateVersion: template.version }
-        });
-        return repository.getJob(job.id)!;
+    return persistCreatedJob({
+      creationKey: request.creationKey,
+      creationFingerprint: fingerprint,
+      projectId: request.projectId,
+      templateId: template.id,
+      templateVersion: template.version,
+      state,
+      presetOrigin: null,
+      activityDetails: {
+        templateId: template.id,
+        templateVersion: template.version
+      }
+    });
+  }
+
+  async function createPresetJob(request: PresetCreateRequest): Promise<CreatorJob> {
+    if (input.presets === undefined) {
+      throw new CreatorServiceError(
+        'creator_preset_not_found',
+        'Creator preset catalog is unavailable'
+      );
+    }
+    let preset;
+    try {
+      preset = input.presets.get(request.preset);
+    } catch {
+      throw new CreatorServiceError(
+        'creator_preset_not_found',
+        'Creator preset was not found'
+      );
+    }
+    const definition = getCreatorPresetModuleDefinition(preset.module);
+    if (
+      preset.runtimeTemplate.id !== definition.runtimeTemplate.id
+      || preset.runtimeTemplate.version !== definition.runtimeTemplate.version
+    ) {
+      throw new CreatorServiceError(
+        'creator_preset_incompatible',
+        'Creator preset runtime binding is incompatible'
+      );
+    }
+    const services = input.creatorServicesConfig === undefined
+      ? createDefaultCreatorServicesConfig()
+      : await input.creatorServicesConfig.read();
+    let state: Record<string, CreatorJson>;
+    let template;
+    try {
+      const merged = mergeCreatorPresetState({
+        definition,
+        defaults: preset.defaults,
+        defaultsByLocale: preset.defaultsByLocale,
+        locale: request.locale,
+        requirement: preset.requirements,
+        services
       });
-    },
+      template = templates.get(
+        preset.runtimeTemplate.id,
+        preset.runtimeTemplate.version
+      );
+      state = template.inputSchema.parse(merged) as Record<string, CreatorJson>;
+    } catch (error) {
+      throw new CreatorServiceError(
+        'creator_preset_invalid',
+        error instanceof Error ? error.message : 'Creator preset state is invalid'
+      );
+    }
+    const origin: CreatorPresetOrigin = {
+      module: preset.module,
+      id: preset.id,
+      version: preset.version,
+      locale: request.locale,
+      title: preset.title[request.locale],
+      contentHash: preset.contentHash
+    };
+    const fingerprint = createPresetCreationFingerprint({
+      projectId: request.projectId,
+      preset: {
+        module: preset.module,
+        id: preset.id,
+        version: preset.version,
+        contentHash: preset.contentHash
+      },
+      locale: request.locale,
+      templateId: template.id,
+      templateVersion: template.version,
+      state
+    });
+    return persistCreatedJob({
+      creationKey: request.creationKey,
+      creationFingerprint: fingerprint,
+      projectId: request.projectId,
+      templateId: template.id,
+      templateVersion: template.version,
+      state,
+      presetOrigin: origin,
+      activityDetails: {
+        templateId: template.id,
+        templateVersion: template.version,
+        presetModule: preset.module,
+        presetId: preset.id,
+        presetVersion: preset.version,
+        presetLocale: request.locale,
+        presetContentHash: preset.contentHash,
+        ...(preset.requirements === undefined
+          ? {}
+          : {
+              requirementService: preset.requirements.service,
+              requirementProvider: preset.requirements.provider,
+              ...(preset.requirements.model === undefined
+                ? {}
+                : { requirementModel: preset.requirements.model })
+            })
+      }
+    });
+  }
+
+  function persistCreatedJob(input: {
+    creationKey?: string;
+    creationFingerprint: string | null;
+    projectId: string;
+    templateId: string;
+    templateVersion: number;
+    state: Record<string, CreatorJson>;
+    presetOrigin: CreatorPresetOrigin | null;
+    activityDetails: Record<string, CreatorJson>;
+  }): CreatorJob {
+    return repository.transaction(() => {
+      if (input.creationKey !== undefined) {
+        const existing = repository.getJobByCreationKey(input.creationKey);
+        if (existing !== undefined) {
+          const existingFingerprint = repository.getCreationFingerprint(existing.id);
+          if (
+            input.creationFingerprint === null
+            || existingFingerprint !== input.creationFingerprint
+          ) {
+            throw new CreatorServiceError(
+              'creator_idempotency_key_reused',
+              'Creator creation key was already used with a different request'
+            );
+          }
+          return existing;
+        }
+      }
+      const job = repository.createJob({
+        ...(input.creationKey === undefined ? {} : { creationKey: input.creationKey }),
+        creationFingerprint: input.creationFingerprint,
+        presetOrigin: input.presetOrigin,
+        projectId: input.projectId,
+        templateId: input.templateId,
+        templateVersion: input.templateVersion,
+        status: 'draft',
+        state: input.state
+      });
+      repository.insertActivity({
+        jobId: job.id,
+        revision: 0,
+        actor: 'user',
+        action: 'create-job',
+        summary: '创建创作任务',
+        details: input.activityDetails
+      });
+      return repository.getJob(job.id)!;
+    });
+  }
+
+  return {
+    templates,
+    createJob,
     getJob,
     listJobs(projectId?: string): CreatorJob[] {
       return repository.listJobs(projectId);

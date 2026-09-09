@@ -37,6 +37,7 @@ import type {
 } from './creator-workspace.js';
 import {
   creatorTemplateForWorkspace,
+  creatorTemplateVersionForWorkspace,
   isVisibleCreatorWorkspace
 } from './creator-workspace.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
@@ -157,7 +158,7 @@ const creatorTools: DashboardEntry[] = [
     category: '图像创作',
     icon: Image,
     workspace: 'image-generation'
-  },
+  }
 ];
 
 const categories = ['全部', '视频创作', '视频编辑', '图像创作', '音频处理'] as const;
@@ -275,6 +276,7 @@ export default function DashboardPage(props: {
         projectId={props.projectId}
         service={props.creatorService}
         templateId={creatorTemplateForWorkspace(workspace)}
+        templateVersion={creatorTemplateVersionForWorkspace(workspace)}
         jobId={activeJobId}
         onJobCreated={job => handleJobCreated(workspace, job)}
         onBack={closeWorkspace}
@@ -397,7 +399,10 @@ export default function DashboardPage(props: {
                 <span className="dashboard-featured-scrim" aria-hidden="true" />
                 <span className="dashboard-featured-copy">
                   <strong>{localize(tool.title)}</strong>
-                  <span>{t('dashboard.start')} <ArrowUpRight size={14} strokeWidth={1.8} aria-hidden="true" /></span>
+                  <span>
+                    {t('dashboard.start')}
+                    <ArrowUpRight size={14} strokeWidth={1.8} aria-hidden="true" />
+                  </span>
                 </span>
               </button>
             ))}
@@ -406,7 +411,11 @@ export default function DashboardPage(props: {
 
         <section className="dashboard-directory" aria-label={t('dashboard.apps')}>
           <div className="dashboard-directory-controls">
-            <div className="dashboard-category-tabs" role="tablist" aria-label={t('dashboard.categories')}>
+            <div
+              className="dashboard-category-tabs"
+              role="tablist"
+              aria-label={t('dashboard.categories')}
+            >
               {categories.map(item => (
                 <button
                   type="button"
@@ -457,7 +466,13 @@ export default function DashboardPage(props: {
             <div className="dashboard-empty" role="status">
               <Search size={20} strokeWidth={1.6} aria-hidden="true" />
               <p>{t('dashboard.empty')}</p>
-              <button type="button" onClick={() => { setQuery(''); setCategory('全部'); }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery('');
+                  setCategory('全部');
+                }}
+              >
                 {t('dashboard.showAll')}
               </button>
             </div>
@@ -496,6 +511,7 @@ function CreatorWorkspaceSession(props: {
   projectId: string;
   service: CreatorWebService;
   templateId: string;
+  templateVersion: number;
   jobId?: string;
   children: ReactNode;
   onJobCreated(job: CreatorJob): void;
@@ -503,7 +519,7 @@ function CreatorWorkspaceSession(props: {
 }) {
   const l = useLocalizedCopy();
   const [job, setJob] = useState<CreatorJob | undefined>(() => props.jobId === undefined
-    ? createPendingCreatorJob(props.projectId, props.templateId)
+    ? createPendingCreatorJob(props.projectId, props.templateId, props.templateVersion)
     : undefined);
   const [error, setError] = useState<string>();
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -518,7 +534,7 @@ function CreatorWorkspaceSession(props: {
   jobRef.current = job;
   onJobCreatedRef.current = props.onJobCreated;
 
-  const creationScope = `${props.projectId}:${props.templateId}`;
+  const creationScope = `${props.projectId}:${props.templateId}:${props.templateVersion}`;
   const startedAnotherNewSession = props.jobId === undefined
     && previousRouteJobIdRef.current !== undefined;
   if (
@@ -527,7 +543,11 @@ function CreatorWorkspaceSession(props: {
   ) {
     creationIdentityRef.current = {
       scope: creationScope,
-      key: readOrCreateCreatorJobCreationKey(props.projectId, props.templateId)
+      key: readOrCreateCreatorJobCreationKey(
+        props.projectId,
+        props.templateId,
+        props.templateVersion
+      )
     };
     createdJobIdRef.current = undefined;
   }
@@ -543,13 +563,18 @@ function CreatorWorkspaceSession(props: {
     if (currentJob !== undefined && !isPendingCreatorJob(currentJob)) return currentJob;
 
     const creationKey = creationIdentityRef.current?.key
-      ?? readOrCreateCreatorJobCreationKey(props.projectId, props.templateId);
+      ?? readOrCreateCreatorJobCreationKey(
+        props.projectId,
+        props.templateId,
+        props.templateVersion
+      );
     const requestKey = `create:${creationKey}`;
     let request = creationRequestsRef.current.get(requestKey);
     if (request === undefined) {
       request = createCreatorJobWithRecovery(props.service, {
         projectId: props.projectId,
         templateId: props.templateId,
+        templateVersion: currentJob?.templateVersion,
         creationKey,
         state
       });
@@ -574,11 +599,16 @@ function CreatorWorkspaceSession(props: {
     setJob(next);
     if (!announcedCreatedJobIdsRef.current.has(next.id)) {
       announcedCreatedJobIdsRef.current.add(next.id);
-      clearCreatorJobCreationKey(props.projectId, props.templateId, creationKey);
+      clearCreatorJobCreationKey(
+        props.projectId,
+        props.templateId,
+        props.templateVersion,
+        creationKey
+      );
       onJobCreatedRef.current(next);
     }
     return next;
-  }, [props.projectId, props.service, props.templateId]);
+  }, [props.projectId, props.service, props.templateId, props.templateVersion]);
 
   useEffect(() => {
     let canceled = false;
@@ -589,8 +619,13 @@ function CreatorWorkspaceSession(props: {
         && isPendingCreatorJob(current)
         && current.projectId === props.projectId
         && current.templateId === props.templateId
+        && current.templateVersion === props.templateVersion
           ? current
-          : createPendingCreatorJob(props.projectId, props.templateId)
+          : createPendingCreatorJob(
+              props.projectId,
+              props.templateId,
+              props.templateVersion
+            )
       ));
       return () => { canceled = true; };
     }
@@ -623,7 +658,15 @@ function CreatorWorkspaceSession(props: {
       canceled = true;
       window.clearTimeout(timeout);
     };
-  }, [l, loadAttempt, props.jobId, props.projectId, props.service, props.templateId]);
+  }, [
+    l,
+    loadAttempt,
+    props.jobId,
+    props.projectId,
+    props.service,
+    props.templateId,
+    props.templateVersion
+  ]);
 
   if (error) {
     return (
@@ -661,16 +704,21 @@ function CreatorWorkspaceSession(props: {
   );
 }
 
-function createPendingCreatorJob(projectId: string, templateId: string): CreatorJob {
+function createPendingCreatorJob(
+  projectId: string,
+  templateId: string,
+  templateVersion: number
+): CreatorJob {
   const now = new Date().toISOString();
   return {
     id: `pending:${projectId}:${templateId}`,
     projectId,
     templateId,
-    templateVersion: 1,
+    templateVersion,
     status: 'draft',
     revision: 0,
     state: {},
+    presetOrigin: null,
     agentThreadId: null,
     stages: [],
     artifacts: [],
@@ -753,8 +801,12 @@ function waitForRetry(delayMs: number): Promise<void> {
   return new Promise(resolve => window.setTimeout(resolve, delayMs));
 }
 
-function readOrCreateCreatorJobCreationKey(projectId: string, templateId: string): string {
-  const storageKey = creatorJobCreationStorageKey(projectId, templateId);
+function readOrCreateCreatorJobCreationKey(
+  projectId: string,
+  templateId: string,
+  templateVersion: number
+): string {
+  const storageKey = creatorJobCreationStorageKey(projectId, templateId, templateVersion);
   try {
     const existing = window.sessionStorage.getItem(storageKey);
     if (existing) return existing;
@@ -773,9 +825,10 @@ function readOrCreateCreatorJobCreationKey(projectId: string, templateId: string
 function clearCreatorJobCreationKey(
   projectId: string,
   templateId: string,
+  templateVersion: number,
   expectedKey?: string
 ): void {
-  const storageKey = creatorJobCreationStorageKey(projectId, templateId);
+  const storageKey = creatorJobCreationStorageKey(projectId, templateId, templateVersion);
   try {
     if (
       expectedKey === undefined
@@ -788,8 +841,19 @@ function clearCreatorJobCreationKey(
   }
 }
 
-function creatorJobCreationStorageKey(projectId: string, templateId: string): string {
-  return `${CREATOR_JOB_CREATION_STORAGE_PREFIX}${encodeURIComponent(projectId)}:${encodeURIComponent(templateId)}`;
+function creatorJobCreationStorageKey(
+  projectId: string,
+  templateId: string,
+  templateVersion: number
+): string {
+  return [
+    CREATOR_JOB_CREATION_STORAGE_PREFIX,
+    encodeURIComponent(projectId),
+    ':',
+    encodeURIComponent(templateId),
+    ':',
+    templateVersion
+  ].join('');
 }
 
 function createCreationKeySuffix(): string {
@@ -823,5 +887,5 @@ const englishDashboardLabels: Record<string, string> = {
   封面生成: 'Thumbnail Generator',
   生成视频与内容封面: 'Create thumbnails for videos and content',
   视频下载: 'Video Downloader',
-  '支持YouTube，Bilibili等': 'Supports YouTube, Bilibili, and more',
+  '支持YouTube，Bilibili等': 'Supports YouTube, Bilibili, and more'
 };

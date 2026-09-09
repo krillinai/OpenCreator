@@ -464,6 +464,7 @@ function smartDubbingJob(): CreatorJob {
     templateVersion: 1,
     status: 'running',
     revision: 4,
+    presetOrigin: null,
     state: {
       text: '这是一段智能配音文案。',
       ttsProvider: 'openai',
@@ -556,6 +557,7 @@ function coverJob(): CreatorJob {
     templateVersion: 2,
     status: 'running',
     revision: 5,
+    presetOrigin: null,
     state: {
       sourceType: 'prompt',
       prompt: '电影感人物封面',
@@ -655,6 +657,7 @@ function downloadJob(): CreatorJob {
     templateVersion: 2,
     status: 'running',
     revision: 4,
+    presetOrigin: null,
     state: {
       sourceUrl: 'https://www.youtube.com/watch?v=demo',
       mediaType: 'video',
@@ -740,6 +743,7 @@ function videoGenerationJob(): CreatorJob {
     templateVersion: 1,
     status: 'running',
     revision: 3,
+    presetOrigin: null,
     state: {
       prompt: '雨夜中的赛博朋克街道',
       provider: 'veo',

@@ -215,6 +215,16 @@ Dialogue: 0,0:00:00.00,0:00:01.00,Major,,0,0,0,,Injected`
 	}
 }
 
+func TestValidateRejectsUncontrolledOrOutOfRangeOverrideTags(t *testing.T) {
+	for _, tags := range []string{`\bord5`, `\xshad21`, `\yshad-21`, `\blur10.1`} {
+		style := DefaultStyleSet()
+		style.Horizontal.Major.OverrideTags = tags
+		if err := Validate(style); err == nil {
+			t.Fatalf("Validate() error = nil for %q, want controlled tag validation error", tags)
+		}
+	}
+}
+
 func TestDialogueTagsNormalizesBraces(t *testing.T) {
 	style := DefaultStyleSet()
 	style.Horizontal.Major.OverrideTags = `{\blur1}`

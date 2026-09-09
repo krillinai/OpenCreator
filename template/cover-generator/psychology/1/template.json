@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "psychology",
+  "version": 1,
+  "module": "cover-generator",
+  "runtimeTemplate": {
+    "id": "cover",
+    "version": 2
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 51,
+  "title": {
+    "zh-CN": "心理学洞察封面",
+    "en-US": "Psychology Insight Cover"
+  },
+  "description": {
+    "zh-CN": "以情绪人物、心理张力和强问题感生成知识视频封面。",
+    "en-US": "Create a knowledge-video cover with emotional portraits and psychological tension."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "psychology",
+    "insight",
+    "knowledge"
+  ],
+  "defaults": {
+    "prompt": "",
+    "coverStyle": "psychology",
+    "coverTextLanguage": "auto",
+    "customStylePrompt": "",
+    "coverHeadline": "",
+    "coverSubheadline": "",
+    "ratio": "16:9",
+    "candidateCount": 2,
+    "quality": "high"
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "心理学知识视频封面，真实人物强情绪近景，视觉焦点集中，营造疑问和认知冲突，标题清晰有张力",
+      "coverTextLanguage": "zh-CN",
+      "coverHeadline": "你为什么总是想太多？",
+      "coverSubheadline": "看懂大脑的防御机制"
+    },
+    "en-US": {
+      "prompt": "Psychology knowledge-video cover, emotional close portrait, focused visual hierarchy, cognitive tension, clear compelling headline",
+      "coverTextLanguage": "en-US",
+      "coverHeadline": "Why Do You Overthink?",
+      "coverSubheadline": "Understand your brain's defense system"
+    }
+  }
+}

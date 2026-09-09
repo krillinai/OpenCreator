@@ -16,6 +16,7 @@ describe('creator web service', () => {
     };
     const service = createCreatorService(client);
 
+    await service.listPresets('en-US');
     await service.listJobs('project 1');
     await service.listJobs();
     await service.createJob({
@@ -63,6 +64,7 @@ describe('creator web service', () => {
     await service.deleteJob('job 1');
     await service.deleteJob('job 2', { deleteFiles: true });
 
+    expect(client.get).toHaveBeenCalledWith('/creator/presets?locale=en-US');
     expect(client.get).toHaveBeenCalledWith('/creator/jobs?projectId=project%201');
     expect(client.get).toHaveBeenCalledWith('/creator/jobs');
     expect(client.post).toHaveBeenNthCalledWith(1, '/creator/jobs', {

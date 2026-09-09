@@ -101,6 +101,7 @@ test('统一配音配置在设置、智能配音和视频翻译中保持一致',
   }>('POST', '/creator/jobs', {
     projectId: runtime.projectId,
     templateId: 'video-translation',
+    creationKey: 'tts-services-video-translation',
     state: {
       sourceType: 'url',
       sourceUrl: 'https://www.youtube.com/watch?v=OpenCreatorTtsE2E',

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "personal-growth",
+  "version": 1,
+  "module": "cover-generator",
+  "runtimeTemplate": {
+    "id": "cover",
+    "version": 2
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 50,
+  "title": {
+    "zh-CN": "个人成长封面",
+    "en-US": "Personal Growth Cover"
+  },
+  "description": {
+    "zh-CN": "以人物、强情绪和清晰标题生成个人成长类视频封面。",
+    "en-US": "Create a personal-growth video cover with a human focus and clear headline."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "cover",
+    "growth",
+    "youtube"
+  ],
+  "defaults": {
+    "prompt": "",
+    "coverStyle": "personal-growth",
+    "coverTextLanguage": "auto",
+    "customStylePrompt": "",
+    "coverHeadline": "",
+    "coverSubheadline": "",
+    "ratio": "16:9",
+    "candidateCount": 2,
+    "quality": "medium"
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "个人成长主题，真实人物半身近景，情绪明确，主体与标题留白平衡，强对比、可信、适合知识视频封面",
+      "coverTextLanguage": "zh-CN",
+      "coverHeadline": "改变，从今天开始",
+      "coverSubheadline": "建立真正有效的成长系统"
+    },
+    "en-US": {
+      "prompt": "Personal growth theme, authentic half-body portrait, clear emotion, balanced headline space, strong contrast and credible knowledge-video composition",
+      "coverTextLanguage": "en-US",
+      "coverHeadline": "Change Starts Today",
+      "coverSubheadline": "Build a growth system that works"
+    }
+  }
+}

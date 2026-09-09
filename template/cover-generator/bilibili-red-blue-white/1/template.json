@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "bilibili-red-blue-white",
+  "version": 1,
+  "module": "cover-generator",
+  "runtimeTemplate": {
+    "id": "cover",
+    "version": 2
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 53,
+  "title": {
+    "zh-CN": "B站红蓝白封面",
+    "en-US": "Bilibili Red Blue White Cover"
+  },
+  "description": {
+    "zh-CN": "使用红蓝白高对比配色、大标题和人物主体生成 B站风格封面。",
+    "en-US": "Create a Bilibili-style cover with red, blue, and white contrast, bold text, and a clear portrait."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "bilibili",
+    "red-blue-white",
+    "knowledge"
+  ],
+  "defaults": {
+    "prompt": "",
+    "coverStyle": "bilibili-red-blue-white",
+    "coverTextLanguage": "auto",
+    "customStylePrompt": "",
+    "coverHeadline": "",
+    "coverSubheadline": "",
+    "ratio": "16:9",
+    "candidateCount": 2,
+    "quality": "medium"
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "B站知识视频封面，红蓝白高对比配色，人物主体清晰，标题字号大且层级明确，画面活泼但不杂乱",
+      "coverTextLanguage": "zh-CN",
+      "coverHeadline": "这件事没你想得那么简单",
+      "coverSubheadline": "五分钟讲清底层逻辑"
+    },
+    "en-US": {
+      "prompt": "Bilibili-style knowledge-video cover, red blue and white high contrast, clear portrait, bold hierarchical headline, energetic but organized composition",
+      "coverTextLanguage": "en-US",
+      "coverHeadline": "It's More Complex Than You Think",
+      "coverSubheadline": "The core logic in five minutes"
+    }
+  }
+}

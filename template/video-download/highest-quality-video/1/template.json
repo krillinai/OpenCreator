@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "highest-quality-video",
+  "version": 1,
+  "module": "video-download",
+  "runtimeTemplate": {
+    "id": "video-download",
+    "version": 2
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 21,
+  "title": {
+    "zh-CN": "最高画质视频",
+    "en-US": "Highest Quality Video"
+  },
+  "description": {
+    "zh-CN": "解析公开视频链接并优先进入视频清晰度选择。",
+    "en-US": "Analyze a public video URL and start with video quality selection."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "video",
+    "download",
+    "youtube",
+    "bilibili"
+  ],
+  "defaults": {
+    "mediaType": "video"
+  }
+}

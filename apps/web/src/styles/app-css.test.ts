@@ -695,15 +695,15 @@ describe('app CSS visual contracts', () => {
     expect(emptyComposer).toContain('overflow-y: auto;');
     expect(emptyComposer).toContain('padding: clamp(72px, 13vh, 128px) var(--conversation-gutter) 56px;');
     expect(cssBlock('.conversation-page.is-empty .composer-stack')).toContain('width: min(760px, 100%);');
-    expect(cssBlock('.creator-template-tabs')).toContain('width: min(760px, 100%);');
-    expect(cssBlock('.creator-template-tabs')).toContain('grid-template-columns: repeat(3, minmax(max-content, 1fr));');
-    expect(cssBlock('.creator-tool-grid')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
-    expect(cssBlock('.creator-template-grid')).toContain('grid-template-columns: repeat(5, minmax(0, 1fr));');
-    expect(cssBlock('.creator-template-grid')).toContain('gap: 12px;');
-    expect(cssBlock('.creator-template-copy')).toContain('padding: 9px 10px 11px;');
-    expect(appCss).toMatch(
-      /@media \(max-width: 1100px\) and \(min-width: 921px\)\s*\{[\s\S]*?\.creator-template-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/
-    );
+    expect(cssBlock('.creator-home-wrap')).toContain('overflow-y: auto;');
+    expect(cssBlock('.creator-module-grid')).toContain('display: flex;');
+    expect(cssBlock('.creator-module-grid')).toContain('overflow-x: auto;');
+    expect(cssBlock('.creator-module-card')).toContain('display: inline-flex;');
+    expect(cssBlock('.creator-module-card')).toContain('min-height: 36px;');
+    expect(cssBlock('.creator-template-grid')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(cssBlock('.creator-template-grid')).toContain('gap: 14px;');
+    expect(cssBlock('.creator-template-copy')).toContain('padding: 12px 13px 14px;');
+    expect(cssBlock('.creator-template-highlights')).toContain('flex-wrap: wrap;');
     expect(appCss).toMatch(/\.conversation-page\.is-empty \.opencreator-composer textarea\s*\{[^}]*min-height:\s*72px;/);
     expect(appCss).not.toContain('translateY(clamp(-150px, -14vh, -108px))');
     expect(tokensCss).toContain('--border-hairline: rgba(245, 245, 246, 0.08);');

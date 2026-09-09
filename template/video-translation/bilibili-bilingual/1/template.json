@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "id": "bilibili-bilingual",
+  "version": 1,
+  "module": "video-translation",
+  "runtimeTemplate": {
+    "id": "video-translation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 10,
+  "title": {
+    "zh-CN": "B站双语精翻",
+    "en-US": "Bilibili Bilingual Translation"
+  },
+  "description": {
+    "zh-CN": "英文视频翻译为简体中文，生成醒目的双语字幕和横屏成片。",
+    "en-US": "Translate English videos into Simplified Chinese with polished bilingual subtitles."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "bilibili",
+    "bilingual",
+    "subtitles",
+    "translation"
+  ],
+  "defaults": {
+    "sourceLanguage": "en",
+    "targetLanguage": "zh_cn",
+    "preferPlatformCaptions": true,
+    "bilingual": true,
+    "subtitlePosition": "top",
+    "subtitleStyle": {
+      "fontPreset": "sans",
+      "fontWeight": "bold",
+      "fontSize": "medium",
+      "primaryColor": "#FFFFFF",
+      "secondaryColor": "#FFD45C",
+      "outlineColor": "#000000",
+      "outlineWidth": 2,
+      "shadow": {
+        "enabled": true,
+        "color": "#000000",
+        "opacity": 0.65,
+        "offsetX": 2,
+        "offsetY": 2,
+        "blur": 1
+      }
+    },
+    "dubbing": false,
+    "voiceCode": "",
+    "voiceName": "",
+    "composeVideo": true,
+    "videoFormat": "horizontal",
+    "verticalTitle": "",
+    "verticalSubtitle": ""
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "sourceLanguage": "en",
+      "targetLanguage": "zh_cn"
+    },
+    "en-US": {
+      "sourceLanguage": "zh_cn",
+      "targetLanguage": "en"
+    }
+  }
+}

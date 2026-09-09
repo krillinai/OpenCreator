@@ -331,6 +331,7 @@ function stageInput(
     templateVersion: jobPatch.templateVersion ?? 1,
     status: 'running',
     revision: 1,
+    presetOrigin: null,
     state: {
       prompt: 'A bright creative studio',
       provider: 'openai',

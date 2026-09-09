@@ -28,7 +28,8 @@ describe('creator video download', () => {
 
     const created = await request('POST', '/creator/jobs', {
       projectId: 'project_download',
-      templateId: 'video-download'
+      templateId: 'video-download',
+      creationKey: 'video-download-flow'
     });
     const initial = created.json().job;
     expect(initial.templateVersion).toBe(2);
@@ -114,7 +115,8 @@ describe('creator video download', () => {
 
     const translation = await request('POST', '/creator/jobs', {
       projectId: 'project_download',
-      templateId: 'video-translation'
+      templateId: 'video-translation',
+      creationKey: 'video-download-import-translation'
     });
     const imported = await request(
       'POST',

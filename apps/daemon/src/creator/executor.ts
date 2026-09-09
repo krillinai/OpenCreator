@@ -34,7 +34,11 @@ export interface CreatorExecutor {
 }
 
 export class CreatorExecutorError extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details: Record<string, CreatorJson> = {}
+  ) {
     super(message);
     this.name = 'CreatorExecutorError';
   }

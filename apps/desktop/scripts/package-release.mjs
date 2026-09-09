@@ -151,6 +151,48 @@ const creatorRuntimeManifest = JSON.parse(readFileSync(
   resolve(desktopDir, '.pack', 'creator-runtime', 'krillinai', 'manifest.json'),
   'utf8'
 ));
+const creatorSubtitleFontSourceManifest = JSON.parse(readFileSync(
+  resolve(rootDir, 'assets', 'creator-subtitle-fonts', 'manifest.json'),
+  'utf8'
+));
+const creatorPresetManifest = JSON.parse(readFileSync(
+  resolve(
+    desktopDir,
+    '.pack',
+    'daemon',
+    'runtime',
+    'creator-presets',
+    'manifest.json'
+  ),
+  'utf8'
+));
+const creatorSubtitleFontResources = creatorRuntimeManifest.resources
+  .filter(resource => (
+    resource.path.startsWith('fonts/')
+    || resource.path.startsWith('licenses/fonts/')
+  ));
+const creatorSubtitleWebFontResources = creatorSubtitleFontSourceManifest.fonts
+  .map(font => {
+    if (
+      typeof font?.webFile !== 'string'
+      || typeof font?.webSha256 !== 'string'
+      || !/^[a-f0-9]{64}$/i.test(font.webSha256)
+    ) {
+      throw new Error('Creator subtitle Web font manifest is invalid');
+    }
+    const source = resolve(rootDir, 'assets', 'creator-subtitle-fonts', font.webFile);
+    const built = resolve(rootDir, 'apps', 'web', 'dist', 'fonts', 'opencreator', basename(font.webFile));
+    if (!existsSync(source) || hashFile(source) !== font.webSha256.toLowerCase()) {
+      throw new Error(`Creator subtitle Web source font hash mismatch: ${font.webFile}`);
+    }
+    if (!existsSync(built) || hashFile(built) !== font.webSha256.toLowerCase()) {
+      throw new Error(`Creator subtitle Web build font hash mismatch: ${built}`);
+    }
+    return {
+      path: `fonts/opencreator/${basename(font.webFile)}`,
+      sha256: font.webSha256.toLowerCase()
+    };
+  });
 const manifest = {
   version: 1,
   commit: gitOutput(['rev-parse', 'HEAD']) || 'unknown',
@@ -165,6 +207,17 @@ const manifest = {
   webFileCount: webBuild.fileCount,
   creatorAgentRuntimeHash: creatorAgentRuntime.hash,
   creatorAgentRuntimeFileCount: creatorAgentRuntime.fileCount,
+  creatorPresetCatalogHash: creatorPresetManifest.catalogHash,
+  creatorPresetAssetSetHash: creatorPresetManifest.assetSetHash,
+  creatorPresetResourceCount: creatorPresetManifest.files.length,
+  creatorSubtitleFontSetHash: hashResourceDescriptors(
+    creatorSubtitleFontResources
+  ),
+  creatorSubtitleFontResourceCount: creatorSubtitleFontResources.length,
+  creatorSubtitleWebFontSetHash: hashResourceDescriptors(
+    creatorSubtitleWebFontResources
+  ),
+  creatorSubtitleWebFontResourceCount: creatorSubtitleWebFontResources.length,
   codexRuntimeVersion: codexRuntimeManifest.version,
   codexRuntimeCommit: codexRuntimeManifest.commit,
   codexRuntimeBinarySha256: codexRuntimeManifest.binary.sha256,
@@ -465,6 +518,20 @@ function hashDirectory(root) {
 
 function hashFile(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function hashResourceDescriptors(resources) {
+  const aggregate = createHash('sha256');
+  for (const resource of [...resources].sort((left, right) => (
+    left.path.localeCompare(right.path)
+  ))) {
+    aggregate
+      .update(resource.path)
+      .update('\0')
+      .update(resource.sha256)
+      .update('\0');
+  }
+  return aggregate.digest('hex');
 }
 
 function listRelativeFiles(root, current = root) {

@@ -8,6 +8,7 @@ import type {
   CodexSkillMarketInstallRecordResponse,
   ConversationSearchResult,
   CreatorJob,
+  CreatorPresetSummary,
   CreateMemoryRequest,
   CreateThreadRequest,
   RunDiagnosticsResponse,
@@ -43,6 +44,7 @@ import {
 } from '../features/conversation/CreatorDashboard.js';
 import {
   creatorWorkspaceForTemplate,
+  type CreatorPresetWorkspace,
   type CreatorSkillLaunch
 } from '../features/dashboard/creator-workspace.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
@@ -205,6 +207,9 @@ const WORKSPACE_AUTO_COLLAPSE_MAX_WIDTH =
 const WORKSPACE_AUTO_COLLAPSE_MEDIA_QUERY =
   `(min-width: ${MOBILE_NAVIGATION_MAX_WIDTH + 1}px) and (max-width: ${WORKSPACE_AUTO_COLLAPSE_MAX_WIDTH}px)`;
 const RESIZE_KEY_STEP = 32;
+const CREATOR_PRESET_CREATION_TIMEOUT_MS = 15_000;
+const CREATOR_PRESET_CREATION_STORAGE_PREFIX =
+  'opencreator.creator-preset-creation.v1:';
 function canScrollVertically(
   target: EventTarget | null,
   boundary: HTMLElement,
@@ -289,6 +294,10 @@ export function AppController(props: AppControllerProps) {
   const [creatorJobs, setCreatorJobs] = useState<CreatorJob[]>([]);
   const [creatorJobsLoading, setCreatorJobsLoading] = useState(false);
   const [creatorJobsError, setCreatorJobsError] = useState<string>();
+  const [creatorPresets, setCreatorPresets] = useState<CreatorPresetSummary[]>([]);
+  const [creatorPresetsLoading, setCreatorPresetsLoading] = useState(false);
+  const [creatorPresetsError, setCreatorPresetsError] = useState<string>();
+  const [creatorPresetsReloadKey, setCreatorPresetsReloadKey] = useState(0);
   const defaultFileService = useMemo(() => createUnavailableFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
@@ -355,6 +364,8 @@ export function AppController(props: AppControllerProps) {
   >();
   const [pendingComposerFocusRequestId, setPendingComposerFocusRequestId] = useState<number>();
   const [homeSkillPromptHint, setHomeSkillPromptHint] = useState<string>();
+  const [homeCreatorModule, setHomeCreatorModule] =
+    useState<CreatorPresetWorkspace>('video-translation');
   const [creatorSkillLaunch, setCreatorSkillLaunch] = useState<CreatorSkillLaunch>();
   useEffect(() => {
     if (threadConfigUpdateError === undefined) return;
@@ -469,6 +480,10 @@ export function AppController(props: AppControllerProps) {
   const nextComposerFocusRequestIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
+  const creatorPresetCreationIntentsRef = useRef(new Map<string, {
+    creationKey: string;
+    request?: Promise<CreatorJob>;
+  }>());
   const codexModelsRef = useRef(codexModels);
   runRegistryRef.current = runRegistry;
   runtimeThreadsRef.current = runtimeThreads;
@@ -759,6 +774,94 @@ export function AppController(props: AppControllerProps) {
     setHomeSkillPromptHint(promptHint);
     nextComposerFocusRequestIdRef.current += 1;
     setPendingComposerFocusRequestId(nextComposerFocusRequestIdRef.current);
+  }
+  async function applyDashboardPreset(preset: CreatorPresetSummary): Promise<void> {
+    if (creatorService === null) {
+      throw new Error(language === 'en-US'
+        ? 'The local creator service is unavailable.'
+        : '本地创作服务不可用。');
+    }
+    const projectId = state.currentProjectId;
+    if (projectId === undefined) {
+      throw new Error(language === 'en-US'
+        ? 'Select a project before using a preset.'
+        : '请先选择项目，再使用模板。');
+    }
+    const scope = [
+      projectId,
+      preset.module,
+      preset.id,
+      preset.version,
+      language
+    ].join(':');
+    let intent = creatorPresetCreationIntentsRef.current.get(scope);
+    if (intent === undefined) {
+      intent = {
+        creationKey: readOrCreateCreatorPresetCreationKey(scope)
+      };
+      creatorPresetCreationIntentsRef.current.set(scope, intent);
+    }
+    let request = intent.request;
+    if (request === undefined) {
+      request = withCreatorPresetCreationTimeout(
+        creatorService.createJob({
+          projectId,
+          preset: {
+            module: preset.module,
+            id: preset.id,
+            version: preset.version
+          },
+          locale: language,
+          creationKey: intent.creationKey
+        }).then(response => response.job),
+        language === 'en-US'
+          ? 'Preset creation timed out. Try again.'
+          : '模板任务创建超时，请重试。'
+      );
+      intent.request = request;
+    }
+    let job: CreatorJob;
+    try {
+      job = await request;
+    } catch (error) {
+      if (
+        creatorPresetCreationIntentsRef.current.get(scope) === intent
+        && intent.request === request
+      ) {
+        intent.request = undefined;
+        if (isTerminalCreatorPresetCreationError(error)) {
+          creatorPresetCreationIntentsRef.current.delete(scope);
+          clearCreatorPresetCreationKey(scope, intent.creationKey);
+        }
+      }
+      if (
+        error instanceof ApiClientError
+        && error.code === 'creator_preset_not_found'
+      ) {
+        setCreatorPresetsReloadKey(value => value + 1);
+        throw new Error(language === 'en-US'
+          ? 'This preset is no longer available. The catalog has been refreshed.'
+          : '该模板已不可用，模板目录已刷新。');
+      }
+      throw error;
+    }
+    if (
+      creatorPresetCreationIntentsRef.current.get(scope) === intent
+      && intent.request === request
+    ) {
+      creatorPresetCreationIntentsRef.current.delete(scope);
+      clearCreatorPresetCreationKey(scope, intent.creationKey);
+    }
+    rememberCreatorJob(job);
+    setCreatorSkillLaunch(undefined);
+    closeMobileSidebar();
+    dispatch({ type: 'set_active_view', activeView: 'dashboard' });
+    navigateToRoute({
+      view: 'workbench',
+      tool: preset.module,
+      jobId: job.id,
+      returnTo: 'home'
+    });
   }
   const handleCreatorWorkspaceModeChange = useCallback((active: boolean) => {
     setImmersiveWorkspace(active);
@@ -1262,6 +1365,47 @@ export function AppController(props: AppControllerProps) {
       canceled = true;
     };
   }, [connectionState.status, hostBridge, projectService, threadService]);
+
+  useEffect(() => {
+    let canceled = false;
+    if (connectionState.status !== 'connected' || creatorService === null) {
+      setCreatorPresets([]);
+      setCreatorPresetsError(undefined);
+      setCreatorPresetsLoading(false);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    setCreatorPresetsLoading(true);
+    setCreatorPresetsError(undefined);
+    void creatorService.listPresets(language)
+      .then(response => {
+        if (!canceled) setCreatorPresets(response.presets);
+      })
+      .catch(error => {
+        if (!canceled) {
+          setCreatorPresetsError(getRuntimeErrorMessage(
+            error,
+            language === 'en-US'
+              ? 'Unable to load creator presets'
+              : '无法加载创作模板'
+          ));
+        }
+      })
+      .finally(() => {
+        if (!canceled) setCreatorPresetsLoading(false);
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    connectionState.status,
+    creatorPresetsReloadKey,
+    creatorService,
+    language
+  ]);
 
   useEffect(() => {
     let canceled = false;
@@ -2219,6 +2363,7 @@ export function AppController(props: AppControllerProps) {
   function startNewConversation(options: {
     updateRoute?: boolean;
     projectId?: string;
+    destination?: 'home' | 'chat';
   } = {}) {
     closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
@@ -2240,7 +2385,9 @@ export function AppController(props: AppControllerProps) {
       dispatch({ type: 'select_project', projectId: options.projectId });
     }
     dispatch({ type: 'new_conversation' });
-    if (options.updateRoute !== false) navigateToRoute({ view: 'home' });
+    if (options.updateRoute !== false) {
+      navigateToRoute({ view: options.destination ?? 'chat' });
+    }
   }
 
   function startCreatorTool(text: string) {
@@ -2701,7 +2848,10 @@ export function AppController(props: AppControllerProps) {
   function applyRouteFromLocation(route: AppRoute) {
     switch (route.view) {
       case 'home':
-        startNewConversation({ updateRoute: false });
+        startNewConversation({ updateRoute: false, destination: 'home' });
+        return;
+      case 'chat':
+        startNewConversation({ updateRoute: false, destination: 'chat' });
         return;
       case 'thread':
         void openScheduleTask(route.threadId, route.runId, {
@@ -4010,6 +4160,8 @@ export function AppController(props: AppControllerProps) {
   const conversationConfirmedEmpty = conversationEmpty && !conversationHistoryPending;
   const showConversationEmptyState = conversationConfirmedEmpty
     && (selectedThread === undefined || selectedThread.purpose === 'conversation');
+  const showCreatorHome = props.route.view === 'home'
+    && state.selectedThreadId === undefined;
   const showConversationHeader = selectedThread !== undefined
     || selectedScheduleTask !== undefined
     || selectedConversation !== undefined;
@@ -4058,11 +4210,24 @@ export function AppController(props: AppControllerProps) {
   const pendingComposerApproval = [...timelineItems].reverse().find(item => (
     item.kind === 'approval' && item.approval.status === 'pending'
   ));
+  const creatorDashboard = (
+    <CreatorDashboard
+      presets={creatorPresets}
+      loading={creatorPresetsLoading}
+      error={creatorPresetsError}
+      selectedModule={homeCreatorModule}
+      onRetry={() => setCreatorPresetsReloadKey(value => value + 1)}
+      onSelectModule={setHomeCreatorModule}
+      onSelectPreset={applyDashboardPreset}
+      onSelectSkill={applyDashboardSkill}
+    />
+  );
   const conversationPage = (
     <section
       className={[
         'conversation-page',
-        showConversationEmptyState ? 'is-empty' : undefined,
+        showConversationEmptyState || showCreatorHome ? 'is-empty' : undefined,
+        showCreatorHome ? 'is-creator-home' : undefined,
         !useIntegratedConversationTitleBar && showConversationHeader
           ? 'has-header'
           : undefined,
@@ -4078,173 +4243,179 @@ export function AppController(props: AppControllerProps) {
           {conversationTaskToolbar}
         </div>
       ) : null}
-      <div className="conversation-body">
-        {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
-        {projectLoadError ? <p className="inline-error">{projectLoadError}</p> : null}
-        {threadLoadError ? <p className="inline-error">{threadLoadError}</p> : null}
-        {threadHistoryLoadError ? <p className="inline-error">{threadHistoryLoadError}</p> : null}
-        {threadConfigUpdateError ? (
-          <div className="conversation-toast" role="alert">
-            {threadConfigUpdateError}
-          </div>
-        ) : null}
-        {showConversationEmptyState ? null : (
-          <Timeline
-            ref={timelineRef}
-            key={state.selectedThreadId ?? 'draft'}
-            items={timelineItems}
-            hasMore={threadHistory.hasMore}
-            loadingOlder={threadHistory.loadingOlder}
-            targetItemId={
-              searchHistoryTarget !== undefined
-              && searchHistoryTarget.threadId === state.selectedThreadId
-                ? searchHistoryTarget.itemId
-                : undefined
-            }
-            targetRunId={
-              timelineRunTarget !== undefined
-              && timelineRunTarget.threadId === state.selectedThreadId
-                ? timelineRunTarget.runId
-                : undefined
-            }
-            targetApprovalId={
-              timelineApprovalTarget !== undefined
-              && timelineApprovalTarget.threadId === state.selectedThreadId
-                ? timelineApprovalTarget.approvalId
-                : undefined
-            }
-            onLoadOlder={threadHistory.loadOlder}
-            onOpenFile={openTimelineFile}
-            onEditUserMessage={editUserMessage}
-            resolvingApprovalIds={resolvingApprovalIds}
-            approvalErrors={approvalErrors}
-            onApproveApproval={(id) => void resolveApproval(id, 'approve')}
-            onRejectApproval={(id) => void resolveApproval(id, 'reject')}
-          />
-        )}
-        {showHistoryLoadingOverlay ? (
-          <div
-            className="conversation-history-loading"
-            role="status"
-            aria-label={t('conversation.loadingHistory')}
-          >
-            <span>{t('conversation.loadingHistoryProgress')}</span>
-          </div>
-        ) : null}
-      </div>
-      <div className="composer-wrap" onWheel={handleComposerWheel}>
-        {showConversationEmptyState ? (
-          <ConversationEmptyState />
-        ) : null}
-        {pendingComposerApproval?.kind === 'approval' ? (
-          <div
-            className="composer-approval-overlay"
-            data-search-target={
-              timelineApprovalTarget?.approvalId === pendingComposerApproval.approval.id
-                ? 'true'
-                : undefined
-            }
-          >
-            <ApprovalPanel
-              approval={pendingComposerApproval.approval}
-              resolving={resolvingApprovalIds.has(pendingComposerApproval.approval.id)}
-              error={approvalErrors[pendingComposerApproval.approval.id]}
-              onApprove={id => void resolveApproval(id, 'approve')}
-              onReject={id => void resolveApproval(id, 'reject')}
+      {showCreatorHome ? null : (
+        <div className="conversation-body">
+          {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
+          {projectLoadError ? <p className="inline-error">{projectLoadError}</p> : null}
+          {threadLoadError ? <p className="inline-error">{threadLoadError}</p> : null}
+          {threadHistoryLoadError ? <p className="inline-error">{threadHistoryLoadError}</p> : null}
+          {threadConfigUpdateError ? (
+            <div className="conversation-toast" role="alert">
+              {threadConfigUpdateError}
+            </div>
+          ) : null}
+          {showConversationEmptyState ? null : (
+            <Timeline
+              ref={timelineRef}
+              key={state.selectedThreadId ?? 'draft'}
+              items={timelineItems}
+              hasMore={threadHistory.hasMore}
+              loadingOlder={threadHistory.loadingOlder}
+              targetItemId={
+                searchHistoryTarget !== undefined
+                && searchHistoryTarget.threadId === state.selectedThreadId
+                  ? searchHistoryTarget.itemId
+                  : undefined
+              }
+              targetRunId={
+                timelineRunTarget !== undefined
+                && timelineRunTarget.threadId === state.selectedThreadId
+                  ? timelineRunTarget.runId
+                  : undefined
+              }
+              targetApprovalId={
+                timelineApprovalTarget !== undefined
+                && timelineApprovalTarget.threadId === state.selectedThreadId
+                  ? timelineApprovalTarget.approvalId
+                  : undefined
+              }
+              onLoadOlder={threadHistory.loadOlder}
+              onOpenFile={openTimelineFile}
+              onEditUserMessage={editUserMessage}
+              resolvingApprovalIds={resolvingApprovalIds}
+              approvalErrors={approvalErrors}
+              onApproveApproval={(id) => void resolveApproval(id, 'approve')}
+              onRejectApproval={(id) => void resolveApproval(id, 'reject')}
             />
-          </div>
-        ) : null}
-        {pendingMemorySuggestion !== undefined && memoryService !== null ? (
-          <MemorySuggestion
-            key={pendingMemorySuggestion.id}
-            content={pendingMemorySuggestion.content}
-            projectKey={currentMemoryProjectKey}
-            threadKey={state.selectedThreadId}
-            onSave={saveMemorySuggestion}
-            onDismiss={() => setPendingMemorySuggestion(undefined)}
+          )}
+          {showHistoryLoadingOverlay ? (
+            <div
+              className="conversation-history-loading"
+              role="status"
+              aria-label={t('conversation.loadingHistory')}
+            >
+              <span>{t('conversation.loadingHistoryProgress')}</span>
+            </div>
+          ) : null}
+        </div>
+      )}
+      {showCreatorHome ? (
+        <div className="creator-home-wrap">
+          {creatorDashboard}
+        </div>
+      ) : (
+        <div className="composer-wrap" onWheel={handleComposerWheel}>
+          {showConversationEmptyState ? (
+            <ConversationEmptyState />
+          ) : null}
+          {pendingComposerApproval?.kind === 'approval' ? (
+            <div
+              className="composer-approval-overlay"
+              data-search-target={
+                timelineApprovalTarget?.approvalId === pendingComposerApproval.approval.id
+                  ? 'true'
+                  : undefined
+              }
+            >
+              <ApprovalPanel
+                approval={pendingComposerApproval.approval}
+                resolving={resolvingApprovalIds.has(pendingComposerApproval.approval.id)}
+                error={approvalErrors[pendingComposerApproval.approval.id]}
+                onApprove={id => void resolveApproval(id, 'approve')}
+                onReject={id => void resolveApproval(id, 'reject')}
+              />
+            </div>
+          ) : null}
+          {pendingMemorySuggestion !== undefined && memoryService !== null ? (
+            <MemorySuggestion
+              key={pendingMemorySuggestion.id}
+              content={pendingMemorySuggestion.content}
+              projectKey={currentMemoryProjectKey}
+              threadKey={state.selectedThreadId}
+              onSave={saveMemorySuggestion}
+              onDismiss={() => setPendingMemorySuggestion(undefined)}
+            />
+          ) : null}
+          <Composer
+            key={composerAttachmentScope}
+            projectId={currentProject?.id ?? ''}
+            projectName={currentProjectName}
+            projects={projects}
+            showProjectSelector={false}
+            permission={effectiveComposerConfig.permission}
+            profile={effectiveComposerConfig.profile}
+            model={effectiveComposerConfig.model}
+            reasoning={effectiveComposerConfig.reasoning}
+            models={codexModels?.models}
+            modelsLoading={codexModelsLoading}
+            modelsError={codexModelsLoadError}
+            modelsNotice={codexModelsNotice}
+            disabled={composerDisabled}
+            disabledReason={composerDisabledReason}
+            promptHint={showConversationEmptyState ? homeSkillPromptHint : undefined}
+            running={currentRunBusy}
+            canceling={currentRunCanceling}
+            permissionChangeDisabled={selectedThread !== undefined && currentRunBusy}
+            slashCommands={slashCommands}
+            slashCommandsLoading={capabilitiesLoading}
+            slashCommandsError={capabilitiesLoadError}
+            showConnectors={false}
+            queuedItems={composerQueuedItems}
+            imageInputSupported={imageInputSupported}
+            imageInputUnsupportedReason={
+              imageInputSupported
+                ? undefined
+                : '当前 Codex 版本不支持图片输入，请更新 Codex'
+            }
+            draftRequest={
+              pendingComposerDraft !== undefined && pendingComposerDraft.threadId === state.selectedThreadId
+                ? pendingComposerDraft.request
+                : undefined
+            }
+            focusRequestId={pendingComposerFocusRequestId}
+            onSelectProject={selectProject}
+            onCreateBlankProject={
+              projectService === null
+                ? undefined
+                : createBlankProject
+            }
+            onAddProjectDirectory={
+              projectService === null || hostBridge.selectProjectDirectory === undefined
+                ? undefined
+                : addProjectDirectory
+            }
+            onPermissionChange={handleComposerPermissionChange}
+            onModelConfigChange={handleComposerModelConfigChange}
+            onDraftApplied={handleComposerDraftApplied}
+            onFocusRequestApplied={handleComposerFocusRequestApplied}
+            onManageSkills={() => navigateToRoute({ view: 'plugins' })}
+            onManageConnectors={() => navigateToRoute({
+              view: 'plugins',
+              tab: 'connections'
+            })}
+            onCancel={() => void cancelActiveRun()}
+            onCancelQueuedRun={(runId) => void cancelQueuedRun(runId)}
+            onSteerQueuedRun={(runId) => void steerQueuedRun(runId)}
+            onUploadAttachment={async file => {
+              if (attachmentService === null) throw new Error('附件服务暂不可用');
+              const response = await attachmentService.upload({
+                file,
+                draftId: composerAttachmentDraftId
+              });
+              return response.attachment;
+            }}
+            onDeleteAttachment={async attachment => {
+              if (attachmentService === null || attachment.draftId === undefined) return;
+              await attachmentService.delete({
+                id: attachment.id,
+                draftId: attachment.draftId
+              });
+            }}
+            onSubmit={submitPrompt}
           />
-        ) : null}
-        <Composer
-          key={composerAttachmentScope}
-          projectId={currentProject?.id ?? ''}
-          projectName={currentProjectName}
-          projects={projects}
-          showProjectSelector={false}
-          permission={effectiveComposerConfig.permission}
-          profile={effectiveComposerConfig.profile}
-          model={effectiveComposerConfig.model}
-          reasoning={effectiveComposerConfig.reasoning}
-          models={codexModels?.models}
-          modelsLoading={codexModelsLoading}
-          modelsError={codexModelsLoadError}
-          modelsNotice={codexModelsNotice}
-          disabled={composerDisabled}
-          disabledReason={composerDisabledReason}
-          promptHint={showConversationEmptyState ? homeSkillPromptHint : undefined}
-          running={currentRunBusy}
-          canceling={currentRunCanceling}
-          permissionChangeDisabled={selectedThread !== undefined && currentRunBusy}
-          slashCommands={slashCommands}
-          slashCommandsLoading={capabilitiesLoading}
-          slashCommandsError={capabilitiesLoadError}
-          showConnectors={false}
-          queuedItems={composerQueuedItems}
-          imageInputSupported={imageInputSupported}
-          imageInputUnsupportedReason={
-            imageInputSupported
-              ? undefined
-              : '当前 Codex 版本不支持图片输入，请更新 Codex'
-          }
-          draftRequest={
-            pendingComposerDraft !== undefined && pendingComposerDraft.threadId === state.selectedThreadId
-              ? pendingComposerDraft.request
-              : undefined
-          }
-          focusRequestId={pendingComposerFocusRequestId}
-          onSelectProject={selectProject}
-          onCreateBlankProject={
-            projectService === null
-              ? undefined
-              : createBlankProject
-          }
-          onAddProjectDirectory={
-            projectService === null || hostBridge.selectProjectDirectory === undefined
-              ? undefined
-              : addProjectDirectory
-          }
-          onPermissionChange={handleComposerPermissionChange}
-          onModelConfigChange={handleComposerModelConfigChange}
-          onDraftApplied={handleComposerDraftApplied}
-          onFocusRequestApplied={handleComposerFocusRequestApplied}
-          onManageSkills={() => navigateToRoute({ view: 'plugins' })}
-          onManageConnectors={() => navigateToRoute({
-            view: 'plugins',
-            tab: 'connections'
-          })}
-          onCancel={() => void cancelActiveRun()}
-          onCancelQueuedRun={(runId) => void cancelQueuedRun(runId)}
-          onSteerQueuedRun={(runId) => void steerQueuedRun(runId)}
-          onUploadAttachment={async file => {
-            if (attachmentService === null) throw new Error('附件服务暂不可用');
-            const response = await attachmentService.upload({
-              file,
-              draftId: composerAttachmentDraftId
-            });
-            return response.attachment;
-          }}
-          onDeleteAttachment={async attachment => {
-            if (attachmentService === null || attachment.draftId === undefined) return;
-            await attachmentService.delete({
-              id: attachment.id,
-              draftId: attachment.draftId
-            });
-          }}
-          onSubmit={submitPrompt}
-        />
-        {showConversationEmptyState ? (
-          <CreatorDashboard onSelectSkill={applyDashboardSkill} />
-        ) : null}
-      </div>
+          {showConversationEmptyState ? creatorDashboard : null}
+        </div>
+      )}
     </section>
   );
   const conversationWorkspace = fileWorkspaceOpen ? (
@@ -4297,7 +4468,7 @@ export function AppController(props: AppControllerProps) {
   ) : state.activeView === 'dashboard' ? (
     <DashboardPage
       onSelectPrompt={startCreatorTool}
-      onBackToHome={() => startNewConversation()}
+      onBackToHome={() => startNewConversation({ destination: 'home' })}
       skillLaunch={creatorSkillLaunch}
       onWorkspaceModeChange={handleCreatorWorkspaceModeChange}
       projectId={state.currentProjectId}
@@ -4312,6 +4483,15 @@ export function AppController(props: AppControllerProps) {
         navigateToRoute({ view: 'settings', tab: 'local-components' });
       }}
       onWorkspaceNavigate={(workspace, jobId, options) => {
+        if (
+          workspace === null
+          && props.route.view === 'workbench'
+          && props.route.returnTo === 'home'
+        ) {
+          startNewConversation({ updateRoute: false });
+          navigateToRoute({ view: 'home' }, options);
+          return;
+        }
         if (
           workspace === null
           && props.route.view === 'workbench'
@@ -4492,11 +4672,13 @@ export function AppController(props: AppControllerProps) {
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}
+          homeActive={props.route.view === 'home'}
           projectNavigationMode={props.projectNavigationMode}
           collapsed={effectiveSidebarCollapsed}
           autoCollapsed={sidebarAutoCollapsed}
           colorMode={colorMode}
           onNewConversation={projectId => startNewConversation({ projectId })}
+          onOpenHome={() => startNewConversation({ destination: 'home' })}
           onSelectProject={selectProject}
           onSelectConversation={selectConversation}
           onSelectTask={selectSidebarTask}
@@ -4657,6 +4839,74 @@ export function AppController(props: AppControllerProps) {
   }
 }
 
+function readOrCreateCreatorPresetCreationKey(scope: string): string {
+  const storageKey = creatorPresetCreationStorageKey(scope);
+  try {
+    const existing = window.sessionStorage.getItem(storageKey);
+    if (existing) return existing;
+  } catch {
+    // Session storage is a recovery aid; in-memory retry still works without it.
+  }
+  const creationKey = `creator_preset_${createCreatorPresetCreationKeySuffix()}`;
+  try {
+    window.sessionStorage.setItem(storageKey, creationKey);
+  } catch {
+    // The caller retains the key in memory when storage is unavailable.
+  }
+  return creationKey;
+}
+
+function clearCreatorPresetCreationKey(scope: string, expectedKey: string): void {
+  try {
+    const storageKey = creatorPresetCreationStorageKey(scope);
+    if (window.sessionStorage.getItem(storageKey) === expectedKey) {
+      window.sessionStorage.removeItem(storageKey);
+    }
+  } catch {
+    // Session storage cleanup must not block a completed creation.
+  }
+}
+
+function creatorPresetCreationStorageKey(scope: string): string {
+  return `${CREATOR_PRESET_CREATION_STORAGE_PREFIX}${encodeURIComponent(scope)}`;
+}
+
+function createCreatorPresetCreationKeySuffix(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+}
+
+function withCreatorPresetCreationTimeout<T>(
+  promise: Promise<T>,
+  message: string
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(
+      () => reject(new Error(message)),
+      CREATOR_PRESET_CREATION_TIMEOUT_MS
+    );
+    promise.then(
+      value => {
+        window.clearTimeout(timeout);
+        resolve(value);
+      },
+      error => {
+        window.clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
+}
+
+function isTerminalCreatorPresetCreationError(error: unknown): boolean {
+  return error instanceof ApiClientError && [
+    'creator_idempotency_key_reused',
+    'creator_preset_not_found',
+    'creator_preset_incompatible',
+    'creator_preset_invalid'
+  ].includes(error.code);
+}
+
 function mergeTimelineItems(
   previousItems: TimelineItem[],
   incomingItems: TimelineItem[]
@@ -4693,7 +4943,17 @@ function createInitialState(
 
   switch (route.view) {
     case 'home':
-      return persistedState;
+      return {
+        ...persistedState,
+        activeView: 'conversation',
+        selectedThreadId: undefined
+      };
+    case 'chat':
+      return {
+        ...persistedState,
+        activeView: 'conversation',
+        selectedThreadId: undefined
+      };
     case 'thread':
       return {
         ...persistedState,
@@ -4760,7 +5020,7 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
 
 function routeForConversation(selectedThreadId?: string): AppRoute {
   return selectedThreadId === undefined
-    ? { view: 'home' }
+    ? { view: 'chat' }
     : { view: 'thread', threadId: selectedThreadId };
 }
 

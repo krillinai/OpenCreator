@@ -15,6 +15,7 @@ function job(revision: number, state: Record<string, any>): CreatorJob {
     templateVersion: 1,
     status: 'draft',
     revision,
+    presetOrigin: null,
     state,
     agentThreadId: null,
     stages: [],

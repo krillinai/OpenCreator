@@ -54,7 +54,8 @@ describe('creator smart dubbing', () => {
 
     const created = await request('POST', '/creator/jobs', {
       projectId: 'project_dubbing',
-      templateId: 'smart-dubbing'
+      templateId: 'smart-dubbing',
+      creationKey: 'smart-dubbing-flow'
     });
     const initial = created.json().job;
     const updated = await request('POST', `/creator/jobs/${initial.id}/actions`, {

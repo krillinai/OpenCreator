@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "calm-narration",
+  "version": 1,
+  "module": "smart-dubbing",
+  "runtimeTemplate": {
+    "id": "smart-dubbing",
+    "version": 1
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 60,
+  "title": {
+    "zh-CN": "沉静旁白",
+    "en-US": "Calm Narration"
+  },
+  "description": {
+    "zh-CN": "适合知识、纪录和故事内容的舒缓自然旁白。",
+    "en-US": "A calm, natural narration setup for knowledge, documentary and story content."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "audio",
+    "narration",
+    "voice"
+  ],
+  "defaults": {
+    "text": "",
+    "voiceCode": "",
+    "voiceName": "",
+    "style": "calm",
+    "speed": 1,
+    "format": "mp3"
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "text": "在这里输入需要配音的文案。"
+    },
+    "en-US": {
+      "text": "Enter the script you want to narrate."
+    }
+  }
+}

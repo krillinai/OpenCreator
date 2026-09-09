@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "wealth-platinum-red",
+  "version": 1,
+  "module": "cover-generator",
+  "runtimeTemplate": {
+    "id": "cover",
+    "version": 2
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 52,
+  "title": {
+    "zh-CN": "财富白金红封面",
+    "en-US": "Wealth Platinum Red Cover"
+  },
+  "description": {
+    "zh-CN": "使用白金红配色、强数字信息和商业人物生成财富主题封面。",
+    "en-US": "Create a wealth-themed cover with platinum red colors, bold numbers, and a business portrait."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "wealth",
+    "business",
+    "platinum-red"
+  ],
+  "defaults": {
+    "prompt": "",
+    "coverStyle": "wealth-platinum-red",
+    "coverTextLanguage": "auto",
+    "customStylePrompt": "",
+    "coverHeadline": "",
+    "coverSubheadline": "",
+    "ratio": "16:9",
+    "candidateCount": 2,
+    "quality": "high"
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "财富与商业主题封面，白色、铂金和高饱和红色，可信商业人物，突出数字和收益结果，画面专业有冲击力",
+      "coverTextLanguage": "zh-CN",
+      "coverHeadline": "普通人如何积累第一桶金",
+      "coverSubheadline": "三个真正可执行的方法"
+    },
+    "en-US": {
+      "prompt": "Wealth and business cover, white platinum and saturated red palette, credible business portrait, prominent numbers and results, professional high-impact composition",
+      "coverTextLanguage": "en-US",
+      "coverHeadline": "Build Your First $100K",
+      "coverSubheadline": "Three methods you can actually use"
+    }
+  }
+}

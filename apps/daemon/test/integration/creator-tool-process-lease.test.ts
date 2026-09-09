@@ -86,6 +86,7 @@ async function createJob(projectId: string) {
     payload: {
       projectId,
       templateId: 'video-translation',
+      creationKey: `creator-tool-lease:${projectId}`,
       state: { targetLanguage: 'en' }
     }
   });

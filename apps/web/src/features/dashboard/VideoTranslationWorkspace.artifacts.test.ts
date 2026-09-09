@@ -601,11 +601,36 @@ function fallbackState() {
 }
 
 function resultVersion(input: {
-  settings?: {
-    composeVideo?: boolean;
-    videoFormat?: 'horizontal' | 'vertical' | 'all';
-    dubbing?: boolean;
-  };
+  settings?: Partial<{
+    sourceUrl: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+    bilingual: boolean;
+    subtitlePosition: 'top' | 'bottom';
+    preferPlatformCaptions: boolean;
+    composeVideo: boolean;
+    videoFormat: 'horizontal' | 'vertical' | 'all';
+    dubbing: boolean;
+    voiceCode: string;
+    verticalTitle: string;
+    verticalSubtitle: string;
+    subtitleFont?: 'system' | 'sans' | 'serif' | 'rounded';
+    subtitleWeight?: 'regular' | 'medium' | 'bold';
+    subtitleSize?: 'small' | 'medium' | 'large';
+    subtitleColor?: string;
+    subtitleSecondaryColor?: string;
+    subtitleOutlineColor?: string;
+    subtitleOutlineWidth?: number;
+    subtitleShadowEnabled?: boolean;
+    subtitleShadowColor?: string;
+    subtitleShadowOpacity?: number;
+    subtitleShadowOffsetX?: number;
+    subtitleShadowOffsetY?: number;
+    subtitleShadowBlur?: number;
+    ttsProvider?: 'openai' | 'aliyun' | 'edge-tts' | 'minimax';
+    ttsModel?: string;
+    voiceName?: string;
+  }>;
 } = {}) {
   const settings = { ...fallbackState(), ...input.settings };
   return {
@@ -625,14 +650,24 @@ function resultVersion(input: {
       bilingual: settings.bilingual,
       subtitlePosition: settings.subtitlePosition,
       preferPlatformCaptions: settings.preferPlatformCaptions,
-      subtitleFont: 'system' as const,
-      subtitleSize: 'medium' as const,
-      subtitleColor: '#FFFFFF',
+      subtitleFont: settings.subtitleFont ?? 'system',
+      subtitleWeight: settings.subtitleWeight ?? 'bold',
+      subtitleSize: settings.subtitleSize ?? 'medium',
+      subtitleColor: settings.subtitleColor ?? '#FFFFFF',
+      subtitleSecondaryColor: settings.subtitleSecondaryColor ?? '#FFD45C',
+      subtitleOutlineColor: settings.subtitleOutlineColor ?? '#000000',
+      subtitleOutlineWidth: settings.subtitleOutlineWidth ?? 2,
+      subtitleShadowEnabled: settings.subtitleShadowEnabled ?? true,
+      subtitleShadowColor: settings.subtitleShadowColor ?? '#000000',
+      subtitleShadowOpacity: settings.subtitleShadowOpacity ?? 0.65,
+      subtitleShadowOffsetX: settings.subtitleShadowOffsetX ?? 2,
+      subtitleShadowOffsetY: settings.subtitleShadowOffsetY ?? 2,
+      subtitleShadowBlur: settings.subtitleShadowBlur ?? 1,
       dubbing: settings.dubbing,
-      ttsProvider: 'openai' as const,
-      ttsModel: 'gpt-4o-mini-tts',
+      ttsProvider: settings.ttsProvider ?? 'openai',
+      ttsModel: settings.ttsModel ?? 'gpt-4o-mini-tts',
       voiceCode: settings.voiceCode,
-      voiceName: '',
+      voiceName: settings.voiceName ?? '',
       composeVideo: settings.composeVideo,
       videoFormat: settings.videoFormat,
       verticalTitle: settings.verticalTitle,

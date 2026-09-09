@@ -99,6 +99,7 @@ describe('creator video generation', () => {
     const created = await request('POST', '/creator/jobs', {
       projectId: 'project_video',
       templateId: 'video-generation',
+      creationKey: 'video-generation-flow',
       state: {
         prompt: 'A cinematic coastal road',
         provider: 'seedance',

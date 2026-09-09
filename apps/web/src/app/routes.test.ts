@@ -21,11 +21,14 @@ describe('app routes', () => {
   });
 
   it('parses every primary page route', () => {
-    expect(parseRoute('#/')).toEqual({ view: 'dashboard' });
+    expect(parseRoute('#/')).toEqual({ view: 'home' });
     expect(parseRoute('#/new')).toEqual({ view: 'home' });
+    expect(parseRoute('#/chat')).toEqual({ view: 'chat' });
     expect(parseRoute('#/search')).toEqual({ view: 'search' });
     expect(parseRoute('#/projects')).toEqual({ view: 'projects' });
     expect(parseRoute('#/workbench')).toEqual({ view: 'workbench' });
+    expect(parseRoute('#/workbench?module=image-generation')).toEqual({ view: 'workbench' });
+    expect(parseRoute('#/workbench?module=unknown')).toEqual({ view: 'workbench' });
     expect(parseRoute('#/workbench?tool=video-translation')).toEqual({
       view: 'workbench',
       tool: 'video-translation'
@@ -40,6 +43,12 @@ describe('app routes', () => {
       tool: 'cover-generator',
       jobId: 'cover_1',
       returnTo: 'projects'
+    });
+    expect(parseRoute('#/workbench?tool=image-generation&jobId=image_1&returnTo=home')).toEqual({
+      view: 'workbench',
+      tool: 'image-generation',
+      jobId: 'image_1',
+      returnTo: 'home'
     });
     expect(parseRoute('#/workbench?tool=cover-generator&returnTo=unknown')).toEqual({
       view: 'workbench',
@@ -116,6 +125,7 @@ describe('app routes', () => {
 
   it('formats stable copyable hashes for every route', () => {
     expect(formatRoute({ view: 'home' })).toBe('#/new');
+    expect(formatRoute({ view: 'chat' })).toBe('#/chat');
     expect(formatRoute({ view: 'workbench' })).toBe('#/workbench');
     expect(formatRoute({
       view: 'workbench',
@@ -128,6 +138,12 @@ describe('app routes', () => {
       jobId: 'cover/job 1',
       returnTo: 'projects'
     })).toBe('#/workbench?tool=cover-generator&jobId=cover%2Fjob+1&returnTo=projects');
+    expect(formatRoute({
+      view: 'workbench',
+      tool: 'image-generation',
+      jobId: 'image/job 1',
+      returnTo: 'home'
+    })).toBe('#/workbench?tool=image-generation&jobId=image%2Fjob+1&returnTo=home');
     expect(formatRoute({ view: 'projects' })).toBe('#/projects');
     expect(formatRoute({ view: 'thread', threadId: 'thread 1' })).toBe('#/thread/thread%201');
     expect(formatRoute({ view: 'search' })).toBe('#/search');

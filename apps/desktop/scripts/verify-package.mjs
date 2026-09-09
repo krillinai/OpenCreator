@@ -51,12 +51,19 @@ const resourcesDir = platformResourcesDir(packageRoot);
 const appAsar = join(resourcesDir, 'app.asar');
 const daemonDir = join(resourcesDir, 'daemon');
 const webDir = join(resourcesDir, 'web');
+const daemonCreatorPresetDir = join(daemonDir, 'runtime', 'creator-presets');
+const webCreatorPresetDir = join(webDir, 'creator-presets');
+const webCreatorSubtitleFontDir = join(webDir, 'fonts', 'opencreator');
 const creatorRuntimeDir = join(resourcesDir, 'creator-runtime', 'krillinai');
 const codexRuntimeDir = join(resourcesDir, 'codex-runtime');
 const sourceWebDir = resolve(desktopDir, '../web/dist');
 const sourceCreatorAgentRuntimeDir = resolve(
   desktopDir,
   '../daemon/runtime/opencreator-runtime'
+);
+const sourceCreatorSubtitleFontManifestPath = resolve(
+  desktopDir,
+  '../../assets/creator-subtitle-fonts/manifest.json'
 );
 const executable = packagedExecutable(packageRoot);
 const machOMagicValues = new Set([
@@ -89,8 +96,10 @@ assertExists(join(daemonDir, 'runtime', 'opencreator-runtime', 'manifest.json'))
 assertAsarContents();
 assertBrandingContents();
 assertDaemonContents();
+assertCreatorPresetContents();
 assertWebContents();
 assertCreatorRuntime();
+assertCreatorSubtitleFontContents();
 assertCodexRuntime();
 assertNoLocalData();
 assertSize('app.asar', appAsar, 80 * 1024 * 1024);
@@ -293,6 +302,7 @@ function assertPortableDaemonDependencies() {
           '@opencreator/config',
           '@opencreator/protocol',
           '@opencreator/skill-market',
+          'image-size',
           'nanoid',
           'yaml',
           'zod'
@@ -364,6 +374,174 @@ function assertWebContents() {
   }
 }
 
+function assertCreatorPresetContents() {
+  const manifestPath = join(daemonCreatorPresetDir, 'manifest.json');
+  const catalogPath = join(daemonCreatorPresetDir, 'catalog.json');
+  assertExists(manifestPath);
+  assertExists(catalogPath);
+  const presetManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  if (
+    presetManifest?.schemaVersion !== 1
+    || !isSha256(presetManifest.catalogHash)
+    || !isSha256(presetManifest.assetSetHash)
+    || !Array.isArray(presetManifest.files)
+  ) {
+    throw new Error(`Creator preset manifest is invalid: ${manifestPath}`);
+  }
+
+  const expectedDaemonFiles = new Set(['manifest.json']);
+  for (const file of presetManifest.files) {
+    if (
+      typeof file?.path !== 'string'
+      || !isSha256(file?.sha256)
+      || !Number.isSafeInteger(file?.size)
+      || file.size < 0
+      || expectedDaemonFiles.has(file.path)
+    ) {
+      throw new Error(`Creator preset manifest contains an invalid resource: ${manifestPath}`);
+    }
+    expectedDaemonFiles.add(file.path);
+    const absolute = join(daemonCreatorPresetDir, ...file.path.split('/'));
+    assertExists(absolute);
+    const contents = readFileSync(absolute);
+    if (contents.byteLength !== file.size || hashBuffer(contents) !== file.sha256) {
+      throw new Error(`Creator preset packaged resource hash mismatch: ${absolute}`);
+    }
+  }
+
+  const daemonFiles = listRelativeFiles(daemonCreatorPresetDir);
+  const staleDaemonFile = daemonFiles.find(file => !expectedDaemonFiles.has(file));
+  if (staleDaemonFile !== undefined) {
+    throw new Error(
+      `Creator preset Daemon resources contain a stale file: ${staleDaemonFile}`
+    );
+  }
+  const missingDaemonFile = [...expectedDaemonFiles]
+    .find(file => !daemonFiles.includes(file));
+  if (missingDaemonFile !== undefined) {
+    throw new Error(`Creator preset Daemon resource is missing: ${missingDaemonFile}`);
+  }
+
+  const catalogHash = hashFile(catalogPath);
+  if (catalogHash !== presetManifest.catalogHash) {
+    throw new Error(
+      `Creator preset catalog hash mismatch: ${catalogHash} !== ${presetManifest.catalogHash}`
+    );
+  }
+  const assetEntries = presetManifest.files
+    .filter(file => file.path.startsWith('assets/'))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const assetSetHash = hashBuffer(Buffer.from(canonicalJson(assetEntries)));
+  if (assetSetHash !== presetManifest.assetSetHash) {
+    throw new Error(
+      `Creator preset asset set hash mismatch: ${assetSetHash} !== ${presetManifest.assetSetHash}`
+    );
+  }
+
+  const expectedWebFiles = assetEntries.map(file => basename(file.path)).sort();
+  assertExists(webCreatorPresetDir);
+  for (const file of assetEntries) {
+    const name = basename(file.path);
+    const webAsset = join(webCreatorPresetDir, name);
+    if (!existsSync(webAsset)) {
+      throw new Error(`Creator preset Web asset is missing: ${webAsset}`);
+    }
+    const contents = readFileSync(webAsset);
+    if (contents.byteLength !== file.size || hashBuffer(contents) !== file.sha256) {
+      throw new Error(`Creator preset Web asset hash mismatch: ${webAsset}`);
+    }
+  }
+  const actualWebFiles = listRelativeFiles(webCreatorPresetDir);
+  const staleWebFile = actualWebFiles.find(file => !expectedWebFiles.includes(file));
+  if (staleWebFile !== undefined) {
+    throw new Error(
+      `Creator preset Web assets contain a stale file: ${staleWebFile}`
+    );
+  }
+
+  if (
+    typeof manifest.packageRoot === 'string'
+    && (
+      manifest.creatorPresetCatalogHash !== presetManifest.catalogHash
+      || manifest.creatorPresetAssetSetHash !== presetManifest.assetSetHash
+      || manifest.creatorPresetResourceCount !== presetManifest.files.length
+    )
+  ) {
+    throw new Error('Packaged Creator presets do not match the Desktop build manifest');
+  }
+}
+
+function assertCreatorSubtitleFontContents() {
+  const creatorRuntimeManifest = JSON.parse(readFileSync(
+    join(creatorRuntimeDir, 'manifest.json'),
+    'utf8'
+  ));
+  const fontResources = creatorRuntimeManifest.resources.filter(resource => (
+    resource.path.startsWith('fonts/')
+    || resource.path.startsWith('licenses/fonts/')
+  ));
+  const sourceFontManifest = JSON.parse(readFileSync(
+    sourceCreatorSubtitleFontManifestPath,
+    'utf8'
+  ));
+  if (
+    sourceFontManifest?.version !== 1
+    || !Array.isArray(sourceFontManifest.fonts)
+    || sourceFontManifest.fonts.length === 0
+  ) {
+    throw new Error('Creator subtitle source font manifest is invalid');
+  }
+  const webFontResources = sourceFontManifest.fonts.map(font => {
+    if (
+      typeof font?.webFile !== 'string'
+      || !font.webFile.endsWith('.woff2')
+      || !isSha256(font?.webSha256)
+    ) {
+      throw new Error('Creator subtitle source Web font entry is invalid');
+    }
+    const source = resolve(
+      dirname(sourceCreatorSubtitleFontManifestPath),
+      font.webFile
+    );
+    if (!existsSync(source) || hashFile(source) !== font.webSha256.toLowerCase()) {
+      throw new Error(`Creator subtitle source Web font hash mismatch: ${source}`);
+    }
+    return {
+      path: `fonts/opencreator/${basename(font.webFile)}`,
+      sha256: font.webSha256.toLowerCase()
+    };
+  });
+  const expectedWebFiles = webFontResources
+    .map(resource => basename(resource.path))
+    .sort();
+  assertExists(webCreatorSubtitleFontDir);
+  for (const resource of webFontResources) {
+    const webFont = join(webCreatorSubtitleFontDir, basename(resource.path));
+    assertExists(webFont);
+    if (hashFile(webFont) !== resource.sha256) {
+      throw new Error(`Creator subtitle Web font hash mismatch: ${webFont}`);
+    }
+  }
+  const actualWebFiles = listRelativeFiles(webCreatorSubtitleFontDir);
+  const staleWebFont = actualWebFiles.find(file => !expectedWebFiles.includes(file));
+  if (staleWebFont !== undefined) {
+    throw new Error(`Creator subtitle Web fonts contain a stale file: ${staleWebFont}`);
+  }
+  if (
+    typeof manifest.packageRoot === 'string'
+    && (
+      manifest.creatorSubtitleFontSetHash !== hashResourceDescriptors(fontResources)
+      || manifest.creatorSubtitleFontResourceCount !== fontResources.length
+      || manifest.creatorSubtitleWebFontSetHash !== hashResourceDescriptors(webFontResources)
+      || manifest.creatorSubtitleWebFontResourceCount !== webFontResources.length
+    )
+  ) {
+    throw new Error(
+      'Packaged Creator subtitle fonts do not match the Desktop build manifest'
+    );
+  }
+}
+
 function normalizedAsarEntries() {
   return listPackage(appAsar).map(entry => {
     const normalized = entry.replaceAll('\\', '/');
@@ -419,6 +597,52 @@ function hashDirectory(root) {
     fileCount: files.length,
     hash: aggregate.digest('hex')
   };
+}
+
+function hashFile(path) {
+  return hashBuffer(readFileSync(path));
+}
+
+function hashResourceDescriptors(resources) {
+  const aggregate = createHash('sha256');
+  for (const resource of [...resources].sort((left, right) => (
+    left.path.localeCompare(right.path)
+  ))) {
+    aggregate
+      .update(resource.path)
+      .update('\0')
+      .update(resource.sha256)
+      .update('\0');
+  }
+  return aggregate.digest('hex');
+}
+
+function listRelativeFiles(root) {
+  const files = [];
+  walk(root, path => {
+    if (statSync(path).isFile()) {
+      files.push(relative(root, path).replaceAll('\\', '/'));
+    }
+  });
+  return files.sort();
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(sortJson(value));
+}
+
+function sortJson(value) {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, sortJson(child)])
+  );
+}
+
+function isSha256(value) {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 }
 
 function findFirstDifferentPath(left, right) {

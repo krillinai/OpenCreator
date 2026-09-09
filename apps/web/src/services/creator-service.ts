@@ -14,6 +14,7 @@ import type {
   CreatorEventEnvelope,
   CreatorJob,
   CreatorJobListResponse,
+  CreatorPresetListResponse,
   CreatorStageRun,
   CreatorSourceUploadResponse,
   CreatorTemplateListResponse
@@ -44,6 +45,11 @@ export function createCreatorService(client: ClientLike) {
   return {
     listTemplates(): Promise<CreatorTemplateListResponse> {
       return client.get('/creator/templates') as Promise<CreatorTemplateListResponse>;
+    },
+    listPresets(locale: 'zh-CN' | 'en-US'): Promise<CreatorPresetListResponse> {
+      return client.get(
+        `/creator/presets?locale=${encodeURIComponent(locale)}`
+      ) as Promise<CreatorPresetListResponse>;
     },
     createJob(request: CreateCreatorJobRequest): Promise<{ job: CreatorJob }> {
       return client.post('/creator/jobs', request) as Promise<{ job: CreatorJob }>;

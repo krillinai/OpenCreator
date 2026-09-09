@@ -10,6 +10,7 @@ import {
   FolderMinus,
   FolderPlus,
   FolderOpen,
+  House,
   LoaderCircle,
   MoreHorizontal,
   Pencil,
@@ -54,11 +55,13 @@ export function OpenCreatorSidebar(props: {
   currentProjectId?: string;
   selectedConversationId?: string;
   activeView: ActiveView;
+  homeActive?: boolean;
   projectNavigationMode?: 'library' | 'tree';
   collapsed?: boolean;
   autoCollapsed?: boolean;
   colorMode?: ColorMode;
   onNewConversation(projectId?: string): void;
+  onOpenHome(): void;
   onSelectProject(projectId: string): void;
   onSelectConversation(conversationId: string): void;
   onSelectTask(threadId: string): void;
@@ -121,18 +124,39 @@ export function OpenCreatorSidebar(props: {
   const globalActions: Array<{
     label: string;
     icon: LucideIcon;
-    view?: ActiveView;
+    current: boolean;
     onClick(): void;
   }> = [
-    { label: t('nav.dashboard'), icon: PanelsTopLeft, view: 'dashboard', onClick: () => props.onOpenView('dashboard') },
-    { label: t('nav.projects'), icon: FolderKanban, view: 'projects', onClick: () => props.onOpenView('projects') },
-    { label: t('nav.settings'), icon: SlidersHorizontal, view: 'settings', onClick: props.onOpenSettings }
+    {
+      label: t('nav.home'),
+      icon: House,
+      current: props.homeActive === true,
+      onClick: props.onOpenHome
+    },
+    {
+      label: t('nav.dashboard'),
+      icon: PanelsTopLeft,
+      current: props.activeView === 'dashboard',
+      onClick: () => props.onOpenView('dashboard')
+    },
+    {
+      label: t('nav.projects'),
+      icon: FolderKanban,
+      current: props.activeView === 'projects',
+      onClick: () => props.onOpenView('projects')
+    },
+    {
+      label: t('nav.settings'),
+      icon: SlidersHorizontal,
+      current: props.activeView === 'settings',
+      onClick: props.onOpenSettings
+    }
   ];
   if (props.projectNavigationMode === 'tree') {
     globalActions.push({
       label: t('nav.schedules'),
       icon: Clock3,
-      view: 'schedules',
+      current: props.activeView === 'schedules',
       onClick: () => props.onOpenView('schedules')
     });
   }
@@ -269,7 +293,7 @@ export function OpenCreatorSidebar(props: {
               className="sidebar-row"
               key={action.label}
               title={collapsed ? action.label : undefined}
-              aria-current={action.view && props.activeView === action.view ? 'page' : undefined}
+              aria-current={action.current ? 'page' : undefined}
               onClick={action.onClick}
             >
               <span className="sidebar-nav-icon" aria-hidden="true">

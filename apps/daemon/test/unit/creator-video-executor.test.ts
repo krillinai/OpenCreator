@@ -361,6 +361,7 @@ function stageInput(
     templateVersion: 1,
     status: 'running',
     revision: 1,
+    presetOrigin: null,
     state: {
       prompt: 'A cinematic city reveal',
       provider: 'seedance',

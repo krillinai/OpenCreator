@@ -53,7 +53,8 @@ describe('creator image generation', () => {
     }));
     const created = await request('POST', '/creator/jobs', {
       projectId: 'project_image',
-      templateId: 'image-generation'
+      templateId: 'image-generation',
+      creationKey: 'image-generation-flow'
     });
     const initial = created.json().job;
     expect(initial.templateVersion).toBe(2);

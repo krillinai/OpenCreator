@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "cinematic-story",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 41,
+  "title": {
+    "zh-CN": "电影感故事镜头",
+    "en-US": "Cinematic Story Shot"
+  },
+  "description": {
+    "zh-CN": "生成八秒横屏叙事镜头，强调环境、人物动作与电影光影。",
+    "en-US": "Generate an eight-second horizontal narrative shot with cinematic lighting and character motion."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "cinematic",
+    "story",
+    "horizontal"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1280x720",
+    "duration": 8
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "电影感叙事镜头，真实环境与人物，镜头缓慢移动，动作自然连续，层次丰富的光影，明确的前中后景，画面稳定"
+    },
+    "en-US": {
+      "prompt": "Cinematic narrative shot with a realistic environment and character, slow camera movement, natural continuous action, layered lighting, clear foreground midground and background"
+    }
+  }
+}

@@ -367,6 +367,7 @@ function creatorJob(patch: Partial<CreatorJob>): CreatorJob {
     templateVersion: 1,
     status: 'draft',
     revision: 1,
+    presetOrigin: null,
     state: {
       prompt: '',
       provider: 'seedance',

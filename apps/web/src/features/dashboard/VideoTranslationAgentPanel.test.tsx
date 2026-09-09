@@ -878,6 +878,7 @@ function job(): CreatorJob {
     templateVersion: 1,
     status: 'draft',
     revision: 4,
+    presetOrigin: null,
     state: {},
     agentThreadId: null,
     stages: [],

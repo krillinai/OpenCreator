@@ -20,6 +20,15 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(scriptDir, '..');
 const rootDir = resolve(desktopDir, '../..');
 const targetDir = resolve(desktopDir, '.pack/daemon');
+const creatorPresetBuildRoot = resolve(
+  rootDir,
+  '.runtime/generated/creator-presets'
+);
+const targetCreatorPresetRoot = resolve(
+  targetDir,
+  'runtime',
+  'creator-presets'
+);
 const runtimeDependencyDir = resolve(
   desktopDir,
   'packaging',
@@ -49,6 +58,10 @@ await runStage('校验冻结锁文件', 'pnpm', [
 ], {
   cwd: rootDir,
   timeoutMs: 60_000
+});
+await runStage('编译 Creator Preset', 'pnpm', ['templates:compile'], {
+  cwd: rootDir,
+  timeoutMs: 5 * 60_000
 });
 await runStage('构建 Protocol', 'pnpm', ['--filter', '@opencreator/protocol', 'build'], {
   cwd: rootDir,
@@ -115,6 +128,8 @@ cpSync(
   resolve(targetDir, 'runtime'),
   { recursive: true }
 );
+rmSync(targetCreatorPresetRoot, { recursive: true, force: true });
+cpSync(creatorPresetBuildRoot, targetCreatorPresetRoot, { recursive: true });
 pruneDependencyInstallMetadata();
 pruneDevelopmentArtifacts(targetDir);
 
@@ -122,6 +137,8 @@ assertExists(resolve(targetDir, 'dist/main.js'));
 assertExists(resolve(targetDir, 'node_modules/better-sqlite3/build/Release/better_sqlite3.node'));
 assertExists(resolve(targetDir, 'runtime/opencreator-runtime/SKILL.md'));
 assertExists(resolve(targetDir, 'runtime/opencreator-runtime/manifest.json'));
+assertExists(resolve(targetDir, 'runtime/creator-presets/catalog.json'));
+assertExists(resolve(targetDir, 'runtime/creator-presets/manifest.json'));
 assertWorkspaceRuntimePackage('protocol', 'Protocol');
 assertWorkspaceRuntimePackage('config', 'Config');
 assertWorkspaceRuntimePackage('skill-market', 'Skill Market');
@@ -148,7 +165,8 @@ function cleanBuildOutputs() {
     resolve(rootDir, 'packages/config/dist'),
     resolve(rootDir, 'packages/skill-market/dist'),
     resolve(rootDir, 'apps/daemon/dist'),
-    resolve(rootDir, 'apps/web/dist')
+    resolve(rootDir, 'apps/web/dist'),
+    resolve(rootDir, '.runtime/generated/creator-presets')
   ]) {
     rmSync(path, { recursive: true, force: true });
   }

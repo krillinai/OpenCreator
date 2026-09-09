@@ -53,6 +53,7 @@ import {
 type SourceType = 'url' | 'file';
 type SubtitlePosition = 'top' | 'bottom';
 type SubtitleFont = 'system' | 'sans' | 'serif' | 'rounded';
+type SubtitleWeight = 'regular' | 'medium' | 'bold';
 type SubtitleSize = 'small' | 'medium' | 'large';
 type VideoFormat = 'horizontal' | 'vertical' | 'all';
 type VideoOrientation = 'landscape' | 'portrait';
@@ -69,8 +70,18 @@ type TranslationSettingsSnapshot = {
   subtitlePosition: SubtitlePosition;
   preferPlatformCaptions: boolean;
   subtitleFont: SubtitleFont;
+  subtitleWeight: SubtitleWeight;
   subtitleSize: SubtitleSize;
   subtitleColor: string;
+  subtitleSecondaryColor: string;
+  subtitleOutlineColor: string;
+  subtitleOutlineWidth: number;
+  subtitleShadowEnabled: boolean;
+  subtitleShadowColor: string;
+  subtitleShadowOpacity: number;
+  subtitleShadowOffsetX: number;
+  subtitleShadowOffsetY: number;
+  subtitleShadowBlur: number;
   dubbing: boolean;
   ttsProvider: CreatorTtsProvider;
   ttsModel: string;
@@ -81,6 +92,23 @@ type TranslationSettingsSnapshot = {
   verticalTitle: string;
   verticalSubtitle: string;
 };
+
+type SubtitleStyleSettings = Pick<
+  TranslationSettingsSnapshot,
+  | 'subtitleFont'
+  | 'subtitleWeight'
+  | 'subtitleSize'
+  | 'subtitleColor'
+  | 'subtitleSecondaryColor'
+  | 'subtitleOutlineColor'
+  | 'subtitleOutlineWidth'
+  | 'subtitleShadowEnabled'
+  | 'subtitleShadowColor'
+  | 'subtitleShadowOpacity'
+  | 'subtitleShadowOffsetX'
+  | 'subtitleShadowOffsetY'
+  | 'subtitleShadowBlur'
+>;
 
 type TranslationSourceSnapshot = {
   sourceType: SourceType;
@@ -116,6 +144,21 @@ type LanguageOption = {
 
 const steps = ['添加视频', '翻译设置', '字幕样式', '配音与输出'] as const;
 const subtitleColors = ['#FFFFFF', '#FFE45C', '#7EE7FF', '#A7F3D0'] as const;
+const defaultSubtitleStyle: SubtitleStyleSettings = {
+  subtitleFont: 'sans',
+  subtitleWeight: 'bold',
+  subtitleSize: 'medium',
+  subtitleColor: '#FFFFFF',
+  subtitleSecondaryColor: '#D1D5DB',
+  subtitleOutlineColor: '#000000',
+  subtitleOutlineWidth: 2.5,
+  subtitleShadowEnabled: true,
+  subtitleShadowColor: '#000000',
+  subtitleShadowOpacity: 0.6,
+  subtitleShadowOffsetX: 1.5,
+  subtitleShadowOffsetY: 1.5,
+  subtitleShadowBlur: 0.5
+};
 const WORKSPACE_MIN_WIDTH = 780;
 const AGENT_MIN_WIDTH = 320;
 const WORKSPACE_RESIZE_HANDLE_WIDTH = 7;
@@ -274,13 +317,21 @@ function subtitleSizeLabel(value: SubtitleSize, l: LocalizeCopy) {
   } as const)[value];
 }
 
-function subtitleFontFamily(value: SubtitleFont) {
+function subtitleWeightLabel(value: SubtitleWeight, l: LocalizeCopy) {
   return ({
-    system: 'inherit',
-    sans: 'Arial, Helvetica, sans-serif',
-    serif: 'Georgia, Times New Roman, serif',
-    rounded: 'Arial Rounded MT Bold, Nunito, sans-serif'
+    regular: l('常规', 'Regular'),
+    medium: l('中等', 'Medium'),
+    bold: l('粗体', 'Bold')
   } as const)[value];
+}
+
+function subtitleFontFamily(value: SubtitleFont, weight: SubtitleWeight) {
+  const suffix = ({ regular: 'Regular', medium: 'Medium', bold: 'Bold' } as const)[weight];
+  if (value === 'serif') return `"OpenCreator Serif ${suffix}", Georgia, serif`;
+  if (value === 'rounded') {
+    return `"OpenCreator Rounded ${suffix}", "OpenCreator Sans ${suffix}", system-ui, sans-serif`;
+  }
+  return `"OpenCreator Sans ${suffix}", system-ui, sans-serif`;
 }
 
 function localSourceFingerprint(source: TranslationSourceSnapshot) {
@@ -307,9 +358,7 @@ function sameSettings(left: TranslationSettingsSnapshot, right: TranslationSetti
     && left.bilingual === right.bilingual
     && left.subtitlePosition === right.subtitlePosition
     && left.preferPlatformCaptions === right.preferPlatformCaptions
-    && left.subtitleFont === right.subtitleFont
-    && left.subtitleSize === right.subtitleSize
-    && left.subtitleColor === right.subtitleColor
+    && sameSubtitleStyle(left, right)
     && left.dubbing === right.dubbing
     && left.ttsProvider === right.ttsProvider
     && left.ttsModel === right.ttsModel
@@ -319,6 +368,25 @@ function sameSettings(left: TranslationSettingsSnapshot, right: TranslationSetti
     && left.videoFormat === right.videoFormat
     && left.verticalTitle === right.verticalTitle
     && left.verticalSubtitle === right.verticalSubtitle;
+}
+
+function sameSubtitleStyle(
+  left: TranslationSettingsSnapshot,
+  right: TranslationSettingsSnapshot
+): boolean {
+  return left.subtitleFont === right.subtitleFont
+    && left.subtitleWeight === right.subtitleWeight
+    && left.subtitleSize === right.subtitleSize
+    && left.subtitleColor === right.subtitleColor
+    && left.subtitleSecondaryColor === right.subtitleSecondaryColor
+    && left.subtitleOutlineColor === right.subtitleOutlineColor
+    && left.subtitleOutlineWidth === right.subtitleOutlineWidth
+    && left.subtitleShadowEnabled === right.subtitleShadowEnabled
+    && left.subtitleShadowColor === right.subtitleShadowColor
+    && left.subtitleShadowOpacity === right.subtitleShadowOpacity
+    && left.subtitleShadowOffsetX === right.subtitleShadowOffsetX
+    && left.subtitleShadowOffsetY === right.subtitleShadowOffsetY
+    && left.subtitleShadowBlur === right.subtitleShadowBlur;
 }
 
 function canReuseSubtitleCues(
@@ -341,9 +409,7 @@ function translationChanges(
   const subtitleInputsChanged = !canReuseSubtitleCues(version, settings, source)
     || version.settings.bilingual !== settings.bilingual
     || version.settings.subtitlePosition !== settings.subtitlePosition;
-  const subtitleStyleChanged = version.settings.subtitleFont !== settings.subtitleFont
-    || version.settings.subtitleSize !== settings.subtitleSize
-    || version.settings.subtitleColor !== settings.subtitleColor;
+  const subtitleStyleChanged = !sameSubtitleStyle(version.settings, settings);
   const voiceChanged = version.settings.dubbing !== settings.dubbing
     || version.settings.ttsProvider !== settings.ttsProvider
     || version.settings.ttsModel !== settings.ttsModel
@@ -494,18 +560,7 @@ function deserializeResultVersions(value: CreatorJson | undefined): TranslationR
         bilingual: settingsRecord.bilingual,
         subtitlePosition: settingsRecord.subtitlePosition,
         preferPlatformCaptions: settingsRecord.preferPlatformCaptions,
-        subtitleFont: settingsRecord.subtitleFont === 'sans'
-          || settingsRecord.subtitleFont === 'serif'
-          || settingsRecord.subtitleFont === 'rounded'
-          ? settingsRecord.subtitleFont
-          : 'system',
-        subtitleSize: settingsRecord.subtitleSize === 'small'
-          || settingsRecord.subtitleSize === 'large'
-          ? settingsRecord.subtitleSize
-          : 'medium',
-        subtitleColor: typeof settingsRecord.subtitleColor === 'string'
-          ? settingsRecord.subtitleColor
-          : '#FFFFFF',
+        ...readSubtitleStyleSettings(settingsRecord, {}, undefined),
         dubbing: settingsRecord.dubbing,
         ttsProvider: isTtsProvider(settingsRecord.ttsProvider)
           ? settingsRecord.ttsProvider
@@ -783,15 +838,7 @@ function legacyResultVersionsFromArtifacts(
           preferPlatformCaptions: typeof sourceState.preferPlatformCaptions === 'boolean'
             ? sourceState.preferPlatformCaptions
             : persisted?.settings.preferPlatformCaptions ?? true,
-          subtitleFont: readSubtitleFontSetting(sourceState, fallbackState, persisted),
-          subtitleSize: readSubtitleSizeSetting(sourceState, fallbackState, persisted),
-          subtitleColor: readStringSetting(
-            sourceState,
-            fallbackState,
-            persisted,
-            'subtitleColor',
-            '#FFFFFF'
-          ),
+          ...readSubtitleStyleSettings(sourceState, fallbackState, persisted),
           dubbing: typeof sourceState.dubbing === 'boolean'
             ? sourceState.dubbing
             : persisted?.settings.dubbing ?? false,
@@ -909,15 +956,7 @@ function resultVersionFromSnapshot(
         'preferPlatformCaptions',
         true
       ),
-      subtitleFont: readSubtitleFontSetting(sourceState, fallbackState, persisted),
-      subtitleSize: readSubtitleSizeSetting(sourceState, fallbackState, persisted),
-      subtitleColor: readStringSetting(
-        sourceState,
-        fallbackState,
-        persisted,
-        'subtitleColor',
-        '#FFFFFF'
-      ),
+      ...readSubtitleStyleSettings(sourceState, fallbackState, persisted),
       dubbing: readBooleanSetting(sourceState, fallbackState, persisted, 'dubbing', false),
       ttsProvider: readTtsProviderSetting(sourceState, fallbackState, persisted),
       ttsModel: readStringSetting(sourceState, fallbackState, persisted, 'ttsModel', ''),
@@ -988,26 +1027,133 @@ function isTtsProvider(value: unknown): value is CreatorTtsProvider {
     || value === 'edge-tts';
 }
 
-function readSubtitleFontSetting(
+function readSubtitleStyleSettings(
   state: Record<string, CreatorJson>,
   fallback: Record<string, CreatorJson>,
   persisted: TranslationResultVersion | undefined
-): SubtitleFont {
-  const value = state.subtitleFont ?? fallback.subtitleFont;
-  return value === 'sans' || value === 'serif' || value === 'rounded'
-    ? value
-    : persisted?.settings.subtitleFont ?? 'system';
+): SubtitleStyleSettings {
+  const style = readJsonRecord(state.subtitleStyle);
+  const fallbackStyle = readJsonRecord(fallback.subtitleStyle);
+  const shadow = readJsonRecord(style.shadow);
+  const fallbackShadow = readJsonRecord(fallbackStyle.shadow);
+  const settings = persisted?.settings;
+  const fontValue = style.fontPreset ?? state.subtitleFont
+    ?? fallbackStyle.fontPreset ?? fallback.subtitleFont;
+  const weightValue = style.fontWeight ?? state.subtitleWeight
+    ?? fallbackStyle.fontWeight ?? fallback.subtitleWeight;
+  const sizeValue = style.fontSize ?? state.subtitleSize
+    ?? fallbackStyle.fontSize ?? fallback.subtitleSize;
+  return {
+    subtitleFont: isSubtitleFont(fontValue)
+      ? fontValue
+      : settings?.subtitleFont ?? defaultSubtitleStyle.subtitleFont,
+    subtitleWeight: isSubtitleWeight(weightValue)
+      ? weightValue
+      : settings?.subtitleWeight ?? defaultSubtitleStyle.subtitleWeight,
+    subtitleSize: isSubtitleSize(sizeValue)
+      ? sizeValue
+      : settings?.subtitleSize ?? defaultSubtitleStyle.subtitleSize,
+    subtitleColor: readSubtitleColor(
+      style.primaryColor ?? state.subtitleColor
+        ?? fallbackStyle.primaryColor ?? fallback.subtitleColor,
+      settings?.subtitleColor ?? defaultSubtitleStyle.subtitleColor
+    ),
+    subtitleSecondaryColor: readSubtitleColor(
+      style.secondaryColor ?? state.subtitleSecondaryColor
+        ?? fallbackStyle.secondaryColor ?? fallback.subtitleSecondaryColor,
+      settings?.subtitleSecondaryColor ?? defaultSubtitleStyle.subtitleSecondaryColor
+    ),
+    subtitleOutlineColor: readSubtitleColor(
+      style.outlineColor ?? state.subtitleOutlineColor
+        ?? fallbackStyle.outlineColor ?? fallback.subtitleOutlineColor,
+      settings?.subtitleOutlineColor ?? defaultSubtitleStyle.subtitleOutlineColor
+    ),
+    subtitleOutlineWidth: readBoundedNumber(
+      style.outlineWidth ?? state.subtitleOutlineWidth
+        ?? fallbackStyle.outlineWidth ?? fallback.subtitleOutlineWidth,
+      0,
+      8,
+      settings?.subtitleOutlineWidth ?? defaultSubtitleStyle.subtitleOutlineWidth
+    ),
+    subtitleShadowEnabled: readBooleanValue(
+      shadow.enabled ?? state.subtitleShadowEnabled
+        ?? fallbackShadow.enabled ?? fallback.subtitleShadowEnabled,
+      settings?.subtitleShadowEnabled ?? defaultSubtitleStyle.subtitleShadowEnabled
+    ),
+    subtitleShadowColor: readSubtitleColor(
+      shadow.color ?? state.subtitleShadowColor
+        ?? fallbackShadow.color ?? fallback.subtitleShadowColor,
+      settings?.subtitleShadowColor ?? defaultSubtitleStyle.subtitleShadowColor
+    ),
+    subtitleShadowOpacity: readBoundedNumber(
+      shadow.opacity ?? state.subtitleShadowOpacity
+        ?? fallbackShadow.opacity ?? fallback.subtitleShadowOpacity,
+      0,
+      1,
+      settings?.subtitleShadowOpacity ?? defaultSubtitleStyle.subtitleShadowOpacity
+    ),
+    subtitleShadowOffsetX: readBoundedNumber(
+      shadow.offsetX ?? state.subtitleShadowOffsetX
+        ?? fallbackShadow.offsetX ?? fallback.subtitleShadowOffsetX,
+      -20,
+      20,
+      settings?.subtitleShadowOffsetX ?? defaultSubtitleStyle.subtitleShadowOffsetX
+    ),
+    subtitleShadowOffsetY: readBoundedNumber(
+      shadow.offsetY ?? state.subtitleShadowOffsetY
+        ?? fallbackShadow.offsetY ?? fallback.subtitleShadowOffsetY,
+      -20,
+      20,
+      settings?.subtitleShadowOffsetY ?? defaultSubtitleStyle.subtitleShadowOffsetY
+    ),
+    subtitleShadowBlur: readBoundedNumber(
+      shadow.blur ?? state.subtitleShadowBlur
+        ?? fallbackShadow.blur ?? fallback.subtitleShadowBlur,
+      0,
+      10,
+      settings?.subtitleShadowBlur ?? defaultSubtitleStyle.subtitleShadowBlur
+    )
+  };
 }
 
-function readSubtitleSizeSetting(
-  state: Record<string, CreatorJson>,
-  fallback: Record<string, CreatorJson>,
-  persisted: TranslationResultVersion | undefined
-): SubtitleSize {
-  const value = state.subtitleSize ?? fallback.subtitleSize;
-  return value === 'small' || value === 'large'
+function readJsonRecord(value: CreatorJson | undefined): Record<string, CreatorJson> {
+  return value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value)
     ? value
-    : persisted?.settings.subtitleSize ?? 'medium';
+    : {};
+}
+
+function isSubtitleFont(value: unknown): value is SubtitleFont {
+  return value === 'system' || value === 'sans' || value === 'serif' || value === 'rounded';
+}
+
+function isSubtitleWeight(value: unknown): value is SubtitleWeight {
+  return value === 'regular' || value === 'medium' || value === 'bold';
+}
+
+function isSubtitleSize(value: unknown): value is SubtitleSize {
+  return value === 'small' || value === 'medium' || value === 'large';
+}
+
+function readSubtitleColor(value: unknown, fallback: string): string {
+  return typeof value === 'string' && /^#[0-9A-Fa-f]{6}$/.test(value)
+    ? value.toUpperCase()
+    : fallback;
+}
+
+function readBoundedNumber(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  fallback: number
+): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    && value >= minimum && value <= maximum
+    ? value
+    : fallback;
+}
+
+function readBooleanValue(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
 }
 
 function readBooleanSetting(
@@ -1263,9 +1409,19 @@ export default function VideoTranslationWorkspace(props: {
   const [bilingual, setBilingual] = useState(true);
   const [subtitlePosition, setSubtitlePosition] = useState<SubtitlePosition>('top');
   const [preferPlatformCaptions, setPreferPlatformCaptions] = useState(true);
-  const [subtitleFont, setSubtitleFont] = useState<SubtitleFont>('system');
-  const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>('medium');
-  const [subtitleColor, setSubtitleColor] = useState('#FFFFFF');
+  const [subtitleFont, setSubtitleFont] = useState<SubtitleFont>(defaultSubtitleStyle.subtitleFont);
+  const [subtitleWeight, setSubtitleWeight] = useState<SubtitleWeight>(defaultSubtitleStyle.subtitleWeight);
+  const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>(defaultSubtitleStyle.subtitleSize);
+  const [subtitleColor, setSubtitleColor] = useState(defaultSubtitleStyle.subtitleColor);
+  const [subtitleSecondaryColor, setSubtitleSecondaryColor] = useState(defaultSubtitleStyle.subtitleSecondaryColor);
+  const [subtitleOutlineColor, setSubtitleOutlineColor] = useState(defaultSubtitleStyle.subtitleOutlineColor);
+  const [subtitleOutlineWidth, setSubtitleOutlineWidth] = useState(defaultSubtitleStyle.subtitleOutlineWidth);
+  const [subtitleShadowEnabled, setSubtitleShadowEnabled] = useState(defaultSubtitleStyle.subtitleShadowEnabled);
+  const [subtitleShadowColor, setSubtitleShadowColor] = useState(defaultSubtitleStyle.subtitleShadowColor);
+  const [subtitleShadowOpacity, setSubtitleShadowOpacity] = useState(defaultSubtitleStyle.subtitleShadowOpacity);
+  const [subtitleShadowOffsetX, setSubtitleShadowOffsetX] = useState(defaultSubtitleStyle.subtitleShadowOffsetX);
+  const [subtitleShadowOffsetY, setSubtitleShadowOffsetY] = useState(defaultSubtitleStyle.subtitleShadowOffsetY);
+  const [subtitleShadowBlur, setSubtitleShadowBlur] = useState(defaultSubtitleStyle.subtitleShadowBlur);
   const [dubbing, setDubbing] = useState(false);
   const [ttsProvider, setTtsProvider] = useState<CreatorTtsProvider>('openai');
   const [ttsModel, setTtsModel] = useState('gpt-4o-mini-tts');
@@ -1314,22 +1470,20 @@ export default function VideoTranslationWorkspace(props: {
     if (typeof persisted.bilingual === 'boolean') setBilingual(persisted.bilingual);
     if (persisted.subtitlePosition === 'top' || persisted.subtitlePosition === 'bottom') setSubtitlePosition(persisted.subtitlePosition);
     if (typeof persisted.preferPlatformCaptions === 'boolean') setPreferPlatformCaptions(persisted.preferPlatformCaptions);
-    if (
-      persisted.subtitleFont === 'system'
-      || persisted.subtitleFont === 'sans'
-      || persisted.subtitleFont === 'serif'
-      || persisted.subtitleFont === 'rounded'
-    ) {
-      setSubtitleFont(persisted.subtitleFont);
-    }
-    if (
-      persisted.subtitleSize === 'small'
-      || persisted.subtitleSize === 'medium'
-      || persisted.subtitleSize === 'large'
-    ) {
-      setSubtitleSize(persisted.subtitleSize);
-    }
-    if (typeof persisted.subtitleColor === 'string') setSubtitleColor(persisted.subtitleColor);
+    const persistedSubtitleStyle = readSubtitleStyleSettings(persisted, {}, undefined);
+    setSubtitleFont(persistedSubtitleStyle.subtitleFont);
+    setSubtitleWeight(persistedSubtitleStyle.subtitleWeight);
+    setSubtitleSize(persistedSubtitleStyle.subtitleSize);
+    setSubtitleColor(persistedSubtitleStyle.subtitleColor);
+    setSubtitleSecondaryColor(persistedSubtitleStyle.subtitleSecondaryColor);
+    setSubtitleOutlineColor(persistedSubtitleStyle.subtitleOutlineColor);
+    setSubtitleOutlineWidth(persistedSubtitleStyle.subtitleOutlineWidth);
+    setSubtitleShadowEnabled(persistedSubtitleStyle.subtitleShadowEnabled);
+    setSubtitleShadowColor(persistedSubtitleStyle.subtitleShadowColor);
+    setSubtitleShadowOpacity(persistedSubtitleStyle.subtitleShadowOpacity);
+    setSubtitleShadowOffsetX(persistedSubtitleStyle.subtitleShadowOffsetX);
+    setSubtitleShadowOffsetY(persistedSubtitleStyle.subtitleShadowOffsetY);
+    setSubtitleShadowBlur(persistedSubtitleStyle.subtitleShadowBlur);
     if (typeof persisted.dubbing === 'boolean') setDubbing(persisted.dubbing);
     if (isTtsProvider(persisted.ttsProvider)) setTtsProvider(persisted.ttsProvider);
     if (typeof persisted.ttsModel === 'string') setTtsModel(persisted.ttsModel);
@@ -1426,6 +1580,23 @@ export default function VideoTranslationWorkspace(props: {
       || creatorSession.state.sourceFileName !== undefined
       || creatorSession.state.sourceFileSize !== undefined
       || creatorSession.state.sourceFileLastModified !== undefined;
+    const subtitleStyle = {
+      fontPreset: subtitleFont,
+      fontWeight: subtitleWeight,
+      fontSize: subtitleSize,
+      primaryColor: subtitleColor,
+      secondaryColor: subtitleSecondaryColor,
+      outlineColor: subtitleOutlineColor,
+      outlineWidth: subtitleOutlineWidth,
+      shadow: {
+        enabled: subtitleShadowEnabled,
+        color: subtitleShadowColor,
+        opacity: subtitleShadowOpacity,
+        offsetX: subtitleShadowOffsetX,
+        offsetY: subtitleShadowOffsetY,
+        blur: subtitleShadowBlur
+      }
+    } as const;
     const next = {
       sourceType,
       sourceUrl: videoUrl,
@@ -1441,9 +1612,9 @@ export default function VideoTranslationWorkspace(props: {
       bilingual,
       subtitlePosition,
       preferPlatformCaptions,
-      subtitleFont,
-      subtitleSize,
-      subtitleColor,
+      ...(creatorSession.job.templateVersion >= 2
+        ? { subtitleStyle }
+        : { subtitleFont, subtitleSize, subtitleColor }),
       dubbing,
       ttsProvider,
       ttsModel,
@@ -1490,7 +1661,17 @@ export default function VideoTranslationWorkspace(props: {
     sourceType,
     subtitleColor,
     subtitleFont,
+    subtitleOutlineColor,
+    subtitleOutlineWidth,
+    subtitleSecondaryColor,
+    subtitleShadowBlur,
+    subtitleShadowColor,
+    subtitleShadowEnabled,
+    subtitleShadowOffsetX,
+    subtitleShadowOffsetY,
+    subtitleShadowOpacity,
     subtitleSize,
+    subtitleWeight,
     subtitlePosition,
     targetLanguage,
     ttsModel,
@@ -1620,7 +1801,7 @@ export default function VideoTranslationWorkspace(props: {
       ?? registeredSourceFile?.name
       ?? l('等待上传视频', 'Waiting for an upload'));
   const outputLabel = outputLabelFor({ composeVideo, videoFormat }, l);
-  const subtitleStyleLabel = `${subtitleFontLabel(subtitleFont, l)} · ${subtitleSizeLabel(subtitleSize, l)} · ${subtitleColor.toUpperCase()}`;
+  const subtitleStyleLabel = `${subtitleFontLabel(subtitleFont, l)} · ${subtitleWeightLabel(subtitleWeight, l)} · ${subtitleSizeLabel(subtitleSize, l)} · ${subtitleColor.toUpperCase()}`;
   const summaryItems = useMemo(() => [
     { label: l('翻译语言', 'Languages'), value: `${languageLabel(sourceLanguages, sourceLanguage)} → ${languageLabel(targetLanguages, targetLanguage)}` },
     { label: l('字幕', 'Subtitles'), value: bilingual ? l(`双语 · 译文在${subtitlePosition === 'top' ? '上' : '下'}`, `Bilingual · translation ${subtitlePosition === 'top' ? 'above' : 'below'}`) : l('仅译文', 'Translation only') },
@@ -1861,7 +2042,7 @@ export default function VideoTranslationWorkspace(props: {
     ? outputLabelFor(selectedResultSettings, l)
     : outputLabel;
   const selectedSubtitleStyleLabel = selectedResultSettings
-    ? `${subtitleFontLabel(selectedResultSettings.subtitleFont, l)} · ${subtitleSizeLabel(selectedResultSettings.subtitleSize, l)} · ${selectedResultSettings.subtitleColor.toUpperCase()}`
+    ? `${subtitleFontLabel(selectedResultSettings.subtitleFont, l)} · ${subtitleWeightLabel(selectedResultSettings.subtitleWeight, l)} · ${subtitleSizeLabel(selectedResultSettings.subtitleSize, l)} · ${selectedResultSettings.subtitleColor.toUpperCase()}`
     : subtitleStyleLabel;
   const selectedSourceName = selectedResultSource?.sourceType === 'url'
     ? (selectedResultSource.videoUrl.trim() || l('等待填写链接', 'Waiting for a link'))
@@ -1922,8 +2103,18 @@ export default function VideoTranslationWorkspace(props: {
       subtitlePosition,
       preferPlatformCaptions,
       subtitleFont,
+      subtitleWeight,
       subtitleSize,
       subtitleColor,
+      subtitleSecondaryColor,
+      subtitleOutlineColor,
+      subtitleOutlineWidth,
+      subtitleShadowEnabled,
+      subtitleShadowColor,
+      subtitleShadowOpacity,
+      subtitleShadowOffsetX,
+      subtitleShadowOffsetY,
+      subtitleShadowBlur,
       dubbing,
       ttsProvider,
       ttsModel,
@@ -1954,8 +2145,18 @@ export default function VideoTranslationWorkspace(props: {
     setSubtitlePosition(settings.subtitlePosition);
     setPreferPlatformCaptions(settings.preferPlatformCaptions);
     setSubtitleFont(settings.subtitleFont);
+    setSubtitleWeight(settings.subtitleWeight);
     setSubtitleSize(settings.subtitleSize);
     setSubtitleColor(settings.subtitleColor);
+    setSubtitleSecondaryColor(settings.subtitleSecondaryColor);
+    setSubtitleOutlineColor(settings.subtitleOutlineColor);
+    setSubtitleOutlineWidth(settings.subtitleOutlineWidth);
+    setSubtitleShadowEnabled(settings.subtitleShadowEnabled);
+    setSubtitleShadowColor(settings.subtitleShadowColor);
+    setSubtitleShadowOpacity(settings.subtitleShadowOpacity);
+    setSubtitleShadowOffsetX(settings.subtitleShadowOffsetX);
+    setSubtitleShadowOffsetY(settings.subtitleShadowOffsetY);
+    setSubtitleShadowBlur(settings.subtitleShadowBlur);
     setDubbing(settings.dubbing);
     setTtsProvider(settings.ttsProvider);
     setTtsModel(settings.ttsModel);
@@ -2741,6 +2942,23 @@ export default function VideoTranslationWorkspace(props: {
                   </label>
 
                   <div className="video-translation-style-control">
+                    <span>{l('字重', 'Font weight')}</span>
+                    <div className="video-translation-size-options" role="radiogroup" aria-label={l('字幕字重', 'Subtitle font weight')}>
+                      {(['regular', 'medium', 'bold'] as const).map(weight => (
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={subtitleWeight === weight}
+                          key={weight}
+                          onClick={() => setSubtitleWeight(weight)}
+                        >
+                          {subtitleWeightLabel(weight, l)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="video-translation-style-control">
                     <span>{l('字幕大小', 'Subtitle size')}</span>
                     <div className="video-translation-size-options" role="radiogroup" aria-label={l('字幕大小', 'Subtitle size')}>
                       {(['small', 'medium', 'large'] as const).map(size => (
@@ -2758,7 +2976,7 @@ export default function VideoTranslationWorkspace(props: {
                   </div>
 
                   <div className="video-translation-style-control">
-                    <span>{l('字幕颜色', 'Subtitle color')}</span>
+                    <span>{l('译文颜色', 'Translation color')}</span>
                     <div className="video-translation-color-options">
                       {subtitleColors.map(color => (
                         <button
@@ -2775,13 +2993,111 @@ export default function VideoTranslationWorkspace(props: {
                       <label className="video-translation-custom-color" title={l('自定义颜色', 'Custom color')}>
                         <input
                           type="color"
-                          aria-label={l('自定义字幕颜色', 'Custom subtitle color')}
+                          aria-label={l('自定义译文颜色', 'Custom translation color')}
                           value={subtitleColor}
                           onChange={event => setSubtitleColor(event.target.value.toUpperCase())}
                         />
                         <span>{l('自定义', 'Custom')}</span>
                       </label>
                     </div>
+                  </div>
+
+                  <div className="video-translation-style-fields">
+                    <label className="video-translation-field video-translation-color-field">
+                      <span>{l('原文颜色', 'Original color')}</span>
+                      <input
+                        type="color"
+                        aria-label={l('原文颜色', 'Original color')}
+                        value={subtitleSecondaryColor}
+                        onChange={event => setSubtitleSecondaryColor(event.target.value.toUpperCase())}
+                      />
+                    </label>
+                    <label className="video-translation-field video-translation-color-field">
+                      <span>{l('描边颜色', 'Outline color')}</span>
+                      <input
+                        type="color"
+                        aria-label={l('描边颜色', 'Outline color')}
+                        value={subtitleOutlineColor}
+                        onChange={event => setSubtitleOutlineColor(event.target.value.toUpperCase())}
+                      />
+                    </label>
+                    <label className="video-translation-field">
+                      <span>{l('描边宽度', 'Outline width')}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="8"
+                        step="0.5"
+                        value={subtitleOutlineWidth}
+                        onChange={event => setSubtitleOutlineWidth(Number(event.target.value))}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="video-translation-shadow-settings">
+                    <Switch
+                      checked={subtitleShadowEnabled}
+                      label={l('字幕阴影', 'Subtitle shadow')}
+                      description={l('为字幕增加可控阴影，提高复杂画面上的可读性', 'Add a controlled shadow for readability on detailed footage')}
+                      onChange={setSubtitleShadowEnabled}
+                    />
+                    {subtitleShadowEnabled ? (
+                      <div className="video-translation-style-fields">
+                        <label className="video-translation-field video-translation-color-field">
+                          <span>{l('阴影颜色', 'Shadow color')}</span>
+                          <input
+                            type="color"
+                            aria-label={l('阴影颜色', 'Shadow color')}
+                            value={subtitleShadowColor}
+                            onChange={event => setSubtitleShadowColor(event.target.value.toUpperCase())}
+                          />
+                        </label>
+                        <label className="video-translation-field">
+                          <span>{l('不透明度', 'Opacity')}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.05"
+                            value={subtitleShadowOpacity}
+                            onChange={event => setSubtitleShadowOpacity(Number(event.target.value))}
+                          />
+                        </label>
+                        <label className="video-translation-field">
+                          <span>{l('水平偏移', 'Horizontal offset')}</span>
+                          <input
+                            type="number"
+                            min="-20"
+                            max="20"
+                            step="1"
+                            value={subtitleShadowOffsetX}
+                            onChange={event => setSubtitleShadowOffsetX(Number(event.target.value))}
+                          />
+                        </label>
+                        <label className="video-translation-field">
+                          <span>{l('垂直偏移', 'Vertical offset')}</span>
+                          <input
+                            type="number"
+                            min="-20"
+                            max="20"
+                            step="1"
+                            value={subtitleShadowOffsetY}
+                            onChange={event => setSubtitleShadowOffsetY(Number(event.target.value))}
+                          />
+                        </label>
+                        <label className="video-translation-field">
+                          <span>{l('模糊', 'Blur')}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="10"
+                            step="0.5"
+                            value={subtitleShadowBlur}
+                            onChange={event => setSubtitleShadowBlur(Number(event.target.value))}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -2795,8 +3111,15 @@ export default function VideoTranslationWorkspace(props: {
                   <div
                     style={{
                       '--subtitle-preview-color': subtitleColor,
+                      '--subtitle-preview-secondary-color': subtitleSecondaryColor,
+                      '--subtitle-preview-outline-color': subtitleOutlineColor,
+                      '--subtitle-preview-outline-width': `${subtitleOutlineWidth}px`,
+                      '--subtitle-preview-shadow': subtitleShadowEnabled
+                        ? `${subtitleShadowOffsetX}px ${subtitleShadowOffsetY}px ${subtitleShadowBlur}px color-mix(in srgb, ${subtitleShadowColor} ${Math.round(subtitleShadowOpacity * 100)}%, transparent)`
+                        : 'none',
                       '--subtitle-preview-font-size': ({ small: '14px', medium: '16px', large: '18px' } as const)[subtitleSize],
-                      '--subtitle-preview-font-family': subtitleFontFamily(subtitleFont)
+                      '--subtitle-preview-font-family': subtitleFontFamily(subtitleFont, subtitleWeight),
+                      '--subtitle-preview-font-weight': ({ regular: 400, medium: 500, bold: 700 } as const)[subtitleWeight]
                     } as CSSProperties}
                   >
                     {bilingual && subtitlePosition === 'bottom' ? (

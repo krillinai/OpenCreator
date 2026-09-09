@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "social-poster",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 32,
+  "title": {
+    "zh-CN": "社交媒体方形海报",
+    "en-US": "Social Media Poster"
+  },
+  "description": {
+    "zh-CN": "生成适合社交媒体发布的高对比方形视觉，一次输出四张候选。",
+    "en-US": "Generate high-contrast square visuals for social media with four candidates."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "poster",
+    "social",
+    "square"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1024",
+    "quality": "high",
+    "candidateCount": 4
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "社交媒体方形海报视觉，主体明确，高对比配色，构图简洁有冲击力，保留文字排版空间，适合移动端快速浏览"
+    },
+    "en-US": {
+      "prompt": "Square social media poster visual, clear subject, high-contrast colors, concise impactful composition, reserved typography space, optimized for mobile viewing"
+    }
+  }
+}

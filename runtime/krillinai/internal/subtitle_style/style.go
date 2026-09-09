@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var controlledOverrideTagPattern = regexp.MustCompile(`\\(xshad|yshad|blur)(-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+))`)
 
 type StyleSet struct {
 	Version    int         `json:"version,omitempty"`
@@ -479,6 +482,24 @@ func validateOverrideTags(path, tags string) error {
 	}
 	if !strings.HasPrefix(normalized, `\`) {
 		return fmt.Errorf("%s must start with an ASS override tag backslash", path)
+	}
+	matches := controlledOverrideTagPattern.FindAllStringSubmatch(normalized, -1)
+	consumed := strings.Builder{}
+	for _, match := range matches {
+		consumed.WriteString(match[0])
+		value, err := strconv.ParseFloat(match[2], 64)
+		if err != nil {
+			return fmt.Errorf("%s contains an invalid %s value", path, match[1])
+		}
+		if match[1] == "blur" && (value < 0 || value > 10) {
+			return fmt.Errorf("%s blur must be between 0 and 10", path)
+		}
+		if match[1] != "blur" && (value < -20 || value > 20) {
+			return fmt.Errorf("%s %s must be between -20 and 20", path, match[1])
+		}
+	}
+	if consumed.String() != normalized {
+		return fmt.Errorf("%s only supports controlled xshad, yshad, and blur tags", path)
 	}
 	return nil
 }

@@ -27,6 +27,7 @@ jobs:
           go-version-file: runtime/krillinai/go.mod
           cache-dependency-path: runtime/krillinai/go.sum
       - run: pnpm install --frozen-lockfile
+      - run: pnpm templates:ci
       - name: Audit high severity dependencies
         run: pnpm audit --audit-level high --ignore-registry-errors
         timeout-minutes: 5

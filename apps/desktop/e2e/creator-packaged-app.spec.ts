@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  cpSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -12,7 +13,7 @@ import {
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { packagedExecutable } from './package-artifact.js';
@@ -210,6 +211,7 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     }>(currentApp.page, 'POST', '/creator/jobs', {
       projectId: createdProject.body.project.id,
       templateId: 'video-translation',
+      creationKey: 'packaged-video-translation',
       state: {
         sourceType: 'url',
         sourceUrl: 'https://www.youtube.com/watch?v=creator-package-smoke',
@@ -243,6 +245,7 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     }>(currentApp.page, 'POST', '/creator/jobs', {
       projectId: createdProject.body.project.id,
       templateId: 'video-translation',
+      creationKey: 'packaged-local-video-translation',
       state: {
         sourceType: 'file',
         sourceUrl: '',
@@ -288,6 +291,7 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     }>(currentApp.page, 'POST', '/creator/jobs', {
       projectId: createdProject.body.project.id,
       templateId: 'image-generation',
+      creationKey: 'packaged-image-generation',
       state: {
         prompt: 'Packaged image generation smoke',
         provider: 'gemini',
@@ -317,6 +321,7 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     }>(currentApp.page, 'POST', '/creator/jobs', {
       projectId: createdProject.body.project.id,
       templateId: 'cover',
+      creationKey: 'packaged-cover-generation',
       state: {
         prompt: 'Packaged cover generation smoke',
         ratio: '9:16',
@@ -390,6 +395,7 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     }>(currentApp.page, 'POST', '/creator/jobs', {
       projectId: createdProject.body.project.id,
       templateId: 'video-download',
+      creationKey: 'packaged-video-download',
       state: {
         sourceUrl: 'https://www.youtube.com/watch?v=C4gJinSiuG4'
       }
@@ -473,6 +479,214 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         retryDelay: 100
       });
     }
+  }
+});
+
+test('Creator Preset 在实际 Desktop 包中创建并重启恢复', async () => {
+  test.setTimeout(180_000);
+  const fixture = await launchCreatorDesktop();
+  let currentApp: PackagedApp = fixture.app;
+
+  try {
+    await waitForWorkspace(currentApp.page);
+    expect(currentApp.page.url()).toContain('opencreator-app://app/');
+    const catalog = await runtimeRequest<{
+      catalogHash: string;
+      presets: Array<{
+        module: string;
+        id: string;
+        version: number;
+        title: string;
+        coverUrl: string;
+      }>;
+    }>(currentApp.page, 'GET', '/creator/presets?locale=zh-CN');
+    expect(catalog.status).toBe(200);
+    expect(catalog.body.catalogHash).toMatch(/^[a-f0-9]{64}$/);
+    const preset = catalog.body.presets.find(item => (
+      item.module === 'video-translation'
+      && item.id === 'bilibili-bilingual'
+      && item.version === 1
+    ));
+    expect(preset).toMatchObject({
+      title: 'B站双语精翻',
+      coverUrl: expect.stringMatching(/^\/creator-presets\/[a-f0-9]{64}\.webp$/)
+    });
+
+    const staticResources = await currentApp.page.evaluate(async coverUrl => {
+      const [cover, font] = await Promise.all([
+        fetch(coverUrl),
+        fetch('/fonts/opencreator/OpenCreatorRounded-Bold.woff2')
+      ]);
+      return {
+        cover: {
+          status: cover.status,
+          contentType: cover.headers.get('content-type'),
+          bytes: (await cover.arrayBuffer()).byteLength
+        },
+        font: {
+          status: font.status,
+          contentType: font.headers.get('content-type'),
+          bytes: (await font.arrayBuffer()).byteLength
+        }
+      };
+    }, preset!.coverUrl);
+    expect(staticResources.cover).toMatchObject({
+      status: 200,
+      contentType: 'image/webp'
+    });
+    expect(staticResources.cover.bytes).toBeGreaterThan(20_000);
+    expect(staticResources.font.status).toBe(200);
+    expect(staticResources.font.contentType).toContain('font/woff2');
+    expect(staticResources.font.bytes).toBeGreaterThan(10_000);
+
+    const projectDir = join(fixture.root, 'creator-preset-workspace');
+    mkdirSync(projectDir, { recursive: true });
+    const project = await runtimeRequest<{
+      project: { id: string };
+    }>(currentApp.page, 'POST', '/projects', {
+      cwd: projectDir,
+      name: 'Creator Preset 打包态验证',
+      sandbox: 'workspace-write'
+    });
+    expect(project.status).toBe(201);
+    const created = await runtimeRequest<{
+      job: {
+        id: string;
+        templateId: string;
+        templateVersion: number;
+        state: Record<string, unknown>;
+        presetOrigin: Record<string, unknown> | null;
+        stages: unknown[];
+      };
+    }>(currentApp.page, 'POST', '/creator/jobs', {
+      projectId: project.body.project.id,
+      preset: {
+        module: 'video-translation',
+        id: 'bilibili-bilingual',
+        version: 1
+      },
+      locale: 'zh-CN',
+      creationKey: 'packaged-creator-preset'
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.job).toMatchObject({
+      templateId: 'video-translation',
+      templateVersion: 2,
+      state: {
+        bilingual: true,
+        targetLanguage: 'zh_cn'
+      },
+      presetOrigin: {
+        module: 'video-translation',
+        id: 'bilibili-bilingual',
+        version: 1,
+        locale: 'zh-CN',
+        title: 'B站双语精翻'
+      },
+      stages: []
+    });
+
+    const relaunchInput = {
+      executablePath: currentApp.executablePath,
+      launchArgs: currentApp.launchArgs,
+      env: currentApp.env
+    };
+    await closePackagedApp(currentApp);
+    currentApp = await relaunchPackagedApp(relaunchInput, 45_000);
+    await waitForWorkspace(currentApp.page);
+    const restored = await runtimeRequest<{
+      job: {
+        id: string;
+        state: Record<string, unknown>;
+        presetOrigin: Record<string, unknown> | null;
+      };
+    }>(
+      currentApp.page,
+      'GET',
+      `/creator/jobs/${encodeURIComponent(created.body.job.id)}`
+    );
+    expect(restored.status).toBe(200);
+    expect(restored.body.job).toMatchObject({
+      id: created.body.job.id,
+      state: {
+        bilingual: true,
+        targetLanguage: 'zh_cn'
+      },
+      presetOrigin: created.body.job.presetOrigin
+    });
+  } finally {
+    await closePackagedApp(currentApp).catch(() => undefined);
+    if (process.env.OPENCREATOR_E2E_KEEP_TEMP !== '1') {
+      rmSync(fixture.root, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100
+      });
+    }
+  }
+});
+
+test('Creator Preset verifier 拒绝损坏和陈旧的打包资源', () => {
+  test.setTimeout(300_000);
+  const sourceRoot = packagedPackageRoot();
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'opencreator-preset-verifier-'));
+  const packageRoot = join(fixtureRoot, basename(sourceRoot));
+  clonePackageRoot(sourceRoot, packageRoot);
+  const resources = packagedResourcesRoot(packageRoot);
+  const presetRoot = join(resources, 'daemon', 'runtime', 'creator-presets');
+  const manifestPath = join(presetRoot, 'manifest.json');
+  const catalogPath = join(presetRoot, 'catalog.json');
+  const manifestBytes = readFileSync(manifestPath);
+  const catalogBytes = readFileSync(catalogPath);
+  const presetManifest = JSON.parse(manifestBytes.toString('utf8')) as {
+    files: Array<{ path: string }>;
+  };
+  const coverName = basename(
+    presetManifest.files.find(file => file.path.startsWith('assets/'))!.path
+  );
+  const coverPath = join(resources, 'web', 'creator-presets', coverName);
+  const coverBytes = readFileSync(coverPath);
+  const stalePath = join(resources, 'web', 'creator-presets', 'stale.webp');
+
+  try {
+    expect(runPackagedVerifier(packageRoot).status).toBe(0);
+
+    rmSync(catalogPath);
+    expectVerifierFailure(
+      runPackagedVerifier(packageRoot),
+      'catalog.json'
+    );
+    writeFileSync(catalogPath, catalogBytes);
+
+    const substitutedManifest = JSON.parse(manifestBytes.toString('utf8'));
+    substitutedManifest.assetSetHash = '0'.repeat(64);
+    writeFileSync(manifestPath, `${JSON.stringify(substitutedManifest)}\n`);
+    expectVerifierFailure(
+      runPackagedVerifier(packageRoot),
+      'Creator preset asset set hash mismatch'
+    );
+    writeFileSync(manifestPath, manifestBytes);
+
+    rmSync(coverPath);
+    expectVerifierFailure(
+      runPackagedVerifier(packageRoot),
+      'Creator preset Web asset is missing'
+    );
+    writeFileSync(coverPath, coverBytes);
+
+    writeFileSync(stalePath, coverBytes);
+    expectVerifierFailure(
+      runPackagedVerifier(packageRoot),
+      'Creator preset Web assets contain a stale file'
+    );
+  } finally {
+    rmSync(fixtureRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100
+    });
   }
 });
 
@@ -638,6 +852,59 @@ function packagedRuntimeRoot(): string {
   return process.platform === 'darwin'
     ? resolve(packageRoot, '..', 'Resources', 'creator-runtime', 'krillinai')
     : join(packageRoot, 'resources', 'creator-runtime', 'krillinai');
+}
+
+function packagedPackageRoot(): string {
+  const executable = packagedExecutable(desktopDir);
+  return process.platform === 'darwin'
+    ? resolve(dirname(executable), '../..')
+    : dirname(executable);
+}
+
+function packagedResourcesRoot(packageRoot: string): string {
+  return process.platform === 'darwin'
+    ? join(packageRoot, 'Contents', 'Resources')
+    : join(packageRoot, 'resources');
+}
+
+function clonePackageRoot(source: string, destination: string): void {
+  if (process.platform === 'darwin') {
+    const result = spawnSync('cp', ['-cR', source, destination], {
+      encoding: 'utf8',
+      timeout: 5 * 60_000
+    });
+    if (result.status === 0) return;
+  } else if (process.platform === 'linux') {
+    const result = spawnSync('cp', ['-a', '--reflink=auto', source, destination], {
+      encoding: 'utf8',
+      timeout: 5 * 60_000
+    });
+    if (result.status === 0) return;
+  }
+  cpSync(source, destination, { recursive: true });
+}
+
+function runPackagedVerifier(packageRoot: string): ReturnType<typeof spawnSync> {
+  return spawnSync(process.execPath, [
+    join(desktopDir, 'scripts', 'verify-package.mjs')
+  ], {
+    cwd: resolve(desktopDir, '../..'),
+    env: {
+      ...process.env,
+      OPENCREATOR_DESKTOP_PACKAGE_ROOT: packageRoot
+    },
+    encoding: 'utf8',
+    timeout: 5 * 60_000,
+    maxBuffer: 20 * 1024 * 1024
+  });
+}
+
+function expectVerifierFailure(
+  result: ReturnType<typeof spawnSync>,
+  message: string
+): void {
+  expect(result.status).not.toBe(0);
+  expect(`${result.stdout}\n${result.stderr}`).toContain(message);
 }
 
 function executableResource(path: string): string {

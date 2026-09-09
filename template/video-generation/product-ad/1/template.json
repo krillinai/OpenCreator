@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "product-ad",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 40,
+  "title": {
+    "zh-CN": "商品广告短片",
+    "en-US": "Product Ad Video"
+  },
+  "description": {
+    "zh-CN": "生成五秒横屏商品广告镜头，适合展示产品质感与卖点。",
+    "en-US": "Generate a five-second landscape product ad shot with premium motion."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "advertising",
+    "product",
+    "video"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1280x720",
+    "duration": 5
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "高质感商品广告短片，产品居中，缓慢推进镜头，真实材质细节，专业棚拍光线，动作自然流畅"
+    },
+    "en-US": {
+      "prompt": "Premium product advertisement, centered product, slow cinematic push-in, realistic material detail, professional studio lighting, smooth natural motion"
+    }
+  }
+}

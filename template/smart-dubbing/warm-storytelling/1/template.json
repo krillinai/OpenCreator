@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "warm-storytelling",
+  "version": 1,
+  "module": "smart-dubbing",
+  "runtimeTemplate": {
+    "id": "smart-dubbing",
+    "version": 1
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 62,
+  "title": {
+    "zh-CN": "温暖故事讲述",
+    "en-US": "Warm Storytelling"
+  },
+  "description": {
+    "zh-CN": "使用较慢语速和温暖叙述感生成人物故事、纪录片与情感内容配音。",
+    "en-US": "Create warm, slower narration for human stories, documentaries, and emotional content."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "warm",
+    "storytelling",
+    "documentary"
+  ],
+  "defaults": {
+    "text": "",
+    "voiceCode": "",
+    "voiceName": "",
+    "style": "storytelling",
+    "speed": 0.9,
+    "format": "wav"
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "text": "很多年以后，他依然记得那个安静的下午。阳光穿过窗帘，也照亮了人生新的方向。"
+    },
+    "en-US": {
+      "text": "Years later, he still remembered that quiet afternoon, when sunlight crossed the room and revealed a new direction."
+    }
+  }
+}

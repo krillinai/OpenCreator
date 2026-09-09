@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "audio-download",
+  "version": 1,
+  "module": "video-download",
+  "runtimeTemplate": {
+    "id": "video-download",
+    "version": 2
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 20,
+  "title": {
+    "zh-CN": "高清音频下载",
+    "en-US": "High Quality Audio Download"
+  },
+  "description": {
+    "zh-CN": "解析公开视频链接并优先选择可用的高质量音频。",
+    "en-US": "Extract high-quality audio options from a public video URL."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "audio",
+    "download",
+    "youtube"
+  ],
+  "defaults": {
+    "mediaType": "audio"
+  }
+}

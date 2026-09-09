@@ -17,6 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as fontkit from 'fontkit';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(scriptDir, '..');
@@ -42,6 +43,7 @@ const binDir = join(outputRoot, 'bin');
 const executableSuffix = targetPlatform === 'win32' ? '.exe' : '';
 const configuredYtDlpPath = process.env.OPENCREATOR_YT_DLP_PATH?.trim();
 const runtimeMode = 'cli';
+const subtitleFontSourceRoot = join(rootDir, 'assets', 'creator-subtitle-fonts');
 
 ensureKrillinBuild();
 ensureExternalDependencies();
@@ -52,6 +54,7 @@ const sourceCommit = krillinBuild.sourceCommit;
 const sourceSha256 = krillinBuild.sourceSha256;
 rmSync(outputRoot, { recursive: true, force: true });
 mkdirSync(binDir, { recursive: true });
+const subtitleFonts = prepareSubtitleFonts();
 
 const primaryExecutablePath = join(binDir, `krillinai-cli${executableSuffix}`);
 copyExecutable(
@@ -87,6 +90,10 @@ const buildRecord = {
   sourceCommit,
   sourceSha256,
   ytDlp: ytDlpRuntime.descriptor,
+  subtitleFonts: {
+    manifestSha256: subtitleFonts.manifestSha256,
+    resourceCount: subtitleFonts.resourcePaths.length
+  },
   integrationPatchSha256: hashFiles([
     join(rootDir, 'scripts', 'build-krillinai.mjs'),
     join(scriptDir, 'install-creator-runtime-dependencies.mjs'),
@@ -108,6 +115,7 @@ const resourcePaths = [
   primaryExecutablePath,
   ...externalInputs.map(([name]) => join(binDir, `${name}${executableSuffix}`)),
   ...ytDlpRuntime.resourcePaths,
+  ...subtitleFonts.resourcePaths,
   subtitleStylePath,
   buildRecordPath
 ];
@@ -131,6 +139,146 @@ const manifest = {
 };
 writeFileSync(join(outputRoot, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(JSON.stringify({ ok: true, outputRoot, resources: manifest.resources.length }));
+
+function prepareSubtitleFonts() {
+  const sourceManifestPath = join(subtitleFontSourceRoot, 'manifest.json');
+  if (!existsSync(sourceManifestPath)) {
+    throw new Error(`Creator subtitle font manifest is missing: ${sourceManifestPath}`);
+  }
+  const sourceManifest = JSON.parse(readFileSync(sourceManifestPath, 'utf8'));
+  if (
+    sourceManifest?.version !== 1
+    || !Array.isArray(sourceManifest.fonts)
+    || sourceManifest.fonts.length !== 9
+    || !Array.isArray(sourceManifest.licenses)
+    || sourceManifest.licenses.length < 1
+  ) {
+    throw new Error('Creator subtitle font manifest is invalid');
+  }
+
+  const runtimeFontsDir = join(outputRoot, 'fonts');
+  const runtimeLicensesDir = join(outputRoot, 'licenses', 'fonts');
+  mkdirSync(runtimeFontsDir, { recursive: true });
+  mkdirSync(runtimeLicensesDir, { recursive: true });
+  const resourcePaths = [];
+  const runtimeFonts = [];
+  const seenAliases = new Set();
+  for (const entry of sourceManifest.fonts) {
+    if (
+      !['sans', 'serif', 'rounded'].includes(entry?.preset)
+      || !['regular', 'medium', 'bold'].includes(entry?.weight)
+      || ![400, 500, 700].includes(entry?.weightValue)
+      || typeof entry?.family !== 'string'
+      || typeof entry?.fullName !== 'string'
+      || typeof entry?.desktopFile !== 'string'
+      || !/\.(?:otf|ttf)$/i.test(entry.desktopFile)
+      || !/^[a-f0-9]{64}$/i.test(entry?.desktopSha256 ?? '')
+      || typeof entry?.webFile !== 'string'
+      || !/\.woff2$/i.test(entry.webFile)
+      || !/^[a-f0-9]{64}$/i.test(entry?.webSha256 ?? '')
+      || typeof entry?.license !== 'string'
+    ) {
+      throw new Error('Creator subtitle font manifest contains an invalid font entry');
+    }
+    const desktopSource = resolveAssetPath(subtitleFontSourceRoot, entry.desktopFile);
+    if (
+      !existsSync(desktopSource)
+      || hashFile(desktopSource) !== entry.desktopSha256.toLowerCase()
+    ) {
+      throw new Error(`Creator subtitle desktop font hash mismatch: ${entry.desktopFile}`);
+    }
+    const webSource = resolveAssetPath(subtitleFontSourceRoot, entry.webFile);
+    if (
+      !existsSync(webSource)
+      || hashFile(webSource) !== entry.webSha256.toLowerCase()
+    ) {
+      throw new Error(`Creator subtitle Web font hash mismatch: ${entry.webFile}`);
+    }
+    assertSubtitleFontMetadata(desktopSource, entry);
+    assertSubtitleFontMetadata(webSource, entry);
+    if (seenAliases.has(entry.family)) {
+      throw new Error(`Creator subtitle font alias is duplicated: ${entry.family}`);
+    }
+    seenAliases.add(entry.family);
+    const targetName = entry.desktopFile.split('/').at(-1);
+    const target = join(runtimeFontsDir, targetName);
+    copyFileSync(desktopSource, target);
+    resourcePaths.push(target);
+    runtimeFonts.push({
+      preset: entry.preset,
+      weight: entry.weight,
+      weightValue: entry.weightValue,
+      family: entry.family,
+      fullName: entry.fullName,
+      file: `fonts/${targetName}`,
+      sha256: entry.desktopSha256.toLowerCase(),
+      license: `licenses/fonts/${entry.license.split('/').at(-1)}`
+    });
+  }
+
+  const copiedLicenses = new Set();
+  const runtimeLicenses = [];
+  for (const entry of sourceManifest.licenses) {
+    if (
+      typeof entry?.file !== 'string'
+      || !/^[a-f0-9]{64}$/i.test(entry?.sha256 ?? '')
+    ) {
+      throw new Error('Creator subtitle font manifest contains an invalid license entry');
+    }
+    const source = resolveAssetPath(subtitleFontSourceRoot, entry.file);
+    if (!existsSync(source) || hashFile(source) !== entry.sha256.toLowerCase()) {
+      throw new Error(`Creator subtitle font license hash mismatch: ${entry.file}`);
+    }
+    const target = join(runtimeLicensesDir, entry.file.split('/').at(-1));
+    if (!copiedLicenses.has(target)) {
+      copyFileSync(source, target);
+      resourcePaths.push(target);
+      copiedLicenses.add(target);
+    }
+    runtimeLicenses.push({
+      file: `licenses/fonts/${entry.file.split('/').at(-1)}`,
+      sha256: entry.sha256.toLowerCase()
+    });
+  }
+
+  const runtimeManifestPath = join(runtimeFontsDir, 'manifest.json');
+  writeFileSync(runtimeManifestPath, `${JSON.stringify({
+    version: sourceManifest.version,
+    sources: sourceManifest.sources,
+    fonts: runtimeFonts,
+    licenses: runtimeLicenses
+  }, null, 2)}\n`);
+  resourcePaths.push(runtimeManifestPath);
+  return {
+    manifestSha256: hashFile(sourceManifestPath),
+    resourcePaths
+  };
+}
+
+function assertSubtitleFontMetadata(path, entry) {
+  const font = fontkit.openSync(path);
+  if (
+    Array.isArray(font.fonts)
+    || font.familyName !== entry.family
+    || font.fullName !== entry.fullName
+    || font['OS/2']?.usWeightClass !== entry.weightValue
+  ) {
+    throw new Error(`Creator subtitle font metadata mismatch: ${path}`);
+  }
+}
+
+function resolveAssetPath(root, path) {
+  const absoluteRoot = resolve(root);
+  const result = resolve(absoluteRoot, path);
+  if (
+    result !== absoluteRoot
+    && !result.startsWith(`${absoluteRoot}/`)
+    && !result.startsWith(`${absoluteRoot}\\`)
+  ) {
+    throw new Error(`Creator subtitle font path escapes its root: ${path}`);
+  }
+  return result;
+}
 
 function ensureKrillinBuild() {
   execFileSync(process.execPath, [join(rootDir, 'scripts', 'build-krillinai.mjs')], {

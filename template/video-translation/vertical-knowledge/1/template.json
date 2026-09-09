@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "id": "vertical-knowledge",
+  "version": 1,
+  "module": "video-translation",
+  "runtimeTemplate": {
+    "id": "video-translation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 12,
+  "title": {
+    "zh-CN": "竖屏知识切片",
+    "en-US": "Vertical Knowledge Clip"
+  },
+  "description": {
+    "zh-CN": "面向短视频平台的双语翻译，使用醒目大字字幕并生成竖屏成片。",
+    "en-US": "Bilingual translation for short-video platforms with large subtitles and a vertical render."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "vertical",
+    "knowledge",
+    "bilingual",
+    "short-video"
+  ],
+  "defaults": {
+    "sourceLanguage": "en",
+    "targetLanguage": "zh_cn",
+    "preferPlatformCaptions": true,
+    "bilingual": true,
+    "subtitlePosition": "bottom",
+    "subtitleStyle": {
+      "fontPreset": "rounded",
+      "fontWeight": "bold",
+      "fontSize": "large",
+      "primaryColor": "#FFE45C",
+      "secondaryColor": "#FFFFFF",
+      "outlineColor": "#000000",
+      "outlineWidth": 3,
+      "shadow": {
+        "enabled": true,
+        "color": "#000000",
+        "opacity": 0.75,
+        "offsetX": 3,
+        "offsetY": 3,
+        "blur": 1
+      }
+    },
+    "dubbing": false,
+    "voiceCode": "",
+    "voiceName": "",
+    "composeVideo": true,
+    "videoFormat": "vertical",
+    "verticalTitle": "",
+    "verticalSubtitle": ""
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "sourceLanguage": "en",
+      "targetLanguage": "zh_cn",
+      "verticalTitle": "一个值得记住的观点",
+      "verticalSubtitle": "60 秒快速理解"
+    },
+    "en-US": {
+      "sourceLanguage": "zh_cn",
+      "targetLanguage": "en",
+      "verticalTitle": "One Idea Worth Remembering",
+      "verticalSubtitle": "Understand it in 60 seconds"
+    }
+  }
+}

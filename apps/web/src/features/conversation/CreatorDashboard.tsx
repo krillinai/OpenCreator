@@ -1,12 +1,23 @@
-import { useState } from 'react';
-import { Mic2 } from 'lucide-react';
-import { useAppLanguage } from '../../i18n/LanguageProvider.js';
+import type {
+  CreatorPresetRequirements,
+  CreatorPresetSummary,
+  CreatorRuntimeWorkspace
+} from '@opencreator/protocol';
 import {
-  isVisibleCreatorWorkspace,
-  type CreatorWorkspace
-} from '../dashboard/creator-workspace.js';
-
-type CreatorSkillCategory = '最近' | '推荐' | '视频创作' | '数字人' | '图像设计' | '内容营销';
+  Cpu,
+  Download,
+  Image,
+  ImagePlus,
+  Languages,
+  Mic2,
+  RefreshCw,
+  Search,
+  WandSparkles,
+  type LucideIcon
+} from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { useAppLanguage } from '../../i18n/LanguageProvider.js';
+import type { CreatorWorkspace } from '../dashboard/creator-workspace.js';
 
 export type CreatorSkill = {
   id: string;
@@ -23,346 +34,337 @@ export type CreatorSkill = {
   };
 };
 
-const creatorSkillCategories: CreatorSkillCategory[] = [
-  '最近',
-  '推荐',
-  '视频创作',
-  '数字人',
-  '图像设计',
-  '内容营销'
+const moduleOrder: CreatorRuntimeWorkspace[] = [
+  'video-translation',
+  'video-download',
+  'image-generation',
+  'video-generation',
+  'cover-generator',
+  'smart-dubbing'
 ];
 
-const creatorSkillsByCategory: Record<CreatorSkillCategory, CreatorSkill[]> = {
-  最近: [],
-  推荐: [
-    {
-      id: 'video-translation-multilingual',
-      title: '多语言视频翻译',
-      category: '视频翻译',
-      image: '/dashboard/templates/video-translation-example.png',
-      interaction: { type: 'workspace', workspace: 'video-translation' },
-      promptHint: {
-        zhCN: '上传视频，或者输入有效的视频链接',
-        enUS: 'Upload a video or enter a valid video link'
-      }
-    },
-    {
-      id: 'video-download',
-      title: '视频下载',
-      category: '视频处理',
-      image: '/dashboard/templates/video-download-cover.png',
-      interaction: { type: 'workspace', workspace: 'video-download' },
-      promptHint: {
-        zhCN: '输入 YouTube、Bilibili 等平台的公开视频链接',
-        enUS: 'Enter a public YouTube, Bilibili, or other supported video link'
-      }
-    },
-    {
-      id: 'avatar-presenter',
-      title: '数字人口播',
-      category: '数字人',
-      image: '/dashboard/templates/digital-presenter.jpg'
-    },
-    {
-      id: 'stickman-animation',
-      title: '火柴人动画',
-      category: '动画生成',
-      image: '/dashboard/templates/ai-video-insane.jpg',
-      interaction: { type: 'workspace', workspace: 'stickman-video' },
-      promptHint: {
-        zhCN: '选择、上传或生成角色，再描述故事和动画要求',
-        enUS: 'Choose, upload, or generate a character, then describe the story'
-      }
-    },
-    {
-      id: 'cover-generation',
-      title: '封面生成',
-      category: '封面设计',
-      image: '/dashboard/templates/peter-openclaw-cover.png',
-      interaction: { type: 'workspace', workspace: 'cover-generator' },
-      promptHint: {
-        zhCN: '描述封面，添加参考图，或者输入有效的 YouTube 链接',
-        enUS: 'Describe the thumbnail, add a reference, or enter a valid YouTube link'
-      }
-    },
-    {
-      id: 'image-generation',
-      title: '图像生成',
-      category: '图像设计',
-      image: '/dashboard/templates/image-generation-cover.png',
-      interaction: { type: 'workspace', workspace: 'image-generation' },
-      promptHint: {
-        zhCN: '描述画面主体、风格、构图和使用场景',
-        enUS: 'Describe the subject, style, composition, and intended use'
-      }
-    },
-    {
-      id: 'intelligent-clipping',
-      title: '智能剪辑',
-      category: '视频剪辑',
-      image: '/dashboard/templates/intelligent-clipping-cover.png',
-      interaction: { type: 'workspace', workspace: 'auto-clips' },
-      promptHint: {
-        zhCN: '上传长视频，设置内容重点、目标时长和片段数量',
-        enUS: 'Upload a long video, then set the content focus, target duration, and clip count'
-      }
-    }
-  ],
-  视频创作: [
-    {
-      id: 'video-translation',
-      title: '视频翻译',
-      category: '视频处理',
-      image: '/dashboard/templates/video-translation-example.png',
-      interaction: { type: 'workspace', workspace: 'video-translation' },
-      promptHint: {
-        zhCN: '上传视频，或者输入有效的视频链接',
-        enUS: 'Upload a video or enter a valid video link'
-      }
-    },
-    {
-      id: 'video-download-category',
-      title: '视频下载',
-      category: '视频处理',
-      image: '/dashboard/templates/video-download-cover.png',
-      interaction: { type: 'workspace', workspace: 'video-download' },
-      promptHint: {
-        zhCN: '输入 YouTube、Bilibili 等平台的公开视频链接',
-        enUS: 'Enter a public YouTube, Bilibili, or other supported video link'
-      }
-    },
-    {
-      id: 'narrative-short-video',
-      title: '剧情短片',
-      category: '故事视频',
-      image: '/dashboard/templates/animated-story.jpg'
-    },
-    {
-      id: 'product-ad-video',
-      title: '商品广告短片',
-      category: '商业视频',
-      image: '/skill-market/examples/seedance-2-video-ad.png'
-    },
-    {
-      id: 'stickman-explainer',
-      title: '火柴人知识动画',
-      category: '动画视频',
-      image: '/dashboard/templates/ai-video-insane.jpg',
-      interaction: { type: 'workspace', workspace: 'stickman-video' },
-      promptHint: {
-        zhCN: '选择角色并输入知识主题，我会先生成分镜',
-        enUS: 'Choose a character and enter a topic to create the storyboard'
-      }
-    },
-    {
-      id: 'tutorial-demo-video',
-      title: '教程演示视频',
-      category: '教程视频',
-      image: '/dashboard/templates/video-localization.jpg'
-    },
-    {
-      id: 'short-video-script',
-      title: '短视频脚本',
-      category: '内容策划',
-      image: '/skill-market/examples/gpt-image-2-info-poster.png'
-    }
-  ],
-  数字人: [
-    {
-      id: 'avatar-knowledge-presenter',
-      title: '知识分享口播',
-      category: '知识博主',
-      image: '/dashboard/templates/digital-presenter.jpg'
-    },
-    {
-      id: 'avatar-course-lesson',
-      title: '课程讲解',
-      category: '在线课程',
-      image: '/dashboard/templates/animated-story.jpg'
-    },
-    {
-      id: 'avatar-product-introduction',
-      title: '产品介绍',
-      category: '产品讲解',
-      image: '/skill-market/examples/nano-banana-pro-product-visual.png'
-    },
-    {
-      id: 'avatar-news-presenter',
-      title: '新闻播报',
-      category: '资讯播报',
-      image: '/dashboard/templates/video-translation-example.png'
-    },
-    {
-      id: 'avatar-social-presenter',
-      title: '社媒口播',
-      category: '短视频口播',
-      image: '/skill-market/examples/seedance-2-video-ad.png'
-    }
-  ],
-  图像设计: [
-    {
-      id: 'video-thumbnail',
-      title: '视频封面',
-      category: '封面设计',
-      image: '/dashboard/templates/ai-video-insane.jpg',
-      interaction: { type: 'workspace', workspace: 'cover-generator' },
-      promptHint: {
-        zhCN: '描述封面，添加参考图，或者输入有效的 YouTube 链接',
-        enUS: 'Describe the thumbnail, add a reference, or enter a valid YouTube link'
-      }
-    },
-    {
-      id: 'product-poster',
-      title: '产品海报',
-      category: '商业海报',
-      image: '/skill-market/examples/nano-banana-pro-product-visual.png'
-    },
-    {
-      id: 'image-generation-category',
-      title: '图像生成',
-      category: '图像设计',
-      image: '/dashboard/templates/image-generation-cover.png',
-      interaction: { type: 'workspace', workspace: 'image-generation' },
-      promptHint: {
-        zhCN: '描述画面主体、风格、构图和使用场景',
-        enUS: 'Describe the subject, style, composition, and intended use'
-      }
-    },
-    {
-      id: 'infographic',
-      title: '信息长图',
-      category: '信息设计',
-      image: '/skill-market/examples/gpt-image-2-info-poster.png'
-    },
-    {
-      id: 'social-visuals',
-      title: '社媒配图',
-      category: '社交媒体',
-      image: '/dashboard/templates/animated-story.jpg'
-    },
-    {
-      id: 'portrait-series',
-      title: '人物写真',
-      category: '人物图像',
-      image: '/dashboard/templates/digital-presenter.jpg'
-    }
-  ],
-  内容营销: [
-    {
-      id: 'brand-story',
-      title: '品牌故事',
-      category: '品牌内容',
-      image: '/dashboard/templates/animated-story.jpg'
-    },
-    {
-      id: 'product-recommendation-video',
-      title: '种草短视频',
-      category: '社媒营销',
-      image: '/skill-market/examples/seedance-2-video-ad.png'
-    },
-    {
-      id: 'campaign-promotion',
-      title: '活动推广',
-      category: '活动营销',
-      image: '/skill-market/examples/gpt-image-2-info-poster.png'
-    },
-    {
-      id: 'product-launch',
-      title: '新品发布',
-      category: '产品营销',
-      image: '/skill-market/examples/nano-banana-pro-product-visual.png'
-    },
-    {
-      id: 'creator-weekly',
-      title: '创作者周报',
-      category: '粉丝运营',
-      image: '/dashboard/templates/video-localization.jpg'
-    }
-  ]
+const moduleCopy: Record<CreatorRuntimeWorkspace, {
+  zh: string;
+  en: string;
+  descriptionZh: string;
+  descriptionEn: string;
+  blankZh: string;
+  blankEn: string;
+  icon: LucideIcon;
+}> = {
+  'video-translation': {
+    zh: '视频翻译',
+    en: 'Video Translation',
+    descriptionZh: '字幕、配音与成片生成',
+    descriptionEn: 'Subtitles, dubbing, and rendered video',
+    blankZh: '空白视频翻译',
+    blankEn: 'Blank Video Translation',
+    icon: Languages
+  },
+  'video-download': {
+    zh: '视频下载',
+    en: 'Video Download',
+    descriptionZh: '下载视频或提取音频',
+    descriptionEn: 'Download video or extract audio',
+    blankZh: '空白视频下载',
+    blankEn: 'Blank Video Download',
+    icon: Download
+  },
+  'image-generation': {
+    zh: '图像生成',
+    en: 'Image Generation',
+    descriptionZh: '生成图片与视觉素材',
+    descriptionEn: 'Generate images and visual assets',
+    blankZh: '空白图像生成',
+    blankEn: 'Blank Image Generation',
+    icon: Image
+  },
+  'video-generation': {
+    zh: '视频生成',
+    en: 'Video Generation',
+    descriptionZh: '文字或参考图生成视频',
+    descriptionEn: 'Generate video from text or images',
+    blankZh: '空白视频生成',
+    blankEn: 'Blank Video Generation',
+    icon: WandSparkles
+  },
+  'cover-generator': {
+    zh: '封面生成',
+    en: 'Cover Generation',
+    descriptionZh: '生成视频与内容封面',
+    descriptionEn: 'Generate thumbnails for video and content',
+    blankZh: '空白封面生成',
+    blankEn: 'Blank Cover Generation',
+    icon: ImagePlus
+  },
+  'smart-dubbing': {
+    zh: '智能配音',
+    en: 'Smart Dubbing',
+    descriptionZh: '自然音色与情绪表达',
+    descriptionEn: 'Natural voices and expressive delivery',
+    blankZh: '空白智能配音',
+    blankEn: 'Blank Smart Dubbing',
+    icon: Mic2
+  }
 };
 
-export function CreatorDashboard(props: { onSelectSkill(skill: CreatorSkill): void }) {
-  const { language, t } = useAppLanguage();
-  const [selectedCategory, setSelectedCategory] = useState<CreatorSkillCategory>('推荐');
-  const [recentSkills, setRecentSkills] = useState<CreatorSkill[]>([]);
-  const skills = selectedCategory === '最近'
-    ? recentSkills
-    : creatorSkillsByCategory[selectedCategory].filter(isVisibleCreatorSkill);
-  const visibleCategories = creatorSkillCategories.filter(category => (
-    category !== '最近'
-    && creatorSkillsByCategory[category].some(isVisibleCreatorSkill)
-  ));
+export function CreatorDashboard(props: {
+  presets?: CreatorPresetSummary[];
+  loading?: boolean;
+  error?: string;
+  selectedModule?: CreatorRuntimeWorkspace;
+  onRetry?(): void;
+  onSelectModule?(module: CreatorRuntimeWorkspace): void;
+  onSelectPreset?(preset: CreatorPresetSummary): Promise<void> | void;
+  onSelectSkill?(skill: CreatorSkill): void;
+}) {
+  const { language } = useAppLanguage();
+  const [internalSelectedModule, setInternalSelectedModule] =
+    useState<CreatorRuntimeWorkspace>('video-translation');
+  const [query, setQuery] = useState('');
+  const [busyIdentities, setBusyIdentities] = useState<Set<string>>(
+    () => new Set()
+  );
+  const busyIdentitiesRef = useRef(new Set<string>());
+  const [actionError, setActionError] = useState<string>();
+  const presets = props.presets ?? [];
+  const selectedModule = props.selectedModule ?? internalSelectedModule;
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visiblePresets = useMemo(() => presets.filter(preset => {
+    if (preset.module !== selectedModule) return false;
+    if (normalizedQuery === '') return true;
+    return `${preset.title} ${preset.description} ${preset.tags.join(' ')}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery);
+  }), [normalizedQuery, presets, selectedModule]);
+  const presetCounts = useMemo(() => {
+    const counts = new Map<CreatorRuntimeWorkspace, number>();
+    for (const module of moduleOrder) counts.set(module, 0);
+    for (const preset of presets) {
+      counts.set(preset.module, (counts.get(preset.module) ?? 0) + 1);
+    }
+    return counts;
+  }, [presets]);
 
-  function selectSkill(skill: CreatorSkill) {
-    setRecentSkills(current => [
-      skill,
-      ...current.filter(item => item.id !== skill.id)
-    ].slice(0, 5));
-    props.onSelectSkill(skill);
+  function selectModule(module: CreatorRuntimeWorkspace) {
+    setInternalSelectedModule(module);
+    setQuery('');
+    setActionError(undefined);
+    props.onSelectModule?.(module);
+  }
+
+  async function selectPreset(preset: CreatorPresetSummary) {
+    const identity = presetIdentity(preset);
+    if (busyIdentitiesRef.current.has(identity)) return;
+    busyIdentitiesRef.current.add(identity);
+    setBusyIdentities(new Set(busyIdentitiesRef.current));
+    setActionError(undefined);
+    try {
+      await props.onSelectPreset?.(preset);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      busyIdentitiesRef.current.delete(identity);
+      setBusyIdentities(new Set(busyIdentitiesRef.current));
+    }
   }
 
   return (
-    <div className="creator-dashboard" data-template-count={skills.length}>
-      <div className="creator-template-tabs" role="tablist" aria-label={t('home.skillCategories')}>
-        {visibleCategories.map(category => (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={selectedCategory === category}
-            key={category}
-            onClick={() => setSelectedCategory(category)}
-          >
-            {language === 'en-US' ? englishCreatorLabels[category] ?? category : category}
-          </button>
-        ))}
-      </div>
+    <div className="creator-dashboard">
+      <header className="creator-dashboard-title">
+        <h1>{language === 'en-US' ? 'Creation Presets' : '创作模板'}</h1>
+        <p>
+          {language === 'en-US'
+            ? 'Choose a module and start with a ready-to-use preset.'
+            : '选择创作模块，使用预置模板快速开始。'}
+        </p>
+      </header>
+
+      <section className="creator-module-section" aria-labelledby="creator-modules-title">
+        <div className="creator-dashboard-heading">
+          <div>
+            <h2 id="creator-modules-title">
+              {language === 'en-US' ? 'Creation Modules' : '创作模块'}
+            </h2>
+            <span>
+              {language === 'en-US'
+                ? 'Choose a module, then start from one of its presets.'
+                : '先选择创作模块，再使用模块内的预置模板。'}
+            </span>
+          </div>
+        </div>
+        <div
+          className="creator-module-grid"
+          role="tablist"
+          aria-label={language === 'en-US' ? 'Creation modules' : '创作模块'}
+        >
+          {moduleOrder.map(module => (
+            <CreatorModuleButton
+              key={module}
+              module={module}
+              count={presetCounts.get(module) ?? 0}
+              selected={selectedModule === module}
+              language={language}
+              onSelect={selectModule}
+            />
+          ))}
+        </div>
+      </section>
 
       <section className="creator-dashboard-section" aria-labelledby="creator-templates-title">
         <div className="creator-dashboard-heading">
           <div>
-            <h2 id="creator-templates-title">{t('home.skills')}</h2>
+            <h2 id="creator-templates-title">
+              {language === 'en-US'
+                ? `${moduleLabel(selectedModule, language)} Presets`
+                : `${moduleLabel(selectedModule, language)}模板`}
+            </h2>
+            <span>
+              {language === 'en-US'
+                ? 'Preset settings remain editable before you start the task.'
+                : '模板会预填工作台设置，开始任务前仍可修改。'}
+            </span>
           </div>
-          <Mic2 size={18} strokeWidth={1.7} aria-hidden="true" />
+          <label className="creator-template-search">
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              aria-label={language === 'en-US'
+                ? `Search ${moduleLabel(selectedModule, language)} presets`
+                : `搜索${moduleLabel(selectedModule, language)}模板`}
+              placeholder={language === 'en-US'
+                ? 'Search presets'
+                : `搜索${moduleLabel(selectedModule, language)}模板`}
+            />
+          </label>
         </div>
-        <div className="creator-template-grid">
-          {skills.length === 0 ? (
-            <p className="creator-template-empty">{t('home.noRecentSkills')}</p>
-          ) : null}
-          {skills.map(skill => (
-            <button
-              className="creator-template-card"
-              type="button"
-              key={skill.id}
-              data-skill-id={skill.id}
-              onClick={() => selectSkill(skill)}
-              aria-label={t('home.useSkill', {
-                title: language === 'en-US'
-                  ? englishCreatorLabels[skill.title] ?? skill.title
-                  : skill.title
-              })}
-            >
-              <span className="creator-template-media">
-                <img src={skill.image} alt="" loading="lazy" />
-              </span>
-              <span className="creator-template-copy">
-                <small>{language === 'en-US'
-                  ? englishCreatorLabels[skill.category] ?? skill.category
-                  : skill.category}</small>
-                <strong>{language === 'en-US'
-                  ? englishCreatorLabels[skill.title] ?? skill.title
-                  : skill.title}</strong>
-              </span>
+
+        {props.loading ? (
+          <p className="creator-template-empty" aria-busy="true">
+            {language === 'en-US' ? 'Loading presets...' : '正在加载模板...'}
+          </p>
+        ) : null}
+        {props.error ? (
+          <div className="creator-template-error" role="alert">
+            <span>{props.error}</span>
+            <button type="button" onClick={props.onRetry}>
+              <RefreshCw size={15} aria-hidden="true" />
+              {language === 'en-US' ? 'Retry' : '重试'}
             </button>
-          ))}
-        </div>
+          </div>
+        ) : null}
+        {actionError ? (
+          <p className="creator-template-action-error" role="alert">{actionError}</p>
+        ) : null}
+
+        {!props.loading && !props.error ? (
+          <div className="creator-template-grid">
+            {visiblePresets.map(preset => {
+              const identity = presetIdentity(preset);
+              const busy = busyIdentities.has(identity);
+              const highlights = preset.highlights ?? [];
+              return (
+                <button
+                  className="creator-template-card"
+                  type="button"
+                  key={identity}
+                  data-preset-id={identity}
+                  disabled={busy}
+                  aria-busy={busy}
+                  onClick={() => void selectPreset(preset)}
+                  aria-label={language === 'en-US'
+                    ? `Use ${preset.title} preset`
+                    : `使用${preset.title}模板`}
+                >
+                  <span className="creator-template-media">
+                    <img src={preset.coverUrl} alt="" loading="lazy" />
+                    {busy ? (
+                      <span className="creator-template-busy">
+                        {language === 'en-US' ? 'Creating...' : '正在创建...'}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="creator-template-copy">
+                    <strong>{preset.title}</strong>
+                    <span>{preset.description}</span>
+                    {highlights.length > 0 ? (
+                      <span className="creator-template-highlights">
+                        {highlights.map((highlight, index) => (
+                          <span
+                            className="creator-template-highlight"
+                            key={`${highlight.text}-${index}`}
+                          >
+                            {highlight.colors.length > 0 ? (
+                              <span className="creator-template-swatches" aria-hidden="true">
+                                {highlight.colors.map((color, colorIndex) => (
+                                  <span
+                                    key={`${color}-${colorIndex}`}
+                                    style={{ backgroundColor: color }}
+                                  />
+                                ))}
+                              </span>
+                            ) : null}
+                            <span>{highlight.text}</span>
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
+                    {preset.requirements ? (
+                      <span className="creator-template-requirement">
+                        <Cpu size={13} strokeWidth={1.8} aria-hidden="true" />
+                        <span>{formatPresetRequirement(preset.requirements, language)}</span>
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })}
+            {visiblePresets.length === 0 ? (
+              <p className="creator-template-empty">
+                {normalizedQuery
+                  ? (language === 'en-US' ? 'No matching presets.' : '没有匹配的模板。')
+                  : (language === 'en-US'
+                      ? 'No presets are available for this module yet.'
+                      : '该模块暂时没有预置模板。')}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </div>
   );
 }
 
-function isVisibleCreatorSkill(skill: CreatorSkill): boolean {
-  return skill.interaction?.type === 'workspace'
-    && isVisibleCreatorWorkspace(skill.interaction.workspace);
+function CreatorModuleButton(props: {
+  module: CreatorRuntimeWorkspace;
+  count: number;
+  selected: boolean;
+  language: 'zh-CN' | 'en-US';
+  onSelect(module: CreatorRuntimeWorkspace): void;
+}) {
+  const copy = moduleCopy[props.module];
+  const Icon = copy.icon;
+  const countLabel = props.language === 'en-US'
+    ? `${props.count} preset${props.count === 1 ? '' : 's'}`
+    : `${props.count} 个模板`;
+  return (
+    <button
+      className="creator-module-card"
+      type="button"
+      role="tab"
+      aria-selected={props.selected}
+      aria-label={`${moduleLabel(props.module, props.language)}，${countLabel}`}
+      onClick={() => props.onSelect(props.module)}
+    >
+      <span className="creator-module-label">
+        <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
+        <strong>{moduleLabel(props.module, props.language)}</strong>
+      </span>
+      <small aria-hidden="true">{props.count}</small>
+    </button>
+  );
 }
 
 export function getCreatorSkillPromptHint(
@@ -372,72 +374,45 @@ export function getCreatorSkillPromptHint(
   if (skill.promptHint !== undefined) {
     return language === 'en-US' ? skill.promptHint.enUS : skill.promptHint.zhCN;
   }
-  const title = language === 'en-US'
-    ? englishCreatorLabels[skill.title] ?? skill.title
-    : skill.title;
   return language === 'en-US'
-    ? `Describe what you want to create with ${title} and any requirements`
-    : `描述你希望用「${title}」完成的内容和要求`;
+    ? `Describe what you want to create with ${skill.title} and any requirements`
+    : `描述你希望用「${skill.title}」完成的内容和要求`;
 }
 
-const englishCreatorLabels: Record<string, string> = {
-  最近: 'Recent',
-  推荐: 'Recommended',
-  视频创作: 'Video',
-  数字人: 'Avatars',
-  图像设计: 'Images',
-  内容营销: 'Marketing',
-  多语言视频翻译: 'Multilingual Video Translation',
-  视频翻译: 'Video Translation',
-  视频下载: 'Video Download',
-  视频处理: 'Video Tools',
-  数字人口播: 'Digital Avatar',
-  火柴人动画: 'Stick Figure Animation',
-  动画生成: 'Animation',
-  智能剪辑: 'Intelligent Curation',
-  视频剪辑: 'Video Editing',
-  封面生成: 'Cover Generation',
-  创意短片策划: 'Creative Short Planning',
-  产品视觉海报: 'Product Visual Poster',
-  图像生成: 'Image Generation',
-  剧情短片: 'Narrative Short',
-  故事视频: 'Story Video',
-  商品广告短片: 'Product Ad',
-  商业视频: 'Commercial Video',
-  火柴人知识动画: 'Explainer Animation',
-  动画视频: 'Animated Video',
-  教程演示视频: 'Tutorial Video',
-  教程视频: 'Tutorial',
-  短视频脚本: 'Short Video Script',
-  内容策划: 'Content Planning',
-  知识分享口播: 'Knowledge Presenter',
-  知识博主: 'Knowledge Creator',
-  课程讲解: 'Course Lesson',
-  在线课程: 'Online Course',
-  产品介绍: 'Product Introduction',
-  产品讲解: 'Product Demo',
-  新闻播报: 'News Presenter',
-  资讯播报: 'News',
-  社媒口播: 'Social Presenter',
-  短视频口播: 'Short Video Presenter',
-  视频封面: 'Video Thumbnail',
-  封面设计: 'Thumbnail Design',
-  产品海报: 'Product Poster',
-  商业海报: 'Commercial Poster',
-  信息长图: 'Infographic',
-  信息设计: 'Information Design',
-  社媒配图: 'Social Visuals',
-  社交媒体: 'Social Media',
-  人物写真: 'Portrait Series',
-  人物图像: 'Portraits',
-  品牌故事: 'Brand Story',
-  品牌内容: 'Brand Content',
-  种草短视频: 'Product Recommendation Video',
-  社媒营销: 'Social Marketing',
-  活动推广: 'Campaign Promotion',
-  活动营销: 'Campaign Marketing',
-  新品发布: 'Product Launch',
-  产品营销: 'Product Marketing',
-  创作者周报: 'Creator Weekly',
-  粉丝运营: 'Audience Growth'
-};
+function moduleLabel(
+  module: CreatorRuntimeWorkspace,
+  language: 'zh-CN' | 'en-US'
+): string {
+  return language === 'en-US' ? moduleCopy[module].en : moduleCopy[module].zh;
+}
+
+function presetIdentity(preset: CreatorPresetSummary): string {
+  return `${preset.module}/${preset.id}/${preset.version}`;
+}
+
+function formatPresetRequirement(
+  requirement: CreatorPresetRequirements,
+  language: 'zh-CN' | 'en-US'
+): string {
+  const service = requirement.service === 'image'
+    ? (language === 'en-US' ? 'Image' : '图像服务')
+    : requirement.service === 'video'
+      ? (language === 'en-US' ? 'Video' : '视频服务')
+      : (language === 'en-US' ? 'TTS' : '配音服务');
+  const provider = providerLabel(requirement.provider);
+  return `${service} · ${provider}${requirement.model ? ` · ${requirement.model}` : ''}`;
+}
+
+function providerLabel(provider: string): string {
+  const labels: Record<string, string> = {
+    openai: 'OpenAI',
+    jimeng: 'Jimeng',
+    kling: 'Kling',
+    gemini: 'Gemini',
+    seedance: 'Seedance',
+    veo: 'Veo',
+    aliyun: 'Aliyun',
+    minimax: 'MiniMax'
+  };
+  return labels[provider] ?? provider;
+}

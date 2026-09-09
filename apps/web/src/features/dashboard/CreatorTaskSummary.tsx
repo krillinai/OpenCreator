@@ -1,5 +1,6 @@
 import { Sparkles, type LucideIcon } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { useOptionalCreatorSession } from './creator-session-store.js';
 
 type SummaryItem = {
   label: string;
@@ -15,8 +16,10 @@ export default function CreatorTaskSummary(props: {
   noteIcon?: LucideIcon;
 }) {
   const l = useLocalizedCopy();
+  const session = useOptionalCreatorSession();
   const SourceIcon = props.sourceIcon;
   const NoteIcon = props.noteIcon;
+  const presetTitle = session?.job.presetOrigin?.title.trim();
 
   return (
     <aside
@@ -35,6 +38,12 @@ export default function CreatorTaskSummary(props: {
         </span>
       </div>
       <dl>
+        {presetTitle ? (
+          <div>
+            <dt>{l('模板来源', 'Preset')}</dt>
+            <dd title={presetTitle}>{presetTitle}</dd>
+          </div>
+        ) : null}
         {props.items.map(item => (
           <div key={item.label}>
             <dt>{item.label}</dt>

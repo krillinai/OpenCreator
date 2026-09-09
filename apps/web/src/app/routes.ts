@@ -5,12 +5,13 @@ import {
 
 export type AppRoute =
   | { view: 'home' }
+  | { view: 'chat' }
   | { view: 'projects' }
   | {
       view: 'workbench';
       tool?: CreatorWorkspace;
       jobId?: string;
-      returnTo?: 'projects';
+      returnTo?: 'home' | 'projects';
     }
   | { view: 'thread'; threadId: string; runId?: string; approvalId?: string }
   | { view: 'search' }
@@ -34,7 +35,9 @@ export type SettingsRouteTab = 'ai-services' | 'local-components';
 
 export function parseRoute(hash: string): AppRoute {
   const [path = '', query = ''] = hash.split('?', 2);
+  if (path === '#/' || path === '#') return { view: 'home' };
   if (path === '#/new') return { view: 'home' };
+  if (path === '#/chat') return { view: 'chat' };
   if (path.startsWith('#/thread/')) {
     const threadId = safeDecodeURIComponent(path.slice('#/thread/'.length));
     const fields = parseQuery(query);
@@ -59,7 +62,7 @@ export function parseRoute(hash: string): AppRoute {
       view: 'workbench',
       tool,
       ...(jobId === null || jobId.length === 0 ? {} : { jobId }),
-      ...(returnTo === 'projects' ? { returnTo } : {})
+      ...(returnTo === 'home' || returnTo === 'projects' ? { returnTo } : {})
     };
   }
   if (path === '#/schedules') {
@@ -112,6 +115,8 @@ export function formatRoute(route: AppRoute): string {
   switch (route.view) {
     case 'home':
       return '#/new';
+    case 'chat':
+      return '#/chat';
     case 'projects':
       return '#/projects';
     case 'workbench': {

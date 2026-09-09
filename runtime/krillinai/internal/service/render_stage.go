@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"krillin-ai/internal/storage"
+	subtitlestyle "krillin-ai/internal/subtitle_style"
 	"krillin-ai/internal/types"
 	"os"
 	"os/exec"
@@ -50,17 +53,38 @@ func escapeAssFilterPath(path string) string {
 
 func buildEmbedSubtitleArgs(req RenderVideoRequest) ([]string, string) {
 	assPath := renderAssPath(req)
-	ass := escapeAssFilterPath(assPath)
+	filter := buildAssFilterExpression(assPath, packagedSubtitleFontsDir())
 	return []string{
 		"-y",
 		"-i", req.InputVideo,
-		"-vf", fmt.Sprintf("ass=filename='%s'", ass),
+		"-vf", filter,
 		"-c:v", "libx264",
 		"-preset", "fast",
 		"-c:a", "aac",
 		"-b:a", "192k",
 		req.OutputFile,
 	}, assPath
+}
+
+func buildAssFilterExpression(assPath, fontsDir string) string {
+	filter := fmt.Sprintf("ass=filename='%s'", escapeAssFilterPath(assPath))
+	if strings.TrimSpace(fontsDir) != "" {
+		filter += fmt.Sprintf(":fontsdir='%s'", escapeAssFilterPath(fontsDir))
+	}
+	return filter
+}
+
+func packagedSubtitleFontsDir() string {
+	resourceRoot := strings.TrimSpace(os.Getenv("KRILLINAI_RESOURCE_ROOT"))
+	if resourceRoot == "" {
+		return ""
+	}
+	fontsDir := filepath.Join(resourceRoot, "fonts")
+	info, err := os.Stat(fontsDir)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	return fontsDir
 }
 
 func renderSubtitleFile(ctx context.Context, req RenderVideoRequest) (string, error) {
@@ -79,6 +103,9 @@ func renderSubtitleFile(ctx context.Context, req RenderVideoRequest) (string, er
 		return "", fmt.Errorf("renderSubtitleFile prepare subtitle layout error: %w", err)
 	}
 	req = preparedReq
+	if err := validatePackagedSubtitleFonts(req.StepParam.SubtitleStyle); err != nil {
+		return "", fmt.Errorf("renderSubtitleFile subtitle fonts error: %w", err)
+	}
 	if err := srtToAss(req.SubtitleFile, assPath, req.Horizontal, req.StepParam); err != nil {
 		return "", fmt.Errorf("renderSubtitleFile srtToAss error: %w", err)
 	}
@@ -89,6 +116,62 @@ func renderSubtitleFile(ctx context.Context, req RenderVideoRequest) (string, er
 		return "", fmt.Errorf("renderSubtitleFile ffmpeg error: %w, output: %s", err, string(output))
 	}
 	return req.OutputFile, nil
+}
+
+type subtitleFontManifest struct {
+	Version int `json:"version"`
+	Fonts   []struct {
+		Family string `json:"family"`
+		File   string `json:"file"`
+		SHA256 string `json:"sha256"`
+	} `json:"fonts"`
+}
+
+func validatePackagedSubtitleFonts(styleSet *subtitlestyle.StyleSet) error {
+	resourceRoot := strings.TrimSpace(os.Getenv("KRILLINAI_RESOURCE_ROOT"))
+	if resourceRoot == "" || styleSet == nil {
+		return nil
+	}
+	fontsDir := filepath.Join(resourceRoot, "fonts")
+	manifestPath := filepath.Join(fontsDir, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("creator subtitle font manifest unavailable: %w", err)
+	}
+	var manifest subtitleFontManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return fmt.Errorf("creator subtitle font manifest invalid: %w", err)
+	}
+	if manifest.Version != 1 || len(manifest.Fonts) == 0 {
+		return fmt.Errorf("creator subtitle font manifest invalid")
+	}
+	available := make(map[string]bool, len(manifest.Fonts))
+	for _, font := range manifest.Fonts {
+		if strings.TrimSpace(font.Family) == "" || strings.TrimSpace(font.File) == "" || len(font.SHA256) != 64 {
+			return fmt.Errorf("creator subtitle font manifest contains an invalid entry")
+		}
+		path := filepath.Join(fontsDir, filepath.Base(font.File))
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("creator subtitle font unavailable: %s: %w", font.File, err)
+		}
+		actual := fmt.Sprintf("%x", sha256.Sum256(content))
+		if !strings.EqualFold(actual, font.SHA256) {
+			return fmt.Errorf("creator subtitle font hash mismatch: %s", font.File)
+		}
+		available[font.Family] = true
+	}
+	for _, fontName := range []string{
+		styleSet.Horizontal.Major.FontName,
+		styleSet.Horizontal.Minor.FontName,
+		styleSet.Vertical.Major.FontName,
+		styleSet.Vertical.Minor.FontName,
+	} {
+		if !available[fontName] {
+			return fmt.Errorf("creator subtitle font alias unavailable: %s", fontName)
+		}
+	}
+	return nil
 }
 
 type verticalConverter func(inputVideo, outputVideo, majorTitle, minorTitle string) error

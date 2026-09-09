@@ -13,6 +13,7 @@ import type {
   CodexStatusResponse,
   CreatorJson,
   CreatorJob,
+  CreatorPresetSummary,
   CreateScheduleRequest,
   ProjectResponse,
   RunDiagnosticsResponse,
@@ -53,6 +54,22 @@ vi.mock('@opencreator/skill-market', async importOriginal => {
 let testRuntimeProjects: ProjectResponse[] | undefined;
 let testCreatorJobs: CreatorJob[] = [];
 let testCreatorJobsByCreationKey = new Map<string, string>();
+const testCreatorPresets: CreatorPresetSummary[] = [{
+  module: 'image-generation',
+  id: 'ecommerce-product-alt',
+  version: 1,
+  title: '电商商品主图增强版',
+  description: '从测试 catalog 动态加载。',
+  coverUrl: `/creator-presets/${'a'.repeat(64)}.webp`,
+  tags: ['ecommerce', 'product'],
+  featured: true,
+  sortOrder: 10,
+  requirements: null,
+  highlights: [
+    { text: '1536 × 1024', colors: [] },
+    { text: '2 张', colors: [] }
+  ]
+}];
 
 function App(props: AppProps = {}) {
   return <ProductionApp projectNavigationMode="tree" {...props} />;
@@ -65,7 +82,7 @@ function navigateToTestRoute(hash: string) {
 
 describe('App', () => {
   beforeEach(() => {
-    window.history.replaceState(null, '', '#/new');
+    window.history.replaceState(null, '', '#/chat');
   });
 
   it('maps valid skills and configured MCP servers into Composer commands', () => {
@@ -295,6 +312,7 @@ describe('App', () => {
       templateVersion: 2,
       status: 'draft',
       revision: 0,
+      presetOrigin: null,
       state: {
         prompt: '返回项目列表测试封面',
         sourceType: 'prompt',
@@ -660,17 +678,28 @@ describe('App', () => {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   });
 
-  it('hides Home and opens the dashboard from the root route', async () => {
+  it.each(['browser', 'desktop'] as const)(
+    'opens the template Home without restoring the previous conversation in the %s host',
+    async hostKind => {
     window.history.replaceState(null, '', '#/');
-    render(<App fileService={createFileService()} />);
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
+      selectedThreadId: 'thread-from-previous-session'
+    }));
+    const hostBridge = createHostBridge();
+    hostBridge.kind = hostKind;
+    render(<App fileService={createFileService()} hostBridge={hostBridge} />);
 
-    expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '首页' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByRole('heading', { name: '创作模板' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '创作模块' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '视频翻译模板' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '工作台' })).not.toHaveAttribute('aria-current');
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: '输入任务' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '空白视频翻译' })).not.toBeInTheDocument();
   });
 
-  it('opens a Home Skill interaction without submitting its prompt hint', async () => {
+  it('opens a blank creator workspace from Workbench without submitting a prompt hint', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
@@ -695,18 +724,303 @@ describe('App', () => {
       />
     );
 
-    await user.click(await screen.findByRole('button', {
-      name: '使用多语言视频翻译模板'
-    }));
+    await user.click(await screen.findByRole('button', { name: '工作台' }));
+    await user.click(screen.getByRole('button', { name: /^视频翻译/ }));
 
     expect(await screen.findByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
     expect(screen.queryByLabelText('OpenCreator 导航')).not.toBeInTheDocument();
     const agentInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
-    expect(agentInput).toHaveAttribute('placeholder', '上传视频，或者输入有效的视频链接');
+    expect(agentInput).toHaveAttribute(
+      'placeholder',
+      '询问状态，或描述要调整的语言、字幕、配音和成片要求'
+    );
     expect(agentInput).toHaveValue('');
-    await user.click(screen.getByRole('button', { name: '返回' }));
+    await user.click(within(
+      screen.getByRole('region', { name: '视频翻译操作区' })
+    ).getByRole('button', { name: '返回' }));
     expect(await screen.findByLabelText('OpenCreator 导航')).toBeInTheDocument();
     await waitFor(() => expect(window.location.hash).toBe('#/workbench'));
+  });
+
+  it('creates a preset job from the catalog and opens the real job workspace', async () => {
+    const user = userEvent.setup();
+    const [project] = persistProjects('/Users/test/develop/preset-project');
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
+      currentProjectId: project.id
+    }));
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const createBodies: Array<Record<string, unknown>> = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsedUrl = new URL(url);
+      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
+        createBodies.push(readRequestBody(init));
+      }
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(screen.getByRole('button', {
+      name: '使用电商商品主图增强版模板'
+    }));
+
+    await waitFor(() => expect(window.location.hash).toBe(
+      '#/workbench?tool=image-generation&jobId=creator-job-1&returnTo=home'
+    ));
+    expect(await screen.findByRole('heading', { name: '图像生成' })).toBeInTheDocument();
+    expect(createBodies).toHaveLength(1);
+    expect(createBodies[0]).toMatchObject({
+      projectId: project.id,
+      preset: {
+        module: 'image-generation',
+        id: 'ecommerce-product-alt',
+        version: 1
+      },
+      locale: 'zh-CN',
+      creationKey: expect.stringMatching(/^creator_preset_/)
+    });
+    expect(createBodies[0]).not.toHaveProperty('templateId');
+    expect(createBodies[0]).not.toHaveProperty('state');
+    expect(testCreatorJobs[0]).toMatchObject({
+      state: {
+        prompt: '专业电商商品主图',
+        provider: 'openai'
+      },
+      presetOrigin: {
+        module: 'image-generation',
+        id: 'ecommerce-product-alt',
+        version: 1,
+        title: '电商商品主图增强版'
+      },
+      stages: []
+    });
+    expect(creatorPresetCreationStorageKeys()).toHaveLength(0);
+
+    await user.click(within(
+      screen.getByRole('region', { name: '图像生成 操作区' })
+    ).getAllByRole('button', { name: '返回' })[0]!);
+
+    await waitFor(() => expect(window.location.hash).toBe('#/new'));
+    expect(await screen.findByRole('heading', { name: '图像生成模板' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^图像生成，1 个模板/ }))
+      .toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('reuses the preset creation key after remounting and clears it after recovery', async () => {
+    const user = userEvent.setup();
+    const [project] = persistProjects('/Users/test/develop/preset-remount');
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
+      currentProjectId: project.id
+    }));
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const creationKeys: string[] = [];
+    let rejectFirstResponse: ((reason: Error) => void) | undefined;
+    const firstResponse = new Promise<Response>((_resolve, reject) => {
+      rejectFirstResponse = reject;
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsedUrl = new URL(url);
+      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
+        creationKeys.push(String(readRequestBody(init).creationKey));
+        const committed = handleDefaultProjectApiRequest(url, init)!;
+        if (creationKeys.length === 1) return firstResponse;
+        return committed;
+      }
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    const firstRender = render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(screen.getByRole('button', {
+      name: '使用电商商品主图增强版模板'
+    }));
+    await waitFor(() => expect(testCreatorJobs).toHaveLength(1));
+    expect(creatorPresetCreationStorageKeys()).toHaveLength(1);
+    firstRender.unmount();
+    rejectFirstResponse?.(new TypeError('connection closed after commit'));
+    await act(async () => Promise.resolve());
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(screen.getByRole('button', {
+      name: '使用电商商品主图增强版模板'
+    }));
+
+    await waitFor(() => expect(window.location.hash).toBe(
+      '#/workbench?tool=image-generation&jobId=creator-job-1&returnTo=home'
+    ));
+    expect(creationKeys).toHaveLength(2);
+    expect(new Set(creationKeys).size).toBe(1);
+    expect(testCreatorJobs).toHaveLength(1);
+    expect(creatorPresetCreationStorageKeys()).toHaveLength(0);
+  });
+
+  it('retries a timed-out preset creation with the same creation key', async () => {
+    const user = userEvent.setup();
+    const [project] = persistProjects('/Users/test/develop/preset-timeout');
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
+      currentProjectId: project.id
+    }));
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const nativeSetTimeout = window.setTimeout.bind(window);
+    vi.spyOn(window, 'setTimeout').mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => nativeSetTimeout(
+      handler,
+      timeout === 15_000 ? 0 : timeout,
+      ...args
+    )) as typeof window.setTimeout);
+    const creationKeys: string[] = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsedUrl = new URL(url);
+      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
+        creationKeys.push(String(readRequestBody(init).creationKey));
+        if (creationKeys.length === 1) {
+          return new Promise<Response>(() => undefined);
+        }
+      }
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(screen.getByRole('button', {
+      name: '使用电商商品主图增强版模板'
+    }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '模板任务创建超时，请重试。'
+    );
+    expect(creatorPresetCreationStorageKeys()).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', {
+      name: '使用电商商品主图增强版模板'
+    }));
+    await waitFor(() => expect(window.location.hash).toBe(
+      '#/workbench?tool=image-generation&jobId=creator-job-1&returnTo=home'
+    ));
+    expect(creationKeys).toHaveLength(2);
+    expect(new Set(creationKeys).size).toBe(1);
+    expect(creatorPresetCreationStorageKeys()).toHaveLength(0);
+  });
+
+  it('refreshes the catalog and clears the creation key when a preset disappears', async () => {
+    const user = userEvent.setup();
+    const [project] = persistProjects('/Users/test/develop/preset-missing');
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
+      currentProjectId: project.id
+    }));
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    let catalogRequests = 0;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsedUrl = new URL(url);
+      if (parsedUrl.pathname === '/creator/presets' && init?.method === 'GET') {
+        catalogRequests += 1;
+        return jsonResponse({
+          locale: 'zh-CN',
+          catalogHash: `${catalogRequests}`.padStart(64, '0'),
+          presets: testCreatorPresets
+        });
+      }
+      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
+        return jsonResponse({
+          error: {
+            code: 'creator_preset_not_found',
+            message: 'Creator preset asset not found'
+          }
+        }, { status: 404 });
+      }
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(screen.getByRole('button', {
+      name: '使用电商商品主图增强版模板'
+    }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '该模板已不可用，模板目录已刷新。'
+    );
+    await waitFor(() => expect(catalogRequests).toBeGreaterThanOrEqual(2));
+    expect(creatorPresetCreationStorageKeys()).toHaveLength(0);
   });
 
   it('adds a title bar safe area only when the host exposes the capability', async () => {
@@ -791,6 +1105,7 @@ describe('App', () => {
   it('waits for restored conversation history before showing the empty conversation layout', async () => {
     const user = userEvent.setup();
     const [project] = persistProjects('/Users/test/develop/clean');
+    window.location.hash = '#/thread/thread-restored-loading';
     window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: project.id,
       selectedThreadId: 'thread-restored-loading'
@@ -845,7 +1160,7 @@ describe('App', () => {
       .toBeInTheDocument();
     expect(document.querySelector('.conversation-page')).not.toHaveClass('is-empty');
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '创作模板' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '创作模块' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     history.resolve(jsonResponse({
@@ -860,10 +1175,11 @@ describe('App', () => {
     });
     expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '创作模板' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '创作模块' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '视频翻译模板' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
-    expect(screen.queryByRole('button', { name: /^视频翻译/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '空白视频翻译' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '工作台' }));
     expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^视频翻译/ }));
@@ -4078,7 +4394,7 @@ describe('App', () => {
           name: new RegExp(`^${hostKind} 归档会话 `)
         })).not.toBeInTheDocument();
       });
-      expect(window.location.hash).toBe('#/new');
+      expect(window.location.hash).toBe('#/chat');
       expect(findPostCall(fetchCalls, `/threads/${thread.id}/archive`)).toBeDefined();
       expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
     }
@@ -4717,6 +5033,7 @@ describe('App', () => {
 
   it('restores a selected historical conversation that is outside the initial thread page', async () => {
     const [biliProject] = persistProjects('/Users/test/develop/opencreator/bili');
+    window.location.hash = '#/thread/thread_older_history';
     window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: biliProject.id,
       selectedThreadId: 'thread_older_history'
@@ -7755,6 +8072,16 @@ function handleDefaultCreatorApiRequest(
 ): Response | undefined {
   const method = init?.method ?? 'GET';
   const parsedUrl = new URL(url);
+  if (parsedUrl.pathname === '/creator/presets' && method === 'GET') {
+    const locale = parsedUrl.searchParams.get('locale') === 'en-US'
+      ? 'en-US'
+      : 'zh-CN';
+    return jsonResponse({
+      locale,
+      catalogHash: 'f'.repeat(64),
+      presets: testCreatorPresets
+    });
+  }
   if (parsedUrl.pathname === '/creator/jobs' && method === 'GET') {
     const projectId = parsedUrl.searchParams.get('projectId');
     return jsonResponse({
@@ -7772,15 +8099,52 @@ function handleDefaultCreatorApiRequest(
       : testCreatorJobs.find(job => job.id === existingJobId);
     if (existingJob !== undefined) return jsonResponse({ job: existingJob }, { status: 201 });
     const now = new Date(0).toISOString();
+    const presetRef = body.preset !== null
+      && typeof body.preset === 'object'
+      && !Array.isArray(body.preset)
+      ? body.preset as Record<string, unknown>
+      : undefined;
+    const presetModule = typeof presetRef?.module === 'string'
+      ? presetRef.module
+      : undefined;
+    const isImagePreset = presetModule === 'image-generation';
     const job: CreatorJob = {
       id: `creator-job-${testCreatorJobs.length + 1}`,
       projectId: typeof body.projectId === 'string' ? body.projectId : 'project-test',
-      templateId: typeof body.templateId === 'string' ? body.templateId : 'video-translation',
-      templateVersion: typeof body.templateVersion === 'number' ? body.templateVersion : 1,
+      templateId: typeof body.templateId === 'string'
+        ? body.templateId
+        : isImagePreset
+          ? 'image-generation'
+          : 'video-translation',
+      templateVersion: typeof body.templateVersion === 'number'
+        ? body.templateVersion
+        : isImagePreset
+          ? 2
+          : 1,
       status: 'draft',
       revision: 0,
+      presetOrigin: isImagePreset ? {
+        module: 'image-generation',
+        id: String(presetRef?.id ?? ''),
+        version: Number(presetRef?.version ?? 1),
+        locale: body.locale === 'en-US' ? 'en-US' : 'zh-CN',
+        title: body.locale === 'en-US'
+          ? 'Enhanced Product Hero'
+          : '电商商品主图增强版',
+        contentHash: 'e'.repeat(64)
+      } : null,
       state: body.state !== null && typeof body.state === 'object' && !Array.isArray(body.state)
         ? body.state as Record<string, CreatorJson>
+        : isImagePreset
+          ? {
+              prompt: '专业电商商品主图',
+              provider: 'openai',
+              size: '1536x1024',
+              quality: 'medium',
+              candidateCount: 2,
+              referenceImageArtifactId: null,
+              currentStage: null
+            }
         : {
             sourceType: 'url',
             sourceUrl: '',
@@ -8209,6 +8573,15 @@ function persistProjects(cwd: string, ...additionalCwds: string[]): [OpenCreator
   ];
   window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
   return projects;
+}
+
+function creatorPresetCreationStorageKeys(): string[] {
+  return Array.from(
+    { length: window.sessionStorage.length },
+    (_, index) => window.sessionStorage.key(index)
+  ).filter((key): key is string => (
+    key?.startsWith('opencreator.creator-preset-creation.v1:') === true
+  ));
 }
 
 function createLegacyPersistedProject(cwd: string): OpenCreatorProject {

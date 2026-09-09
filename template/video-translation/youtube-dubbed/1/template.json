@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "youtube-dubbed",
+  "version": 1,
+  "module": "video-translation",
+  "runtimeTemplate": {
+    "id": "video-translation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 11,
+  "title": {
+    "zh-CN": "YouTube 中文配音",
+    "en-US": "YouTube English Dubbing"
+  },
+  "description": {
+    "zh-CN": "将英文视频翻译为中文，生成中文配音、单语字幕和横屏成片。",
+    "en-US": "Translate Chinese videos into English with dubbing, single-language subtitles, and a horizontal render."
+  },
+  "cover": "cover.webp",
+  "tags": [
+    "youtube",
+    "translation",
+    "dubbing"
+  ],
+  "defaults": {
+    "sourceLanguage": "en",
+    "targetLanguage": "zh_cn",
+    "preferPlatformCaptions": true,
+    "bilingual": false,
+    "subtitlePosition": "bottom",
+    "subtitleStyle": {
+      "fontPreset": "sans",
+      "fontWeight": "bold",
+      "fontSize": "medium",
+      "primaryColor": "#FFFFFF",
+      "secondaryColor": "#FFFFFF",
+      "outlineColor": "#000000",
+      "outlineWidth": 2,
+      "shadow": {
+        "enabled": true,
+        "color": "#000000",
+        "opacity": 0.7,
+        "offsetX": 2,
+        "offsetY": 2,
+        "blur": 1
+      }
+    },
+    "dubbing": true,
+    "voiceCode": "",
+    "voiceName": "",
+    "composeVideo": true,
+    "videoFormat": "horizontal",
+    "verticalTitle": "",
+    "verticalSubtitle": ""
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "sourceLanguage": "en",
+      "targetLanguage": "zh_cn"
+    },
+    "en-US": {
+      "sourceLanguage": "zh_cn",
+      "targetLanguage": "en"
+    }
+  }
+}

@@ -59,6 +59,7 @@ function job(status: CreatorJob['stages'][number]['status'], revision = 1): Crea
     templateVersion: 1,
     status: status === 'running' ? 'running' : 'completed',
     revision,
+    presetOrigin: null,
     state: {},
     agentThreadId: null,
     stages: [{

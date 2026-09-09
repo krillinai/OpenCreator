@@ -12,6 +12,7 @@
     "cross-spawn": "7.0.6",
     "fastify": "5.9.0",
     "https-proxy-agent": "7.0.6",
+    "image-size": "2.0.2",
     "nanoid": "5.1.16",
     "yaml": "2.9.0",
     "zod": "3.25.76"

@@ -13,6 +13,7 @@ import type {
   CreatorExecutorResult
 } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
+import { creatorSubtitleStyleSchema } from '../presets/module-schemas.js';
 import { validateMediaFile } from '../validators/media.js';
 import { validateSrtFile } from '../validators/srt.js';
 import {
@@ -133,6 +134,13 @@ export function normalizeKrillinFailure(error: { code?: string; message?: string
   message: string;
 } {
   const message = error?.message ?? 'KrillinAI stage failed';
+  if (
+    error?.code === 'subtitle_style_load_failed'
+    || error?.code === 'default_subtitle_style_load_failed'
+    || /(?:fontconfig|fontconfig error|could not load font|failed to find.*font|subtitle style)/i.test(message)
+  ) {
+    return { code: 'creator_subtitle_style_unsupported', message };
+  }
   if (/OpenAI.*(?:杞綍|转录|transcri)|(?:杞綍|转录|transcri).*OpenAI/i.test(message)) {
     return { code: 'creator_transcription_config_missing', message };
   }
@@ -168,27 +176,104 @@ function stageOptions(input: CreatorExecutorInput): Record<string, unknown> {
 
 export function buildKrillinSubtitleStyle(value: CreatorJson | undefined): Record<string, unknown> | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const style = value as Record<string, CreatorJson>;
-  const primaryColor = nonEmptyString(style.primaryColor);
-  const secondaryColor = nonEmptyString(style.secondaryColor);
-  const outlineColor = nonEmptyString(style.outlineColor);
-  const outlineWidth = finiteNumber(style.outlineWidth);
-  const major = compactObject({
+  if (Object.keys(value).length === 0) return undefined;
+  const parsed = creatorSubtitleStyleSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new CreatorExecutorError(
+      'creator_subtitle_style_unsupported',
+      `Unsupported subtitle style: ${parsed.error.issues.map(issue => issue.message).join('; ')}`
+    );
+  }
+  const style = parsed.data;
+  const fontName = `${subtitleFontFamily(style.fontPreset)} ${subtitleWeightName(style.fontWeight)}`;
+  const bold = style.fontWeight === 'bold';
+  const backColor = assBackColor(style.shadow.color, style.shadow.opacity);
+  const shadow = style.shadow.enabled
+    ? Math.max(Math.abs(style.shadow.offsetX), Math.abs(style.shadow.offsetY))
+    : 0;
+  const overrideTags = style.shadow.enabled
+    ? `\\xshad${formatAssNumber(style.shadow.offsetX)}\\yshad${formatAssNumber(style.shadow.offsetY)}\\blur${formatAssNumber(style.shadow.blur)}`
+    : '';
+  const sizes = subtitleFontSizes(style.fontSize);
+  const createStyle = (
+    name: 'Major' | 'Minor',
+    fontSize: number,
+    primaryColor: string,
+    marginV: number
+  ) => ({
+    name,
+    font_name: fontName,
+    font_size: fontSize,
     primary_color: primaryColor,
-    outline_color: outlineColor,
-    outline: outlineWidth
+    secondary_color: primaryColor,
+    outline_color: style.outlineColor,
+    back_color: backColor,
+    bold,
+    italic: false,
+    underline: false,
+    strike_out: false,
+    scale_x: 100,
+    scale_y: 100,
+    spacing: 0,
+    angle: 0,
+    border_style: 1,
+    outline: style.outlineWidth,
+    shadow,
+    alignment: 2,
+    margin_l: 10,
+    margin_r: 10,
+    margin_v: marginV,
+    encoding: 1,
+    override_tags: overrideTags
   });
-  const minor = compactObject({
-    primary_color: secondaryColor,
-    outline_color: outlineColor,
-    outline: outlineWidth
-  });
-  if (Object.keys(major).length === 0 && Object.keys(minor).length === 0) return undefined;
   return {
     version: 1,
-    horizontal: { major: { ...major }, minor: { ...minor } },
-    vertical: { major: { ...major }, minor: { ...minor } }
+    horizontal: {
+      major: createStyle('Major', sizes.horizontalMajor, style.primaryColor, 20),
+      minor: createStyle('Minor', sizes.horizontalMinor, style.secondaryColor, 30)
+    },
+    vertical: {
+      major: createStyle('Major', sizes.verticalMajor, style.primaryColor, 101),
+      minor: createStyle('Minor', sizes.verticalMinor, style.secondaryColor, 92)
+    }
   };
+}
+
+function subtitleFontFamily(preset: 'system' | 'sans' | 'serif' | 'rounded'): string {
+  if (preset === 'serif') return 'OpenCreator Serif';
+  if (preset === 'rounded') return 'OpenCreator Rounded';
+  return 'OpenCreator Sans';
+}
+
+function subtitleWeightName(weight: 'regular' | 'medium' | 'bold'): string {
+  if (weight === 'medium') return 'Medium';
+  if (weight === 'bold') return 'Bold';
+  return 'Regular';
+}
+
+function subtitleFontSizes(size: 'small' | 'medium' | 'large'): {
+  horizontalMajor: number;
+  horizontalMinor: number;
+  verticalMajor: number;
+  verticalMinor: number;
+} {
+  if (size === 'small') {
+    return { horizontalMajor: 12, horizontalMinor: 9, verticalMajor: 10, verticalMinor: 6 };
+  }
+  if (size === 'large') {
+    return { horizontalMajor: 18, horizontalMinor: 12, verticalMajor: 15, verticalMinor: 9 };
+  }
+  return { horizontalMajor: 14, horizontalMinor: 10, verticalMajor: 12, verticalMinor: 7 };
+}
+
+function assBackColor(color: string, opacity: number): string {
+  const hex = color.slice(1).toUpperCase();
+  const alpha = Math.round(255 * (1 - opacity)).toString(16).padStart(2, '0').toUpperCase();
+  return `&H${alpha}${hex.slice(4, 6)}${hex.slice(2, 4)}${hex.slice(0, 2)}`;
+}
+
+function formatAssNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)));
 }
 
 async function writeArtifactIndex(
