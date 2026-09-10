@@ -40,15 +40,52 @@ export class CreatorProviderRequestLedger {
     request: Record<string, CreatorJson>;
     billingSideEffect?: boolean;
   }): CreatorProviderRequest {
-    return this.repository.createProviderRequest({
-      jobId: input.jobId,
-      provider: input.provider,
-      stageRunId: input.stageRunId,
-      scopeKey: input.scopeKey ?? null,
-      requestKey: input.requestKey,
-      requestHash: hashRequest(input.request),
-      billingSideEffect: input.billingSideEffect ?? true,
-      status: 'registered'
+    const requestHash = hashRequest(input.request);
+    return this.repository.transaction(() => {
+      const latest = this.repository.getLatestProviderRequest(input.provider, input.requestKey);
+      if (latest === undefined) {
+        return this.repository.createProviderRequest({
+          jobId: input.jobId,
+          provider: input.provider,
+          stageRunId: input.stageRunId,
+          scopeKey: input.scopeKey ?? null,
+          requestKey: input.requestKey,
+          requestHash,
+          billingSideEffect: input.billingSideEffect ?? true,
+          status: 'registered'
+        });
+      }
+      if (latest.jobId !== input.jobId || latest.requestHash !== requestHash) {
+        throw new CreatorProviderRequestError(
+          'creator_provider_request_key_conflict',
+          'Provider request key is already associated with a different request payload'
+        );
+      }
+      if (latest.status === 'registered') return latest;
+      if (isPendingRemote(latest.status)) {
+        throw new CreatorProviderRequestError(
+          'creator_provider_resolution_required',
+          'Provider request acceptance must be resolved before this request can be submitted again'
+        );
+      }
+      if (latest.stageRunId === input.stageRunId) {
+        throw new CreatorProviderRequestError(
+          'creator_provider_request_already_finalized',
+          'Provider request was already finalized for the current stage run'
+        );
+      }
+      return this.repository.createProviderRequest({
+        jobId: input.jobId,
+        provider: input.provider,
+        stageRunId: input.stageRunId,
+        scopeKey: input.scopeKey ?? null,
+        requestKey: input.requestKey,
+        requestHash,
+        billingSideEffect: input.billingSideEffect ?? true,
+        status: 'registered',
+        generation: latest.generation + 1,
+        resubmissionOf: latest.id
+      });
     });
   }
 
@@ -230,4 +267,8 @@ function sortValue(value: CreatorJson): CreatorJson {
 
 function isTerminal(status: CreatorProviderRequestStatus): boolean {
   return ['succeeded', 'failed', 'abandoned_unknown', 'canceled'].includes(status);
+}
+
+function isPendingRemote(status: CreatorProviderRequestStatus): boolean {
+  return ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(status);
 }

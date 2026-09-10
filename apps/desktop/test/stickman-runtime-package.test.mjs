@@ -88,6 +88,7 @@ function fixture() {
     'fonts/NotoSans-Bold.woff2',
     'fonts/NotoSansSC-Bold.woff2',
     'fonts/OFL.txt',
+    'visual-assets/catalog.json',
     ...[
       'default.png', 'tech-guy.png', 'long-hair.png', 'short-hair.png', 'hiphop.png',
       'student.png', 'elder.png', 'manager.png', 'chef.png', 'fitness.png'
@@ -103,7 +104,9 @@ function fixture() {
         ? 'browser'
         : path.startsWith('fonts/')
           ? 'font'
-          : 'character',
+          : path.startsWith('visual-assets/')
+            ? 'visual-asset'
+            : 'character',
     sha256: hash(readFileSync(join(root, path))),
     bytes: readFileSync(join(root, path)).length,
     version: path.startsWith('bundle/')

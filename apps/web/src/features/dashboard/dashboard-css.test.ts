@@ -100,6 +100,37 @@ describe('dashboard CSS contracts', () => {
     expect(resultPane[0]).toContain('min-height: 0;');
   });
 
+  it('keeps storyboard navigation fixed while only the shot list scrolls', () => {
+    const storyboardStep = cssBlocks('.stickman-storyboard-step');
+    const storyboardPanel = cssBlocks('.stickman-storyboard-review');
+    const storyboardEditor = cssBlocks('.stickman-storyboard-review .stickman-storyboard-editor');
+
+    expect(storyboardStep).toHaveLength(1);
+    expect(storyboardStep[0]).toContain('grid-template-rows: minmax(0, 1fr) auto;');
+    expect(storyboardPanel).toHaveLength(1);
+    expect(storyboardPanel[0]).toContain('overflow: hidden;');
+    expect(storyboardEditor).toHaveLength(1);
+    expect(storyboardEditor[0]).toContain('overflow-y: auto;');
+    expect(storyboardEditor[0]).toContain('scrollbar-gutter: stable;');
+  });
+
+  it('keeps script generation content meaningful inside the fixed editor layout', () => {
+    const scriptStep = cssBlocks('.stickman-script-step');
+    const scriptPanel = cssBlocks('.stickman-script-panel');
+    const scriptEditor = cssBlocks('.stickman-script-editor');
+    const skeletonBox = cssBlocks('.stickman-script-skeleton-box');
+
+    expect(scriptStep).toHaveLength(1);
+    expect(scriptStep[0]).toContain('grid-template-rows: minmax(0, 1fr) auto;');
+    expect(scriptPanel).toHaveLength(1);
+    expect(scriptPanel[0]).toContain('grid-template-rows: auto minmax(0, 1fr);');
+    expect(scriptPanel[0]).toContain('overflow: hidden;');
+    expect(scriptEditor).toHaveLength(1);
+    expect(scriptEditor[0]).toContain('overflow-y: auto;');
+    expect(skeletonBox).toHaveLength(1);
+    expect(skeletonBox[0]).toContain('background: var(--conversation-bg);');
+  });
+
   it('visually preserves creator steps that remain reachable after navigating back', () => {
     const reachableConnector = cssBlocks(
       '.video-translation-steps li[data-next-reachable="true"]::after'

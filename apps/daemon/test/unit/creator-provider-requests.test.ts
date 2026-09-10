@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
+  CreatorProviderRequestError,
   CreatorProviderRequestLedger,
   type CreatorProviderCapabilities
 } from '../../src/creator/provider-requests.js';
@@ -74,6 +75,25 @@ describe('creator provider request ledger', () => {
     expect(recovered.status).toBe('unknown_remote_acceptance');
     expect(lookup).not.toHaveBeenCalled();
     expect(submitCount).toBe(1);
+
+    const retryStage = secondRepository.createStageRun({
+      jobId: first.job.id,
+      stageId: 'generate',
+      executor: 'image',
+      status: 'running',
+      scopeKey: 'shot-01',
+      inputFingerprint: 'a'.repeat(64)
+    });
+    expect(() => new CreatorProviderRequestLedger(secondRepository).registerBeforeSubmit({
+      jobId: first.job.id,
+      provider: 'openai-image',
+      stageRunId: retryStage.id,
+      scopeKey: 'shot-01',
+      requestKey: `${first.job.id}:images:shot-01`,
+      request: { prompt: 'draw', apiKey: 'must-not-be-persisted' }
+    })).toThrowError(expect.objectContaining<Partial<CreatorProviderRequestError>>({
+      code: 'creator_provider_resolution_required'
+    }));
     secondDb.close();
   });
 
@@ -92,6 +112,12 @@ describe('creator provider request ledger', () => {
     ledger.markUnknownRemoteAcceptance(first.id);
 
     const second = ledger.confirmResubmit(first.id);
+    repository.updateStageRun({
+      id: stage.id,
+      status: 'failed',
+      errorCode: 'creator_provider_resolution_required',
+      errorMessage: 'Provider request acceptance requires resolution'
+    });
 
     expect(repository.getProviderRequest(first.id)?.status).toBe('abandoned_unknown');
     expect(second).toMatchObject({
@@ -100,6 +126,114 @@ describe('creator provider request ledger', () => {
       status: 'registered',
       requestHash: first.requestHash
     });
+    const retryStage = repository.createStageRun({
+      jobId: job.id,
+      stageId: 'generate',
+      executor: 'image',
+      status: 'running',
+      scopeKey: 'shot-01',
+      inputFingerprint: 'a'.repeat(64)
+    });
+    const reused = ledger.registerBeforeSubmit({
+      jobId: job.id,
+      provider: 'openai-image',
+      stageRunId: retryStage.id,
+      scopeKey: 'shot-01',
+      requestKey: `${job.id}:images:shot-01`,
+      request: { prompt: 'draw' }
+    });
+    expect(reused.id).toBe(second.id);
+    expect(repository.listProviderRequests(job.id)).toHaveLength(2);
+    db.close();
+  });
+
+  it('creates the next generation when a terminal request is retried by a new stage run', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-provider-ledger-'));
+    const { db, job, stage, ledger, repository } = setup();
+    const requestKey = `${job.id}:images:shot-01`;
+    const first = ledger.registerBeforeSubmit({
+      jobId: job.id,
+      provider: 'openai-image',
+      stageRunId: stage.id,
+      scopeKey: 'shot-01',
+      requestKey,
+      request: { prompt: 'draw' }
+    });
+    ledger.markSubmitting(first.id);
+    ledger.markFailed(first.id);
+    repository.updateStageRun({
+      id: stage.id,
+      status: 'failed',
+      errorCode: 'creator_stage_failed',
+      errorMessage: 'Provider request failed'
+    });
+    const retryStage = repository.createStageRun({
+      jobId: job.id,
+      stageId: 'generate',
+      executor: 'image',
+      status: 'running',
+      scopeKey: 'shot-01',
+      inputFingerprint: 'a'.repeat(64)
+    });
+
+    const retry = ledger.registerBeforeSubmit({
+      jobId: job.id,
+      provider: 'openai-image',
+      stageRunId: retryStage.id,
+      scopeKey: 'shot-01',
+      requestKey,
+      request: { prompt: 'draw' }
+    });
+
+    expect(retry).toMatchObject({
+      generation: 2,
+      resubmissionOf: first.id,
+      status: 'registered',
+      stageRunId: retryStage.id
+    });
+    db.close();
+  });
+
+  it('rejects reuse of a request key for a different payload', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-provider-ledger-'));
+    const { db, job, stage, ledger, repository } = setup();
+    const requestKey = `${job.id}:images:shot-01`;
+    const first = ledger.registerBeforeSubmit({
+      jobId: job.id,
+      provider: 'openai-image',
+      stageRunId: stage.id,
+      scopeKey: 'shot-01',
+      requestKey,
+      request: { prompt: 'draw' }
+    });
+    ledger.markSubmitting(first.id);
+    ledger.markFailed(first.id);
+    repository.updateStageRun({
+      id: stage.id,
+      status: 'failed',
+      errorCode: 'creator_stage_failed',
+      errorMessage: 'Provider request failed'
+    });
+    const retryStage = repository.createStageRun({
+      jobId: job.id,
+      stageId: 'generate',
+      executor: 'image',
+      status: 'running',
+      scopeKey: 'shot-01',
+      inputFingerprint: 'a'.repeat(64)
+    });
+
+    expect(() => ledger.registerBeforeSubmit({
+      jobId: job.id,
+      provider: 'openai-image',
+      stageRunId: retryStage.id,
+      scopeKey: 'shot-01',
+      requestKey,
+      request: { prompt: 'changed payload' }
+    })).toThrowError(expect.objectContaining<Partial<CreatorProviderRequestError>>({
+      code: 'creator_provider_request_key_conflict'
+    }));
+    expect(repository.listProviderRequests(job.id)).toHaveLength(1);
     db.close();
   });
 

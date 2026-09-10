@@ -5,36 +5,25 @@ import {
 } from '../../src/creator/krillin/execution-plan.js';
 
 describe('KrillinAI CLI execution plan', () => {
-  it('tries platform captions before speech recognition for YouTube', () => {
+  it('delegates platform-caption fallback to KrillinAI in one attempt', () => {
     const plan = createKrillinCliExecutionPlan(
       'subtitle',
-      'https://www.youtube.com/watch?v=demo',
       { captionSource: 'any' }
     );
 
-    expect(plan).toEqual([
-      {
-        options: { captionSource: 'platform' },
-        continueOnErrorCode: 'platform_caption_failed'
-      },
-      {
-        options: { captionSource: 'whisper' }
-      }
-    ]);
+    expect(plan).toEqual([{ options: { captionSource: 'any' } }]);
   });
 
-  it('keeps one attempt for local media or forced speech recognition', () => {
+  it('defaults subtitles to KrillinAI any-source mode', () => {
     expect(createKrillinCliExecutionPlan(
       'subtitle',
-      'local:/tmp/video.mp4',
-      { captionSource: 'any' }
+      {}
     )).toEqual([{
       options: { captionSource: 'any' }
     }]);
 
     expect(createKrillinCliExecutionPlan(
       'subtitle',
-      'https://youtu.be/demo',
       { captionSource: 'whisper' }
     )).toEqual([{
       options: { captionSource: 'whisper' }
@@ -44,7 +33,6 @@ describe('KrillinAI CLI execution plan', () => {
   it('keeps non-subtitle stages unchanged', () => {
     expect(createKrillinCliExecutionPlan(
       'render-horizontal',
-      undefined,
       {}
     )).toEqual([{ options: {} }]);
   });

@@ -23,6 +23,7 @@ export function verifyCreatorRuntime(root, platform, arch) {
     || !/^[a-f0-9]{64}$/i.test(manifest.protocolSha256 ?? '')
     || !/^[a-f0-9]{64}$/i.test(manifest.integrationPatchSha256 ?? '')
     || typeof manifest.upstreamCommit !== 'string'
+    || !isValidCliSource(manifest.cliSource)
     || manifest.platform !== platform
     || manifest.arch !== arch
     || !Array.isArray(manifest.resources)
@@ -88,6 +89,15 @@ export function verifyCreatorRuntime(root, platform, arch) {
     throw new Error('Creator Runtime must load local transcription dependencies on demand');
   }
   return manifest;
+}
+
+function isValidCliSource(value) {
+  if (value === undefined) return true;
+  if (value === null || typeof value !== 'object') return false;
+  if (!['local-source', 'configured-binary', 'vendor-release'].includes(value.kind)) return false;
+  if (value.revision !== undefined && (typeof value.revision !== 'string' || value.revision.length === 0)) return false;
+  if (value.dirty !== undefined && typeof value.dirty !== 'boolean') return false;
+  return true;
 }
 
 function verifyYtDlpRuntime(descriptor, resourcesByPath) {

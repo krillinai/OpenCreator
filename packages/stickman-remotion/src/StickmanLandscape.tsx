@@ -7,7 +7,7 @@ import {
   interpolate,
   useCurrentFrame
 } from 'remotion';
-import { assertTimeline, type StickmanTimelineProps } from './timeline.js';
+import { assertTimeline, buildNarrationTrack, type StickmanTimelineProps } from './timeline.js';
 import notoSansBold from '../assets/fonts/NotoSans-Bold.woff2';
 import notoSansScBold from '../assets/fonts/NotoSansSC-Bold.woff2';
 
@@ -30,14 +30,22 @@ const localFontFaces = `
 
 export const StickmanLandscape: React.FC<StickmanTimelineProps> = props => {
   const timeline = assertTimeline(props);
-  const audioPath = timeline.shots[0]?.audioPath;
+  const narrationTrack = buildNarrationTrack(timeline);
   return (
     <AbsoluteFill style={{
       backgroundColor: '#f7f7f5',
       fontFamily: '"OpenCreator Noto Sans SC", "OpenCreator Noto Sans", sans-serif'
     }}>
       <style>{localFontFaces}</style>
-      {audioPath ? <Audio src={fileUrl(audioPath)} /> : null}
+      {narrationTrack.map(clip => (
+        <Sequence
+          key={`audio-${clip.shotId}`}
+          from={clip.from}
+          durationInFrames={clip.durationInFrames}
+        >
+          <Audio src={fileUrl(clip.audioPath)} />
+        </Sequence>
+      ))}
       {timeline.shots.map(shot => (
         <Sequence
           key={shot.shotId}

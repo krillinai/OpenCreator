@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, link, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
   CreatorJson,
@@ -10,6 +10,7 @@ import type { CreatorExecutorInput } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { spawnCreatorProcess } from '../process-tree.js';
 import { createKrillinConfigToml } from './config-bridge.js';
+import { isYouTubeSource } from './execution-plan.js';
 import {
   resolveInside,
   type KrillinRuntimeManifest
@@ -42,6 +43,13 @@ export type KrillinCliProgressFrame = {
   percent: number;
   message?: string;
 };
+
+type RunProcess = (input: {
+  executable: string;
+  args: string[];
+  cwd: string;
+  signal: AbortSignal;
+}) => Promise<void>;
 
 export class KrillinCliError extends Error {
   constructor(
@@ -84,7 +92,12 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
     resourceRoot: input.resourceRoot,
     dependencyRoot: input.dependencyRoot,
     launcherRoot,
-    useOnDemandTranscription: input.config.transcription.provider === 'whisperkit',
+    onDemandTranscriptionProvider: isOnDemandTranscriptionProvider(
+      input.config.transcription.provider
+    ) ? input.config.transcription.provider : undefined,
+    onDemandTranscriptionModel: input.config.transcription.provider === 'whisper.cpp'
+      ? input.config.transcription.whisperCpp.model
+      : undefined,
     ytDlpRuntime: input.ytDlpRuntime
   });
   const cliConfig = stageConfig(input.config, krillinCliStageId(input.stage.stageRun.stageId), input.options);
@@ -104,24 +117,41 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
     await writeInitialManifest(input.stage, input.options);
   }
 
-  const args = commandArguments(input.stage, input.artifacts, input.options, stylePath);
+  const args = buildKrillinCliCommandArguments(input.stage, input.artifacts, input.options, stylePath);
   input.stage.reportProgress({
     krillinMode: 'cli',
     providerStatus: 'running',
     percent: 5
   });
   try {
-    const response = await executeCli({
-      executable: resolveInside(input.resourceRoot, cli.path),
-      args,
-      cwd: launcherRoot,
-      runtimeBin,
-      resourceRoot: cliResourceRoot,
-      dependencyBin,
-      ytDlpRuntime: input.ytDlpRuntime,
-      reportProgress: progress => input.stage.reportProgress(progress),
-      signal: input.stage.signal
-    });
+    let response: KrillinCliResponse;
+    try {
+      response = await executeCli({
+        executable: resolveInside(input.resourceRoot, cli.path),
+        args,
+        cwd: launcherRoot,
+        runtimeBin,
+        resourceRoot: cliResourceRoot,
+        dependencyBin,
+        ytDlpRuntime: input.ytDlpRuntime,
+        reportProgress: progress => input.stage.reportProgress(progress),
+        signal: input.stage.signal
+      });
+    } catch (error) {
+      const recovered = await recoverWindowsHorizontalAssRender({
+        platform: process.platform,
+        resourceRoot: input.resourceRoot,
+        manifest: input.manifest,
+        stageId: input.stage.stageRun.stageId,
+        workdir: input.stage.workdir,
+        artifacts: input.artifacts,
+        signal: input.stage.signal,
+        error,
+        reportProgress: progress => input.stage.reportProgress(progress)
+      });
+      if (recovered === undefined) throw error;
+      response = recovered;
+    }
     const artifacts = await collectArtifacts(input, response);
     input.stage.reportProgress({
       krillinMode: 'cli',
@@ -169,7 +199,7 @@ function stageConfig(
   return config;
 }
 
-function commandArguments(
+export function buildKrillinCliCommandArguments(
   stage: CreatorExecutorInput,
   artifacts: MaterializedKrillinArtifact[],
   options: Record<string, unknown>,
@@ -186,6 +216,7 @@ function commandArguments(
       '--origin-lang', requiredOption(options, 'originLanguage'),
       '--target-lang', requiredOption(options, 'targetLanguage'),
       '--caption-source', stringOption(options, 'captionSource') ?? 'any',
+      ...(booleanOption(options, 'sourceOnly', false) ? ['--source-only'] : []),
       `--bilingual-top=${booleanOption(options, 'bilingualTop', true)}`,
       ...common,
       ...styleArgument(stylePath)
@@ -415,7 +446,13 @@ export function createKrillinCliEnvironment(
     Path: executablePath,
     KRILLINAI_RESOURCE_ROOT: resourceRoot,
     KRILLINAI_OFFLINE_DEPENDENCIES: '1',
-    OPENCREATOR_KRILLINAI_CLI: '1'
+    OPENCREATOR_KRILLINAI_CLI: '1',
+    ...(ytDlpRuntime === undefined
+      ? {}
+      : {
+          KRILLINAI_YT_DLP_EXECUTABLE: ytDlpRuntime.executable,
+          KRILLINAI_YT_DLP_PREFIX_ARGS: JSON.stringify(ytDlpRuntime.prefixArgs)
+        })
   };
 }
 
@@ -472,11 +509,12 @@ export function parseKrillinCliProgressFrame(line: string): KrillinCliProgressFr
   }
 }
 
-async function prepareCliResourceRoot(input: {
+export async function prepareCliResourceRoot(input: {
   resourceRoot: string;
   dependencyRoot: string;
   launcherRoot: string;
-  useOnDemandTranscription: boolean;
+  onDemandTranscriptionProvider?: 'whisperkit' | 'whisper.cpp';
+  onDemandTranscriptionModel?: 'tiny' | 'medium' | 'large-v2';
   ytDlpRuntime?: YtDlpRuntime;
 }): Promise<string> {
   const dependencyBin = join(input.dependencyRoot, 'bin');
@@ -484,7 +522,27 @@ async function prepareCliResourceRoot(input: {
   await mkdir(dependencyBin, { recursive: true });
   await mkdir(dependencyModels, { recursive: true });
   const type = process.platform === 'win32' ? 'junction' : 'dir';
-  await symlink(dependencyModels, join(input.launcherRoot, 'models'), type);
+  if (input.onDemandTranscriptionProvider === 'whisper.cpp') {
+    const model = input.onDemandTranscriptionModel;
+    if (model === undefined) {
+      throw new CreatorExecutorError(
+        'creator_transcription_config_missing',
+        'Whisper.cpp model selection is required'
+      );
+    }
+    const sourceModels = join(dependencyModels, 'whispercpp');
+    const mountedModels = join(input.launcherRoot, 'models', 'whispercpp');
+    await mkdir(mountedModels, { recursive: true });
+    await linkDirectoryEntries(sourceModels, mountedModels);
+    if (model !== 'large-v2') {
+      await linkFile(
+        join(sourceModels, `ggml-${model}.bin`),
+        join(mountedModels, 'ggml-large-v2.bin')
+      );
+    }
+  } else {
+    await symlink(dependencyModels, join(input.launcherRoot, 'models'), type);
+  }
   const overlayBin = join(input.launcherRoot, 'bin');
   await mkdir(overlayBin, { recursive: true });
   await linkDirectoryEntries(join(input.resourceRoot, 'bin'), overlayBin);
@@ -495,17 +553,161 @@ async function prepareCliResourceRoot(input: {
       ? input.ytDlpRuntime.executable
       : input.ytDlpRuntime.script;
     if (ytDlpSource !== undefined) {
-      await linkFile(ytDlpSource, join(overlayBin, ytDlpName));
+      await copyIsolatedFile(ytDlpSource, join(overlayBin, ytDlpName));
     }
   }
-  if (input.useOnDemandTranscription) {
+  if (input.onDemandTranscriptionProvider === 'whisperkit') {
     const whisperKitName = process.platform === 'win32' ? 'whisperkit-cli.exe' : 'whisperkit-cli';
     await linkFile(
       join(dependencyBin, whisperKitName),
       join(overlayBin, whisperKitName)
     );
+  } else if (input.onDemandTranscriptionProvider === 'whisper.cpp') {
+    await linkDirectory(
+      join(dependencyBin, 'whispercpp'),
+      join(overlayBin, 'whispercpp')
+    );
   }
   return input.launcherRoot;
+}
+
+export async function recoverWindowsHorizontalAssRender(input: {
+  platform: NodeJS.Platform;
+  resourceRoot: string;
+  manifest: KrillinRuntimeManifest;
+  stageId: string;
+  workdir: string;
+  artifacts: MaterializedKrillinArtifact[];
+  signal: AbortSignal;
+  error: unknown;
+  reportProgress(progress: Record<string, CreatorJson>): void;
+  runProcess?: RunProcess;
+}): Promise<KrillinCliResponse | undefined> {
+  if (!isWindowsHorizontalAssPathFailure(input)) return undefined;
+  const sourceVideo = artifactPath(input.artifacts, 'source_video');
+  const assName = 'formatted_horizontal_bilingual.ass';
+  const assPath = join(input.workdir, assName);
+  if (!sourceVideo || !await isNonEmptyFile(sourceVideo) || !await isNonEmptyFile(assPath)) {
+    return undefined;
+  }
+  const ffmpeg = input.manifest.resources.find(resource => (
+    resource.kind === 'executable'
+    && /(?:^|\/)ffmpeg(?:\.exe)?$/i.test(resource.path)
+  ));
+  if (ffmpeg === undefined) return undefined;
+
+  const outputPath = join(input.workdir, 'horizontal_bilingual.mp4');
+  const temporaryPath = join(input.workdir, '.horizontal_bilingual.opencreator-recovery.mp4');
+  const args = [
+    '-y',
+    '-i', sourceVideo,
+    '-map', '0:v:0',
+    '-map', '0:a:0?',
+    '-vf', `ass=${assName}`,
+    '-c:v', 'libx264',
+    '-preset', 'medium',
+    '-crf', '23',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    temporaryPath
+  ];
+  await rm(outputPath, { force: true });
+  await rm(temporaryPath, { force: true });
+  input.reportProgress({
+    krillinMode: 'cli',
+    providerStatus: 'running',
+    phase: 'rendering_subtitles',
+    percent: 95,
+    message: 'Rendering bilingual subtitles'
+  });
+  try {
+    await (input.runProcess ?? runProcess)({
+      executable: resolveInside(input.resourceRoot, ffmpeg.path),
+      args,
+      cwd: input.workdir,
+      signal: input.signal
+    });
+    if (!await isNonEmptyFile(temporaryPath)) {
+      throw new KrillinCliError(
+        'render_video_failed',
+        'Windows ASS compatibility render did not produce a video'
+      );
+    }
+    await rename(temporaryPath, outputPath);
+    await writeFile(join(input.workdir, 'opencreator-windows-ass-recovery.json'), `${JSON.stringify({
+      schemaVersion: 1,
+      reason: 'krillinai-2.1.0-windows-absolute-ass-path',
+      cwd: input.workdir,
+      inputVideo: sourceVideo,
+      assFile: assName,
+      outputVideo: outputPath,
+      ffmpegArgs: args
+    }, null, 2)}\n`);
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    if (error instanceof CreatorExecutorError || error instanceof KrillinCliError) throw error;
+    throw new KrillinCliError(
+      'render_video_failed',
+      `Windows ASS compatibility render failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  return {
+    ok: true,
+    stage: 'render-horizontal',
+    outputs: { horizontal_video: outputPath },
+    warnings: ['Recovered KrillinAI 2.1.0 Windows ASS path handling with a relative ASS filter path']
+  };
+}
+
+function isWindowsHorizontalAssPathFailure(input: {
+  platform: NodeJS.Platform;
+  stageId: string;
+  error: unknown;
+}): boolean {
+  if (
+    input.platform !== 'win32'
+    || input.stageId !== 'bilingual-render'
+    || !(input.error instanceof KrillinCliError)
+    || input.error.code !== 'render_video_failed'
+  ) return false;
+  return /Unable to parse option value[\s\S]*formatted_horizontal_bilingual\.ass[\s\S]*as image size/i
+    .test(input.error.message)
+    && /Error applying option ['"]?original_size['"]? to filter ['"]?ass['"]?/i
+      .test(input.error.message);
+}
+
+async function isNonEmptyFile(path: string): Promise<boolean> {
+  try {
+    const info = await stat(path);
+    return info.isFile() && info.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+function runProcess(input: {
+  executable: string;
+  args: string[];
+  cwd: string;
+  signal: AbortSignal;
+}): Promise<void> {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawnCreatorProcess(input.executable, input.args, {
+      cwd: input.cwd,
+      stdio: ['ignore', 'ignore', 'pipe']
+    }, input.signal);
+    let stderr = '';
+    child.stderr?.on('data', chunk => { stderr = boundedAppend(stderr, String(chunk)); });
+    child.once('error', reject);
+    child.once('exit', code => {
+      if (input.signal.aborted) {
+        reject(new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled'));
+        return;
+      }
+      if (code === 0) resolvePromise();
+      else reject(new Error(redact(stderr || `FFmpeg exited with code ${code ?? 'unknown'}`)));
+    });
+  });
 }
 
 async function linkDirectoryEntries(source: string, destination: string): Promise<void> {
@@ -517,7 +719,37 @@ async function linkDirectoryEntries(source: string, destination: string): Promis
 
 async function linkFile(source: string, target: string): Promise<void> {
   await rm(target, { force: true });
-  await symlink(source, target, process.platform === 'win32' ? 'file' : undefined);
+  if (process.platform !== 'win32') {
+    await symlink(source, target);
+    return;
+  }
+  try {
+    await link(source, target);
+  } catch (error) {
+    if (!isWindowsLinkFallbackError(error)) throw error;
+    await copyFile(source, target);
+  }
+}
+
+async function copyIsolatedFile(source: string, target: string): Promise<void> {
+  await rm(target, { force: true });
+  await copyFile(source, target);
+}
+
+function isWindowsLinkFallbackError(error: unknown): boolean {
+  if (error === null || typeof error !== 'object' || !('code' in error)) return false;
+  return ['EPERM', 'EACCES', 'EXDEV', 'ENOTSUP'].includes(String(error.code));
+}
+
+async function linkDirectory(source: string, target: string): Promise<void> {
+  await rm(target, { recursive: true, force: true });
+  await symlink(source, target, process.platform === 'win32' ? 'junction' : 'dir');
+}
+
+function isOnDemandTranscriptionProvider(
+  provider: CreatorServicesConfig['transcription']['provider']
+): provider is 'whisperkit' | 'whisper.cpp' {
+  return provider === 'whisperkit' || provider === 'whisper.cpp';
 }
 
 function parseResponse(stdout: string): KrillinCliResponse | undefined {
@@ -542,8 +774,13 @@ export function resolveKrillinCliSource(
   artifacts: MaterializedKrillinArtifact[],
   options: Record<string, unknown>
 ): string | undefined {
+  const sourceUrl = stringOption(options, 'sourceUrl');
+  const captionSource = stringOption(options, 'captionSource') ?? 'any';
+  if (isYouTubeSource(sourceUrl) && captionSource !== 'whisper') {
+    return sourceUrl;
+  }
   const localSource = artifactPath(artifacts, 'source_video');
-  return localSource === undefined ? stringOption(options, 'sourceUrl') : `local:${localSource}`;
+  return localSource === undefined ? sourceUrl : `local:${localSource}`;
 }
 
 function requiredOption(options: Record<string, unknown>, name: string): string {

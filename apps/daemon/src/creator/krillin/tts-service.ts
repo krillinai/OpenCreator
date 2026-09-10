@@ -6,7 +6,7 @@ import type {
   CreatorTtsVoicesResponse,
   RuntimeErrorCode
 } from '@opencreator/protocol';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
@@ -50,6 +50,23 @@ type ExecuteUtilityInput = {
   launcherRoot: string;
 };
 
+type ExecuteSynthesisInput = {
+  config: CreatorServicesConfig;
+  provider: Exclude<CreatorTtsProvider, 'edge-tts'>;
+  model: string;
+  voiceId: string;
+  text: string;
+  format: 'mp3' | 'wav';
+  speed: number;
+  instructions?: string;
+  signal?: AbortSignal;
+};
+
+type ExecuteSynthesisResult = {
+  content: Buffer;
+  format: 'mp3' | 'wav';
+};
+
 export type KrillinTtsSynthesisRequest = {
   text: string;
   provider?: CreatorTtsProvider;
@@ -58,6 +75,7 @@ export type KrillinTtsSynthesisRequest = {
   format?: 'mp3' | 'wav';
   speed?: number;
   instructions?: string;
+  signal?: AbortSignal;
 };
 
 export type KrillinTtsSynthesisResult = {
@@ -93,10 +111,15 @@ export function createKrillinTtsService(input: {
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
   timeoutMs?: number;
   executeUtility?: (input: ExecuteUtilityInput) => Promise<KrillinUtilityResponse>;
+  executeSynthesis?: (input: ExecuteSynthesisInput) => Promise<ExecuteSynthesisResult>;
 }) {
   const executeUtility = input.executeUtility ?? (utility => executePackagedKrillinUtility({
     ...utility,
     resourceRoot: input.resourceRoot,
+    timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  }));
+  const executeSynthesis = input.executeSynthesis ?? (request => executeProviderSynthesis({
+    ...request,
     timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS
   }));
 
@@ -168,30 +191,21 @@ export function createKrillinTtsService(input: {
       );
     }
 
-    const launcherRoot = await createLauncherRoot(input.workRoot);
-    const textPath = join(launcherRoot, 'speech.txt');
-    const outputPath = join(launcherRoot, `speech.${format}`);
-    await writeFile(textPath, text, { mode: 0o600 });
     try {
-      const args = [
-        'speech',
-        '--text-file', textPath,
-        '--output', outputPath,
-        '--provider', provider,
-        '--voice', voiceId,
-        '--format', format,
-        '--speed', String(speed)
-      ];
-      if (request.instructions?.trim()) {
-        args.push('--instructions', request.instructions.trim());
-      }
-      const response = await executeUtility({
+      const synthesis = await executeSynthesis({
         config: prepared.config,
-        args,
-        launcherRoot
+        provider,
+        model: prepared.model,
+        voiceId,
+        text,
+        format,
+        speed,
+        ...(request.instructions?.trim()
+          ? { instructions: request.instructions.trim() }
+          : {}),
+        ...(request.signal === undefined ? {} : { signal: request.signal })
       });
-      ensureSuccessfulResponse(response);
-      const content = await readFile(outputPath);
+      const content = synthesis.content;
       if (content.length === 0 || content.length > MAX_OUTPUT_BYTES) {
         throw new KrillinTtsServiceError(
           'creator_tts_upstream_error',
@@ -204,8 +218,8 @@ export function createKrillinTtsService(input: {
         provider,
         model: prepared.model,
         voiceId,
-        format,
-        mime: format === 'mp3' ? 'audio/mpeg' : 'audio/wav'
+        format: synthesis.format,
+        mime: synthesis.format === 'mp3' ? 'audio/mpeg' : 'audio/wav'
       };
     } catch (error) {
       if (error instanceof KrillinTtsServiceError) throw error;
@@ -214,8 +228,6 @@ export function createKrillinTtsService(input: {
         error instanceof Error ? error.message : 'KrillinAI speech synthesis failed',
         502
       );
-    } finally {
-      await rm(launcherRoot, { recursive: true, force: true });
     }
   }
 
@@ -300,6 +312,239 @@ function ensureSuccessfulResponse(response: KrillinUtilityResponse): void {
     response.error?.message || 'KrillinAI TTS command failed',
     502
   );
+}
+
+async function executeProviderSynthesis(
+  input: ExecuteSynthesisInput & { timeoutMs: number }
+): Promise<ExecuteSynthesisResult> {
+  if (input.provider === 'aliyun') return synthesizeAliyun(input);
+  if (input.provider === 'minimax') return synthesizeMinimax(input);
+  return synthesizeOpenAi(input);
+}
+
+async function synthesizeOpenAi(
+  input: ExecuteSynthesisInput & { timeoutMs: number }
+): Promise<ExecuteSynthesisResult> {
+  const provider = input.config.tts.openai;
+  const response = await providerFetch(
+    appendPath(provider.baseUrl || 'https://api.openai.com/v1', '/audio/speech'),
+    provider.apiKey,
+    {
+      model: input.model,
+      input: input.text,
+      voice: input.voiceId,
+      response_format: input.format,
+      speed: input.speed,
+      ...(input.instructions === undefined ? {} : { instructions: input.instructions })
+    },
+    input
+  );
+  return {
+    content: await readAudioResponse(response),
+    format: audioFormat(response.headers.get('content-type'), undefined, input.format)
+  };
+}
+
+async function synthesizeAliyun(
+  input: ExecuteSynthesisInput & { timeoutMs: number }
+): Promise<ExecuteSynthesisResult> {
+  const provider = input.config.tts.aliyun;
+  const endpoint = aliyunTtsEndpoint(provider.baseUrl);
+  const response = await providerFetch(endpoint, provider.apiKey, {
+    model: input.model,
+    input: {
+      text: input.text,
+      voice: input.voiceId,
+      language_type: containsCjk(input.text) ? 'Chinese' : 'English'
+    }
+  }, input);
+  const payload = await readJsonResponse(response) as {
+    output?: { audio?: { data?: string; url?: string } };
+    request_id?: string;
+  };
+  const audio = payload.output?.audio;
+  const encoded = audio?.data?.trim();
+  if (encoded) {
+    const content = decodeBase64Audio(encoded);
+    return { content, format: detectAudioFormat(content, input.format) };
+  }
+  if (!audio?.url) throw new Error('Aliyun TTS response did not contain audio');
+  const audioUrl = new URL(audio.url);
+  if (audioUrl.protocol === 'http:') audioUrl.protocol = 'https:';
+  if (audioUrl.protocol !== 'https:') throw new Error('Aliyun TTS returned an invalid audio URL');
+  const audioResponse = await timedFetch(audioUrl, { method: 'GET' }, input);
+  if (!audioResponse.ok) await throwProviderHttpError(audioResponse);
+  const content = await readAudioResponse(audioResponse);
+  return {
+    content,
+    format: audioFormat(
+      audioResponse.headers.get('content-type'),
+      audioUrl.pathname,
+      detectAudioFormat(content, input.format)
+    )
+  };
+}
+
+async function synthesizeMinimax(
+  input: ExecuteSynthesisInput & { timeoutMs: number }
+): Promise<ExecuteSynthesisResult> {
+  const provider = input.config.tts.minimax;
+  const response = await providerFetch(
+    minimaxTtsEndpoint(provider.baseUrl || 'https://api.minimax.io'),
+    provider.apiKey,
+    {
+      model: input.model,
+      text: input.text,
+      stream: false,
+      voice_setting: {
+        voice_id: input.voiceId,
+        speed: input.speed,
+        vol: 1,
+        pitch: 0
+      },
+      audio_setting: {
+        sample_rate: 44_100,
+        format: input.format,
+        channel: 1
+      }
+    },
+    input
+  );
+  const payload = await readJsonResponse(response) as {
+    data?: { audio?: string; status?: number };
+    base_resp?: { status_code?: number; status_msg?: string };
+  };
+  if (payload.base_resp?.status_code !== undefined && payload.base_resp.status_code !== 0) {
+    throw new Error(
+      `MiniMax TTS failed: ${payload.base_resp.status_msg || payload.base_resp.status_code}`
+    );
+  }
+  const encoded = payload.data?.audio;
+  if (!encoded) throw new Error('MiniMax TTS response did not contain audio');
+  const content = Buffer.from(encoded, 'hex');
+  if (content.length === 0) throw new Error('MiniMax TTS returned invalid audio');
+  return { content, format: detectAudioFormat(content, input.format) };
+}
+
+async function providerFetch(
+  url: string,
+  apiKey: string,
+  body: unknown,
+  input: ExecuteSynthesisInput & { timeoutMs: number }
+): Promise<Response> {
+  const response = await timedFetch(url, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  }, input);
+  if (!response.ok) await throwProviderHttpError(response);
+  return response;
+}
+
+async function timedFetch(
+  url: string | URL,
+  init: RequestInit,
+  input: Pick<ExecuteSynthesisInput, 'signal'> & { timeoutMs: number }
+): Promise<Response> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timeout = setTimeout(abort, input.timeoutMs);
+  timeout.unref();
+  if (input.signal?.aborted) abort();
+  else input.signal?.addEventListener('abort', abort, { once: true });
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    input.signal?.removeEventListener('abort', abort);
+  }
+}
+
+async function readJsonResponse(response: Response): Promise<unknown> {
+  try {
+    return await response.json() as unknown;
+  } catch {
+    throw new Error('TTS provider returned invalid JSON');
+  }
+}
+
+async function readAudioResponse(response: Response): Promise<Buffer> {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_OUTPUT_BYTES) {
+    throw new Error('TTS provider audio exceeds the size limit');
+  }
+  const content = Buffer.from(await response.arrayBuffer());
+  if (content.length === 0 || content.length > MAX_OUTPUT_BYTES) {
+    throw new Error('TTS provider returned invalid audio bytes');
+  }
+  return content;
+}
+
+async function throwProviderHttpError(response: Response): Promise<never> {
+  const detail = redactProviderDetail((await response.text()).slice(-1_000));
+  throw new Error(
+    `TTS provider request failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`
+  );
+}
+
+function appendPath(baseUrl: string, suffix: string): string {
+  const base = baseUrl.replace(/\/$/, '');
+  return base.toLowerCase().endsWith(suffix.toLowerCase()) ? base : `${base}${suffix}`;
+}
+
+function aliyunTtsEndpoint(baseUrl: string): string {
+  const base = (baseUrl || 'https://dashscope.aliyuncs.com/api/v1').replace(/\/$/, '');
+  const suffix = '/services/aigc/multimodal-generation/generation';
+  if (base.toLowerCase().endsWith(suffix)) return base;
+  return /\/api\/v1$/i.test(base)
+    ? `${base}${suffix}`
+    : `${base}/api/v1${suffix}`;
+}
+
+function minimaxTtsEndpoint(baseUrl: string): string {
+  const base = baseUrl.replace(/\/$/, '');
+  if (/\/v1\/t2a_v2$/i.test(base)) return base;
+  return /\/v1$/i.test(base) ? `${base}/t2a_v2` : `${base}/v1/t2a_v2`;
+}
+
+function decodeBase64Audio(value: string): Buffer {
+  const encoded = value.includes(',') ? value.slice(value.indexOf(',') + 1) : value;
+  const content = Buffer.from(encoded, 'base64');
+  if (content.length === 0) throw new Error('TTS provider returned invalid base64 audio');
+  return content;
+}
+
+function audioFormat(
+  contentType: string | null,
+  path: string | undefined,
+  fallback: 'mp3' | 'wav'
+): 'mp3' | 'wav' {
+  if (contentType?.toLowerCase().includes('mpeg')) return 'mp3';
+  if (contentType?.toLowerCase().includes('wav')) return 'wav';
+  if (/\.mp3$/i.test(path ?? '')) return 'mp3';
+  if (/\.wav$/i.test(path ?? '')) return 'wav';
+  return fallback;
+}
+
+function detectAudioFormat(content: Buffer, fallback: 'mp3' | 'wav'): 'mp3' | 'wav' {
+  if (content.subarray(0, 4).toString('ascii') === 'RIFF') return 'wav';
+  if (content.subarray(0, 3).toString('ascii') === 'ID3') return 'mp3';
+  if (content.length >= 2 && content[0] === 0xff && (content[1]! & 0xe0) === 0xe0) return 'mp3';
+  return fallback;
+}
+
+function containsCjk(value: string): boolean {
+  return /[\u3400-\u9fff]/u.test(value);
+}
+
+function redactProviderDetail(value: string): string {
+  return value
+    .replace(/https?:\/\/[^\s"']+/gi, '[url]')
+    .replace(/[A-Za-z0-9_-]{32,}/g, '[redacted]')
+    .trim();
 }
 
 async function createLauncherRoot(workRoot: string): Promise<string> {

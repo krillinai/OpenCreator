@@ -1,0 +1,266 @@
+{
+  "version": 1,
+  "templateId": "stickman-video",
+  "characters": [
+    {
+      "id": "stickman.character.default",
+      "revision": 1,
+      "name": { "zhCN": "默认角色", "en": "Default" },
+      "description": { "zhCN": "大圆头、极简五官和基础服装的通用火柴人", "en": "A universal stick figure with a large round head, minimal features, and plain clothing" },
+      "previewFile": "characters/default.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/default.png" }],
+      "identity": {
+        "preserve": "oversized bald circular white head, two simple black dot eyes, broad curved black smile, no nose, plain unpatterned long-sleeve top, plain straight trousers, thin simplified limbs, no accessories",
+        "prohibit": "hair, eyewear, hats, scarves, patterned clothes, jackets, skirts, or bags"
+      },
+      "tags": ["neutral", "general"]
+    },
+    {
+      "id": "stickman.character.tech-guy",
+      "revision": 1,
+      "name": { "zhCN": "科技男", "en": "Tech Guy" },
+      "description": { "zhCN": "黑框眼镜、格子衬衫和深色长裤的科技从业者", "en": "A technology professional with black glasses, a checkered shirt, and dark trousers" },
+      "previewFile": "characters/tech-guy.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/tech-guy.png" }],
+      "identity": {
+        "preserve": "oversized bald circular white head, two simple black dot eyes, broad curved black smile, no nose, thick rectangular black glasses, black checkered collared button-down shirt, dark straight trousers, thin simplified limbs",
+        "prohibit": "hair, hoodies, T-shirts, hats, skirts, dresses, or bags"
+      },
+      "tags": ["technology", "professional"]
+    },
+    {
+      "id": "stickman.character.long-hair",
+      "revision": 1,
+      "name": { "zhCN": "长发角色", "en": "Long Hair" },
+      "description": { "zhCN": "侧分波浪长发和简洁连衣裙的女性角色", "en": "A female character with side-parted wavy hair and a simple dress" },
+      "previewFile": "characters/long-hair.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/long-hair.png" }],
+      "identity": {
+        "preserve": "oversized circular white head, shoulder-length wavy hair with a side part, simple black dot eyes with eyelashes, broad curved black smile, no nose, sleeveless plain fitted dress, high-heeled shoes, thin simplified limbs",
+        "prohibit": "eyewear, short hair, bangs, trousers, hoodies, jackets, school uniforms, or bags"
+      },
+      "tags": ["female", "formal"]
+    },
+    {
+      "id": "stickman.character.short-hair",
+      "revision": 1,
+      "name": { "zhCN": "短发角色", "en": "Short Hair" },
+      "description": { "zhCN": "侧分短发和长袖连衣裙的女性角色", "en": "A female character with side-swept short hair and a long-sleeve dress" },
+      "previewFile": "characters/short-hair.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/short-hair.png" }],
+      "identity": {
+        "preserve": "oversized circular white head, chin-length bob haircut with a side-swept fringe, two simple black dot eyes, broad curved black smile, no nose, plain long-sleeve knee-length dress, plain low shoes, thin simplified limbs",
+        "prohibit": "eyewear, blunt bangs, long hair, trousers, hoodies, jackets, school uniforms, or bags"
+      },
+      "tags": ["female", "general"]
+    },
+    {
+      "id": "stickman.character.student",
+      "revision": 1,
+      "name": { "zhCN": "学生角色", "en": "Student" },
+      "description": { "zhCN": "齐刘海短发和水手领校服的女学生", "en": "A female student with a blunt bob and sailor-collar school uniform" },
+      "previewFile": "characters/student.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/student.png" }],
+      "identity": {
+        "preserve": "female student with an oversized circular white head, chin-length straight bob haircut and blunt straight bangs, two simple black dot eyes, broad curved black smile, no nose, no eyewear, short-sleeve sailor-collar school uniform, tied neckerchief, pleated knee-length skirt, bare thin simplified legs, plain low shoes",
+        "prohibit": "eyeglasses, hoodies, jackets, coats, trousers, jeans, sneakers, backpacks, hats, or a different school uniform"
+      },
+      "tags": ["female", "student"]
+    },
+    {
+      "id": "stickman.character.manager",
+      "revision": 1,
+      "name": { "zhCN": "经理", "en": "Manager" },
+      "description": { "zhCN": "侧分短发、西装和领带的男性经理", "en": "A male manager with neat side-parted hair, a suit, and a tie" },
+      "previewFile": "characters/manager.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/manager.png" }],
+      "identity": {
+        "preserve": "male manager with an oversized circular white head, short neatly side-parted hair, two simple black dot eyes, broad curved black smile, no nose, two-button suit jacket with lapels and patch pockets, white dress shirt, dark necktie, straight suit trousers, thin simplified limbs",
+        "prohibit": "eyewear, long hair, hoodies, T-shirts, dresses, skirts, shorts, or bags"
+      },
+      "tags": ["male", "business"]
+    },
+    {
+      "id": "stickman.character.hiphop",
+      "revision": 1,
+      "name": { "zhCN": "潮流角色", "en": "Street Style" },
+      "description": { "zhCN": "帽子、宽松上衣和潮流配饰的年轻角色", "en": "A young character with a cap, loose top, and street-style accessories" },
+      "previewFile": "characters/hiphop.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/hiphop.png" }],
+      "identity": {
+        "preserve": "young stick-figure character with an oversized circular white head, casual cap, loose streetwear top, relaxed trousers, simple shoes, and a compact youthful silhouette matching the reference",
+        "prohibit": "business suits, school uniforms, dresses, formal shoes, removing the cap, or replacing the streetwear silhouette"
+      },
+      "tags": ["young", "streetwear"]
+    },
+    {
+      "id": "stickman.character.elder",
+      "revision": 1,
+      "name": { "zhCN": "长者", "en": "Elder" },
+      "description": { "zhCN": "具有长者面部与服装特征的火柴人角色", "en": "A stick-figure elder with distinctive mature facial and clothing features" },
+      "previewFile": "characters/elder.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/elder.png" }],
+      "identity": {
+        "preserve": "elderly stick-figure character with an oversized circular white head, mature facial details, hairstyle, clothing silhouette, footwear, and accessories exactly matching the reference",
+        "prohibit": "youthful redesign, school uniforms, streetwear, changing gender presentation, or removing signature age and clothing features"
+      },
+      "tags": ["elder", "general"]
+    },
+    {
+      "id": "stickman.character.chef",
+      "revision": 1,
+      "name": { "zhCN": "厨师", "en": "Chef" },
+      "description": { "zhCN": "厨师帽和厨师制服的职业角色", "en": "A professional character wearing a chef hat and chef uniform" },
+      "previewFile": "characters/chef.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/chef.png" }],
+      "identity": {
+        "preserve": "stick-figure chef with an oversized circular white head, chef hat, double-breasted chef jacket, work trousers, simple shoes, and all uniform details matching the reference",
+        "prohibit": "removing the chef hat, casual clothes, business suits, school uniforms, aprons or accessories not present in the reference"
+      },
+      "tags": ["profession", "food"]
+    },
+    {
+      "id": "stickman.character.fitness",
+      "revision": 1,
+      "name": { "zhCN": "健身角色", "en": "Fitness" },
+      "description": { "zhCN": "运动服装和健身气质的活力角色", "en": "An energetic character with athletic clothing and a fitness-oriented silhouette" },
+      "previewFile": "characters/fitness.png",
+      "referenceFiles": [{ "role": "identity-primary", "path": "characters/fitness.png" }],
+      "identity": {
+        "preserve": "athletic stick-figure character with an oversized circular white head, hairstyle, fitted sports top, athletic bottoms, training shoes, and body proportions matching the reference",
+        "prohibit": "business suits, dresses, school uniforms, formal shoes, changing the hairstyle, or adding unrelated sports equipment"
+      },
+      "tags": ["sport", "active"]
+    }
+  ],
+  "styles": [
+    {
+      "id": "stickman.style.minimal-ink",
+      "revision": 1,
+      "name": { "zhCN": "极简黑白线稿", "en": "Minimal black-and-white line art" },
+      "description": { "zhCN": "纯白背景、清晰墨线和克制灰阶，突出单一动作", "en": "Pure white backgrounds, crisp ink lines, restrained grayscale, and one clear action" },
+      "recommended": false,
+      "previewFile": null,
+      "referenceFiles": [],
+      "rendering": {
+        "medium": "minimal hand-drawn black ink line art, never photography or a rendered painting",
+        "surface": "clean pure white background without paper grain, canvas texture, gradients, or atmospheric haze",
+        "linework": "consistent bold black outer contours with a few thinner internal lines; simple, confident, slightly organic hand-drawn strokes",
+        "shading": "almost no shading; at most a small amount of flat light gray used to separate overlapping forms",
+        "palette": "strict monochrome black, white, and light gray only; translate every color mentioned by the scene into grayscale value or white highlight",
+        "sceneDensity": "keep only the protagonist, the action-critical object, and at most two environment cues; simplify forests, rooms, crowds, and textures into sparse readable symbols",
+        "composition": "one full-frame 16:9 narrative moment with generous breathing room, a strong silhouette, and no panels or diagram layout",
+        "characterRendering": "render the selected protagonist with the same simple line weight and flat white fills while preserving every identity anchor"
+      },
+      "semanticRenderingRules": {
+        "color": "Preserve the meaning of color through grayscale contrast, white highlights, or a light gray halo; never output chromatic color.",
+        "light": "Represent light with untouched white space, sparse rays, and one restrained gray shadow, not cinematic glow or volumetric lighting.",
+        "complexEnvironment": "Reduce nonessential environmental detail while retaining the objects and spatial relationship required by the semantic anchor."
+      },
+      "forbiddenDirections": ["photography", "photorealism", "3D", "oil painting", "watercolor", "colored cartoon", "anime rendering", "vector infographic", "dense realistic environment", "split panel"],
+      "styleAttributes": {
+        "medium": { "zhCN": "黑色手绘墨线", "en": "Hand-drawn black ink" },
+        "palette": { "zhCN": "纯黑、白、浅灰", "en": "Black, white, light gray" },
+        "sceneDensity": { "zhCN": "低，保留必要物体", "en": "Low, essential objects only" },
+        "swatch": { "background": "#ffffff", "foreground": "#171717", "accent": "#b8b8b8", "texture": "none" }
+      },
+      "tags": ["minimal", "monochrome", "ink"]
+    },
+    {
+      "id": "stickman.style.paper-pencil",
+      "revision": 1,
+      "name": { "zhCN": "纸面铅笔手绘", "en": "Pencil sketch on paper" },
+      "description": { "zhCN": "浅灰纸面、粗黑轮廓和石墨排线的叙事铅笔画", "en": "Narrative pencil drawings with light paper, bold outlines, and graphite hatching" },
+      "recommended": true,
+      "previewFile": null,
+      "referenceFiles": [],
+      "rendering": {
+        "medium": "a paused frame from a hand-drawn graphite pencil stick-figure animation, never a photograph, digital painting, or clean vector illustration",
+        "surface": "light gray to warm off-white paper with subtle natural paper grain, faint edge graphite haze, and a restrained vignette",
+        "linework": "bold dark hand-drawn outer contours, naturally imperfect pencil strokes, thinner construction details, and consistent line character across the whole frame",
+        "shading": "restrained graphite hatching and soft gray pencil smudging that add volume without becoming realistic",
+        "palette": "black, paper white, and graphite gray only; no automatic orange, yellow, or other colored accents",
+        "sceneDensity": "a concrete but simplified everyday scene; retain semantic props and spatial relationships while omitting decorative realistic detail",
+        "composition": "one full-frame 16:9 narrative or explanatory moment with a clear foreground, subject relationship, and visible state; never a generic decoration or information graphic",
+        "characterRendering": "preserve the selected protagonist exactly while translating surfaces into paper white, graphite gray fill, and black pencil contours"
+      },
+      "semanticRenderingRules": {
+        "color": "Translate color meaning into paper brightness, graphite density, edge contrast, or a soft pencil halo while remaining strictly monochrome.",
+        "light": "Use clean paper highlights, sparse pencil rays, and soft graphite shadows instead of photographic beams or colored glow.",
+        "complexEnvironment": "Summarize complex settings with a few hand-drawn depth cues and only the objects needed to understand the narration."
+      },
+      "forbiddenDirections": ["blackboard", "chalk texture", "photography", "photorealism", "3D", "oil painting", "watercolor wash", "colored cartoon", "business flat illustration", "clean vector icon", "PPT infographic", "split panel"],
+      "styleAttributes": {
+        "medium": { "zhCN": "纸面石墨铅笔", "en": "Graphite pencil on paper" },
+        "palette": { "zhCN": "米白、黑、石墨灰", "en": "Off-white, black, graphite gray" },
+        "sceneDensity": { "zhCN": "中低，具体但简化", "en": "Medium-low, concrete but simplified" },
+        "swatch": { "background": "#f3f1eb", "foreground": "#222222", "accent": "#8b8b87", "texture": "paper" }
+      },
+      "tags": ["recommended", "pencil", "paper", "monochrome"]
+    },
+    {
+      "id": "stickman.style.comic-storyboard",
+      "revision": 1,
+      "name": { "zhCN": "漫画分镜线稿", "en": "Comic storyboard line art" },
+      "description": { "zhCN": "强轮廓、网点阴影和动作线构成的单幅漫画镜头", "en": "A single comic frame with strong contours, screentone shadows, and action lines" },
+      "recommended": false,
+      "previewFile": null,
+      "referenceFiles": [],
+      "rendering": {
+        "medium": "black-and-white inked comic storyboard art rendered as one finished frame, not a rough thumbnail sheet",
+        "surface": "clean white comic paper with no photographic texture and no colored wash",
+        "linework": "expressive black ink contours with controlled line-weight variation, confident gesture lines, and sparse action accents",
+        "shading": "restrained grayscale screentone and compact black shadow shapes; avoid realistic soft lighting",
+        "palette": "strict black, white, and neutral gray screentone only",
+        "sceneDensity": "moderate detail around the focal action; secondary environment lines must stay subordinate and uncluttered",
+        "composition": "one full-frame 16:9 cinematic comic shot with a readable focal point, dynamic camera angle when justified, and no panel borders or multiple frames",
+        "characterRendering": "preserve the selected protagonist's exact face, hair, clothes, accessories, and proportions in the same inked comic language"
+      },
+      "semanticRenderingRules": {
+        "color": "Translate color into screentone density, black shadow mass, or white highlight without introducing chromatic color.",
+        "light": "Use high-contrast ink shapes, sparse rays, and screentone falloff instead of photorealistic illumination.",
+        "complexEnvironment": "Organize complex scenes around one focal action and reduce background elements to controlled comic depth cues."
+      },
+      "forbiddenDirections": ["multi-panel page", "character sheet", "manga page layout", "photography", "photorealism", "3D", "colored comic", "anime cel color", "PPT infographic", "interface", "watermark"],
+      "styleAttributes": {
+        "medium": { "zhCN": "黑白漫画墨线", "en": "Black-and-white comic ink" },
+        "palette": { "zhCN": "黑、白、灰色网点", "en": "Black, white, gray screentone" },
+        "sceneDensity": { "zhCN": "中等，聚焦动作", "en": "Medium, action-focused" },
+        "swatch": { "background": "#ffffff", "foreground": "#101010", "accent": "#777777", "texture": "screentone" }
+      },
+      "tags": ["comic", "ink", "dynamic"]
+    },
+    {
+      "id": "stickman.style.whiteboard-marker",
+      "revision": 1,
+      "name": { "zhCN": "白板讲解线稿", "en": "Whiteboard explainer line art" },
+      "description": { "zhCN": "白板底面、清晰马克笔轮廓和极少强调色的讲解画面", "en": "Explainer scenes with a whiteboard surface, clear marker contours, and minimal accents" },
+      "recommended": false,
+      "previewFile": null,
+      "referenceFiles": [],
+      "rendering": {
+        "medium": "hand-drawn whiteboard marker illustration, clearly made with physical black markers rather than vector paths",
+        "surface": "plain soft-white whiteboard surface with only a faint dry-erase trace and no paper grain, room background, frame, glare, or photographed board edges",
+        "linework": "strong rounded black marker contours, simple internal strokes, consistent marker width, and occasional natural dry-marker variation",
+        "shading": "no modeled shading; only tiny neutral gray marker accents when needed for separation",
+        "palette": "black and soft white with one restrained cool teal accent allowed only on the single most important prop; the protagonist remains monochrome",
+        "sceneDensity": "very low; show the protagonist, the action-critical prop, and only the minimum explanatory environment cues",
+        "composition": "one full-frame 16:9 illustrated scene, not a photographed presentation board, flowchart, mind map, or collection of icons",
+        "characterRendering": "preserve every identity feature of the selected protagonist using the same black marker outline and white fill"
+      },
+      "semanticRenderingRules": {
+        "color": "Ignore source colors except when the single allowed teal accent materially identifies the key prop; otherwise use outline shape and spacing.",
+        "light": "Represent light as two or three simple marker rays or open white space, never gradients, glow, or realistic shadows.",
+        "complexEnvironment": "Convert complex environments into two or three iconic line cues without turning the scene into a diagram."
+      },
+      "forbiddenDirections": ["photographed whiteboard", "room interior", "whiteboard frame", "flowchart", "mind map", "icon grid", "vector infographic", "photography", "photorealism", "3D", "colored cartoon", "split panel"],
+      "styleAttributes": {
+        "medium": { "zhCN": "白板马克笔", "en": "Whiteboard marker" },
+        "palette": { "zhCN": "黑、柔白、少量青色", "en": "Black, soft white, minimal teal" },
+        "sceneDensity": { "zhCN": "低，解释型构图", "en": "Low, explainer composition" },
+        "swatch": { "background": "#fbfcfc", "foreground": "#16191b", "accent": "#159a9c", "texture": "marker" }
+      },
+      "tags": ["whiteboard", "marker", "explainer"]
+    }
+  ]
+}

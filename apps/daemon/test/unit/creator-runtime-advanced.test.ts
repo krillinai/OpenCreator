@@ -125,6 +125,209 @@ describe('creator runtime advanced contracts', () => {
     db.close();
   });
 
+  it('replaces only the previous artifact in the completed output scope', async () => {
+    const { db, repository, service, templates } = setup();
+    const outputPath = join(tempDir, 'replacement.png');
+    writeFileSync(outputPath, 'replacement');
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{
+        id: 'stickman-image',
+        async run() {
+          return {
+            outputs: [{
+              kind: 'shot_image',
+              status: 'completed' as const,
+              path: outputPath
+            }]
+          };
+        }
+      }],
+      workRoot: join(tempDir, 'work')
+    });
+    const job = service.createJob({ projectId: 'p1', templateId: 'stickman-video' });
+    for (const kind of ['shot_spec', 'image_prompt_pack', 'character_reference', 'style_contract']) {
+      repository.insertArtifact({
+        jobId: job.id,
+        kind,
+        status: 'completed',
+        path: null,
+        sourceArtifactIds: [],
+        metadata: {}
+      });
+    }
+    const oldImage = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'shot_image',
+      status: 'completed',
+      path: null,
+      scopeKey: 'shot-03',
+      inputFingerprint: 'a'.repeat(64),
+      sourceArtifactIds: [],
+      metadata: {}
+    });
+    const otherImage = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'shot_image',
+      status: 'completed',
+      path: null,
+      scopeKey: 'shot-02',
+      inputFingerprint: '2'.repeat(64),
+      sourceArtifactIds: [],
+      metadata: {}
+    });
+    const oldValidation = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'visual_validation',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [oldImage.id],
+      metadata: {}
+    });
+    const oldTimeline = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'timeline_manifest',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [oldValidation.id],
+      metadata: {}
+    });
+    const unrelatedProof = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'unrelated_proof',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [otherImage.id],
+      metadata: {}
+    });
+    const imageStage = repository.createStageRun({
+      jobId: job.id,
+      stageId: 'images',
+      executor: 'stickman-image',
+      status: 'queued',
+      scopeKey: 'shot-03',
+      inputFingerprint: 'b'.repeat(64)
+    });
+
+    await runner.runStageRun(imageStage.id);
+
+    const completed = service.getJob(job.id)!;
+    expect(completed.artifacts.find(artifact => artifact.id === oldImage.id)?.status).toBe('stale');
+    expect(completed.artifacts.find(artifact => artifact.id === oldValidation.id)?.status).toBe('stale');
+    expect(completed.artifacts.find(artifact => artifact.id === oldTimeline.id)?.status).toBe('stale');
+    expect(completed.artifacts.find(artifact => artifact.id === otherImage.id)?.status).toBe('completed');
+    expect(completed.artifacts.find(artifact => artifact.id === unrelatedProof.id)?.status).toBe('completed');
+    expect(completed.artifacts).toContainEqual(expect.objectContaining({
+      kind: 'shot_image',
+      scopeKey: 'shot-03',
+      inputFingerprint: 'b'.repeat(64),
+      status: 'completed'
+    }));
+    await runner.close();
+    db.close();
+  });
+
+  it('resolves one current stickman image per scope from the latest succeeded fingerprint', async () => {
+    const { db, repository, service, templates } = setup();
+    let observedInputs: string[] = [];
+    const validationPath = join(tempDir, 'visual-validation.json');
+    writeFileSync(validationPath, '{}');
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{
+        id: 'stickman-validation',
+        async run({ inputArtifacts }) {
+          observedInputs = inputArtifacts.map(artifact => artifact.id);
+          return {
+            outputs: [{
+              kind: 'visual_validation',
+              status: 'completed' as const,
+              path: validationPath
+            }]
+          };
+        }
+      }],
+      workRoot: join(tempDir, 'work')
+    });
+    const job = service.createJob({ projectId: 'p1', templateId: 'stickman-video' });
+    const shotSpec = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'shot_spec',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [],
+      metadata: {}
+    });
+    repository.createStageRun({
+      jobId: job.id,
+      stageId: 'images',
+      executor: 'stickman-image',
+      status: 'succeeded',
+      scopeKey: 'shot-03',
+      inputFingerprint: 'a'.repeat(64)
+    });
+    const oldImage = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'shot_image',
+      status: 'completed',
+      path: null,
+      scopeKey: 'shot-03',
+      inputFingerprint: 'a'.repeat(64),
+      sourceArtifactIds: [],
+      metadata: {}
+    });
+    repository.createStageRun({
+      jobId: job.id,
+      stageId: 'images',
+      executor: 'stickman-image',
+      status: 'succeeded',
+      scopeKey: 'shot-03',
+      inputFingerprint: 'b'.repeat(64)
+    });
+    const currentImage = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'shot_image',
+      status: 'completed',
+      path: null,
+      scopeKey: 'shot-03',
+      inputFingerprint: 'b'.repeat(64),
+      sourceArtifactIds: [],
+      metadata: {}
+    });
+    repository.createStageRun({
+      jobId: job.id,
+      stageId: 'images',
+      executor: 'stickman-image',
+      status: 'succeeded',
+      scopeKey: 'shot-04',
+      inputFingerprint: 'c'.repeat(64)
+    });
+    const otherImage = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'shot_image',
+      status: 'completed',
+      path: null,
+      scopeKey: 'shot-04',
+      inputFingerprint: 'c'.repeat(64),
+      sourceArtifactIds: [],
+      metadata: {}
+    });
+
+    await runner.run(job.id, 'visual-validation');
+
+    expect(observedInputs).toEqual(expect.arrayContaining([
+      shotSpec.id,
+      currentImage.id,
+      otherImage.id
+    ]));
+    expect(observedInputs).not.toContain(oldImage.id);
+    expect(observedInputs.filter(id => id === currentImage.id || id === otherImage.id)).toHaveLength(2);
+    await runner.close();
+    db.close();
+  });
+
   it('cancels queued and running stage runs without committing partial outputs', async () => {
     const { db, repository, dispatcher, service, templates } = setup();
     const queuedJob = service.createJob({

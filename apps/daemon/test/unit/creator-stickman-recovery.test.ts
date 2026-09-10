@@ -45,6 +45,44 @@ function setup() {
 }
 
 describe('stickman video recovery', () => {
+  it('keeps pristine drafts idle during recovery', async () => {
+    const { db, service, workflow } = setup();
+    const job = service.createJob({ projectId: 'p1', templateId: 'stickman-video' });
+
+    await workflow.recover();
+
+    expect(service.getJob(job.id)).toMatchObject({ status: 'draft', stages: [] });
+    db.close();
+  });
+
+  it('does not enqueue a replacement while a failed stage is still updating the job', async () => {
+    const { db, repository, service, workflow } = setup();
+    const job = service.createJob({
+      projectId: 'p1',
+      templateId: 'stickman-video',
+      state: { sourceType: 'url', sourceUrl: '' }
+    });
+    repository.updateJob({
+      id: job.id,
+      status: 'running',
+      revision: job.revision,
+      state: job.state
+    });
+    const failed = repository.createStageRun({
+      jobId: job.id,
+      stageId: 'source-transcript',
+      executor: 'krillinai',
+      status: 'failed'
+    });
+
+    await workflow.handleStageChanged(failed);
+
+    expect(service.getJob(job.id)!.stages).toEqual([
+      expect.objectContaining({ id: failed.id, status: 'failed' })
+    ]);
+    db.close();
+  });
+
   it('recovers interrupted scopes without duplicating unknown provider billing', async () => {
     const { db, repository, service, ledger, workflow } = setup();
     const converged = service.createJob({ projectId: 'p1', templateId: 'stickman-video' });
@@ -222,6 +260,66 @@ describe('stickman video recovery', () => {
     })).toThrowError(expect.objectContaining<Partial<CreatorServiceError>>({
       code: 'creator_provider_confirmation_required'
     }));
+    db.close();
+  });
+
+  it('rejects shot regeneration while provider acceptance is unresolved', () => {
+    const { db, repository, service, ledger } = setup();
+    const job = service.createJob({
+      projectId: 'p1',
+      templateId: 'stickman-video',
+      state: { currentStage: 'images', workflowTarget: 'visuals_ready' }
+    });
+    const fingerprint = '2'.repeat(64);
+    const stage = repository.createStageRun({
+      jobId: job.id,
+      stageId: 'images',
+      executor: 'stickman-image',
+      status: 'interrupted',
+      scopeKey: 'shot-02',
+      inputFingerprint: fingerprint
+    });
+    const request = ledger.registerBeforeSubmit({
+      jobId: job.id,
+      provider: 'openai',
+      stageRunId: stage.id,
+      scopeKey: 'shot-02',
+      requestKey: 'unresolved-regeneration',
+      request: { prompt: 'test' }
+    });
+    ledger.markSubmitting(request.id);
+    ledger.markUnknownRemoteAcceptance(request.id);
+    const waiting = service.setNeedsInput(job.id, {
+      code: 'creator_provider_resolution_required',
+      message: 'Provider request acceptance is unknown',
+      resumeStageId: 'images'
+    });
+
+    expect(() => service.applyAction(job.id, {
+      actor: 'user',
+      action: 'regenerate-shot',
+      expectedRevision: waiting.revision,
+      input: {
+        scopeKey: 'shot-02',
+        inputFingerprint: fingerprint,
+        revision: waiting.revision
+      }
+    })).toThrowError(expect.objectContaining<Partial<CreatorServiceError>>({
+      code: 'creator_provider_resolution_required'
+    }));
+    expect(() => service.applyAction(job.id, {
+      actor: 'user',
+      action: 'generate-missing-shots',
+      expectedRevision: waiting.revision,
+      input: { revision: waiting.revision }
+    })).toThrowError(expect.objectContaining<Partial<CreatorServiceError>>({
+      code: 'creator_provider_resolution_required'
+    }));
+    expect(service.getJob(job.id)).toMatchObject({
+      revision: waiting.revision,
+      status: 'needs_input',
+      state: { needsInput: { code: 'creator_provider_resolution_required' } }
+    });
     db.close();
   });
 });

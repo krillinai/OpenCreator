@@ -11,10 +11,16 @@ import {
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { basename, dirname, join, relative } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CreatorExecutorInput } from '../../src/creator/executor.js';
-import { runKrillinCli } from '../../src/creator/krillin/cli-runner.js';
+import { createKrillinConfigToml } from '../../src/creator/krillin/config-bridge.js';
+import {
+  prepareCliResourceRoot,
+  recoverWindowsHorizontalAssRender,
+  runKrillinCli
+} from '../../src/creator/krillin/cli-runner.js';
+import { KrillinCliError } from '../../src/creator/krillin/cli-runner.js';
 import type { KrillinRuntimeManifest } from '../../src/creator/krillin/manifest.js';
 
 let tempDir = '';
@@ -25,6 +31,163 @@ afterEach(() => {
 });
 
 describe('KrillinAI CLI runner', () => {
+  it.runIf(process.platform === 'win32')('mounts packaged executable files without requiring symlink privileges', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-windows-file-overlay-'));
+    const resourceRoot = join(tempDir, 'runtime');
+    const dependencyRoot = join(tempDir, 'dependencies');
+    const launcherRoot = join(tempDir, 'launcher');
+    const ytDlp = join(tempDir, 'managed-yt-dlp.exe');
+    mkdirSync(join(resourceRoot, 'bin'), { recursive: true });
+    mkdirSync(launcherRoot, { recursive: true });
+    writeFileSync(join(resourceRoot, 'bin', 'ffmpeg.exe'), 'fixture-ffmpeg');
+    writeFileSync(ytDlp, 'fixture-yt-dlp');
+
+    await expect(prepareCliResourceRoot({
+      resourceRoot,
+      dependencyRoot,
+      launcherRoot,
+      ytDlpRuntime: {
+        version: 'test',
+        executable: ytDlp,
+        prefixArgs: [],
+        env: {}
+      }
+    })).resolves.toBe(launcherRoot);
+
+    expect(readFileSync(join(launcherRoot, 'bin', 'ffmpeg.exe'), 'utf8'))
+      .toBe('fixture-ffmpeg');
+    writeFileSync(join(launcherRoot, 'bin', 'yt-dlp.exe'), 'updated-by-krillin');
+    expect(readFileSync(ytDlp, 'utf8')).toBe('fixture-yt-dlp');
+  });
+
+  it('mounts the on-demand Whisper.cpp directory in the KrillinAI v2 layout', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-whispercpp-overlay-'));
+    const resourceRoot = join(tempDir, 'runtime');
+    const dependencyRoot = join(tempDir, 'dependencies');
+    const whisperCpp = join(dependencyRoot, 'bin', 'whispercpp');
+    const models = join(dependencyRoot, 'models');
+    const launcherRoot = join(tempDir, 'launcher');
+    mkdirSync(join(resourceRoot, 'bin'), { recursive: true });
+    mkdirSync(whisperCpp, { recursive: true });
+    mkdirSync(join(models, 'whispercpp'), { recursive: true });
+    mkdirSync(launcherRoot, { recursive: true });
+    writeFileSync(join(whisperCpp, 'whisper-cli.exe'), 'fixture-whispercpp');
+    writeFileSync(join(models, 'whispercpp', 'ggml-tiny.bin'), 'fixture-model');
+
+    await prepareCliResourceRoot({
+      resourceRoot,
+      dependencyRoot,
+      launcherRoot,
+      onDemandTranscriptionProvider: 'whisper.cpp',
+      onDemandTranscriptionModel: 'tiny'
+    });
+
+    expect(realpathSync(join(launcherRoot, 'bin', 'whispercpp')))
+      .toBe(realpathSync(whisperCpp));
+    expect(existsSync(join(launcherRoot, 'bin', 'whispercpp', 'whisper-cli.exe'))).toBe(true);
+    expect(existsSync(join(launcherRoot, 'models', 'whispercpp', 'ggml-tiny.bin'))).toBe(true);
+    expect(readFileSync(join(launcherRoot, 'models', 'whispercpp', 'ggml-large-v2.bin'), 'utf8'))
+      .toBe('fixture-model');
+  });
+
+  it('bridges the selected Whisper.cpp weights to the KrillinAI 2.1 model label', () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.transcription.provider = 'whisper.cpp';
+    config.transcription.whisperCpp.model = 'tiny';
+
+    const value = parse(createKrillinConfigToml(config)) as {
+      transcribe: { provider: string; whispercpp: { model: string } };
+    };
+
+    expect(value.transcribe).toMatchObject({
+      provider: 'whispercpp',
+      whispercpp: { model: 'large-v2' }
+    });
+  });
+
+  it('recovers only the known Windows ASS drive-letter failure with the auto-video relative-path command', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-windows-ass-'));
+    const resourceRoot = join(tempDir, 'runtime');
+    const workdir = join(tempDir, 'jobs', 'job-1', 'render-run');
+    const source = join(tempDir, 'jobs', 'job-1', 'clean.mp4');
+    const ffmpeg = join(resourceRoot, 'bin', 'ffmpeg.exe');
+    mkdirSync(dirname(ffmpeg), { recursive: true });
+    mkdirSync(workdir, { recursive: true });
+    writeFileSync(ffmpeg, 'fixture-ffmpeg');
+    writeFileSync(source, 'fixture-video');
+    writeFileSync(join(workdir, 'formatted_horizontal_bilingual.ass'), 'fixture-ass');
+    const manifest: KrillinRuntimeManifest = {
+      version: 1,
+      platform: 'win32',
+      arch: 'x64',
+      resources: [{
+        path: relative(resourceRoot, ffmpeg).replaceAll('\\', '/'),
+        sha256: 'f'.repeat(64),
+        kind: 'executable'
+      }]
+    };
+    const runProcess = vi.fn(async (input: { args: string[] }) => {
+      writeFileSync(input.args.at(-1)!, 'recovered-video');
+    });
+    const progress: Array<Record<string, unknown>> = [];
+    const knownFailure = new KrillinCliError(
+      'render_video_failed',
+      '[Parsed_ass_0] Unable to parse option value "/project/formatted_horizontal_bilingual.ass" as image size\n'
+        + "Error applying option 'original_size' to filter 'ass': Invalid argument"
+    );
+
+    const recovered = await recoverWindowsHorizontalAssRender({
+      platform: 'win32',
+      resourceRoot,
+      manifest,
+      stageId: 'bilingual-render',
+      workdir,
+      artifacts: [{ id: 'clean', kind: 'source_video', path: source }],
+      signal: new AbortController().signal,
+      error: knownFailure,
+      reportProgress(value) { progress.push(value); },
+      runProcess
+    });
+
+    const invocation = runProcess.mock.calls[0]![0];
+    const filterIndex = invocation.args.indexOf('-vf');
+    expect(invocation).toMatchObject({ executable: ffmpeg, cwd: workdir });
+    expect(invocation.args[filterIndex + 1]).toBe('ass=formatted_horizontal_bilingual.ass');
+    expect(invocation.args).toEqual(expect.arrayContaining([
+      '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'libx264',
+      '-preset', 'medium', '-crf', '23', '-c:a', 'aac', '-b:a', '128k'
+    ]));
+    expect(invocation.args.some(value => value.includes('/project/formatted_horizontal_bilingual.ass'))).toBe(false);
+    expect(recovered).toMatchObject({
+      ok: true,
+      outputs: { horizontal_video: join(workdir, 'horizontal_bilingual.mp4') }
+    });
+    expect(readFileSync(recovered!.outputs!.horizontal_video!, 'utf8')).toBe('recovered-video');
+    expect(JSON.parse(readFileSync(join(workdir, 'opencreator-windows-ass-recovery.json'), 'utf8')))
+      .toMatchObject({
+        reason: 'krillinai-2.1.0-windows-absolute-ass-path',
+        assFile: 'formatted_horizontal_bilingual.ass',
+        outputVideo: join(workdir, 'horizontal_bilingual.mp4')
+      });
+    expect(basename(invocation.args.at(-1)!)).toBe('.horizontal_bilingual.opencreator-recovery.mp4');
+    expect(progress).toEqual([expect.objectContaining({ phase: 'rendering_subtitles', percent: 95 })]);
+
+    runProcess.mockClear();
+    await expect(recoverWindowsHorizontalAssRender({
+      platform: 'win32',
+      resourceRoot,
+      manifest,
+      stageId: 'bilingual-render',
+      workdir,
+      artifacts: [{ id: 'clean', kind: 'source_video', path: source }],
+      signal: new AbortController().signal,
+      error: new KrillinCliError('render_video_failed', 'unrelated render failure'),
+      reportProgress() {},
+      runProcess
+    })).resolves.toBeUndefined();
+    expect(runProcess).not.toHaveBeenCalled();
+  });
+
   it.skipIf(process.platform === 'win32')('writes private config, invokes the official CLI shape, maps outputs, and removes secrets', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-cli-'));
     const resourceRoot = join(tempDir, 'runtime');

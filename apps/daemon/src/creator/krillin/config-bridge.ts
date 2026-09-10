@@ -16,7 +16,14 @@ export function createKrillinConfigToml(config: CreatorServicesConfig): string {
       openai: openAi(config.transcription.openai),
       fasterwhisper: config.transcription.fasterWhisper,
       whisperkit: config.transcription.whisperKit,
-      whispercpp: config.transcription.whisperCpp,
+      whispercpp: {
+        ...config.transcription.whisperCpp,
+        // KrillinAI 2.1 validates this label even though whisper.cpp reads the
+        // selected model from the compatible file mounted by the CLI runner.
+        model: config.transcription.provider === 'whisper.cpp'
+          ? 'large-v2'
+          : config.transcription.whisperCpp.model
+      },
       aliyun: {
         oss: snakeAliyunOss(config.transcription.aliyun.oss),
         speech: snakeAliyunSpeech(config.transcription.aliyun.speech)

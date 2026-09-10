@@ -137,6 +137,12 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         kind: 'font',
         platform: process.platform,
         arch: process.arch
+      }),
+      expect.objectContaining({
+        path: 'visual-assets/catalog.json',
+        kind: 'visual-asset',
+        platform: process.platform,
+        arch: process.arch
       })
     ]));
 
@@ -165,6 +171,27 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         'stickman-video'
       ])
     );
+    const creatorCapabilities = await runtimeRequest<{
+      platform: string;
+      arch: string;
+      transcription: {
+        providers: Array<{ provider: string; available: boolean; models: string[] }>;
+      };
+    }>(currentApp.page, 'GET', '/creator-services/capabilities');
+    expect(creatorCapabilities.status).toBe(200);
+    expect(creatorCapabilities.body).toMatchObject({
+      platform: 'win32',
+      arch: 'x64',
+      transcription: {
+        providers: expect.arrayContaining([
+          expect.objectContaining({
+            provider: 'whisper.cpp',
+            available: true,
+            models: ['tiny', 'medium', 'large-v2']
+          })
+        ])
+      }
+    });
     const ytDlpStatus = await runtimeRequest<{
       ytDlp: {
         channel: string;
@@ -212,6 +239,13 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     await expect(currentApp.page.getByRole('tab', { name: '模型服务' }))
       .toHaveAttribute('aria-selected', 'true');
     await expect(currentApp.page.getByRole('group', { name: '模型服务' })).toBeVisible();
+    await currentApp.page.getByRole('tab', { name: '语音识别' }).click();
+    const localWhisper = currentApp.page.getByRole('button', { name: '本地 Whisper' });
+    await expect(localWhisper).toBeEnabled();
+    await localWhisper.click();
+    await expect(currentApp.page.getByRole('combobox', { name: '语音识别服务' }))
+      .toHaveText('Whisper.cpp');
+    await expect(currentApp.page.getByRole('combobox', { name: '本地模型' })).toHaveText('tiny');
     await currentApp.page.getByRole('tab', { name: '配音服务' }).click();
     const providerSelect = currentApp.page.getByRole('combobox', { name: '服务商' });
     await expect(providerSelect).toHaveText('OpenAI TTS');
@@ -380,13 +414,15 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       state: {
         sourceType: 'url',
         sourceUrl: 'https://www.youtube.com/watch?v=creator-stickman-package-smoke',
-        selectedPresetId: 'default',
-        characterPrompt: '统一的极简火柴人角色',
-        style: '极简黑白线稿',
+        characterAsset: { assetId: 'stickman.character.default', revision: 1 },
+        styleAsset: { assetId: 'stickman.style.minimal-ink', revision: 1 },
         ratio: '16:9',
-        targetDurationSeconds: 20,
+        targetDurationSeconds: 30,
         targetLanguage: 'zh-CN',
-        voice: 'alloy'
+        ttsProvider: 'openai',
+        ttsModel: 'gpt-4o-mini-tts',
+        voiceCode: 'marin',
+        voiceName: 'Marin'
       }
     });
     expect(stickmanJob.status).toBe(201);
@@ -396,7 +432,7 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       state: {
         sourceType: 'url',
         sourceUrl: 'https://www.youtube.com/watch?v=creator-stickman-package-smoke',
-        selectedPresetId: 'default'
+        characterAsset: { assetId: 'stickman.character.default', revision: 1 }
       }
     });
     const updatedStickmanJob = await runtimeRequest<{
@@ -406,9 +442,11 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       expectedRevision: stickmanJob.body.job.revision,
       input: {
         patch: {
-          selectedPresetId: 'tech-guy',
-          characterPrompt: '戴简洁眼镜的科技火柴人',
-          style: '白底黑线知识动画'
+          characterAsset: { assetId: 'stickman.character.tech-guy', revision: 1 },
+          styleAsset: { assetId: 'stickman.style.whiteboard-marker', revision: 1 },
+          targetDurationSeconds: 125,
+          voiceCode: 'nova',
+          voiceName: 'Nova'
         }
       }
     });
@@ -416,11 +454,17 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     expect(updatedStickmanJob.body.job).toMatchObject({
       revision: 1,
       state: {
-        selectedPresetId: 'tech-guy',
-        characterPrompt: '戴简洁眼镜的科技火柴人',
-        style: '白底黑线知识动画'
+        characterAsset: { assetId: 'stickman.character.tech-guy', revision: 1 },
+        styleAsset: { assetId: 'stickman.style.whiteboard-marker', revision: 1 },
+        targetDurationSeconds: 125,
+        ttsProvider: 'openai',
+        ttsModel: 'gpt-4o-mini-tts',
+        voiceCode: 'nova',
+        voiceName: 'Nova'
       }
     });
+    expect(updatedStickmanJob.body.job.state).not.toHaveProperty('characterPrompt');
+    expect(updatedStickmanJob.body.job.state).not.toHaveProperty('voice');
 
     const relaunchInput = {
       executablePath: currentApp.executablePath,
@@ -555,11 +599,17 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       state: {
         sourceType: 'url',
         sourceUrl: 'https://www.youtube.com/watch?v=creator-stickman-package-smoke',
-        selectedPresetId: 'tech-guy',
-        characterPrompt: '戴简洁眼镜的科技火柴人',
-        style: '白底黑线知识动画'
+        characterAsset: { assetId: 'stickman.character.tech-guy', revision: 1 },
+        styleAsset: { assetId: 'stickman.style.whiteboard-marker', revision: 1 },
+        targetDurationSeconds: 125,
+        ttsProvider: 'openai',
+        ttsModel: 'gpt-4o-mini-tts',
+        voiceCode: 'nova',
+        voiceName: 'Nova'
       }
     });
+    expect(restoredStickmanJob.body.job.state).not.toHaveProperty('characterPrompt');
+    expect(restoredStickmanJob.body.job.state).not.toHaveProperty('voice');
     expect(restoredStickmanJob.body.job.revision)
       .toBeGreaterThanOrEqual(updatedStickmanJob.body.job.revision);
     await currentApp.page.getByRole('button', { name: '我的项目' }).click();
@@ -568,8 +618,20 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     }).click();
     await expect(currentApp.page.getByRole('heading', { name: '火柴人动画' })).toBeVisible();
     await expect(currentApp.page.getByRole('radio', { name: '科技男' })).toBeChecked();
-    await expect(currentApp.page.getByRole('textbox', { name: '角色描述' }))
-      .toHaveValue('戴简洁眼镜的科技火柴人');
+    await expect(currentApp.page.getByRole('textbox', { name: '角色描述' })).toHaveCount(0);
+    await expect(currentApp.page.getByRole('combobox', { name: '视觉风格' }))
+      .toHaveValue('stickman.style.whiteboard-marker@1');
+    await expect(currentApp.page.getByRole('combobox', { name: '目标时长' }))
+      .toHaveValue('custom');
+    await expect(currentApp.page.getByRole('spinbutton', { name: '自定义时长（秒）' }))
+      .toHaveValue('125');
+    await expect(currentApp.page.getByRole('combobox', { name: '配音音色' }))
+      .toHaveCount(0);
+    await expect(currentApp.page.getByText('尚未配置配音服务', { exact: true }))
+      .toBeVisible();
+    await expect(currentApp.page.getByRole('link', { name: '前往配音服务配置' }))
+      .toHaveAttribute('href', '#/settings?tab=ai-services&section=tts');
+    await expect(currentApp.page.getByLabel('任务摘要')).toHaveCount(0);
     await expect(currentApp.page.locator('.creator-collaboration-panel')).toHaveCount(1);
     expect(hasWhisperKitDependency(fixture.root)).toBe(false);
   } finally {

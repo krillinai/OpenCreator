@@ -22,6 +22,20 @@ export type GeneratedImageContent = {
   mime: ImageGenerationAsset['mime'];
 };
 
+export type ImageGenerationCapabilities = {
+  supportsReferenceImage: boolean;
+  maxReferenceImages: number;
+};
+
+export function imageGenerationCapabilities(
+  provider: CreateImageGenerationRequest['provider']
+): ImageGenerationCapabilities {
+  return {
+    supportsReferenceImage: provider === 'openai' || provider === 'gemini',
+    maxReferenceImages: provider === 'openai' || provider === 'gemini' ? 8 : 0
+  };
+}
+
 export class ImageGenerationProviderError extends Error {
   constructor(
     readonly code: 'config_missing' | 'upstream_error' | 'unsupported_capability',
@@ -39,8 +53,12 @@ export async function generateImageContents(
     fetchImpl?: typeof fetch;
     signal?: AbortSignal;
     referenceImage?: GeneratedImageContent;
+    referenceImages?: GeneratedImageContent[];
   } = {}
 ): Promise<{ model: string; contents: GeneratedImageContent[] }> {
+  const referenceImages = options.referenceImages
+    ?? (options.referenceImage === undefined ? [] : [options.referenceImage]);
+  const capabilities = imageGenerationCapabilities(request.provider);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const abort = () => controller.abort(options.signal?.reason);
@@ -49,13 +67,13 @@ export async function generateImageContents(
   else options.signal?.addEventListener('abort', abort, { once: true });
   try {
     if (
-      options.referenceImage !== undefined
-      && request.provider !== 'openai'
-      && request.provider !== 'gemini'
+      referenceImages.length > capabilities.maxReferenceImages
     ) {
       throw new ImageGenerationProviderError(
         'unsupported_capability',
-        `The ${request.provider} image provider does not support reference images`
+        capabilities.supportsReferenceImage
+          ? `The ${request.provider} image provider supports at most ${capabilities.maxReferenceImages} reference images`
+          : `The ${request.provider} image provider does not support reference images`
       );
     }
     if (request.provider === 'gemini') {
@@ -63,7 +81,7 @@ export async function generateImageContents(
         request,
         config,
         controller.signal,
-        options.referenceImage,
+        referenceImages,
         options.fetchImpl
       );
     }
@@ -74,7 +92,7 @@ export async function generateImageContents(
       request,
       config,
       controller.signal,
-      options.referenceImage,
+      referenceImages,
       options.fetchImpl
     );
   } catch (error) {
@@ -94,7 +112,7 @@ async function generateOpenAiImages(
   request: CreateImageGenerationRequest,
   config: CreatorServicesConfig,
   signal: AbortSignal,
-  referenceImage?: GeneratedImageContent,
+  referenceImages: GeneratedImageContent[],
   fetchImpl?: typeof fetch
 ) {
   const provider = request.provider === 'jimeng' ? config.image.jimeng : config.image.openai;
@@ -103,9 +121,9 @@ async function generateOpenAiImages(
     || (request.provider === 'jimeng' ? 'doubao-seedream-4-0-250828' : 'gpt-image-1');
   const endpoint = openAiImageEndpoint(
     provider.baseUrl,
-    referenceImage === undefined ? 'generations' : 'edits'
+    referenceImages.length === 0 ? 'generations' : 'edits'
   );
-  const multipart = referenceImage === undefined
+  const multipart = referenceImages.length === 0
     ? undefined
     : createImageEditBody({
         model,
@@ -113,7 +131,7 @@ async function generateOpenAiImages(
         size: request.size,
         quality: request.quality,
         count: request.count,
-        image: referenceImage
+        images: referenceImages
       });
   const response = await fetchCreatorService({
     endpoint,
@@ -154,7 +172,7 @@ async function generateGeminiImages(
   request: CreateImageGenerationRequest,
   config: CreatorServicesConfig,
   signal: AbortSignal,
-  referenceImage?: GeneratedImageContent,
+  referenceImages: GeneratedImageContent[],
   fetchImpl?: typeof fetch
 ) {
   const provider = config.image.gemini;
@@ -173,14 +191,12 @@ async function generateGeminiImages(
       body: JSON.stringify({
         contents: [{
           parts: [
-            ...(referenceImage === undefined
-              ? []
-              : [{
-                  inlineData: {
-                    mimeType: referenceImage.mime,
-                    data: referenceImage.content.toString('base64')
-                  }
-                }]),
+            ...referenceImages.map(referenceImage => ({
+              inlineData: {
+                mimeType: referenceImage.mime,
+                data: referenceImage.content.toString('base64')
+              }
+            })),
             { text: request.prompt.trim() }
           ]
         }],
@@ -229,7 +245,7 @@ function createImageEditBody(input: {
   size: string;
   quality: string;
   count: number;
-  image: GeneratedImageContent;
+  images: GeneratedImageContent[];
 }): { contentType: string; body: Buffer } {
   const boundary = `opencreator-${crypto.randomUUID()}`;
   const parts: Buffer[] = [];
@@ -247,15 +263,19 @@ function createImageEditBody(input: {
   addField('size', input.size);
   addField('quality', input.quality);
   addField('n', String(input.count));
-  parts.push(Buffer.from([
-    `--${boundary}`,
-    'Content-Disposition: form-data; name="image"; filename="reference-image"',
-    `Content-Type: ${input.image.mime}`,
-    '',
-    ''
-  ].join('\r\n')));
-  parts.push(input.image.content);
-  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  for (const [index, image] of input.images.entries()) {
+    const fieldName = input.images.length === 1 ? 'image' : 'image[]';
+    parts.push(Buffer.from([
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="${fieldName}"; filename="reference-image-${index + 1}"`,
+      `Content-Type: ${image.mime}`,
+      '',
+      ''
+    ].join('\r\n')));
+    parts.push(image.content);
+    parts.push(Buffer.from('\r\n'));
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
   return {
     contentType: `multipart/form-data; boundary=${boundary}`,
     body: Buffer.concat(parts)

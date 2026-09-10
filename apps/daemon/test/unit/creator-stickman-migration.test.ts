@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCreatorRepository } from '../../src/creator/repository.js';
-import { purgeLegacyStickmanJobs } from '../../src/creator/stickman/legacy-migration.js';
+import {
+  migrateStickmanVisualAssetState,
+  purgeLegacyStickmanJobs
+} from '../../src/creator/stickman/legacy-migration.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 
 let tempDir = '';
@@ -85,6 +88,31 @@ describe('legacy stickman migration', () => {
     expect(result.pendingJobIds).toEqual(['../outside']);
     expect(existsSync(join(outside, 'keep.txt'))).toBe(true);
     expect(db.prepare('SELECT id FROM creator_jobs WHERE id = ?').get('../outside')).toBeUndefined();
+    db.close();
+  });
+
+  it('migrates v2 character and style fields once without deleting task data', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-stickman-migration-'));
+    const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
+    const repository = createCreatorRepository(db);
+    const legacy = repository.createJob({
+      projectId: 'p1',
+      templateId: 'stickman-video',
+      templateVersion: 2,
+      status: 'completed',
+      state: { selectedPresetId: 'student', style: '漫画分镜线稿', retained: 'value' }
+    });
+
+    expect(migrateStickmanVisualAssetState({ db })).toEqual({ migratedJobIds: [legacy.id] });
+    expect(repository.getJob(legacy.id)?.state).toMatchObject({
+      characterAsset: { assetId: 'stickman.character.student', revision: 1 },
+      styleAsset: { assetId: 'stickman.style.comic-storyboard', revision: 1 },
+      retained: 'value'
+    });
+    expect(repository.getJob(legacy.id)?.state).not.toHaveProperty('selectedPresetId');
+    expect(repository.getJob(legacy.id)?.state).not.toHaveProperty('style');
+    expect(repository.getJob(legacy.id)?.status).toBe('completed');
+    expect(migrateStickmanVisualAssetState({ db })).toEqual({ migratedJobIds: [] });
     db.close();
   });
 });

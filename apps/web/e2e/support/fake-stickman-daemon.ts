@@ -41,20 +41,34 @@ export class FakeStickmanDaemon {
   private readonly contents = new Map<string, { body: Buffer | string; contentType: string }>([
     ['artifact-script', {
       body: JSON.stringify({
+        contract: 'stickman-narration-script-v2',
+        reviewStatus: 'needs_review',
+        contentLocked: false,
         title: '用火柴人理解复利',
         language: 'zh-CN',
+        targetDurationSeconds: 10,
+        narrationBudget: { unit: 'characters', unitsPerMinute: 240, minUnits: 1, maxUnits: 100 },
+        segmentCount: 2,
+        totalNarrationUnits: 40,
+        estimatedTotalDurationSeconds: 10,
         segments: [
           {
             id: 'segment-01',
+            order: 1,
             narration: '复利让每一次增长都成为下一次增长的基础。',
-            durationSeconds: 5,
-            sourceKeyPoint: '复利的核心定义'
+            claimIds: ['claim-001'],
+            sourceSpanIds: ['source-001'],
+            narrationUnits: 20,
+            estimatedDurationSeconds: 5
           },
           {
             id: 'segment-02',
+            order: 2,
             narration: '时间越长，增长曲线与线性积累的差距越明显。',
-            durationSeconds: 5,
-            sourceKeyPoint: '时间的放大作用'
+            claimIds: ['claim-002'],
+            sourceSpanIds: ['source-002'],
+            narrationUnits: 20,
+            estimatedDurationSeconds: 5
           }
         ]
       }),
@@ -131,13 +145,14 @@ export class FakeStickmanDaemon {
           renderer: 'stickman-video',
           outputs: [
             { kind: 'clean_video', required: true },
-            { kind: 'cover_image', required: true },
-            { kind: 'publish_copy', required: true },
-            { kind: 'bilingual_video', required: true },
-            { kind: 'bilingual_subtitle', required: true }
+            { kind: 'narration_subtitle', required: true },
+            { kind: 'delivery_manifest', required: true }
           ]
         }]
       });
+    }
+    if (method === 'GET' && pathWithoutQuery === '/creator/visual-assets') {
+      return json(route, { assets: fakeVisualAssets() });
     }
     if (method === 'GET' && pathWithoutQuery === '/creator/yt-dlp/status') {
       return json(route, {
@@ -226,14 +241,14 @@ export class FakeStickmanDaemon {
       case 'approve-script':
         this.approveScript();
         break;
-      case 'approve-storyboard':
-        this.approveStoryboard();
+      case 'continue-after-audio':
+        this.continueAfterAudio();
+        break;
+      case 'continue-after-visuals':
+        this.continueAfterVisuals();
         break;
       case 'regenerate-shot':
         this.regenerateShot(String(request.input.scopeKey ?? ''));
-        break;
-      case 'approve-visuals':
-        this.approveVisuals();
         break;
       case 'update-settings':
         this.job.state = {
@@ -262,25 +277,74 @@ export class FakeStickmanDaemon {
   }
 
   private approveScript(): void {
+    const narrationOne = artifact('artifact-narration-01', 'narration_audio', 'segment-01', firstFingerprint, 'segment-01.wav');
+    const narrationTwo = artifact('artifact-narration-02', 'narration_audio', 'segment-02', firstFingerprint, 'segment-02.wav');
+    const timing = artifact('artifact-audio-timing', 'audio_timing', null, null, 'audio-timing.json');
+    this.contents.set(narrationOne.id, { body: 'narration-one', contentType: 'audio/wav' });
+    this.contents.set(narrationTwo.id, { body: 'narration-two', contentType: 'audio/wav' });
+    this.contents.set(timing.id, {
+      body: JSON.stringify({
+        scriptArtifactId: 'artifact-script',
+        timingSource: 'ffprobe_cumulative_tts_duration',
+        segments: [
+          { segmentId: 'segment-01', startSeconds: 0, endSeconds: 5, durationSeconds: 5, audioArtifactId: narrationOne.id, audioSha256: narrationOne.sha256 },
+          { segmentId: 'segment-02', startSeconds: 5, endSeconds: 10, durationSeconds: 5, audioArtifactId: narrationTwo.id, audioSha256: narrationTwo.sha256 }
+        ],
+        totalDurationSeconds: 10
+      }),
+      contentType: 'application/json; charset=utf-8'
+    });
+    this.job.artifacts.push(narrationOne, narrationTwo, timing);
+    this.job.stages.push(
+      stage('narration', 'succeeded', 'segment-01', firstFingerprint),
+      stage('narration', 'succeeded', 'segment-02', firstFingerprint),
+      stage('audio-timing', 'succeeded')
+    );
+    this.job.status = 'running';
+    this.job.state = {
+      ...this.job.state,
+      approvedScriptArtifactId: 'artifact-script',
+      workflowTarget: 'audio_ready',
+      currentStage: 'audio-timing',
+      needsInput: null
+    };
+    this.bump('approve-script', '脚本已确认，配音与节奏已生成');
+  }
+
+  private continueAfterAudio(): void {
     const shotSpec = artifact('artifact-shot-spec', 'shot_spec', null, null, 'shot-spec.json');
     this.contents.set(shotSpec.id, {
       body: JSON.stringify({
         scriptArtifactId: 'artifact-script',
+        audioTimingArtifactId: 'artifact-audio-timing',
+        timingSource: 'ffprobe_cumulative_tts_duration',
         shots: [
           {
             id: 'shot-01',
             sourceSegmentId: 'segment-01',
-            narration: '复利让每一次增长都成为下一次增长的基础。',
-            imagePrompt: '白底黑线火柴人把一枚硬币放进增长曲线',
+            semanticAnchor: '每次增长成为下一次增长的基础',
+            visualDescription: '人物把一枚硬币放入逐渐升高的增长曲线',
+            compositionAndAction: '人物位于画面左侧，把硬币放入右侧向上延伸的增长曲线',
+            keyObjects: ['硬币', '增长曲线'],
+            continuityReason: '',
             motion: 'push-in',
+            motionReason: '聚焦硬币进入增长曲线的关键动作',
+            startSeconds: 0,
+            endSeconds: 5,
             durationSeconds: 5
           },
           {
             id: 'shot-02',
             sourceSegmentId: 'segment-02',
-            narration: '时间越长，增长曲线与线性积累的差距越明显。',
-            imagePrompt: '火柴人对比直线与指数曲线，画面简洁',
+            semanticAnchor: '时间拉大复利与线性积累的差距',
+            visualDescription: '人物观察直线与指数曲线之间逐渐扩大的距离',
+            compositionAndAction: '人物位于画面中央，对比两条向右延伸且差距逐渐扩大的曲线',
+            keyObjects: ['直线', '指数曲线'],
+            continuityReason: '承接上一镜头的增长曲线并展示长期结果',
             motion: 'pan-right',
+            motionReason: '沿时间方向展示两条曲线的差距变化',
+            startSeconds: 5,
+            endSeconds: 10,
             durationSeconds: 5
           }
         ]
@@ -288,17 +352,6 @@ export class FakeStickmanDaemon {
       contentType: 'application/json; charset=utf-8'
     });
     this.job.artifacts.push(shotSpec);
-    this.job.stages.push(stage('storyboard', 'succeeded'));
-    this.job.status = 'needs_input';
-    this.job.state = {
-      ...this.job.state,
-      approvedScriptArtifactId: 'artifact-script',
-      needsInput: review('approve-storyboard', shotSpec.id, '请审核分镜后生成画面')
-    };
-    this.bump('approve-script', '脚本审核通过，已生成 2 个分镜');
-  }
-
-  private approveStoryboard(): void {
     const shotOne = artifact('artifact-shot-01-v1', 'shot_image', 'shot-01', firstFingerprint, 'shot-01.png');
     const shotTwo = artifact('artifact-shot-02-v1', 'shot_image', 'shot-02', firstFingerprint, 'shot-02.png');
     const validation = artifact('artifact-visual-validation', 'visual_validation', null, null, 'visual-validation.json');
@@ -310,18 +363,29 @@ export class FakeStickmanDaemon {
     });
     this.job.artifacts.push(shotOne, shotTwo, validation);
     this.job.stages.push(
+      stage('storyboard', 'succeeded'),
       stage('images', 'succeeded', 'shot-01', firstFingerprint),
       stage('images', 'succeeded', 'shot-02', firstFingerprint),
       stage('visual-validation', 'succeeded')
     );
     this.job.providerRequests = [providerRequest()];
-    this.job.status = 'needs_input';
     this.job.state = {
       ...this.job.state,
-      approvedShotSpecArtifactId: 'artifact-shot-spec',
-      needsInput: review('approve-visuals', validation.id, '请确认画面后继续成片')
+      workflowTarget: 'visuals_ready',
+      currentStage: 'visual-validation',
+      needsInput: null
     };
-    this.bump('approve-storyboard', '分镜审核通过，2 个镜头画面已生成');
+    this.bump('continue-after-audio', '配音已确认，分镜画面已生成');
+  }
+
+  private continueAfterVisuals(): void {
+    this.job.state = {
+      ...this.job.state,
+      workflowTarget: 'delivery_ready',
+      currentStage: 'timeline'
+    };
+    this.completeTechnicalDraft(1);
+    this.bump('continue-after-visuals', '画面已确认，动画和交付文件已生成');
   }
 
   private regenerateShot(scopeKey: string): void {
@@ -332,55 +396,90 @@ export class FakeStickmanDaemon {
     this.contents.set(next.id, { body: transparentPng, contentType: 'image/png' });
     this.job.artifacts.push(next);
     this.job.stages.push(stage('images', 'succeeded', 'shot-01', secondFingerprint, 2));
+    for (const artifact of this.job.artifacts) {
+      if (artifact.kind === 'visual_validation' || isDeliveryKind(artifact.kind)) {
+        artifact.status = 'stale';
+      }
+    }
+    const validation = artifact(
+      'artifact-visual-validation-v2',
+      'visual_validation',
+      null,
+      null,
+      'visual-validation-v2.json',
+      2
+    );
+    this.contents.set(validation.id, {
+      body: JSON.stringify({ valid: true, shotCount: 2, technicalDraft: true }),
+      contentType: 'application/json; charset=utf-8'
+    });
+    this.job.artifacts.push(validation);
+    this.job.stages.push(stage('visual-validation', 'succeeded', null, null, 2));
     this.job.state = {
       ...this.job.state,
-      needsInput: review('approve-visuals', 'artifact-visual-validation', '镜头 01 已重生成，请确认画面')
+      workflowTarget: 'visuals_ready',
+      currentStage: 'visual-validation',
+      needsInput: null
     };
     this.bump('regenerate-shot', '镜头 01 已按精确作用域重生成');
   }
 
-  private approveVisuals(): void {
+  private completeTechnicalDraft(version: number): void {
+    const suffix = version === 1 ? '' : `-v${version}`;
     const deliveries = [
-      artifact('artifact-clean-video', 'clean_video', null, null, 'stickman-clean.mp4'),
-      artifact('artifact-cover', 'cover_image', null, null, 'youtube-cover.png'),
-      artifact('artifact-copy', 'publish_copy', null, null, 'publish-copy-youtube.md'),
-      artifact('artifact-bilingual-video', 'bilingual_video', null, null, 'stickman-bilingual.mp4'),
-      artifact('artifact-bilingual-subtitle', 'bilingual_subtitle', null, null, 'stickman-bilingual.srt'),
-      artifact('artifact-delivery-manifest', 'delivery_manifest', null, null, 'delivery-manifest.json')
+      artifact(`artifact-clean-video${suffix}`, 'clean_video', null, null, `stickman-video${suffix}.mp4`, version),
+      artifact(`artifact-narration-subtitle${suffix}`, 'narration_subtitle', null, null, `narration${suffix}.srt`, version),
+      artifact(`artifact-delivery-manifest${suffix}`, 'delivery_manifest', null, null, `delivery-manifest${suffix}.json`, version)
     ];
     for (const delivery of deliveries) {
-      this.contents.set(delivery.id, delivery.kind === 'cover_image'
-        ? { body: transparentPng, contentType: 'image/png' }
-        : { body: `${delivery.kind}\n`, contentType: mediaType(delivery.kind) });
+      this.contents.set(delivery.id, delivery.kind === 'delivery_manifest'
+          ? {
+              body: JSON.stringify({
+                packageStatus: 'technical-draft',
+                placeholderAssets: deliveries.map(item => `${item.kind}:${item.id}`),
+                blockingChecks: ['fake_provider', 'media_validation_unverified'],
+                files: deliveries.filter(item => item.kind !== 'delivery_manifest').map(item => ({
+                  name: item.metadata.fileName,
+                  relativePath: String(item.metadata.fileName),
+                  sourceArtifactId: item.id,
+                  sha256: item.sha256,
+                  bytes: 1,
+                  mime: mediaType(item.kind)
+                }))
+              }),
+              contentType: 'application/json; charset=utf-8'
+            }
+          : { body: `${delivery.kind}\n`, contentType: mediaType(delivery.kind) });
     }
     this.job.artifacts.push(...deliveries);
     this.job.stages.push(
-      stage('timeline', 'succeeded'),
-      stage('render-clean', 'succeeded'),
-      stage('cover', 'succeeded'),
-      stage('subtitles', 'succeeded'),
-      stage('publish-copy', 'succeeded'),
-      stage('bilingual-render', 'succeeded'),
-      stage('package-validation', 'succeeded')
+      stage('timeline', 'succeeded', null, null, version),
+      stage('render-clean', 'succeeded', null, null, version),
+      stage('media-validation', 'succeeded', null, null, version),
+      stage('package-validation', 'succeeded', null, null, version)
     );
     this.job.status = 'completed';
+    const previousSnapshots = Array.isArray(this.job.state.resultSnapshots)
+      ? this.job.state.resultSnapshots
+      : [];
     this.job.state = {
       ...this.job.state,
-      approvedVisualValidationArtifactId: 'artifact-visual-validation',
+      workflowTarget: 'delivery_ready',
+      currentStage: 'package-validation',
       needsInput: null,
-      resultSnapshots: [{
-        version: 1,
+      packageStatus: 'technical-draft',
+      resultSnapshots: [...previousSnapshots, {
+        version,
         createdAt: '2026-08-31T08:05:00.000Z',
         action: 'stage-succeeded',
         stageId: 'package-validation',
-        description: '完成固定五项交付',
+        description: '完成视频与旁白字幕交付',
         artifactRefs: Object.fromEntries(deliveries.map(item => [item.kind, [item.id]])),
         changedArtifactIds: deliveries.map(item => item.id),
         staleArtifactIds: ['artifact-shot-01-v1'],
-        state: { validated: true }
+        state: { packageStatus: 'technical-draft' }
       }]
     };
-    this.bump('approve-visuals', '画面审核通过，固定五项交付已完成');
   }
 
   private bump(action: string, summary: string): void {
@@ -405,13 +504,16 @@ function initialJob(projectId: string): CreatorJob {
     state: {
       sourceType: 'url',
       sourceUrl: 'https://www.youtube.com/watch?v=OpenCreatorStickmanE2E',
-      selectedPresetId: 'default',
-      characterPrompt: '统一的极简火柴人角色，白色圆形头部，黑色线条',
-      style: '极简黑白线稿',
+      characterAsset: { assetId: 'stickman.character.default', revision: 1 },
+      styleAsset: { assetId: 'stickman.style.paper-pencil', revision: 1 },
       ratio: '16:9',
       targetDurationSeconds: 20,
       targetLanguage: 'zh-CN',
-      voice: 'alloy',
+      ttsProvider: 'openai',
+      ttsModel: 'gpt-4o-mini-tts',
+      voiceCode: 'marin',
+      voiceName: 'Marin',
+      workflowTarget: 'script_ready',
       currentStage: null,
       needsInput: review('approve-script', 'artifact-script', '请审核脚本后继续')
     },
@@ -433,6 +535,47 @@ function initialJob(projectId: string): CreatorJob {
     createdAt,
     updatedAt: '2026-08-31T08:03:00.000Z'
   };
+}
+
+function fakeVisualAssets() {
+  return [{
+    id: 'stickman.character.default',
+    revision: 1,
+    templateId: 'stickman-video',
+    kind: 'character',
+    source: 'builtin',
+    status: 'ready',
+    name: { zhCN: '默认角色', en: 'Default' },
+    description: { zhCN: '通用火柴人角色', en: 'General stick-figure character' },
+    previewUrl: null,
+    referenceCount: 1,
+    recommended: true,
+    tags: ['neutral']
+  }, {
+    id: 'stickman.style.paper-pencil',
+    revision: 1,
+    templateId: 'stickman-video',
+    kind: 'style',
+    source: 'builtin',
+    status: 'ready',
+    name: { zhCN: '纸面铅笔手绘', en: 'Pencil sketch on paper' },
+    description: { zhCN: '纸面、铅笔轮廓与石墨排线', en: 'Paper, pencil contours, and graphite hatching' },
+    previewUrl: null,
+    referenceCount: 0,
+    recommended: true,
+    tags: ['pencil'],
+    styleAttributes: {
+      medium: { zhCN: '石墨铅笔', en: 'Graphite pencil' },
+      palette: { zhCN: '纸白、黑、灰', en: 'Paper white, black, gray' },
+      sceneDensity: { zhCN: '中等', en: 'Medium' },
+      swatch: {
+        background: '#f5f3ed',
+        foreground: '#252525',
+        accent: '#8a8a86',
+        texture: 'paper'
+      }
+    }
+  }];
 }
 
 function stage(
@@ -484,7 +627,8 @@ function artifact(
     sourceArtifactIds: [],
     metadata: {
       fileName,
-      ...(kind === 'cover_image' ? { width: 1280, height: 720 } : {})
+      placeholder: true,
+      technicalDraft: true
     },
     createdAt: version === 1 ? createdAt : '2026-08-31T08:04:00.000Z'
   };
@@ -492,17 +636,17 @@ function artifact(
 
 function providerRequest(): CreatorProviderRequest {
   return {
-    id: 'provider-request-unknown',
+    id: 'provider-request-shot-01',
     jobId,
     provider: 'openai',
-    stageRunId: 'stage-cover-global-0',
-    scopeKey: null,
+    stageRunId: 'stage-images-shot-01-1',
+    scopeKey: 'shot-01',
     requestKey: 'fake-provider-request',
     requestHash: 'c'.repeat(64),
-    remoteTaskId: null,
+    remoteTaskId: 'fake-provider-task',
     billingSideEffect: true,
-    status: 'unknown_remote_acceptance',
-    resultArtifactId: null,
+    status: 'succeeded',
+    resultArtifactId: 'artifact-shot-01-v1',
     generation: 1,
     resubmissionOf: null,
     createdAt,
@@ -537,6 +681,14 @@ function mediaType(kind: string): string {
   if (kind.includes('subtitle')) return 'application/x-subrip; charset=utf-8';
   if (kind.includes('manifest')) return 'application/json; charset=utf-8';
   return 'text/markdown; charset=utf-8';
+}
+
+function isDeliveryKind(kind: string): boolean {
+  return [
+    'clean_video',
+    'narration_subtitle',
+    'delivery_manifest'
+  ].includes(kind);
 }
 
 function isRecord(value: unknown): value is Record<string, never> {

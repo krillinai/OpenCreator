@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import type { CodexAvailabilityProbe, CodexRuntimeComponentReadiness } from '@opencreator/protocol';
 import cors from '@fastify/cors';
 import Fastify from 'fastify';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -56,12 +56,19 @@ import {
   createImageExecutor
 } from '../creator/image/executor.js';
 import { createClipExecutor } from '../creator/clip/executor.js';
-import { purgeLegacyStickmanJobs } from '../creator/stickman/legacy-migration.js';
+import {
+  migrateStickmanVisualAssetState,
+  purgeLegacyStickmanJobs
+} from '../creator/stickman/legacy-migration.js';
 import { createStickmanContentExecutor } from '../creator/stickman/content-executor.js';
+import { createStickmanCodexJsonCompletion } from '../creator/stickman/codex-json-completion.js';
+import { createStickmanAudioExecutor } from '../creator/stickman/audio-executor.js';
 import { createStickmanImageExecutor } from '../creator/stickman/image-executor.js';
+import { createStickmanVisualAssetRegistry } from '../creator/stickman/visual-assets.js';
 import { createStickmanValidationExecutor } from '../creator/stickman/validation-executor.js';
 import { createStickmanTimelineExecutor } from '../creator/stickman/timeline-executor.js';
 import { createStickmanRemotionExecutor } from '../creator/stickman/remotion-executor.js';
+import { createStickmanMediaValidationExecutor } from '../creator/stickman/media-validation-executor.js';
 import { createStickmanDeliveryExecutor } from '../creator/stickman/delivery-executor.js';
 import { CreatorProviderRequestLedger } from '../creator/provider-requests.js';
 import { createCreatorProjectCoverService } from '../creator/project-cover.js';
@@ -471,12 +478,16 @@ export async function buildServer(input: BuildServerInput) {
     | undefined;
   let appServerRuntimeManager: AppServerRuntimeManager | undefined;
   let creatorAppServerRuntimeManager: AppServerRuntimeManager | undefined;
+  const stickmanContentRuntimeManager = input.creatorExecutors === undefined
+    ? createAppServerRuntimeManager({ codexBin, codexHome })
+    : undefined;
   const invalidatePersistentRuntime = (reason: string): Promise<void> => {
     const work = Promise.all([
       appServerRuntimeManager?.invalidate(reason)
         ?? persistentAppServerExecutor?.invalidate(reason)
         ?? Promise.resolve(),
-      creatorAppServerRuntimeManager?.invalidate(reason) ?? Promise.resolve()
+      creatorAppServerRuntimeManager?.invalidate(reason) ?? Promise.resolve(),
+      stickmanContentRuntimeManager?.invalidate(reason) ?? Promise.resolve()
     ]).then(() => undefined);
     void work.catch(error => {
       console.warn(
@@ -542,6 +553,7 @@ export async function buildServer(input: BuildServerInput) {
   const creatorEvents = createCreatorEventHub();
   const creatorJobsRoot = join(dataDir, 'creator', 'jobs');
   await purgeLegacyStickmanJobs({ db, jobsRoot: creatorJobsRoot });
+  migrateStickmanVisualAssetState({ db });
   const creatorRepository = createCreatorRepository(db);
   const creatorProviderRequestLedger = new CreatorProviderRequestLedger(creatorRepository);
   const creatorAgentRepository = createCreatorAgentRepository(db);
@@ -647,17 +659,55 @@ export async function buildServer(input: BuildServerInput) {
     dataDir,
     ttsService: krillinTtsService
   });
+  const developmentStickmanRuntimeRoot = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    '../../../desktop/.pack/stickman-runtime'
+  );
+  const stickmanRuntimeRoot = process.env.OPENCREATOR_STICKMAN_RUNTIME_ROOT
+    ?? (existsSync(developmentStickmanRuntimeRoot)
+      ? developmentStickmanRuntimeRoot
+      : join(dataDir, 'creator-runtime', 'stickman'));
+  const packagedStickmanCatalog = join(stickmanRuntimeRoot, 'visual-assets', 'catalog.json');
+  const developmentStickmanCatalog = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    '../../../../resources/stickman/visual-assets/catalog.json'
+  );
+  const stickmanCatalogPath = existsSync(packagedStickmanCatalog)
+    ? packagedStickmanCatalog
+    : existsSync(developmentStickmanCatalog)
+      ? developmentStickmanCatalog
+      : undefined;
+  const stickmanVisualAssets = stickmanCatalogPath !== undefined
+    ? createStickmanVisualAssetRegistry({
+        root: stickmanRuntimeRoot,
+        catalogPath: stickmanCatalogPath
+      })
+    : undefined;
+  const creatorTesseractPath = [
+    process.env.OPENCREATOR_TESSERACT_PATH,
+    process.platform === 'win32' ? 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe' : undefined,
+    process.platform === 'win32' ? 'C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe' : undefined
+  ].find(candidate => candidate !== undefined && existsSync(candidate));
   const creatorExecutors: CreatorExecutor[] = input.creatorExecutors ?? [];
   if (input.creatorExecutors === undefined) {
-    creatorExecutors.push(createStickmanContentExecutor({
-      configStore: creatorServicesConfigStore
-    }));
-    creatorExecutors.push(createStickmanImageExecutor({
-      configStore: creatorServicesConfigStore,
-      ledger: creatorProviderRequestLedger
-    }));
+    if (stickmanVisualAssets !== undefined) {
+      creatorExecutors.push(createStickmanContentExecutor({
+        configStore: creatorServicesConfigStore,
+        codexCompleteJson: createStickmanCodexJsonCompletion({
+          runtimeManager: stickmanContentRuntimeManager!
+        }),
+        visualAssets: stickmanVisualAssets
+      }));
+      creatorExecutors.push(createStickmanImageExecutor({
+        configStore: creatorServicesConfigStore,
+        ledger: creatorProviderRequestLedger,
+        ...(creatorTesseractPath === undefined ? {} : { tesseractPath: creatorTesseractPath })
+      }));
+    }
     creatorExecutors.push(
-      createStickmanValidationExecutor(),
+      createStickmanValidationExecutor({
+        ...(creatorTesseractPath === undefined ? {} : { tesseractPath: creatorTesseractPath })
+      }),
       createStickmanTimelineExecutor()
     );
   }
@@ -744,13 +794,25 @@ export async function buildServer(input: BuildServerInput) {
       }));
     }
     if (input.creatorExecutors === undefined && creatorFfprobePath) {
+      creatorExecutors.push(createStickmanAudioExecutor({
+        configStore: creatorServicesConfigStore,
+        ttsService: krillinTtsService,
+        ledger: creatorProviderRequestLedger,
+        ffprobePath: creatorFfprobePath
+      }));
       creatorExecutors.push(createStickmanRemotionExecutor({
         ffprobePath: creatorFfprobePath,
-        runtimeRoot: process.env.OPENCREATOR_STICKMAN_RUNTIME_ROOT
-          ?? join(dataDir, 'creator-runtime', 'stickman')
+        runtimeRoot: stickmanRuntimeRoot
       }));
+      if (creatorFfmpegPath) {
+        creatorExecutors.push(createStickmanMediaValidationExecutor({
+          ffprobePath: creatorFfprobePath,
+          ffmpegPath: creatorFfmpegPath
+        }));
+      }
       creatorExecutors.push(createStickmanDeliveryExecutor({
-        ffprobePath: creatorFfprobePath
+        ffprobePath: creatorFfprobePath,
+        ffmpegPath: creatorFfmpegPath
       }));
     }
   } catch (error) {
@@ -1146,6 +1208,7 @@ export async function buildServer(input: BuildServerInput) {
     await capture(() => runManager.close());
     await capture(() => appServerRuntimeManager?.close());
     await capture(() => creatorAppServerRuntimeManager?.close());
+    await capture(() => stickmanContentRuntimeManager?.close());
     await capture(() => codexSessionProvider.close());
     await capture(() => codexModelCatalog.close());
     await capture(() => codexControlClient.close());
@@ -1259,6 +1322,7 @@ export async function buildServer(input: BuildServerInput) {
     coverWorkflow,
     videoTranslationWorkflow,
     stickmanVideoWorkflow,
+    stickmanVisualAssets,
     projectCoverService: creatorProjectCoverService,
     referenceImageUploadService: creatorReferenceImageUploadService,
     sourceUploadService: creatorSourceUploadService,

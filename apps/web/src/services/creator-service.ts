@@ -16,7 +16,9 @@ import type {
   CreatorJobListResponse,
   CreatorStageRun,
   CreatorSourceUploadResponse,
-  CreatorTemplateListResponse
+  CreatorTemplateListResponse,
+  CreatorVisualAssetCatalogResponse,
+  CreatorVisualAssetKind
 } from '@opencreator/protocol';
 
 type ClientLike = {
@@ -43,6 +45,24 @@ export function createCreatorService(client: ClientLike) {
   return {
     listTemplates(): Promise<CreatorTemplateListResponse> {
       return client.get('/creator/templates') as Promise<CreatorTemplateListResponse>;
+    },
+    listVisualAssets(
+      templateId: string,
+      kind?: CreatorVisualAssetKind
+    ): Promise<CreatorVisualAssetCatalogResponse> {
+      const query = new URLSearchParams({ templateId });
+      if (kind !== undefined) query.set('kind', kind);
+      return client.get(
+        `/creator/visual-assets?${query.toString()}`
+      ) as Promise<CreatorVisualAssetCatalogResponse>;
+    },
+    openVisualAssetPreview(assetId: string, revision: number): Promise<Response> {
+      if (client.rawGet === undefined) {
+        throw new Error('Creator visual asset preview transport is unavailable');
+      }
+      return client.rawGet(
+        `/creator/visual-assets/${encodeURIComponent(assetId)}/revisions/${revision}/preview`
+      );
     },
     createJob(request: CreateCreatorJobRequest): Promise<{ job: CreatorJob }> {
       return client.post('/creator/jobs', request) as Promise<{ job: CreatorJob }>;

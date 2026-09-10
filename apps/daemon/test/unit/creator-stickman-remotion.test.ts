@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createStickmanRemotionExecutor } from '../../src/creator/stickman/remotion-executor.js';
+import { readStickmanRemotionRuntime } from '../../src/creator/stickman/remotion-runtime.js';
 
 let tempDir = '';
 
@@ -12,12 +13,42 @@ afterEach(() => {
 });
 
 describe('stickman Remotion worker isolation', () => {
+  it('accepts visual assets from the packaged runtime manifest', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-stickman-runtime-'));
+    const visualAssetPath = join(tempDir, 'catalog.json');
+    writeFileSync(visualAssetPath, '{}\n');
+    writeFileSync(join(tempDir, 'manifest.json'), JSON.stringify({
+      version: 1,
+      platform: process.platform,
+      arch: process.arch,
+      remotionVersion: '4.0.473',
+      chromiumVersion: 'test',
+      bundlePath: 'bundle',
+      browserExecutable: 'browser',
+      resources: [{
+        path: 'catalog.json',
+        kind: 'visual-asset',
+        sha256: '0'.repeat(64),
+        bytes: 3,
+        version: '1',
+        platform: process.platform,
+        arch: process.arch
+      }]
+    }));
+
+    expect(readStickmanRemotionRuntime(tempDir)).toEqual({
+      root: tempDir,
+      bundlePath: join(tempDir, 'bundle'),
+      browserExecutable: join(tempDir, 'browser')
+    });
+  });
+
   it('isolates worker crashes and cancellation without leaving a clean video', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-stickman-remotion-'));
     const timelinePath = join(tempDir, 'timeline.json');
     writeFileSync(timelinePath, JSON.stringify({ fps: 30, width: 1280, height: 720, totalFrames: 30, shots: [] }));
-    const crashWorker = join(tempDir, 'crash-worker.mjs');
-    writeFileSync(crashWorker, "process.stderr.write('injected crash'); process.exit(2);\n");
+    const crashWorker = join(tempDir, 'crash-worker.ts');
+    writeFileSync(crashWorker, "const code: number = 2; process.stderr.write('injected crash'); process.exit(code);\n");
     const executor = createStickmanRemotionExecutor({
       ffprobePath: 'unused',
       runtimeRoot: tempDir,

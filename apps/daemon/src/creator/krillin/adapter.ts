@@ -62,13 +62,12 @@ export function createKrillinExecutor(input: {
       const ffprobe = executablePath(input.resourceRoot, /(?:^|\/)ffprobe(?:\.exe)?$/i);
       const materializedArtifacts = await writeArtifactIndex(input.jobsRoot, stage);
       const inputArtifactIds = materializedArtifacts.map(artifact => artifact.id);
-      const options = stageOptions(stage);
+      const options = buildKrillinStageOptions(stage);
       if (hasPackagedCli(preflight.manifest)) {
         let artifacts: KrillinResultArtifact[];
         try {
           const attempts = createKrillinCliExecutionPlan(
             resolveKrillinStageContract(stage).stageType,
-            resolveKrillinCliSource(materializedArtifacts, options),
             options
           );
           let completed: KrillinResultArtifact[] | undefined;
@@ -297,7 +296,7 @@ function createTaskRequest(
     stageType,
     idempotencyKey: input.stageRun.id,
     inputArtifactIds,
-    options: stageOptions(input)
+    options: buildKrillinStageOptions(input)
   };
   return {
     ...requestIdentity,
@@ -306,22 +305,20 @@ function createTaskRequest(
   };
 }
 
-function stageOptions(input: CreatorExecutorInput): Record<string, unknown> {
+export function buildKrillinStageOptions(input: CreatorExecutorInput): Record<string, unknown> {
   const state = input.job.state;
   return compactObject({
     sourceUrl: typeof state.sourceUrl === 'string' ? state.sourceUrl : undefined,
     originLanguage: typeof state.sourceLanguage === 'string' ? state.sourceLanguage : undefined,
     targetLanguage: typeof state.targetLanguage === 'string' ? state.targetLanguage : undefined,
     captionSource: state.preferPlatformCaptions === false ? 'whisper' : 'any',
+    sourceOnly: input.job.templateId === 'stickman-video'
+      && input.stageRun.stageId === 'source-transcript',
     bilingual: input.stageRun.stageId === 'subtitles' || state.bilingual === true,
     bilingualTop: state.subtitlePosition === 'top',
     ttsProvider: typeof state.ttsProvider === 'string' ? state.ttsProvider : undefined,
     ttsModel: typeof state.ttsModel === 'string' ? state.ttsModel : undefined,
-    voiceCode: typeof state.voiceCode === 'string'
-      ? state.voiceCode
-      : input.stageRun.stageId === 'narration' && typeof state.voice === 'string'
-        ? state.voice
-        : undefined,
+    voiceCode: typeof state.voiceCode === 'string' ? state.voiceCode : undefined,
     verticalTitle: typeof state.verticalTitle === 'string' ? state.verticalTitle : undefined,
     verticalSubtitle: typeof state.verticalSubtitle === 'string' ? state.verticalSubtitle : undefined,
     dubbed: state.dubbing === true || state.dubbed === true,

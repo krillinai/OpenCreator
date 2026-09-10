@@ -28,7 +28,9 @@ const requiredCharacters = new Set([
   'characters/chef.png',
   'characters/fitness.png'
 ]);
-
+const requiredVisualAssets = new Set([
+  'visual-assets/catalog.json'
+]);
 export function verifyStickmanRuntime(rootPath, platform, arch) {
   const root = resolve(rootPath);
   const manifestPath = join(root, 'manifest.json');
@@ -53,7 +55,7 @@ export function verifyStickmanRuntime(rootPath, platform, arch) {
   for (const resource of manifest.resources) {
     if (
       typeof resource?.path !== 'string'
-      || !['bundle', 'browser', 'font', 'character'].includes(resource.kind)
+      || !['bundle', 'browser', 'font', 'character', 'visual-asset'].includes(resource.kind)
       || !/^[a-f0-9]{64}$/i.test(resource.sha256 ?? '')
       || !Number.isSafeInteger(resource.bytes)
       || resource.bytes < 0
@@ -107,6 +109,11 @@ export function verifyStickmanRuntime(rootPath, platform, arch) {
   for (const path of requiredCharacters) {
     if (!manifest.resources.some(resource => resource.kind === 'character' && resource.path === path)) {
       throw new Error(`Stickman Runtime character is missing: ${path}`);
+    }
+  }
+  for (const path of requiredVisualAssets) {
+    if (!manifest.resources.some(resource => resource.kind === 'visual-asset' && resource.path === path)) {
+      throw new Error(`Stickman Runtime visual asset is missing: ${path}`);
     }
   }
   return manifest;

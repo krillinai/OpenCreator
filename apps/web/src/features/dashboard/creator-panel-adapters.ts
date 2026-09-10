@@ -260,38 +260,49 @@ export const stickmanVideoPanelAdapter: CreatorPanelAdapter = {
   ),
   stageLabel(stageId, l) {
     const labels: Record<string, string> = {
-      'acquire-source': l('获取 YouTube 来源', 'Acquire YouTube source'),
+      'ingest-text': l('保存文本来源', 'Save text source'),
       'source-transcript': l('提取来源字幕', 'Extract source transcript'),
       'source-brief': l('生成来源摘要', 'Create source brief'),
       'content-plan': l('规划内容结构', 'Plan content structure'),
       script: l('生成脚本', 'Generate script'),
-      storyboard: l('生成分镜', 'Generate storyboard'),
-      images: l('生成镜头画面', 'Generate shot visuals'),
       narration: l('生成旁白', 'Generate narration'),
+      'audio-timing': l('测量旁白时长', 'Measure narration timing'),
+      storyboard: l('生成分镜', 'Generate storyboard'),
+      'style-assets': l('准备角色参考图与风格', 'Prepare character reference and style'),
+      'prompt-pack': l('生成镜头提示词', 'Build shot prompts'),
+      images: l('生成镜头画面', 'Generate shot visuals'),
       'visual-validation': l('校验画面', 'Validate visuals'),
-      timeline: l('编排时间线', 'Build timeline'),
-      'render-clean': l('渲染纯净视频', 'Render clean video'),
-      cover: l('生成 YouTube 封面', 'Generate YouTube cover'),
-      subtitles: l('生成双语字幕', 'Generate bilingual subtitles'),
-      'publish-copy': l('生成发布文案', 'Generate publish copy'),
-      'bilingual-render': l('渲染双语视频', 'Render bilingual video'),
-      'package-validation': l('校验固定交付', 'Validate delivery package')
+      timeline: l('生成时间线与旁白字幕', 'Build timeline and narration subtitles'),
+      'render-clean': l('渲染火柴人动画', 'Render stickman video'),
+      'media-validation': l('校验成片媒体', 'Validate rendered media'),
+      'package-validation': l('整理成片与字幕', 'Prepare video and subtitles')
     };
     return labels[stageId] ?? l('火柴人视频任务', 'Stickman video task');
   },
   phaseLabel(phase, l) {
     const labels: Record<string, string> = {
       validating: l('检查任务输入', 'Checking task input'),
-      downloading: l('下载 YouTube 视频', 'Downloading YouTube video'),
+      preparing_source: l('准备 YouTube 来源', 'Preparing the YouTube source'),
+      reading_platform_captions: l('获取平台字幕', 'Fetching platform captions'),
+      processing_platform_captions: l('解析平台字幕', 'Processing platform captions'),
+      translating_subtitles: l('整理来源字幕', 'Preparing source captions'),
+      preparing_audio: l('平台字幕不可用，准备音频转录', 'Platform captions unavailable; preparing audio transcription'),
+      transcribing_audio: l('使用 Whisper 转录音频', 'Transcribing audio with Whisper'),
+      collecting_outputs: l('整理来源字幕', 'Collecting source captions'),
       transcribing: l('提取来源字幕', 'Extracting source transcript'),
       analyzing: l('理解来源内容', 'Analyzing source content'),
       planning: l('规划内容结构', 'Planning content structure'),
       writing: l('生成创作内容', 'Writing creative content'),
+      reviewing: l('检查脚本结构与语义', 'Reviewing script structure and meaning'),
+      materializing: l('准备角色参考图与风格合同', 'Preparing character reference and style contract'),
       submitting: l('提交图像生成服务', 'Submitting to the image provider'),
+      retrying_candidate: l('重新生成当前镜头候选', 'Retrying the current shot candidate'),
       generating: l('生成镜头画面', 'Generating shot visuals'),
       synthesizing: l('合成旁白音频', 'Synthesizing narration'),
+      measuring: l('测量真实音频时长', 'Measuring real audio timing'),
+      validating_media: l('检查视频轨、音频轨与抽帧', 'Checking video, audio, and sampled frames'),
       rendering: l('渲染视频', 'Rendering video'),
-      packaging: l('整理固定交付', 'Packaging deliverables'),
+      packaging: l('整理成片与字幕', 'Packaging video and subtitles'),
       failed: l('阶段执行失败', 'Stage failed'),
       completed: l('阶段已完成', 'Stage completed')
     };
@@ -299,13 +310,15 @@ export const stickmanVideoPanelAdapter: CreatorPanelAdapter = {
   },
   activityStageId: readActivityStageId,
   normalizeActivity(activity, l) {
+    if (activity.action === 'run-stage') return null;
     const labels: Record<string, string> = {
       'approve-script': l('审核通过了脚本', 'Approved the script'),
+      'continue-after-audio': l('确认配音并开始生成分镜画面', 'Continued from audio to storyboard visuals'),
+      'continue-after-visuals': l('确认画面并开始动画合成', 'Continued from visuals to video composition'),
       'edit-script': l('保存了脚本修改', 'Saved script changes'),
       'edit-shot': l('保存了镜头修改', 'Saved shot changes'),
-      'approve-storyboard': l('审核通过了分镜', 'Approved the storyboard'),
       'regenerate-shot': l('重新生成了单个镜头', 'Regenerated one shot'),
-      'approve-visuals': l('确认了镜头画面', 'Approved shot visuals'),
+      'generate-missing-shots': l('继续生成剩余分镜画面', 'Continued generating missing shot visuals'),
       'retry-stage': l('重试了失败阶段', 'Retried a failed stage'),
       'commit-version': l('保存了新的交付版本', 'Committed a new delivery version')
     };
@@ -329,35 +342,29 @@ export const stickmanVideoPanelAdapter: CreatorPanelAdapter = {
   },
   readStageProgress: readStandardProgress,
   aggregateStages(stages) {
-    const otherStages = stages.filter(stage => stage.stageId !== 'images');
-    const imageStages = stages.filter(stage => stage.stageId === 'images');
-    if (imageStages.length === 0) return stages;
-    const latestByScope = new Map<string, CreatorStageRun>();
-    for (const stage of imageStages) latestByScope.set(stage.scopeKey ?? stage.id, stage);
-    const current = [...latestByScope.values()];
-    const representative = current.sort((left, right) => (
-      (left.startedAt ?? '').localeCompare(right.startedAt ?? '')
-    )).at(-1)!;
-    const completed = current.filter(stage => stage.status === 'succeeded').length;
-    const failed = current.filter(stage => stage.status === 'failed').length;
-    const running = current.some(stage => stage.status === 'running' || stage.status === 'queued');
-    const aggregate: CreatorStageRun = {
-      ...representative,
-      id: `stickman-images:${current.map(stage => stage.id).sort().join(':')}`,
-      scopeKey: null,
-      inputFingerprint: null,
-      status: running ? 'running' : failed > 0 ? 'failed' : 'succeeded',
-      progress: {
-        ...representative.progress,
-        completed,
-        failed,
-        total: current.length,
-        percent: current.length === 0 ? 0 : Math.round((completed / current.length) * 100)
-      }
-    };
-    return [...otherStages, aggregate];
+    const scriptStageIds = new Set<string>([
+      'ingest-text',
+      'source-transcript',
+      'source-brief',
+      'content-plan',
+      'script'
+    ]);
+    const scriptStages = stages.filter(stage => scriptStageIds.has(stage.stageId));
+    const productionStages = stages.filter(stage => (
+      !scriptStageIds.has(stage.stageId) && stage.stageId !== 'acquire-source'
+    ));
+    if (productionStages.length === 0) {
+      const scriptPipeline = aggregateStickmanScriptStages(scriptStages);
+      return scriptPipeline === undefined ? [] : [scriptPipeline];
+    }
+    const representative = currentStickmanStage(productionStages);
+    return representative === undefined ? [] : [representative];
   },
-  runningProgressText(_stage, progress, l) {
+  runningProgressText(stage, progress, l) {
+    if (stage.stageId === 'script' && progress.phase !== null) {
+      return stickmanVideoPanelAdapter.phaseLabel(progress.phase, l);
+    }
+    if (stage.stageId !== 'images') return null;
     if (progress.total === null || progress.completed === null) return null;
     return l(
       `镜头完成 ${progress.completed}/${progress.total}${progress.failed ? `，失败 ${progress.failed}` : ''}`,
@@ -365,6 +372,80 @@ export const stickmanVideoPanelAdapter: CreatorPanelAdapter = {
     );
   }
 };
+
+function aggregateStickmanScriptStages(
+  stages: CreatorStageRun[]
+): CreatorStageRun | undefined {
+  if (stages.length === 0) return undefined;
+  const textSource = stages.some(stage => stage.stageId === 'ingest-text');
+  const order = textSource
+    ? ['ingest-text', 'source-brief', 'content-plan', 'script']
+    : ['source-transcript', 'source-brief', 'content-plan', 'script'];
+  const current = order.flatMap(stageId => (
+    stages.find(stage => stage.stageId === stageId) ?? []
+  ));
+  if (current.length === 0) return undefined;
+
+  const active = latestStartedStage(current.filter(stage => stage.status === 'running'))
+    ?? latestStartedStage(current.filter(stage => stage.status === 'queued'));
+  const stopped = latestStartedStage(current.filter(stage => (
+    stage.status === 'failed'
+    || stage.status === 'canceled'
+    || stage.status === 'interrupted'
+  )));
+  const script = current.find(stage => stage.stageId === 'script');
+  const representative = active ?? stopped ?? script ?? latestStartedStage(current)!;
+  const currentIndex = Math.max(0, order.indexOf(representative.stageId));
+  const completed = active === undefined
+    && stopped === undefined
+    && script?.status === 'succeeded';
+  const status = completed
+    ? 'succeeded' as const
+    : active?.status ?? stopped?.status ?? 'running' as const;
+  const stagePercent = representative.status === 'succeeded'
+    ? 100
+    : Math.max(0, Math.min(100, readFiniteNumber(representative.progress.percent) ?? 0));
+  const percent = completed
+    ? 100
+    : Math.round(((currentIndex + stagePercent / 100) / order.length) * 100);
+
+  return {
+    ...representative,
+    stageId: 'script',
+    scopeKey: null,
+    inputFingerprint: null,
+    status,
+    progress: {
+      ...representative.progress,
+      phase: representative.progress.phase ?? null,
+      message: representative.progress.message ?? null,
+      percent,
+      completed: completed ? order.length : currentIndex,
+      failed: stopped?.status === 'failed' ? 1 : 0,
+      total: order.length
+    },
+    startedAt: current[0]?.startedAt ?? null,
+    finishedAt: completed ? script?.finishedAt ?? representative.finishedAt : null
+  };
+}
+
+function currentStickmanStage(stages: CreatorStageRun[]): CreatorStageRun | undefined {
+  return latestStartedStage(stages.filter(stage => stage.status === 'running'))
+    ?? latestStartedStage(stages.filter(stage => stage.status === 'queued'))
+    ?? latestStartedStage(stages.filter(stage => (
+      stage.status === 'failed'
+      || stage.status === 'canceled'
+      || stage.status === 'interrupted'
+    )))
+    ?? latestStartedStage(stages.filter(stage => stage.status === 'succeeded'));
+}
+
+function latestStartedStage(stages: CreatorStageRun[]): CreatorStageRun | undefined {
+  return [...stages].sort((left, right) => (
+    (left.startedAt ?? '').localeCompare(right.startedAt ?? '')
+    || left.id.localeCompare(right.id)
+  )).at(-1);
+}
 
 export function creatorPanelAdapterFor(templateId: string): CreatorPanelAdapter {
   if (templateId === 'video-translation') return videoTranslationPanelAdapter;
@@ -483,10 +564,11 @@ function stickmanFieldLabel(
   l: CreatorPanelLocalize
 ): string | null {
   const labels: Record<string, string> = {
+    sourceType: l('内容来源', 'Content source'),
     sourceUrl: l('YouTube 来源', 'YouTube source'),
-    selectedPresetId: l('角色预设', 'Character preset'),
-    characterPrompt: l('角色描述', 'Character prompt'),
-    style: l('视觉风格', 'Visual style'),
+    sourceText: l('文本来源', 'Text source'),
+    characterAsset: l('人物形象', 'Character'),
+    styleAsset: l('视觉风格', 'Visual style'),
     targetDurationSeconds: l('目标时长', 'Target duration'),
     targetLanguage: l('目标语言', 'Target language'),
     voice: l('旁白音色', 'Narration voice')

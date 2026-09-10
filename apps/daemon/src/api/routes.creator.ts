@@ -46,6 +46,10 @@ import {
   type VideoTranslationWorkflow
 } from '../creator/templates/video-translation-actions.js';
 import type { StickmanVideoWorkflow } from '../creator/templates/stickman-video-actions.js';
+import {
+  StickmanVisualAssetError,
+  type StickmanVisualAssetRegistry
+} from '../creator/stickman/visual-assets.js';
 import type { CreatorProjectCoverService } from '../creator/project-cover.js';
 import type { CreatorStageRunner } from '../creator/stage-runner.js';
 import {
@@ -73,6 +77,7 @@ export async function registerCreatorRoutes(
     coverWorkflow?: CoverWorkflow;
     videoTranslationWorkflow?: VideoTranslationWorkflow;
     stickmanVideoWorkflow?: StickmanVideoWorkflow;
+    stickmanVisualAssets?: StickmanVisualAssetRegistry;
     projectCoverService?: CreatorProjectCoverService;
     referenceImageUploadService?: CreatorReferenceImageUploadService;
     sourceUploadService?: CreatorSourceUploadService;
@@ -81,6 +86,53 @@ export async function registerCreatorRoutes(
     stageRunner?: Pick<CreatorStageRunner, 'cancel' | 'cancelJob'>;
   }
 ): Promise<void> {
+  if (options.stickmanVisualAssets !== undefined) {
+    server.get('/creator/visual-assets', async (request, reply) => {
+      try {
+        const query = readObject(request.query);
+        const templateId = readString(query.templateId, 'templateId');
+        if (templateId !== 'stickman-video') {
+          return reply.code(404).send(apiError(
+            'creator_artifact_not_found',
+            'Creator visual asset catalog was not found'
+          ));
+        }
+        const kind = query.kind === undefined ? undefined : readString(query.kind, 'kind');
+        if (kind !== undefined && kind !== 'character' && kind !== 'style') {
+          throw new TypeError('kind must be character or style');
+        }
+        return options.stickmanVisualAssets!.list(kind);
+      } catch (error) {
+        return sendCreatorError(reply, error);
+      }
+    });
+    server.get(
+      '/creator/visual-assets/:id/revisions/:revision/preview',
+      async (request, reply) => {
+        try {
+          const { id, revision } = request.params as { id: string; revision: string };
+          const preview = options.stickmanVisualAssets!.preview({
+            assetId: id,
+            revision: readQueryInteger(revision, 'revision')
+          });
+          if (preview === undefined) {
+            return reply.code(404).send(apiError(
+              'creator_artifact_not_found',
+              'Creator visual asset preview was not found'
+            ));
+          }
+          return reply
+            .type(preview.mimeType)
+            .header('Cache-Control', 'private, max-age=86400, immutable')
+            .header('Content-Disposition', 'inline')
+            .send(preview.stream);
+        } catch (error) {
+          return sendCreatorError(reply, error);
+        }
+      }
+    );
+  }
+
   if (options.sourceUploadService !== undefined) {
     server.addContentTypeParser(
       CREATOR_SOURCE_UPLOAD_CONTENT_TYPE,
@@ -847,6 +899,10 @@ function readCreatorAgentSandbox(
 }
 
 function sendCreatorError(reply: FastifyReply, error: unknown) {
+  if (error instanceof StickmanVisualAssetError) {
+    const status = error.code.endsWith('_not_found') ? 404 : 422;
+    return reply.code(status).send(apiError(error.code as RuntimeErrorCode, error.message));
+  }
   if (error instanceof CreatorArtifactImportError) {
     return reply.code(error.statusCode)
       .send(apiError(error.code, error.message));

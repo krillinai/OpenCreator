@@ -122,6 +122,34 @@ describe('CreatorCollaborationPanel', () => {
       .not.toBeInTheDocument();
   });
 
+  it('完成阶段不误报结果已同步到工作台', () => {
+    const current = downloadJob();
+    current.stages[0] = {
+      ...current.stages[0]!,
+      status: 'succeeded',
+      dispatchStatus: 'finished',
+      progress: { phase: 'completed', percent: 100 },
+      finishedAt: '2026-08-30T08:00:06.000Z'
+    };
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          initialJob={current}
+          service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+        >
+          <CreatorCollaborationPanel
+            adapter={videoDownloadPanelAdapter}
+            stepLabel="下载到项目"
+            contextSummary="YouTube · 1080p"
+          />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    expect(screen.getByText('已完成')).toBeInTheDocument();
+    expect(screen.queryByText('已完成，结果已同步到工作台')).not.toBeInTheDocument();
+  });
+
   it('视频解析阶段显示不确定进度而不是固定 20%', () => {
     const current = downloadJob();
     current.state.currentStage = 'probe';

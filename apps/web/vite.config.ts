@@ -2,7 +2,7 @@ import react from '@vitejs/plugin-react';
 import { existsSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { spawn, spawnSync, type ChildProcessByStdio } from 'node:child_process';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Readable } from 'node:stream';
 import { defineConfig } from 'vite';
@@ -42,6 +42,16 @@ function opencreatorRuntimeDevPlugin(): Plugin {
   return {
     name: 'opencreator-runtime-dev',
     configureServer(server) {
+      const daemonSourceDir = resolve(webDir, '../daemon/src');
+      server.watcher.add(daemonSourceDir);
+      server.watcher.on('change', changedPath => {
+        const relativePath = relative(daemonSourceDir, resolve(changedPath));
+        if (relativePath.startsWith('..') || isAbsolute(relativePath)) return;
+        if (runtimeProcess === undefined) return;
+        console.warn(`[opencreator-runtime-dev] Daemon source changed (${relativePath}); restarting on the next request.`);
+        stopRuntimeProcess();
+      });
+
       server.middlewares.use('/.opencreator/runtime-config', async (_request, response) => {
         try {
           const config = await getRuntimeConfig();

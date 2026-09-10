@@ -4,6 +4,26 @@ import { isAbsolute, relative, resolve } from 'node:path';
 
 const migrationKey = 'purge-stickman-video-v1';
 
+const legacyStyleAssets: Record<string, string> = {
+  '极简黑白线稿': 'stickman.style.minimal-ink',
+  '纸面铅笔手绘': 'stickman.style.paper-pencil',
+  '漫画分镜线稿': 'stickman.style.comic-storyboard',
+  '白板讲解线稿': 'stickman.style.whiteboard-marker'
+};
+
+const legacyCharacterIds = new Set([
+  'default',
+  'tech-guy',
+  'long-hair',
+  'short-hair',
+  'student',
+  'manager',
+  'hiphop',
+  'elder',
+  'chef',
+  'fitness'
+]);
+
 type MigrationState = {
   pendingJobIds: string[];
   blockedJobIds: string[];
@@ -76,6 +96,61 @@ export async function purgeLegacyStickmanJobs(input: {
   };
   writeState(input.db, result);
   return result;
+}
+
+export function migrateStickmanVisualAssetState(input: {
+  db: Database.Database;
+}): { migratedJobIds: string[] } {
+  const rows = input.db.prepare(`
+    SELECT id, state_json
+    FROM creator_jobs
+    WHERE template_id = 'stickman-video' AND template_version = 2
+    ORDER BY id ASC
+  `).all() as Array<{ id: string; state_json: string }>;
+  const update = input.db.prepare(`
+    UPDATE creator_jobs
+    SET state_json = ?, updated_at = ?
+    WHERE id = ?
+  `);
+  const migratedJobIds: string[] = [];
+  input.db.transaction(() => {
+    for (const row of rows) {
+      const state = JSON.parse(row.state_json) as Record<string, unknown>;
+      const characterAsset = readStoredAssetRef(state.characterAsset)
+        ?? {
+          assetId: `stickman.character.${readLegacyCharacterId(state.selectedPresetId)}`,
+          revision: 1
+        };
+      const styleAsset = readStoredAssetRef(state.styleAsset)
+        ?? {
+          assetId: legacyStyleAssets[typeof state.style === 'string' ? state.style : '']
+            ?? 'stickman.style.minimal-ink',
+          revision: 1
+        };
+      const next: Record<string, unknown> = { ...state, characterAsset, styleAsset };
+      delete next.selectedPresetId;
+      delete next.style;
+      if (JSON.stringify(next) === row.state_json) continue;
+      update.run(JSON.stringify(next), new Date().toISOString(), row.id);
+      migratedJobIds.push(row.id);
+    }
+  })();
+  return { migratedJobIds };
+}
+
+function readStoredAssetRef(value: unknown): { assetId: string; revision: number } | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.assetId !== 'string'
+    || !Number.isSafeInteger(record.revision)
+    || Number(record.revision) <= 0
+  ) return undefined;
+  return { assetId: record.assetId, revision: Number(record.revision) };
+}
+
+function readLegacyCharacterId(value: unknown): string {
+  return typeof value === 'string' && legacyCharacterIds.has(value) ? value : 'default';
 }
 
 function ensureMigrationTable(db: Database.Database): void {

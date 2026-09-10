@@ -38,6 +38,7 @@ const binDir = join(outputRoot, 'bin');
 const executableSuffix = targetPlatform === 'win32' ? '.exe' : '';
 const defaultCliVersion = '2.1.0';
 const configuredKrillinCliPath = process.env.OPENCREATOR_KRILLINAI_CLI_PATH?.trim();
+const configuredKrillinSourceRoot = process.env.OPENCREATOR_KRILLINAI_SOURCE_ROOT?.trim();
 const configuredKrillinCliVersion = process.env.OPENCREATOR_KRILLINAI_CLI_VERSION?.trim();
 const configuredKrillinUpstreamCommit = process.env.OPENCREATOR_KRILLINAI_UPSTREAM_COMMIT?.trim();
 const configuredYtDlpPath = process.env.OPENCREATOR_YT_DLP_PATH?.trim();
@@ -45,9 +46,25 @@ const protocolVersion = 1;
 const protocolSchemaSource = join(rootDir, 'packages', 'protocol', 'contracts', 'krillin-opencreator-v1.schema.json');
 const runtimeMode = 'cli';
 
+if (configuredKrillinCliPath && configuredKrillinSourceRoot) {
+  throw new Error('Configure either OPENCREATOR_KRILLINAI_CLI_PATH or OPENCREATOR_KRILLINAI_SOURCE_ROOT, not both');
+}
+const defaultKrillinSourceRoot = resolve(rootDir, '..', 'KrillinAI');
+const localKrillinSourceRoot = configuredKrillinCliPath
+  ? undefined
+  : configuredKrillinSourceRoot
+    ? resolve(configuredKrillinSourceRoot)
+    : isKrillinSourceRoot(defaultKrillinSourceRoot)
+      ? defaultKrillinSourceRoot
+      : undefined;
+const localKrillinBuild = localKrillinSourceRoot === undefined
+  ? undefined
+  : buildLocalKrillinCli(localKrillinSourceRoot);
+const selectedKrillinCliPath = configuredKrillinCliPath ?? localKrillinBuild?.path;
+
 ensureCliDependencies();
 const vendorVersions = readVendorVersions();
-const vendoredKrillin = configuredKrillinCliPath
+const vendoredKrillin = selectedKrillinCliPath
   ? undefined
   : vendorVersions?.dependencies?.krillinai;
 if (configuredKrillinCliPath && (!configuredKrillinCliVersion || !configuredKrillinUpstreamCommit)) {
@@ -56,11 +73,22 @@ if (configuredKrillinCliPath && (!configuredKrillinCliVersion || !configuredKril
     + 'when OPENCREATOR_KRILLINAI_CLI_PATH is configured'
   );
 }
-const cliVersion = configuredKrillinCliVersion ?? vendoredKrillin?.version ?? defaultCliVersion;
+const cliVersion = configuredKrillinCliVersion
+  ?? localKrillinBuild?.version
+  ?? vendoredKrillin?.version
+  ?? defaultCliVersion;
 const serviceVersion = cliVersion;
 const upstreamCommit = configuredKrillinUpstreamCommit
+  ?? localKrillinBuild?.revision
   ?? vendoredKrillin?.upstreamCommit
   ?? `v${defaultCliVersion}`;
+const cliSource = localKrillinBuild === undefined
+  ? { kind: configuredKrillinCliPath ? 'configured-binary' : 'vendor-release' }
+  : {
+      kind: 'local-source',
+      revision: localKrillinBuild.revision,
+      dirty: localKrillinBuild.dirty
+    };
 rmSync(outputRoot, { recursive: true, force: true });
 mkdirSync(binDir, { recursive: true });
 
@@ -68,7 +96,7 @@ const primaryExecutablePath = join(binDir, `krillinai-cli${executableSuffix}`);
 copyExecutable(
   resolveExecutable(
     'krillinai-cli',
-    configuredKrillinCliPath,
+    selectedKrillinCliPath,
     join(vendorRoot, `krillinai-cli${executableSuffix}`)
   ),
   primaryExecutablePath
@@ -108,6 +136,7 @@ const buildRecord = {
   protocolSha256,
   ytDlp: ytDlpRuntime.descriptor,
   upstreamCommit,
+  cliSource,
   integrationPatchSha256: hashFiles([
     join(scriptDir, 'install-creator-runtime-dependencies.mjs'),
     join(scriptDir, 'prepare-creator-runtime.mjs'),
@@ -143,6 +172,7 @@ const manifest = {
   platform: targetPlatform,
   arch: targetArch,
   upstreamCommit: buildRecord.upstreamCommit,
+  cliSource: buildRecord.cliSource,
   ytDlp: ytDlpRuntime.descriptor,
   resources: resourcePaths.map(path => ({
     path: relative(outputRoot, path).replaceAll('\\', '/'),
@@ -157,7 +187,7 @@ console.log(JSON.stringify({ ok: true, outputRoot, resources: manifest.resources
 
 function ensureCliDependencies() {
   const required = [
-    [configuredKrillinCliPath, join(vendorRoot, `krillinai-cli${executableSuffix}`)],
+    [selectedKrillinCliPath, join(vendorRoot, `krillinai-cli${executableSuffix}`)],
     [process.env.OPENCREATOR_FFMPEG_PATH, join(vendorRoot, `ffmpeg${executableSuffix}`)],
     [process.env.OPENCREATOR_FFPROBE_PATH, join(vendorRoot, `ffprobe${executableSuffix}`)],
     [configuredYtDlpPath, join(vendorRoot, 'yt-dlp')],
@@ -175,6 +205,41 @@ function ensureCliDependencies() {
     },
     stdio: 'inherit'
   });
+}
+
+function isKrillinSourceRoot(path) {
+  return existsSync(join(path, 'go.mod')) && existsSync(join(path, 'cmd', 'cli', 'main.go'));
+}
+
+function buildLocalKrillinCli(sourceRoot) {
+  if (!isKrillinSourceRoot(sourceRoot)) {
+    throw new Error(`KrillinAI source root is invalid: ${sourceRoot}`);
+  }
+  const revision = commandOutput('git', ['rev-parse', 'HEAD'], sourceRoot).trim();
+  const describe = commandOutput('git', ['describe', '--tags', '--always'], sourceRoot).trim();
+  const dirty = commandOutput('git', ['status', '--porcelain', '--untracked-files=all'], sourceRoot).trim() !== '';
+  const version = `${describe}${dirty ? '-dirty' : ''}`;
+  const buildRoot = join(rootDir, '.runtime', 'local-build', 'creator-runtime', `${targetPlatform}-${targetArch}`);
+  const path = join(buildRoot, `krillinai-cli${executableSuffix}`);
+  mkdirSync(buildRoot, { recursive: true });
+  const goos = { win32: 'windows', darwin: 'darwin', linux: 'linux' }[targetPlatform];
+  const goarch = { x64: 'amd64', arm64: 'arm64' }[targetArch];
+  if (!goos || !goarch) {
+    throw new Error(`Unsupported local KrillinAI build target: ${targetPlatform}-${targetArch}`);
+  }
+  execFileSync('go', [
+    'build',
+    '-trimpath',
+    '-ldflags', `-s -w -X krillin-ai/internal/cli.Version=${version}`,
+    '-o', path,
+    './cmd/cli'
+  ], {
+    cwd: sourceRoot,
+    env: { ...process.env, CGO_ENABLED: '0', GOOS: goos, GOARCH: goarch },
+    stdio: 'inherit',
+    windowsHide: true
+  });
+  return { path, revision, dirty, version };
 }
 
 function readVendorVersions() {

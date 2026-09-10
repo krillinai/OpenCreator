@@ -26,26 +26,48 @@ describe.runIf(enabled)('stickman Remotion packaged runtime smoke', () => {
     const inputDir = join(jobRoot, 'inputs');
     const imageOne = join(inputDir, 'shot-one.png');
     const imageTwo = join(inputDir, 'shot-two.png');
-    const narration = join(inputDir, 'narration.mp3');
+    const narrationOne = join(inputDir, 'narration-one.mp3');
+    const narrationTwo = join(inputDir, 'narration-two.mp3');
+    const bgm = join(inputDir, 'background.mp3');
+    const logo = join(inputDir, 'logo.jpg');
     const timelinePath = join(inputDir, 'timeline.json');
     mkdirSync(workdir, { recursive: true });
     mkdirSync(inputDir, { recursive: true });
     await Promise.all([
       renderFixtureImage(imageOne, '#f7f7f5', '#111827', 260),
-      renderFixtureImage(imageTwo, '#dff4ff', '#0f766e', 880)
+      renderFixtureImage(imageTwo, '#dff4ff', '#0f766e', 880),
+      renderFixtureImage(logo, '#ffffff', '#111827', 640)
     ]);
     await execFileAsync(ffmpegPath!, [
-      '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2',
-      '-c:a', 'libmp3lame', '-q:a', '4', narration
+      '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1',
+      '-c:a', 'libmp3lame', '-q:a', '4', narrationOne
+    ], { windowsHide: true });
+    await execFileAsync(ffmpegPath!, [
+      '-y', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=1',
+      '-c:a', 'libmp3lame', '-q:a', '4', narrationTwo
+    ], { windowsHide: true });
+    await execFileAsync(ffmpegPath!, [
+      '-y', '-f', 'lavfi', '-i', 'sine=frequency=110:duration=2',
+      '-c:a', 'libmp3lame', '-q:a', '4', bgm
     ], { windowsHide: true });
     writeFileSync(timelinePath, `${JSON.stringify({
       fps: 30,
       width: 1280,
       height: 720,
       totalFrames: 60,
+      assets: {
+        logoArtifactId: 'logo-1',
+        logoSha256: '3'.repeat(64),
+        logoPath: logo,
+        bgmArtifactId: 'bgm-1',
+        bgmSha256: '4'.repeat(64),
+        bgmPath: bgm,
+        bgmVolume: 0.12,
+        bgmLoop: true
+      },
       shots: [
-        fixtureShot('shot-01', 0, 30, imageOne, narration, 'push-in'),
-        fixtureShot('shot-02', 30, 60, imageTwo, narration, 'pan-left')
+        fixtureShot('shot-01', 0, 30, imageOne, narrationOne, 'push-in'),
+        fixtureShot('shot-02', 30, 60, imageTwo, narrationTwo, 'pan-left')
       ]
     }, null, 2)}\n`);
 

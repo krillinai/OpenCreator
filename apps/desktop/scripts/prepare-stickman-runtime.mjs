@@ -38,6 +38,7 @@ const bundleRoot = join(outputRoot, 'bundle');
 const browserRoot = join(outputRoot, 'browser');
 const fontRoot = join(outputRoot, 'fonts');
 const characterRoot = join(outputRoot, 'characters');
+const visualAssetRoot = join(outputRoot, 'visual-assets');
 const remotionVersion = '4.0.473';
 const chromiumVersion = '149.0.7790.0';
 const requireFromDaemon = createRequire(join(rootDir, 'apps', 'daemon', 'package.json'));
@@ -85,12 +86,18 @@ cpSync(
   characterRoot,
   { recursive: true }
 );
+cpSync(
+  join(rootDir, 'resources', 'stickman', 'visual-assets'),
+  visualAssetRoot,
+  { recursive: true }
+);
 
 const resources = [];
 addDirectory(bundleRoot, 'bundle', remotionVersion);
 addDirectory(browserRoot, 'browser', chromiumVersion);
 addDirectory(fontRoot, 'font', '@fontsource/noto-sans@5.2.8');
 addDirectory(characterRoot, 'character', 'opencreator-dashboard@1');
+addDirectory(visualAssetRoot, 'visual-asset', 'stickman-visual-assets@1');
 resources.sort((left, right) => left.path.localeCompare(right.path));
 const manifest = {
   version: 1,

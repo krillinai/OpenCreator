@@ -12,7 +12,14 @@ let tempDir = '';
 afterEach(async () => {
   await server?.close();
   server = undefined;
-  if (tempDir) await rm(tempDir, { recursive: true, force: true });
+  if (tempDir) {
+    await rm(tempDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100
+    });
+  }
   tempDir = '';
   vi.unstubAllGlobals();
 });

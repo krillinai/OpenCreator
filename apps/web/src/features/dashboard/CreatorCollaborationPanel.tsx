@@ -668,7 +668,7 @@ function stageProgressText(
     stage.status === 'queued' || stage.status === 'running'
   )) return l('正在终止当前阶段', 'Stopping current stage');
   if (stage.status === 'queued') return l('等待执行', 'Queued');
-  if (stage.status === 'succeeded') return l('已完成，结果已同步到工作台', 'Completed and synced to Workbench');
+  if (stage.status === 'succeeded') return l('已完成', 'Completed');
   if (stage.status === 'failed') {
     return adapter.failedProgressText?.(stage, l)
       ?? stage.errorMessage

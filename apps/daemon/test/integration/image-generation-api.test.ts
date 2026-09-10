@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerImageGenerationRoutes } from '../../src/api/routes.image-generation.js';
 import type { CreatorServicesConfigStore } from '../../src/creator-services/config-store.js';
+import { generateImageContents } from '../../src/image-generation/provider.js';
 import { createImageGenerationService } from '../../src/image-generation/service.js';
 
 describe('image generation API', () => {
@@ -99,6 +100,122 @@ describe('image generation API', () => {
     expect(generated.json().result).toMatchObject({ provider: 'jimeng', model: 'doubao-seedream-4-0-250828' });
     expect(String(fetchImpl.mock.calls[0]?.[0])).toBe('https://ark.example.test/api/v3/images/generations');
     expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).not.toHaveProperty('quality');
+  });
+
+  it('keeps configured OpenAI endpoints on the OpenAI edit protocol', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.openai.apiKey = 'openai-compatible-test';
+    config.image.openai.baseUrl = 'https://forward.krillinai.com/v1/images/generations';
+    config.image.openai.model = 'gpt-image-2';
+    const image = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('openai-compatible-image')
+    ]);
+    const reference = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('character-reference')
+    ]);
+    const styleReference = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('style-reference')
+    ]);
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      data: [{ b64_json: image.toString('base64') }]
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+    const result = await generateImageContents({
+      prompt: 'Keep the selected character in a new scene',
+      provider: 'openai',
+      size: '1536x1024',
+      quality: 'medium',
+      count: 1
+    }, config, {
+      fetchImpl: fetchImpl as typeof fetch,
+      referenceImages: [
+        { content: reference, mime: 'image/png' },
+        { content: styleReference, mime: 'image/png' }
+      ]
+    });
+
+    expect(result).toMatchObject({ model: 'gpt-image-2' });
+    expect(result.contents[0]?.content).toEqual(image);
+    expect(String(fetchImpl.mock.calls[0]?.[0]))
+      .toBe('https://forward.krillinai.com/v1/images/edits');
+    expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({
+      Authorization: 'Bearer openai-compatible-test',
+      'Content-Type': expect.stringContaining('multipart/form-data; boundary=')
+    });
+    const body = Buffer.from(fetchImpl.mock.calls[0]?.[1]?.body as ArrayBuffer).toString('latin1');
+    expect(body).toContain('gpt-image-2');
+    expect(body.match(/name="image\[\]"/g)).toHaveLength(2);
+    expect(body).not.toContain('name="async"');
+    expect(body.indexOf('character-reference')).toBeLessThan(body.indexOf('style-reference'));
+  });
+
+  it('sends multiple references as ordered image array fields to OpenAI edits', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.openai.apiKey = 'openai-test';
+    config.image.openai.baseUrl = 'https://images.example.test/v1';
+    const image = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('generated')
+    ]);
+    const character = Buffer.from('character-reference');
+    const style = Buffer.from('style-reference');
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      data: [{ b64_json: image.toString('base64') }]
+    }), { status: 200 }));
+
+    await generateImageContents({
+      prompt: 'Use character identity then visual style',
+      provider: 'openai',
+      size: '1536x1024',
+      quality: 'medium',
+      count: 1
+    }, config, {
+      fetchImpl: fetchImpl as typeof fetch,
+      referenceImages: [
+        { content: character, mime: 'image/png' },
+        { content: style, mime: 'image/jpeg' }
+      ]
+    });
+
+    expect(String(fetchImpl.mock.calls[0]?.[0]))
+      .toBe('https://images.example.test/v1/images/edits');
+    const body = Buffer.from(fetchImpl.mock.calls[0]?.[1]?.body as ArrayBuffer).toString('latin1');
+    expect(body.match(/name="image\[\]"/g)).toHaveLength(2);
+    expect(body.indexOf('character-reference')).toBeLessThan(body.indexOf('style-reference'));
+  });
+
+  it('sends multiple references as ordered Gemini inline data parts', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.gemini.apiKey = 'gemini-test';
+    config.image.gemini.baseUrl = 'https://gemini.example.test/v1beta';
+    const image = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('gemini-result')
+    ]);
+    const references = [Buffer.from('character'), Buffer.from('style')];
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: image.toString('base64') } }] } }]
+    }), { status: 200 }));
+
+    await generateImageContents({
+      prompt: 'Use ordered references',
+      provider: 'gemini',
+      size: '1536x1024',
+      quality: 'medium',
+      count: 1
+    }, config, {
+      fetchImpl: fetchImpl as typeof fetch,
+      referenceImages: references.map(content => ({ content, mime: 'image/png' as const }))
+    });
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(body.contents[0].parts.slice(0, 2)).toEqual(references.map(content => ({
+      inlineData: { mimeType: 'image/png', data: content.toString('base64') }
+    })));
+    expect(body.contents[0].parts[2]).toEqual({ text: 'Use ordered references' });
   });
 
   it('extracts inline image data from Gemini', async () => {

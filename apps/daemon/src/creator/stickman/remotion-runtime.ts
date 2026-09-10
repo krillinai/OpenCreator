@@ -12,7 +12,7 @@ const runtimeManifestSchema = z.object({
   browserExecutable: z.string().min(1),
   resources: z.array(z.object({
     path: z.string().min(1),
-    kind: z.enum(['bundle', 'browser', 'font', 'character']),
+    kind: z.enum(['bundle', 'browser', 'font', 'character', 'brand', 'audio', 'visual-asset']),
     sha256: z.string().regex(/^[a-f0-9]{64}$/i),
     bytes: z.number().int().nonnegative(),
     version: z.string().min(1),

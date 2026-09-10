@@ -23,26 +23,38 @@ describe('KrillinAI transcription capabilities', () => {
     ]));
   });
 
-  it('does not advertise local providers without a controlled installer', () => {
+  it('offers Whisper.cpp on Windows x64 while keeping unsupported local providers disabled', () => {
     const capabilities = createKrillinCreatorServicesCapabilities('win32', 'x64');
     const localProviders = capabilities.transcription.providers.filter(
       provider => provider.kind === 'local'
     );
 
-    expect(localProviders.every(provider => !provider.available)).toBe(true);
     expect(localProviders).toEqual(expect.arrayContaining([
       expect.objectContaining({
         provider: 'faster-whisper',
+        available: false,
         unavailableReason: 'installer_unavailable'
       }),
       expect.objectContaining({
         provider: 'whisper.cpp',
-        unavailableReason: 'installer_unavailable'
+        available: true,
+        models: ['tiny', 'medium', 'large-v2']
       }),
       expect.objectContaining({
         provider: 'whisperkit',
+        available: false,
         unavailableReason: 'unsupported_platform'
       })
     ]));
+  });
+
+  it('keeps Whisper.cpp unavailable on unsupported Windows architectures', () => {
+    const provider = createKrillinCreatorServicesCapabilities('win32', 'arm64')
+      .transcription.providers.find(candidate => candidate.provider === 'whisper.cpp');
+
+    expect(provider).toMatchObject({
+      available: false,
+      unavailableReason: 'unsupported_platform'
+    });
   });
 });

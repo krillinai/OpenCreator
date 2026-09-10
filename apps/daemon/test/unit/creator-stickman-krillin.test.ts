@@ -4,10 +4,14 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { krillinStageTypes } from '@opencreator/protocol';
 import {
+  buildKrillinStageOptions,
   resolveKrillinStageContract,
   validateResultArtifacts
 } from '../../src/creator/krillin/adapter.js';
-import { outputMappings } from '../../src/creator/krillin/cli-runner.js';
+import {
+  buildKrillinCliCommandArguments,
+  outputMappings
+} from '../../src/creator/krillin/cli-runner.js';
 
 let tempDir = '';
 
@@ -51,6 +55,47 @@ describe('stickman KrillinAI mapping', () => {
     });
     expect(outputMappings('narration')).toEqual([['tts_audio', 'narration_audio']]);
     expect(outputMappings('bilingual-render')).toEqual([['horizontal_video', 'bilingual_video']]);
+  });
+
+  it('uses source-only only for the stickman transcript stage', () => {
+    const sourceTranscript = {
+      workdir: 'job/source-transcript',
+      job: {
+        id: 'job-1',
+        templateId: 'stickman-video',
+        state: {
+          sourceUrl: 'https://www.youtube.com/watch?v=abc',
+          sourceLanguage: 'auto',
+          targetLanguage: 'zh_cn'
+        }
+      },
+      stageRun: { id: 'stage-1', stageId: 'source-transcript', progress: {} },
+      inputArtifacts: [],
+      signal: new AbortController().signal,
+      reportProgress() {}
+    };
+    const stickmanOptions = buildKrillinStageOptions(sourceTranscript as never);
+    expect(stickmanOptions.sourceOnly).toBe(true);
+    expect(buildKrillinCliCommandArguments(
+      sourceTranscript as never,
+      [],
+      stickmanOptions,
+      undefined
+    )).toContain('--source-only');
+
+    const translationStage = {
+      ...sourceTranscript,
+      job: { ...sourceTranscript.job, templateId: 'video-translation' },
+      stageRun: { ...sourceTranscript.stageRun, stageId: 'subtitle' }
+    };
+    const translationOptions = buildKrillinStageOptions(translationStage as never);
+    expect(translationOptions.sourceOnly).toBe(false);
+    expect(buildKrillinCliCommandArguments(
+      translationStage as never,
+      [],
+      translationOptions,
+      undefined
+    )).not.toContain('--source-only');
   });
 
   it('rejects undeclared or missing stickman outputs and aliases valid subtitles', async () => {

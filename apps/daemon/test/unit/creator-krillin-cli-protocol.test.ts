@@ -8,7 +8,19 @@ import {
 } from '../../src/creator/krillin/cli-runner.js';
 
 describe('KrillinAI CLI protocol', () => {
-  it('marks materialized videos as local CLI inputs', () => {
+  it('uses the original YouTube URL for platform captions and local media otherwise', () => {
+    expect(resolveKrillinCliSource([
+      { id: 'source-1', kind: 'source_video', path: 'D:\\media\\source.webm' }
+    ], {
+      sourceUrl: 'https://www.youtube.com/watch?v=demo',
+      captionSource: 'any'
+    })).toBe('https://www.youtube.com/watch?v=demo');
+    expect(resolveKrillinCliSource([
+      { id: 'source-1', kind: 'source_video', path: 'D:\\media\\source.webm' }
+    ], {
+      sourceUrl: 'https://www.youtube.com/watch?v=demo',
+      captionSource: 'whisper'
+    })).toBe('local:D:\\media\\source.webm');
     expect(resolveKrillinCliSource([
       { id: 'source-1', kind: 'source_video', path: 'D:\\media\\source.webm' }
     ], { sourceUrl: 'https://example.com/video' })).toBe('local:D:\\media\\source.webm');
@@ -41,7 +53,9 @@ describe('KrillinAI CLI protocol', () => {
       ...inherited,
       KRILLINAI_RESOURCE_ROOT: 'D:\\resources',
       KRILLINAI_OFFLINE_DEPENDENCIES: '1',
-      OPENCREATOR_KRILLINAI_CLI: '1'
+      OPENCREATOR_KRILLINAI_CLI: '1',
+      KRILLINAI_YT_DLP_EXECUTABLE: ytDlpExecutable,
+      KRILLINAI_YT_DLP_PREFIX_ARGS: JSON.stringify(['-I', '-B', '/runtime/yt-dlp'])
     });
     expect(String(env.PATH)).toContain('D:\\dependencies\\bin');
     expect(String(env.PATH)).toContain(dirname(ytDlpExecutable));

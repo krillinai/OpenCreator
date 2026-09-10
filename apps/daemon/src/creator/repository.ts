@@ -122,6 +122,7 @@ export type CreatorRepository = {
   finishStageRunDispatch(id: string, owner: string): boolean;
   createProviderRequest(input: CreateProviderRequestInput): CreatorProviderRequest;
   getProviderRequest(id: string): CreatorProviderRequest | undefined;
+  getLatestProviderRequest(provider: string, requestKey: string): CreatorProviderRequest | undefined;
   listProviderRequests(jobId: string): CreatorProviderRequest[];
   updateProviderRequest(input: {
     id: string;
@@ -562,6 +563,18 @@ export function createCreatorRepository(
         FROM creator_provider_requests
         WHERE id = ?
       `).get(id) as ProviderRequestRow | undefined;
+      return row === undefined ? undefined : hydrateProviderRequest(row);
+    },
+    getLatestProviderRequest(provider, requestKey): CreatorProviderRequest | undefined {
+      const row = db.prepare(`
+        SELECT id, job_id, provider, stage_run_id, scope_key, request_key, request_hash,
+               remote_task_id, billing_side_effect, status, result_artifact_id,
+               generation, resubmission_of, created_at, updated_at
+        FROM creator_provider_requests
+        WHERE provider = ? AND request_key = ?
+        ORDER BY generation DESC
+        LIMIT 1
+      `).get(provider, requestKey) as ProviderRequestRow | undefined;
       return row === undefined ? undefined : hydrateProviderRequest(row);
     },
     listProviderRequests,

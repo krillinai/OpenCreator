@@ -32,3 +32,17 @@ export function assertTimeline(value: StickmanTimelineProps): StickmanTimelinePr
   if (cursor !== value.totalFrames) throw new Error('stickman_timeline_total_mismatch');
   return value;
 }
+
+export function buildNarrationTrack(timeline: StickmanTimelineProps): Array<{
+  shotId: string;
+  from: number;
+  durationInFrames: number;
+  audioPath: string;
+}> {
+  return timeline.shots.map(shot => ({
+    shotId: shot.shotId,
+    from: shot.startFrame,
+    durationInFrames: shot.endFrame - shot.startFrame,
+    audioPath: shot.audioPath
+  }));
+}

@@ -59,6 +59,8 @@ describe('creator web service', () => {
     });
     await service.openProjectCover('job_1');
     await service.openArtifact('job_1', 'artifact 1');
+    await service.listVisualAssets('stickman-video', 'style');
+    await service.openVisualAssetPreview('stickman.style.paper-pencil', 2);
 
     expect(client.get).toHaveBeenCalledWith('/creator/jobs?projectId=project%201');
     expect(client.get).toHaveBeenCalledWith('/creator/jobs');
@@ -101,6 +103,10 @@ describe('creator web service', () => {
     );
     expect(client.rawGet).toHaveBeenCalledWith('/creator/jobs/job_1/cover');
     expect(client.rawGet).toHaveBeenCalledWith('/creator/jobs/job_1/artifacts/artifact%201/content');
+    expect(client.get).toHaveBeenCalledWith('/creator/visual-assets?templateId=stickman-video&kind=style');
+    expect(client.rawGet).toHaveBeenCalledWith(
+      '/creator/visual-assets/stickman.style.paper-pencil/revisions/2/preview'
+    );
   });
 
   it('deduplicates stable SSE ids and reconnects with the last cursor', async () => {

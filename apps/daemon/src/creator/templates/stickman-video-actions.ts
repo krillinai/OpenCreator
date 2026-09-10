@@ -13,12 +13,25 @@ import {
 } from '../provider-requests.js';
 import type { CreatorRepository } from '../repository.js';
 import { CreatorServiceError, type CreatorService } from '../service.js';
-import { stickmanShotSpecSchema } from '../stickman/contracts.js';
 import {
+  stickmanScriptManifestSchema,
+  stickmanShotSpecSchema
+} from '../stickman/contracts.js';
+import {
+  currentNarrationAudio,
   currentShotImage,
+  previousStickmanShotImage,
+  stickmanNarrationFingerprint,
   stickmanShotFingerprint,
-  type StickmanImageSettings
+  type StickmanImageSettings,
+  type StickmanTtsSettings
 } from '../stickman/lineage.js';
+import { STICKMAN_IMAGE_PROMPT_CONTRACT } from '../stickman/image-prompt.js';
+import {
+  DEFAULT_STICKMAN_CHARACTER_ASSET,
+  DEFAULT_STICKMAN_STYLE_ASSET,
+  readVisualAssetRef
+} from '../stickman/visual-assets.js';
 
 export type StickmanVideoWorkflow = ReturnType<typeof createStickmanVideoWorkflow>;
 
@@ -39,7 +52,7 @@ export function createStickmanVideoWorkflow(input: {
 }) {
   async function handleStageChanged(stage: CreatorStageRun): Promise<void> {
     const job = input.creator.getJob(stage.jobId);
-    if (!isStickman(job) || !isTerminal(stage)) return;
+    if (!isStickman(job) || stage.status !== 'succeeded') return;
     await reconcile(job);
   }
 
@@ -47,9 +60,12 @@ export function createStickmanVideoWorkflow(input: {
     if (!isStickman(job)) return;
     if (
       action === 'approve-script'
-      || action === 'approve-storyboard'
-      || action === 'approve-visuals'
+      || action === 'continue-after-audio'
+      || action === 'continue-after-visuals'
+      || action === 'edit-script'
+      || action === 'edit-shot'
       || action === 'regenerate-shot'
+      || action === 'generate-missing-shots'
       || action === 'retry-stage'
       || action === 'resolve-provider-request'
     ) {
@@ -86,6 +102,7 @@ export function createStickmanVideoWorkflow(input: {
       );
     }
     requireApprovedInputs(job, stageId);
+    requireWorkflowTarget(job, stageId);
   }
 
   async function validateResume(job: CreatorJob, stage: CreatorStageRun): Promise<void> {
@@ -104,6 +121,7 @@ export function createStickmanVideoWorkflow(input: {
   async function reconcile(job: CreatorJob): Promise<void> {
     if (
       !isStickman(job)
+      || job.status === 'draft'
       || job.status === 'canceled'
       || job.status === 'completed'
       || job.status === 'failed'
@@ -126,19 +144,26 @@ export function createStickmanVideoWorkflow(input: {
       && needsInput.code !== 'creator_review_required'
     ) return;
 
-    const sourceVideo = latestCompleted(job, 'source_video');
-    if (sourceVideo === undefined) {
-      queueStage(job, 'acquire-source', 'workflow:start');
-      return;
-    }
-    const sourceSubtitle = latestCompleted(job, 'source_subtitle');
-    if (sourceSubtitle === undefined) {
-      queueStage(job, 'source-transcript', sourceVideo.id);
-      return;
+    const sourceType = job.state.sourceType === 'text' ? 'text' : 'url';
+    let sourceInput: CreatorArtifact;
+    if (sourceType === 'text') {
+      const sourceText = latestCompleted(job, 'source_text');
+      if (sourceText === undefined) {
+        queueStage(job, 'ingest-text', 'workflow:start');
+        return;
+      }
+      sourceInput = sourceText;
+    } else {
+      const sourceSubtitle = latestCompleted(job, 'source_subtitle');
+      if (sourceSubtitle === undefined) {
+        queueStage(job, 'source-transcript', 'workflow:start');
+        return;
+      }
+      sourceInput = sourceSubtitle;
     }
     const sourceBrief = latestCompleted(job, 'source_brief');
     if (sourceBrief === undefined) {
-      queueStage(job, 'source-brief', sourceSubtitle.id);
+      queueStage(job, 'source-brief', sourceInput.id);
       return;
     }
     const contentPlan = latestCompleted(job, 'content_plan');
@@ -156,33 +181,54 @@ export function createStickmanVideoWorkflow(input: {
       return;
     }
 
+    const narrationReady = await reconcileNarration(job, script);
+    if (!narrationReady) return;
+    const audioTiming = latestCompleted(job, 'audio_timing');
+    if (audioTiming === undefined) {
+      queueStage(job, 'audio-timing', `narration:${script.id}`);
+      return;
+    }
+    if (!workflowTargetAtLeast(job, 'visuals_ready')) return;
     const storyboard = latestCompleted(job, 'shot_spec');
     if (storyboard === undefined) {
-      queueStage(job, 'storyboard', `approval:${script.id}`);
+      queueStage(job, 'storyboard', audioTiming.id);
       return;
     }
-    if (job.state.approvedShotSpecArtifactId !== storyboard.id) {
-      setReviewGate(input.creator, job, 'approve-storyboard', storyboard.id);
+    const characterReference = latestCompleted(job, 'character_reference');
+    const styleReference = latestCompleted(job, 'style_reference');
+    const styleContract = latestCompleted(job, 'style_contract');
+    if (
+      characterReference === undefined
+      || styleContract === undefined
+      || !matchesCurrentVisualProfile(job, characterReference, styleReference, styleContract)
+    ) {
+      queueStage(job, 'style-assets', storyboard.id);
       return;
     }
-
+    const promptPack = latestCompleted(job, 'image_prompt_pack');
+    if (
+      promptPack === undefined
+      || promptPack.metadata.contract !== STICKMAN_IMAGE_PROMPT_CONTRACT
+      || !promptPack.sourceArtifactIds.includes(styleContract.id)
+      || !promptPack.sourceArtifactIds.includes(characterReference.id)
+      || (styleReference !== undefined && !promptPack.sourceArtifactIds.includes(styleReference.id))
+    ) {
+      queueStage(job, 'prompt-pack', `${storyboard.id}:${characterReference.id}`);
+      return;
+    }
     const mediaReady = await reconcileApprovedMedia(job, storyboard);
     if (!mediaReady) return;
 
     const visualValidation = latestCompleted(job, 'visual_validation');
     if (visualValidation === undefined) {
-      const narration = latestCompleted(job, 'narration_audio')!;
-      queueStage(job, 'visual-validation', `${storyboard.id}:${narration.id}`);
+      queueStage(job, 'visual-validation', `${storyboard.id}:${promptPack.id}`);
       return;
     }
-    if (job.state.approvedVisualValidationArtifactId !== visualValidation.id) {
-      setReviewGate(input.creator, job, 'approve-visuals', visualValidation.id);
-      return;
-    }
+    if (!workflowTargetAtLeast(job, 'delivery_ready')) return;
 
     const timeline = latestCompleted(job, 'timeline_manifest');
     if (timeline === undefined) {
-      queueStage(job, 'timeline', `approval:${visualValidation.id}`);
+      queueStage(job, 'timeline', visualValidation.id);
       return;
     }
     const cleanVideo = latestCompleted(job, 'clean_video');
@@ -190,25 +236,20 @@ export function createStickmanVideoWorkflow(input: {
       queueStage(job, 'render-clean', timeline.id);
       return;
     }
-
-    const cover = latestCompleted(job, 'cover_image');
-    if (cover === undefined) queueStage(job, 'cover', cleanVideo.id);
-    const subtitles = latestCompleted(job, 'bilingual_subtitle');
-    if (subtitles === undefined) queueStage(job, 'subtitles', cleanVideo.id);
-    const publishCopy = latestCompleted(job, 'publish_copy');
-    if (publishCopy === undefined) queueStage(job, 'publish-copy', cleanVideo.id);
-    if (cover === undefined || subtitles === undefined || publishCopy === undefined) return;
-
-    const bilingualVideo = latestCompleted(job, 'bilingual_video');
-    if (bilingualVideo === undefined) {
-      queueStage(job, 'bilingual-render', `${cleanVideo.id}:${subtitles.id}`);
+    const mediaValidation = latestCompleted(job, 'media_validation');
+    if (
+      mediaValidation === undefined
+      || !mediaValidation.sourceArtifactIds.includes(cleanVideo.id)
+    ) {
+      queueStage(job, 'media-validation', `${timeline.id}:${cleanVideo.id}`);
       return;
     }
+
     if (latestCompleted(job, 'delivery_manifest') === undefined) {
       queueStage(
         job,
         'package-validation',
-        `${cleanVideo.id}:${cover.id}:${publishCopy.id}:${bilingualVideo.id}:${subtitles.id}`
+        `${cleanVideo.id}:${mediaValidation.id}:${timeline.id}`
       );
     }
   }
@@ -222,29 +263,65 @@ export function createStickmanVideoWorkflow(input: {
       await readFile(shotSpecArtifact.path, 'utf8')
     ));
     const characterReference = latestCompleted(job, 'character_reference');
+    const styleReference = latestCompleted(job, 'style_reference');
+    const styleContract = latestCompleted(job, 'style_contract');
+    const promptPack = latestCompleted(job, 'image_prompt_pack');
+    if (characterReference === undefined || styleContract === undefined || promptPack === undefined) {
+      return false;
+    }
     const settings = await imageSettings(job);
-    let allImagesReady = true;
-    for (const shot of shotSpec.shots) {
+    for (const [shotIndex, shot] of shotSpec.shots.entries()) {
+      const previousShotImage = previousStickmanShotImage({
+        artifacts: job.artifacts,
+        shotSpec,
+        shotIndex
+      });
       const fingerprint = stickmanShotFingerprint({
         shot,
         job,
         shotSpec: shotSpecArtifact,
         characterReference,
+        styleReference,
+        styleContract,
+        promptPack,
+        previousShotImage,
         settings
       });
       if (currentShotImage(job, shot.id, fingerprint) !== undefined) continue;
-      allImagesReady = false;
-      if (hasUnresolvedProvider(job, 'images', shot.id)) continue;
+      if (hasUnresolvedProvider(job, 'images', shot.id)) return false;
       queueStage(job, 'images', `approval:${shotSpecArtifact.id}:${shot.id}`, {
         scopeKey: shot.id,
         inputFingerprint: fingerprint
       });
+      return false;
     }
-    const narration = latestCompleted(job, 'narration_audio');
-    if (narration === undefined) {
-      queueStage(job, 'narration', `approval:${shotSpecArtifact.id}`);
+    return true;
+  }
+
+  async function reconcileNarration(
+    job: CreatorJob,
+    scriptArtifact: CreatorArtifact
+  ): Promise<boolean> {
+    if (scriptArtifact.path === null) return false;
+    const script = stickmanScriptManifestSchema.parse(JSON.parse(
+      await readFile(scriptArtifact.path, 'utf8')
+    ));
+    const settings = await ttsSettings(job);
+    for (const segment of script.segments) {
+      const fingerprint = stickmanNarrationFingerprint({
+        segment,
+        script: scriptArtifact,
+        settings
+      });
+      if (currentNarrationAudio(job, segment.id, fingerprint) !== undefined) continue;
+      if (hasUnresolvedProvider(job, 'narration', segment.id)) return false;
+      queueStage(job, 'narration', `approval:${scriptArtifact.id}:${segment.id}`, {
+        scopeKey: segment.id,
+        inputFingerprint: fingerprint
+      });
+      return false;
     }
-    return allImagesReady && narration !== undefined;
+    return true;
   }
 
   function queueStage(
@@ -254,13 +331,15 @@ export function createStickmanVideoWorkflow(input: {
     identity: { scopeKey?: string; inputFingerprint?: string } = {}
   ): void {
     const current = input.creator.getJob(job.id) ?? job;
-    const matchingRuns = current.stages.filter(stage => (
+    const scopedRuns = current.stages.filter(stage => (
       stage.stageId === stageId
       && stage.scopeKey === (identity.scopeKey ?? null)
-      && stage.inputFingerprint === (identity.inputFingerprint ?? null)
+    ));
+    const matchingRuns = scopedRuns.filter(stage => (
+      stage.inputFingerprint === (identity.inputFingerprint ?? null)
     ));
     if (matchingRuns.some(stage => stage.status === 'queued' || stage.status === 'running')) return;
-    const generation = matchingRuns.length + 1;
+    const generation = scopedRuns.length + 1;
     input.dispatcher.dispatchWorkflow(current.id, {
       action: 'run-stage',
       expectedRevision: current.revision,
@@ -339,22 +418,46 @@ export function createStickmanVideoWorkflow(input: {
   async function imageSettings(job: CreatorJob): Promise<StickmanImageSettings> {
     if (input.configStore === undefined) {
       return {
-        provider: typeof job.state.provider === 'string' ? job.state.provider : 'openai',
-        model: typeof job.state.imageModel === 'string' ? job.state.imageModel : 'default',
+        provider: 'configured-image-provider',
+        model: 'configured-image-model',
         quality: typeof job.state.quality === 'string' ? job.state.quality : 'medium'
       };
     }
     const config = await input.configStore.read();
-    const provider = job.state.provider === 'openai'
-      || job.state.provider === 'jimeng'
-      || job.state.provider === 'kling'
-      || job.state.provider === 'gemini'
-      ? job.state.provider
-      : config.image.provider;
+    const provider = config.image.provider;
     return {
       provider,
       model: config.image[provider].model,
       quality: typeof job.state.quality === 'string' ? job.state.quality : 'medium'
+    };
+  }
+
+  async function ttsSettings(job: CreatorJob): Promise<StickmanTtsSettings> {
+    if (input.configStore === undefined) {
+      return {
+        provider: typeof job.state.ttsProvider === 'string' ? job.state.ttsProvider : 'openai',
+        model: typeof job.state.ttsModel === 'string' ? job.state.ttsModel : 'default',
+        voiceId: typeof job.state.voiceCode === 'string' ? job.state.voiceCode : 'default'
+      };
+    }
+    const config = await input.configStore.read();
+    const provider = job.state.ttsProvider === 'openai'
+      || job.state.ttsProvider === 'aliyun'
+      || job.state.ttsProvider === 'minimax'
+      ? job.state.ttsProvider
+      : config.tts.provider;
+    if (provider === 'edge-tts') {
+      return { provider, model: '', voiceId: '' };
+    }
+    const providerConfig = config.tts[provider];
+    return {
+      provider,
+      model: typeof job.state.ttsModel === 'string' && job.state.ttsModel.trim()
+        ? job.state.ttsModel.trim()
+        : providerConfig.model,
+      voiceId: typeof job.state.voiceCode === 'string' && job.state.voiceCode.trim()
+        ? job.state.voiceCode.trim()
+        : providerConfig.defaultVoiceId
     };
   }
 
@@ -371,35 +474,99 @@ export function createStickmanVideoWorkflow(input: {
   };
 }
 
+function matchesCurrentVisualProfile(
+  job: CreatorJob,
+  characterReference: CreatorArtifact,
+  styleReference: CreatorArtifact | undefined,
+  styleContract: CreatorArtifact
+): boolean {
+  const character = readVisualAssetRef(
+    job.state.characterAsset,
+    DEFAULT_STICKMAN_CHARACTER_ASSET
+  );
+  const style = readVisualAssetRef(job.state.styleAsset, DEFAULT_STICKMAN_STYLE_ASSET);
+  return characterReference.metadata.assetId === character.assetId
+    && characterReference.metadata.revision === character.revision
+    && styleContract.metadata.contract === 'stickman-visual-profile-v2'
+    && styleContract.metadata.characterAssetId === character.assetId
+    && styleContract.metadata.characterRevision === character.revision
+    && styleContract.metadata.styleAssetId === style.assetId
+    && styleContract.metadata.styleRevision === style.revision
+    && (
+      styleContract.metadata.styleReferenceCount === 0
+        ? styleReference === undefined
+        : styleReference !== undefined
+          && styleReference.metadata.assetId === style.assetId
+          && styleReference.metadata.revision === style.revision
+    );
+}
+
 function requireApprovedInputs(job: CreatorJob, stageId: string): void {
   const script = latestCompleted(job, 'script_manifest');
   if (
-    stageAtOrAfter(stageId, 'storyboard')
+    stageAtOrAfter(stageId, 'narration')
     && (script === undefined || job.state.approvedScriptArtifactId !== script.id)
   ) {
     throw new CreatorServiceError('creator_review_required', '必须先审核当前脚本');
   }
   const storyboard = latestCompleted(job, 'shot_spec');
   if (
-    stageAtOrAfter(stageId, 'images')
-    && (storyboard === undefined || job.state.approvedShotSpecArtifactId !== storyboard.id)
+    stageAtOrAfter(stageId, 'style-assets')
+    && storyboard === undefined
   ) {
-    throw new CreatorServiceError('creator_review_required', '必须先审核当前分镜');
+    throw new CreatorServiceError('creator_stage_input_missing', '必须先生成当前分镜');
   }
-  const validation = latestCompleted(job, 'visual_validation');
+}
+
+function requireWorkflowTarget(job: CreatorJob, stageId: string): void {
+  if (stageAtOrAfter(stageId, 'timeline') && !workflowTargetAtLeast(job, 'delivery_ready')) {
+    throw new CreatorServiceError(
+      'creator_workflow_gate_required',
+      '必须先确认当前分镜画面，才能开始动画合成'
+    );
+  }
+  if (stageAtOrAfter(stageId, 'storyboard') && !workflowTargetAtLeast(job, 'visuals_ready')) {
+    throw new CreatorServiceError(
+      'creator_workflow_gate_required',
+      '必须先完成配音与节奏阶段，才能开始生成分镜画面'
+    );
+  }
+}
+
+type StickmanWorkflowTarget = 'script_ready' | 'audio_ready' | 'visuals_ready' | 'delivery_ready';
+
+function workflowTargetAtLeast(job: CreatorJob, expected: StickmanWorkflowTarget): boolean {
+  const order: StickmanWorkflowTarget[] = [
+    'script_ready',
+    'audio_ready',
+    'visuals_ready',
+    'delivery_ready'
+  ];
+  return order.indexOf(readWorkflowTarget(job)) >= order.indexOf(expected);
+}
+
+function readWorkflowTarget(job: CreatorJob): StickmanWorkflowTarget {
+  const value = job.state.workflowTarget;
   if (
-    stageAtOrAfter(stageId, 'timeline')
-    && (validation === undefined || job.state.approvedVisualValidationArtifactId !== validation.id)
-  ) {
-    throw new CreatorServiceError('creator_review_required', '必须先审核当前画面');
-  }
+    value === 'script_ready'
+    || value === 'audio_ready'
+    || value === 'visuals_ready'
+    || value === 'delivery_ready'
+  ) return value;
+
+  const currentStage = typeof job.state.currentStage === 'string' ? job.state.currentStage : '';
+  if (stageAtOrAfter(currentStage, 'timeline')) return 'delivery_ready';
+  if (stageAtOrAfter(currentStage, 'storyboard')) return 'visuals_ready';
+  if (stageAtOrAfter(currentStage, 'narration')) return 'audio_ready';
+  return 'script_ready';
 }
 
 function stageAtOrAfter(stageId: string, boundary: string): boolean {
   const order = [
-    'acquire-source', 'source-transcript', 'source-brief', 'content-plan', 'script',
-    'storyboard', 'images', 'narration', 'visual-validation', 'timeline', 'render-clean',
-    'cover', 'subtitles', 'publish-copy', 'bilingual-render', 'package-validation'
+    'ingest-text', 'source-transcript', 'source-brief', 'content-plan', 'script',
+    'narration', 'audio-timing', 'storyboard', 'style-assets', 'prompt-pack',
+    'images', 'visual-validation', 'timeline', 'render-clean', 'media-validation',
+    'package-validation'
   ];
   return order.indexOf(stageId) >= order.indexOf(boundary);
 }
@@ -439,10 +606,6 @@ function isProviderTerminal(request: CreatorProviderRequest): boolean {
   return ['succeeded', 'failed', 'abandoned_unknown', 'canceled'].includes(request.status);
 }
 
-function isTerminal(stage: CreatorStageRun): boolean {
-  return ['succeeded', 'failed', 'canceled', 'interrupted'].includes(stage.status);
-}
-
 function latestCompleted(job: CreatorJob, kind: string): CreatorArtifact | undefined {
   return [...job.artifacts].reverse().find(artifact => (
     artifact.kind === kind && artifact.status === 'completed'
@@ -456,7 +619,7 @@ function isStickman(job: CreatorJob | undefined): job is CreatorJob {
 function setReviewGate(
   creator: CreatorService,
   job: CreatorJob,
-  kind: 'approve-script' | 'approve-storyboard' | 'approve-visuals',
+  kind: 'approve-script',
   artifactId: string
 ): void {
   const currentGate = job.state.needsInput;
@@ -468,9 +631,7 @@ function setReviewGate(
     && currentGate.artifactId === artifactId
   ) return;
   const messages = {
-    'approve-script': '请审核脚本后继续',
-    'approve-storyboard': '请审核分镜后继续',
-    'approve-visuals': '请审核画面后继续'
+    'approve-script': '请审核脚本后继续'
   } as const;
   creator.setNeedsInput(job.id, {
     code: 'creator_review_required',

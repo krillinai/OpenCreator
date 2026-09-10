@@ -349,6 +349,8 @@ export default function DashboardPage(props: {
     return renderCreatorWorkspace('stickman-video', (
       <StickmanVideoWorkspace
         promptHint={activePromptHint}
+        creatorServicesService={props.creatorServicesService}
+        creatorService={props.creatorService}
         onBack={closeWorkspace}
       />
     ));

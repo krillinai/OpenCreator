@@ -1,5 +1,5 @@
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,7 @@ describe('KrillinTtsService', () => {
   const roots: string[] = [];
 
   afterEach(async () => {
+    vi.unstubAllGlobals();
     const { rm } = await import('node:fs/promises');
     await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
   });
@@ -118,22 +119,19 @@ describe('KrillinTtsService', () => {
     expect(executeUtility).toHaveBeenCalledOnce();
   });
 
-  it('synthesizes through the Krillin speech command with provider controls', async () => {
+  it('synthesizes through the configured provider with voice controls', async () => {
     const root = await temporaryRoot();
     const config = createDefaultCreatorServicesConfig();
     config.tts.openai.apiKey = 'sk-test';
-    const executeUtility = vi.fn(async input => {
-      const outputIndex = input.args.indexOf('--output');
-      const outputPath = input.args[outputIndex + 1];
-      expect(outputPath).toBeTypeOf('string');
-      await writeFile(outputPath!, Buffer.from('speech-audio'));
-      return { ok: true, outputs: { tts_audio: outputPath } };
-    });
+    const executeSynthesis = vi.fn(async () => ({
+      content: Buffer.from('speech-audio'),
+      format: 'mp3' as const
+    }));
     const service = createKrillinTtsService({
       resourceRoot: join(root, 'runtime'),
       workRoot: join(root, 'work'),
       configStore: createConfigStore(config),
-      executeUtility
+      executeSynthesis
     });
 
     const result = await service.synthesize({
@@ -153,16 +151,65 @@ describe('KrillinTtsService', () => {
       mime: 'audio/mpeg'
     });
     expect(result.content.toString()).toBe('speech-audio');
-    expect(executeUtility).toHaveBeenCalledWith(expect.objectContaining({
-      args: expect.arrayContaining([
-        'speech',
-        '--provider', 'openai',
-        '--voice', 'marin',
-        '--format', 'mp3',
-        '--speed', '1.1',
-        '--instructions', 'Speak warmly.'
-      ])
+    expect(executeSynthesis).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'openai',
+      model: 'gpt-4o-mini-tts',
+      voiceId: 'marin',
+      format: 'mp3',
+      speed: 1.1,
+      instructions: 'Speak warmly.'
     }));
+  });
+
+  it('uses the Qwen multimodal endpoint and downloads the returned Aliyun audio', async () => {
+    const root = await temporaryRoot();
+    const config = createDefaultCreatorServicesConfig();
+    config.tts.provider = 'aliyun';
+    config.tts.aliyun.baseUrl = 'https://tts.example.com/api/v1';
+    config.tts.aliyun.apiKey = 'dashscope-key';
+    const wav = Buffer.from('RIFFfixture-wave');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        output: { audio: { url: 'http://audio.example.com/result.wav?signature=secret' } }
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(wav, {
+        status: 200,
+        headers: { 'content-type': 'audio/wav' }
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    const service = createKrillinTtsService({
+      resourceRoot: join(root, 'runtime'),
+      workRoot: join(root, 'work'),
+      configStore: createConfigStore(config)
+    });
+
+    const result = await service.synthesize({
+      text: '测试文本',
+      provider: 'aliyun',
+      model: 'qwen3-tts-flash',
+      voiceId: 'Cherry',
+      format: 'wav'
+    });
+
+    expect(result).toMatchObject({
+      provider: 'aliyun',
+      model: 'qwen3-tts-flash',
+      voiceId: 'Cherry',
+      format: 'wav',
+      mime: 'audio/wav'
+    });
+    expect(result.content).toEqual(wav);
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      'https://tts.example.com/api/v1/services/aigc/multimodal-generation/generation'
+    );
+    const request = JSON.parse(String((fetchMock.mock.calls[0]![1] as RequestInit).body));
+    expect(request).toEqual({
+      model: 'qwen3-tts-flash',
+      input: { text: '测试文本', voice: 'Cherry', language_type: 'Chinese' }
+    });
+    expect(String(fetchMock.mock.calls[1]![0])).toBe(
+      'https://audio.example.com/result.wav?signature=secret'
+    );
   });
 
   it('requires the configured provider API key before synthesis', async () => {

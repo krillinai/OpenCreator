@@ -135,7 +135,8 @@ describe('CreatorServicesSettingsView', () => {
       .toBe('whisperkit');
   });
 
-  it('disables local Whisper when the Runtime has no controlled installer', async () => {
+  it('offers Whisper.cpp as the controlled local provider on Windows x64', async () => {
+    const user = userEvent.setup();
     render(
       <CreatorServicesSettingsView
         connected
@@ -144,12 +145,14 @@ describe('CreatorServicesSettingsView', () => {
       />
     );
 
-    await userEvent.setup().click(await screen.findByRole('tab', { name: '语音识别' }));
+    await user.click(await screen.findByRole('tab', { name: '语音识别' }));
     expect(screen.getByText('Windows · x64')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '本地 Whisper' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '本地 Whisper' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '本地 Whisper' }));
+    expect(screen.getByRole('combobox', { name: '语音识别服务' })).toHaveTextContent('Whisper.cpp');
+    expect(screen.getByText('tiny')).toBeInTheDocument();
     expect(screen.queryByText('WhisperKit')).not.toBeInTheDocument();
     expect(screen.queryByText('FasterWhisper')).not.toBeInTheDocument();
-    expect(screen.queryByText('Whisper.cpp')).not.toBeInTheDocument();
   });
 
   it('requires reselecting a local provider saved on another Runtime', async () => {
@@ -318,6 +321,7 @@ function runtimeCapabilities(
   arch: string
 ): CreatorServicesCapabilitiesResponse {
   const whisperKitAvailable = platform === 'darwin' && arch === 'arm64';
+  const whisperCppAvailable = platform === 'win32' && arch === 'x64';
   return {
     platform,
     arch,
@@ -351,12 +355,10 @@ function runtimeCapabilities(
         {
           provider: 'whisper.cpp',
           kind: 'local',
-          available: false,
+          available: whisperCppAvailable,
           models: ['tiny', 'medium', 'large-v2'],
           gpuAcceleration: false,
-          unavailableReason: platform === 'win32'
-            ? 'installer_unavailable'
-            : 'unsupported_platform'
+          ...(whisperCppAvailable ? {} : { unavailableReason: 'unsupported_platform' as const })
         },
         {
           provider: 'aliyun',

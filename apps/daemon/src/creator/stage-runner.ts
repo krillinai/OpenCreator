@@ -5,11 +5,13 @@ import type { CreatorArtifact, CreatorJob, CreatorJson, CreatorStageRun } from '
 import type { CreatorExecutor } from './executor.js';
 import { CreatorExecutorError } from './executor.js';
 import type { CreatorRepository } from './repository.js';
+import { CreatorProviderRequestError } from './provider-requests.js';
 import {
   appendCreatorResultSnapshot,
   creatorResultSnapshotForVersion,
   nextCreatorResultVersion
 } from './result-snapshots.js';
+import { currentStickmanScopedArtifacts } from './stickman/lineage.js';
 import type { CreatorTemplateRegistry } from './templates/types.js';
 import { videoTranslationArtifactRefsPatch } from './templates/video-translation-results.js';
 
@@ -168,12 +170,26 @@ export function createCreatorStageRunner(input: {
           ? targetResultVersion ?? nextCreatorResultVersion(beforeOutputs)
           : undefined;
         const insertedArtifacts: CreatorArtifact[] = [];
-        const staleArtifactIds = stage.invalidateDependentArtifacts === false
-          ? []
-          : dependentArtifactIdsForChangedKinds(
+        const changedKinds = new Set(result.outputs.map(output => output.kind));
+        const scopedReplacementIds = stage.replaceOutputArtifactsInScope === true
+          && stageRun!.scopeKey !== null
+          ? artifactIdsAndDependents(
               beforeOutputs,
-              new Set(result.outputs.map(output => output.kind))
-            );
+              beforeOutputs.artifacts
+                .filter(artifact => (
+                  artifact.status === 'completed'
+                  && artifact.scopeKey === stageRun!.scopeKey
+                  && changedKinds.has(artifact.kind)
+                ))
+                .map(artifact => artifact.id)
+            )
+          : [];
+        const staleArtifactIds = [...new Set([
+          ...(stage.invalidateDependentArtifacts === false
+            ? []
+            : dependentArtifactIdsForChangedKinds(beforeOutputs, changedKinds)),
+          ...scopedReplacementIds
+        ])];
         for (const artifactId of staleArtifactIds) {
           input.repository.setArtifactStatus(artifactId, 'stale');
         }
@@ -454,11 +470,9 @@ function resolveInputs(
     if (
       job.templateId === 'stickman-video'
       && requirement.selector === 'latest-completed'
-      && requirement.kind === 'shot_image'
+      && (requirement.kind === 'shot_image' || requirement.kind === 'narration_audio')
     ) {
-      const scoped = job.artifacts.filter(candidate => (
-        candidate.kind === requirement.kind && candidate.status === 'completed'
-      ));
+      const scoped = currentStickmanScopedArtifacts(job, requirement.kind);
       if (scoped.length > 0) artifacts.push(...scoped);
       else if (requirement.optional !== true) missing.push(requirement.kind);
       continue;
@@ -503,6 +517,15 @@ function dependentArtifactIdsForChangedKinds(job: CreatorJob, changedKinds: Set<
   const queue = job.artifacts
     .filter(artifact => artifact.status === 'completed' && changedKinds.has(artifact.kind))
     .map(artifact => artifact.id);
+  return dependentArtifactIds(job, queue);
+}
+
+function artifactIdsAndDependents(job: CreatorJob, rootIds: string[]): string[] {
+  return [...new Set([...rootIds, ...dependentArtifactIds(job, rootIds)])];
+}
+
+function dependentArtifactIds(job: CreatorJob, rootIds: string[]): string[] {
+  const queue = [...rootIds];
   const visited = new Set<string>();
   const stale = new Set<string>();
   while (queue.length > 0) {
@@ -582,7 +605,9 @@ function requireJob(repository: CreatorRepository, jobId: string): CreatorJob {
 }
 
 function errorCode(error: unknown): string {
-  return error instanceof CreatorExecutorError ? error.code : 'creator_stage_failed';
+  return error instanceof CreatorExecutorError || error instanceof CreatorProviderRequestError
+    ? error.code
+    : 'creator_stage_failed';
 }
 
 function resultSnapshotDescription(stageId: string, templateId: string): string {

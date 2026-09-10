@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Fastify from 'fastify';
-import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readCreatorResultSnapshots } from '@opencreator/protocol';
 import { registerCreatorRoutes } from '../../src/api/routes.creator.js';
@@ -28,7 +27,7 @@ afterEach(() => {
 });
 
 describe('stickman result snapshots', () => {
-  it('creates a snapshot only after package validation and keeps the previous stale result readable', async () => {
+  it('creates a snapshot only after package validation and keeps the previous result readable', async () => {
     const context = setup();
     const job = context.service.createJob({
       projectId: 'project-1',
@@ -44,12 +43,9 @@ describe('stickman result snapshots', () => {
     const firstSnapshots = readCreatorResultSnapshots(afterFirst.state.resultSnapshots);
     expect(firstSnapshots).toHaveLength(1);
     expect(Object.keys(firstSnapshots[0]!.artifactRefs).sort()).toEqual([
-      'bilingual_subtitle',
-      'bilingual_video',
       'clean_video',
-      'cover_image',
       'delivery_manifest',
-      'publish_copy'
+      'narration_subtitle'
     ]);
     const firstCleanId = firstSnapshots[0]!.artifactRefs.clean_video![0]!;
 
@@ -61,7 +57,7 @@ describe('stickman result snapshots', () => {
     expect(snapshots).toHaveLength(2);
     expect(snapshots[0]!.artifactRefs.clean_video).toEqual([firstCleanId]);
     expect(snapshots[1]!.artifactRefs.clean_video).not.toEqual([firstCleanId]);
-    expect(afterSecond.artifacts.find(artifact => artifact.id === firstCleanId)?.status).toBe('stale');
+    expect(afterSecond.artifacts.find(artifact => artifact.id === firstCleanId)?.status).toBe('completed');
 
     const app = Fastify();
     await registerCreatorRoutes(app, context.service, createCreatorEventHub(), {
@@ -128,28 +124,127 @@ async function insertInputs(
   mkdirSync(sourceRoot, { recursive: true });
   const files = {
     clean_video: join(sourceRoot, 'clean.mp4'),
-    cover_image: join(sourceRoot, 'cover.png'),
-    publish_copy: join(sourceRoot, 'copy.md'),
-    bilingual_video: join(sourceRoot, 'bilingual.mp4'),
-    bilingual_subtitle: join(sourceRoot, 'bilingual.srt')
+    narration_subtitle: join(sourceRoot, 'narration.srt'),
+    narration_audio: join(sourceRoot, 'segment-01.wav'),
+    audio_timing: join(sourceRoot, 'audio-timing.json'),
+    timeline_manifest: join(sourceRoot, 'timeline.json'),
+    visual_validation: join(sourceRoot, 'visual-validation.json'),
+    media_validation: join(sourceRoot, 'media-validation.json')
   };
   writeFileSync(files.clean_video, `clean-${label}`);
-  writeFileSync(files.bilingual_video, `bilingual-${label}`);
-  writeFileSync(files.publish_copy, `# ${label}\n\nDescription\n\n## Tags\n\n- tag\n`);
-  writeFileSync(files.bilingual_subtitle, `1\n00:00:00,000 --> 00:00:01,000\n${label}\n`);
-  await sharp({ create: { width: 1280, height: 720, channels: 4, background: '#ffffff' } })
-    .png()
-    .toFile(files.cover_image);
-  return Object.fromEntries(Object.entries(files).map(([kind, path]) => [
-    kind,
-    repository.insertArtifact({
+  writeFileSync(files.narration_subtitle, `1\n00:00:00,000 --> 00:00:01,000\n${label}\n`);
+  writeFileSync(files.narration_audio, `narration-${label}`);
+
+  const insert = (
+    kind: keyof typeof files,
+    metadata: Record<string, string | number> = {},
+    scopeKey: string | null = null
+  ) => repository.insertArtifact({
       jobId,
       kind,
       status: 'completed',
-      path,
-      sha256: createHash('sha256').update(readFileSync(path)).digest('hex'),
+      path: files[kind],
+      sha256: createHash('sha256').update(readFileSync(files[kind])).digest('hex'),
+      scopeKey,
       sourceArtifactIds: [],
-      metadata: { fileName: path.split(/[\\/]/).at(-1) ?? kind }
-    })
-  ])) as Record<keyof typeof files, ReturnType<typeof repository.insertArtifact>>;
+      metadata: {
+        fileName: files[kind].split(/[\\/]/).at(-1) ?? kind,
+        ...metadata
+      }
+    });
+
+  const cleanVideo = insert('clean_video', { renderEngine: 'remotion', renderKind: 'final' });
+  const narrationSubtitle = insert('narration_subtitle');
+  const narrationAudio = insert('narration_audio', {
+    duration: 1,
+    provider: 'openai',
+    timingSource: 'ffprobe'
+  }, 'segment-01');
+  writeFileSync(files.audio_timing, JSON.stringify({
+    scriptArtifactId: `script-${label}`,
+    timingSource: 'ffprobe_cumulative_tts_duration',
+    segments: [{
+      segmentId: 'segment-01',
+      startSeconds: 0,
+      endSeconds: 1,
+      durationSeconds: 1,
+      audioArtifactId: narrationAudio.id,
+      audioSha256: narrationAudio.sha256
+    }],
+    totalDurationSeconds: 1
+  }));
+  const audioTiming = insert('audio_timing');
+  writeFileSync(files.timeline_manifest, JSON.stringify({
+    fps: 30,
+    width: 1280,
+    height: 720,
+    totalFrames: 30,
+    shots: [{
+      shotId: 'shot-01',
+      startFrame: 0,
+      endFrame: 30,
+      imageArtifactId: `image-${label}`,
+      audioArtifactId: narrationAudio.id,
+      motion: 'static',
+      imageSha256: 'a'.repeat(64),
+      audioSha256: narrationAudio.sha256
+    }]
+  }));
+  const timeline = insert('timeline_manifest', {
+    timingSource: 'ffprobe_cumulative_tts_duration'
+  });
+  writeFileSync(files.visual_validation, JSON.stringify({
+    ok: true,
+    validation: 'automated_decode_aspect_nonblank_hash_and_ocr',
+    approvedShotSpecArtifactId: `shot-spec-${label}`,
+    shotCount: 1,
+    ocrStatus: 'passed',
+    publishable: true,
+    warnings: [],
+    shots: [{
+      shotId: 'shot-01',
+      imageArtifactId: `image-${label}`,
+      imageSha256: 'a'.repeat(64),
+      width: 1280,
+      height: 720,
+      brightnessMean: 200,
+      contrastStddev: 30,
+      ocrStatus: 'passed',
+      detectedText: []
+    }]
+  }));
+  const visualValidation = insert('visual_validation');
+  writeFileSync(files.media_validation, JSON.stringify({
+    ok: true,
+    validation: 'ffprobe_and_three_frame_sampling',
+    cleanVideoArtifactId: cleanVideo.id,
+    cleanVideoSha256: cleanVideo.sha256,
+    timelineArtifactId: timeline.id,
+    duration: 1,
+    expectedDuration: 1,
+    durationTolerance: 0.15,
+    width: 1280,
+    height: 720,
+    hasVideo: true,
+    hasAudio: true,
+    sampledFrames: [1, 2, 3].map(index => ({
+      index,
+      timestampSeconds: index / 4,
+      sha256: String(index).repeat(64),
+      width: 1280,
+      height: 720,
+      brightnessMean: 180,
+      contrastStddev: 24
+    }))
+  }));
+  const mediaValidation = insert('media_validation');
+  return {
+    clean_video: cleanVideo,
+    narration_subtitle: narrationSubtitle,
+    narration_audio: narrationAudio,
+    audio_timing: audioTiming,
+    timeline_manifest: timeline,
+    visual_validation: visualValidation,
+    media_validation: mediaValidation
+  };
 }

@@ -22,6 +22,13 @@ type PlatformResult = {
   unknownRequests: string[];
 };
 
+type PixelDiff = {
+  width: number;
+  height: number;
+  differentPixels: number;
+  maxChannelDelta: number;
+};
+
 const viewports = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'mobile', width: 390, height: 844 }
@@ -66,10 +73,15 @@ test('火柴人工作台在 Browser/Desktop Bridge 下保持同构并持久化�
     expect(desktopResult.checkpoint.boxes, `${viewport.name} 关键尺寸`).toEqual(
       browserResult.checkpoint.boxes
     );
-    expect(
-      desktopResult.checkpoint.screenshot.equals(browserResult.checkpoint.screenshot),
-      `${viewport.name} 工作台截图应逐像素一致`
-    ).toBe(true);
+    const pixelDiff = await compareScreenshots(
+      browser,
+      browserResult.checkpoint.screenshot,
+      desktopResult.checkpoint.screenshot
+    );
+    expect(pixelDiff.width, `${viewport.name} 截图宽度`).toBe(viewport.width);
+    expect(pixelDiff.height, `${viewport.name} 截图高度`).toBe(viewport.height);
+    expect(pixelDiff.maxChannelDelta, `${viewport.name} 最大像素通道差`).toBeLessThanOrEqual(1);
+    expect(pixelDiff.differentPixels, `${viewport.name} 抗锯齿差异像素`).toBeLessThanOrEqual(100);
     expect(browserResult.nativeDirectorySelections).toBe(0);
     expect(desktopResult.nativeDirectorySelections).toBe(viewport.name === 'desktop' ? 1 : 0);
   }
@@ -101,28 +113,39 @@ async function runPlatform(input: {
       `${input.runtime.origin}/#/workbench?tool=stickman-video&jobId=${fakeDaemon.jobId}`
     );
     await expect(page.getByRole('heading', { name: '火柴人动画' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '用火柴人理解复利' })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: '脚本标题' })).toHaveValue(
+      '用火柴人理解复利'
+    );
     await expect(page.locator('.creator-collaboration-panel')).toHaveCount(1);
 
-    await page.getByRole('button', { name: '审核通过', exact: true }).click();
-    await expect(page.getByRole('button', { name: '审核分镜并生成画面' })).toBeVisible();
-    await expect(page.getByText('2 个镜头，进度来自持久化 StageRun 与 Artifact')).toBeVisible();
-
-    await page.getByRole('button', { name: '审核分镜并生成画面' }).click();
-    await expect(page.getByRole('button', { name: '确认画面并继续成片' })).toBeVisible();
+    await page.getByRole('button', { name: '下一步', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '配音与节奏' })).toBeVisible();
+    await expect(page.locator('.stickman-audio-row')).toHaveCount(2);
+    await expect(page.locator('.stickman-audio-control audio')).toHaveCount(2);
+    await page.getByRole('button', { name: '下一步', exact: true }).click();
+    await expect(page.getByText('2 个镜头 · 画面已生成 2/2')).toBeVisible();
+    await expect(page.getByRole('button', { name: '下一步', exact: true })).toBeVisible();
     await expect(page.getByTitle('重新生成图片')).toHaveCount(2);
     await page.getByTitle('重新生成图片').first().click();
     await expect.poll(() => fakeDaemon.mutationLog().map(item => (
       isAction(item.body) ? item.body.action : null
     ))).toContain('regenerate-shot');
 
-    await page.getByRole('button', { name: '确认画面并继续成片' }).click();
-    await expect(page.getByRole('heading', { name: '固定五项交付' })).toBeVisible();
-    for (const label of ['纯净视频', 'YouTube 封面', '发布文案', '双语视频', '双语字幕']) {
-      await expect(page.getByText(label, { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '下一步', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '动画合成' })).toBeVisible();
+    await page.getByRole('button', { name: '查看成片' }).click();
+    await expect(page.getByRole('heading', { name: '成片交付' })).toBeVisible();
+    await expect(page.getByText('成片已生成，部分发布检查尚未通过')).toBeVisible();
+    const deliveryFiles = page.locator('.creator-result-files');
+    for (const label of ['火柴人动画', '旁白字幕']) {
+      await expect(deliveryFiles.getByText(label, { exact: true })).toBeVisible();
     }
-    await expect(page.locator('.creator-result-files article[data-ready="true"]')).toHaveCount(5);
+    await expect(deliveryFiles.locator('article[data-ready="true"]')).toHaveCount(2);
     await expect(page.locator('.creator-collaboration-panel')).toHaveCount(1);
+    await expect(page.locator('.creator-collaboration-stage')).toHaveCount(1);
+    expect(fakeDaemon.mutationLog().map(item => (
+      isAction(item.body) ? item.body.action : null
+    ))).not.toContain('approve-visuals');
 
     let nativeDirectorySelections = 0;
     if (input.viewport.name === 'desktop') {
@@ -135,7 +158,7 @@ async function runPlatform(input: {
       await page.goto(
         `${input.runtime.origin}/#/workbench?tool=stickman-video&jobId=${fakeDaemon.jobId}`
       );
-      await expect(page.getByRole('heading', { name: '固定五项交付' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '成片交付' })).toBeVisible();
     }
 
     const checkpoint = await captureCheckpoint(page);
@@ -150,6 +173,65 @@ async function runPlatform(input: {
       nativeDirectorySelections,
       unknownRequests: fakeDaemon.unknownRequestPaths()
     };
+  } finally {
+    await context.close();
+  }
+}
+
+async function compareScreenshots(
+  browser: Browser,
+  left: Buffer,
+  right: Buffer
+): Promise<PixelDiff> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    return await page.evaluate(async ({ leftUrl, rightUrl }) => {
+      const decode = async (url: string) => {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const renderingContext = canvas.getContext('2d', { willReadFrequently: true });
+        if (renderingContext === null) throw new Error('截图像素解码失败');
+        renderingContext.drawImage(image, 0, 0);
+        return {
+          width: canvas.width,
+          height: canvas.height,
+          pixels: renderingContext.getImageData(0, 0, canvas.width, canvas.height).data
+        };
+      };
+      const [leftImage, rightImage] = await Promise.all([decode(leftUrl), decode(rightUrl)]);
+      if (leftImage.width !== rightImage.width || leftImage.height !== rightImage.height) {
+        throw new Error(
+          `截图尺寸不同：${leftImage.width}x${leftImage.height} / ${rightImage.width}x${rightImage.height}`
+        );
+      }
+      let differentPixels = 0;
+      let maxChannelDelta = 0;
+      for (let offset = 0; offset < leftImage.pixels.length; offset += 4) {
+        let pixelDifferent = false;
+        for (let channel = 0; channel < 4; channel += 1) {
+          const delta = Math.abs(
+            leftImage.pixels[offset + channel]! - rightImage.pixels[offset + channel]!
+          );
+          if (delta > 0) pixelDifferent = true;
+          if (delta > maxChannelDelta) maxChannelDelta = delta;
+        }
+        if (pixelDifferent) differentPixels += 1;
+      }
+      return {
+        width: leftImage.width,
+        height: leftImage.height,
+        differentPixels,
+        maxChannelDelta
+      };
+    }, {
+      leftUrl: `data:image/png;base64,${left.toString('base64')}`,
+      rightUrl: `data:image/png;base64,${right.toString('base64')}`
+    });
   } finally {
     await context.close();
   }
@@ -264,12 +346,16 @@ async function captureCheckpoint(page: Page): Promise<Checkpoint> {
   await page.evaluate(() => document.fonts.ready);
   const root = page.locator('.stickman-workspace-page');
   await expect(root).toBeVisible();
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  });
   const text = normalizeText(await root.innerText());
   const boxes: Checkpoint['boxes'] = {};
   for (const selector of [
     '.stickman-workspace-content',
     '.creator-task-workspace',
-    '.creator-task-summary',
+    '.stickman-delivery-content',
     '.creator-collaboration-panel',
     '.creator-result-files'
   ]) {
@@ -286,7 +372,11 @@ async function captureCheckpoint(page: Page): Promise<Checkpoint> {
   return {
     text,
     boxes,
-    screenshot: await root.screenshot({ animations: 'disabled' })
+    screenshot: await page.screenshot({
+      animations: 'disabled',
+      mask: [root.locator('video'), root.locator('audio')],
+      maskColor: '#17191d'
+    })
   };
 }
 

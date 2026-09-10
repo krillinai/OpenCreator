@@ -44,7 +44,10 @@ async function main(): Promise<void> {
       assertInside(jobRoot, shot.imagePath, 'image');
       assertInside(jobRoot, shot.audioPath, 'audio');
     }
-    const assetServer = await startAssetServer(resolve(request.bundlePath), timeline.shots ?? []);
+    const assetServer = await startAssetServer(
+      resolve(request.bundlePath),
+      timeline.shots ?? []
+    );
     try {
       const renderTimeline = {
         ...timeline,

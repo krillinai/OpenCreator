@@ -8,6 +8,7 @@ export function createKrillinCreatorServicesCapabilities(
   arch: string = process.arch
 ): CreatorServicesCapabilitiesResponse {
   const whisperKitAvailable = platform === 'darwin' && arch === 'arm64';
+  const whisperCppAvailable = platform === 'win32' && arch === 'x64';
   return {
     platform,
     arch,
@@ -33,9 +34,9 @@ export function createKrillinCreatorServicesCapabilities(
         localProvider(
           'whisper.cpp',
           ['tiny', 'medium', 'large-v2'],
+          whisperCppAvailable,
           false,
-          false,
-          platform === 'win32' ? 'installer_unavailable' : 'unsupported_platform'
+          whisperCppAvailable ? undefined : 'unsupported_platform'
         ),
         cloudProvider('aliyun', [])
       ]

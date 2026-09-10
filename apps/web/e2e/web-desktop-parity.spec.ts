@@ -96,6 +96,104 @@ test('视频下载在 Browser/Desktop Bridge 下保持相同界面、请求和�
   expect(results[1]!.state).toEqual(results[0]!.state);
 });
 
+test('Windows 本地 Whisper 在 Browser/Desktop Bridge 下保持相同界面、请求和持久状态', async ({
+  browser,
+  runtime
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    '一致性规格内部固定创建 Browser/Desktop Chromium 上下文'
+  );
+
+  const results: Array<{
+    text: string;
+    boxes: Record<string, { x: number; y: number; width: number; height: number }>;
+    requests: string[];
+    transcription: Record<string, unknown>;
+  }> = [];
+
+  for (const platform of ['browser', 'desktop'] as const) {
+    await runtime.api('DELETE', '/creator-services/config');
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      deviceScaleFactor: 1,
+      colorScheme: 'dark',
+      reducedMotion: 'reduce'
+    });
+    const page = await context.newPage();
+    if (platform === 'desktop') await installDesktopBridge(page);
+    const requests: string[] = [];
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (!url.pathname.includes('/creator-services/')) return;
+      requests.push(`${request.method()} ${url.pathname.replace('/.opencreator/runtime', '')}`);
+    });
+
+    try {
+      await runtime.openApp(page);
+      await page.goto(`${runtime.origin}/#/settings?tab=ai-services&section=transcription`);
+      const settings = page
+        .getByRole('region', { name: 'OpenCreator 工作区' })
+        .getByRole('main');
+      const localMode = settings.getByRole('button', { name: '本地 Whisper' });
+      await expect(settings.getByText('Windows · x64')).toBeVisible();
+      await expect(localMode).toBeEnabled();
+      await localMode.click();
+
+      const provider = settings.getByRole('combobox', { name: '语音识别服务' });
+      const model = settings.getByRole('combobox', { name: '本地模型' });
+      await expect(provider).toHaveText('Whisper.cpp');
+      await expect(model).toHaveText('tiny');
+      await model.click();
+      await settings.getByRole('option', { name: 'medium' }).click();
+      await settings.getByRole('button', { name: '保存配置' }).click();
+      await page.getByRole('button', { name: '保存并启用' }).click();
+      await expect(settings.getByText('配置已安全保存')).toBeVisible();
+
+      const boxes: Record<
+        string,
+        { x: number; y: number; width: number; height: number }
+      > = {};
+      for (const [name, locator] of [
+        ['settings', settings],
+        ['local-mode', localMode],
+        ['provider', provider],
+        ['model', model]
+      ] as const) {
+        const box = await locator.boundingBox();
+        expect(box, `${platform} 缺少 ${name} 尺寸目标`).not.toBeNull();
+        boxes[name] = {
+          x: Math.round(box!.x),
+          y: Math.round(box!.y),
+          width: Math.round(box!.width),
+          height: Math.round(box!.height)
+        };
+      }
+      const persisted = await runtime.api<{
+        config: { transcription: Record<string, unknown> };
+      }>('GET', '/creator-services/config');
+      results.push({
+        text: normalizeParityText(await settings.innerText()),
+        boxes,
+        requests,
+        transcription: persisted.config.transcription
+      });
+    } finally {
+      await context.close();
+    }
+  }
+
+  expect(results[1]!.text).toBe(results[0]!.text);
+  expect(results[1]!.boxes).toEqual(results[0]!.boxes);
+  expect(results[1]!.requests).toEqual(results[0]!.requests);
+  expect(results[1]!.transcription).toEqual(results[0]!.transcription);
+  expect(results[0]!.transcription).toMatchObject({
+    provider: 'whisper.cpp',
+    whisperCpp: { model: 'medium' }
+  });
+  expect(results[0]!.requests).toContain('PATCH /creator-services/config');
+});
+
 test('本机组件设置在 Browser/Desktop Bridge 下保持相同状态、尺寸和 Runtime 请求', async ({
   browser,
   runtime

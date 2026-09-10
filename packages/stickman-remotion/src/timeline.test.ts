@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertTimeline } from './timeline.js';
+import { assertTimeline, buildNarrationTrack } from './timeline.js';
 
 describe('stickman remotion timeline', () => {
   it('rejects gaps and accepts contiguous shots', () => {
@@ -18,5 +18,9 @@ describe('stickman remotion timeline', () => {
       ...base,
       shots: [{ ...base.shots[0]!, startFrame: 1 }, base.shots[1]!]
     })).toThrow(/gap_or_overlap/);
+    expect(buildNarrationTrack(base)).toEqual([
+      { shotId: 'shot-1', from: 0, durationInFrames: 30, audioPath: 'a.mp3' },
+      { shotId: 'shot-2', from: 30, durationInFrames: 30, audioPath: 'a.mp3' }
+    ]);
   });
 });

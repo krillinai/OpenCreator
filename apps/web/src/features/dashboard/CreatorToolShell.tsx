@@ -9,6 +9,7 @@ import { useOptionalCreatorSession } from './creator-session-store.js';
 
 export default function CreatorToolShell(props: {
   title: string;
+  titleIcon?: ReactNode;
   subtitle: string;
   context: string;
   initialMessage?: string;
@@ -40,10 +41,13 @@ export default function CreatorToolShell(props: {
     <main className={`creator-workspace-page${props.pageClassName ? ` ${props.pageClassName}` : ''}`}>
       <div className="creator-workspace-layout">
         <section className="creator-workspace-main" aria-label={`${props.title} ${l('操作区', 'workspace')}`}>
-          <header className="creator-workspace-header">
+          <header className={`creator-workspace-header${props.titleIcon === undefined ? '' : ' has-title-icon'}`}>
             <button type="button" onClick={props.onBack} aria-label={l('返回', 'Back')}>
               <ArrowLeft size={18} strokeWidth={1.8} aria-hidden="true" />
             </button>
+            {props.titleIcon === undefined ? null : (
+              <span className="creator-workspace-title-icon" aria-hidden="true">{props.titleIcon}</span>
+            )}
             <div>
               <h1>{props.title}</h1>
               <p>{props.subtitle}</p>

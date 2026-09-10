@@ -402,7 +402,7 @@ export function createCreatorService(input: {
       deepLink?: string;
       resumeStageId?: string;
       workflow?: boolean;
-      reviewKind?: 'approve-script' | 'approve-storyboard' | 'approve-visuals';
+      reviewKind?: 'approve-script';
       artifactId?: string;
     }): CreatorJob {
       return repository.transaction(() => {

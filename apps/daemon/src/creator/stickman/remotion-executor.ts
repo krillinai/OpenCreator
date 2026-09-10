@@ -1,6 +1,7 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import { dirname, extname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { spawnCreatorProcess } from '../process-tree.js';
@@ -44,7 +45,7 @@ export function createStickmanRemotionExecutor(input: {
         runtimeRoot: runtime.root
       }, null, 2)}\n`, 'utf8');
       const workerEntrypoint = input.workerEntrypoint
-        ?? fileURLToPath(new URL('./remotion-worker.js', import.meta.url));
+        ?? resolveDefaultWorkerEntrypoint();
       try {
         await runWorker(workerEntrypoint, requestPath, resultPath, stage.signal);
         const result = JSON.parse(await readFile(resultPath, 'utf8')) as {
@@ -83,7 +84,13 @@ export function createStickmanRemotionExecutor(input: {
             status: 'completed',
             path: outputPath,
             sourceArtifactIds: [timeline.id],
-            metadata: { ...media, fileName: 'landscape-clean.mp4' }
+            metadata: {
+              ...media,
+              fileName: 'landscape-clean.mp4',
+              renderEngine: 'remotion',
+              renderKind: 'final',
+              mediaValidation: 'ffprobe'
+            }
           }]
         };
       } catch (error) {
@@ -107,9 +114,18 @@ function runWorker(
   signal: AbortSignal
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    const workerArgs = extname(workerEntrypoint).toLowerCase() === '.ts'
+      ? [
+          '--import',
+          pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href,
+          workerEntrypoint,
+          requestPath,
+          resultPath
+        ]
+      : [workerEntrypoint, requestPath, resultPath];
     const child = spawnCreatorProcess(
       process.execPath,
-      [workerEntrypoint, requestPath, resultPath],
+      workerArgs,
       { cwd: dirname(requestPath), stdio: ['ignore', 'ignore', 'pipe'] },
       signal
     );
@@ -124,4 +140,10 @@ function runWorker(
       ));
     });
   });
+}
+
+function resolveDefaultWorkerEntrypoint(): string {
+  const sourceExtension = extname(fileURLToPath(import.meta.url)).toLowerCase();
+  const workerExtension = sourceExtension === '.ts' ? '.ts' : '.js';
+  return fileURLToPath(new URL(`./remotion-worker${workerExtension}`, import.meta.url));
 }
