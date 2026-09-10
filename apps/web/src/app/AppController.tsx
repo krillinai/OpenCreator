@@ -44,7 +44,6 @@ import {
 } from '../features/conversation/CreatorDashboard.js';
 import {
   creatorWorkspaceForTemplate,
-  type CreatorPresetWorkspace,
   type CreatorSkillLaunch
 } from '../features/dashboard/creator-workspace.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
@@ -364,8 +363,6 @@ export function AppController(props: AppControllerProps) {
   >();
   const [pendingComposerFocusRequestId, setPendingComposerFocusRequestId] = useState<number>();
   const [homeSkillPromptHint, setHomeSkillPromptHint] = useState<string>();
-  const [homeCreatorModule, setHomeCreatorModule] =
-    useState<CreatorPresetWorkspace>('video-translation');
   const [creatorSkillLaunch, setCreatorSkillLaunch] = useState<CreatorSkillLaunch>();
   useEffect(() => {
     if (threadConfigUpdateError === undefined) return;
@@ -4215,11 +4212,88 @@ export function AppController(props: AppControllerProps) {
       presets={creatorPresets}
       loading={creatorPresetsLoading}
       error={creatorPresetsError}
-      selectedModule={homeCreatorModule}
       onRetry={() => setCreatorPresetsReloadKey(value => value + 1)}
-      onSelectModule={setHomeCreatorModule}
       onSelectPreset={applyDashboardPreset}
       onSelectSkill={applyDashboardSkill}
+    />
+  );
+  const conversationComposer = (
+    <Composer
+      key={composerAttachmentScope}
+      projectId={currentProject?.id ?? ''}
+      projectName={currentProjectName}
+      projects={projects}
+      showProjectSelector={false}
+      permission={effectiveComposerConfig.permission}
+      profile={effectiveComposerConfig.profile}
+      model={effectiveComposerConfig.model}
+      reasoning={effectiveComposerConfig.reasoning}
+      models={codexModels?.models}
+      modelsLoading={codexModelsLoading}
+      modelsError={codexModelsLoadError}
+      modelsNotice={codexModelsNotice}
+      disabled={composerDisabled}
+      disabledReason={composerDisabledReason}
+      promptHint={showConversationEmptyState ? homeSkillPromptHint : undefined}
+      running={currentRunBusy}
+      canceling={currentRunCanceling}
+      permissionChangeDisabled={selectedThread !== undefined && currentRunBusy}
+      slashCommands={slashCommands}
+      slashCommandsLoading={capabilitiesLoading}
+      slashCommandsError={capabilitiesLoadError}
+      showConnectors={false}
+      queuedItems={composerQueuedItems}
+      imageInputSupported={imageInputSupported}
+      imageInputUnsupportedReason={
+        imageInputSupported
+          ? undefined
+          : '当前 Codex 版本不支持图片输入，请更新 Codex'
+      }
+      draftRequest={
+        pendingComposerDraft !== undefined && pendingComposerDraft.threadId === state.selectedThreadId
+          ? pendingComposerDraft.request
+          : undefined
+      }
+      focusRequestId={pendingComposerFocusRequestId}
+      onSelectProject={selectProject}
+      onCreateBlankProject={
+        projectService === null
+          ? undefined
+          : createBlankProject
+      }
+      onAddProjectDirectory={
+        projectService === null || hostBridge.selectProjectDirectory === undefined
+          ? undefined
+          : addProjectDirectory
+      }
+      onPermissionChange={handleComposerPermissionChange}
+      onModelConfigChange={handleComposerModelConfigChange}
+      onDraftApplied={handleComposerDraftApplied}
+      onFocusRequestApplied={handleComposerFocusRequestApplied}
+      onManageSkills={() => navigateToRoute({ view: 'plugins' })}
+      onManageConnectors={() => navigateToRoute({
+        view: 'plugins',
+        tab: 'connections'
+      })}
+      onCancel={() => void cancelActiveRun()}
+      onCancelQueuedRun={(runId) => void cancelQueuedRun(runId)}
+      onSteerQueuedRun={(runId) => void steerQueuedRun(runId)}
+      onUploadAttachment={async file => {
+        if (attachmentService === null) throw new Error('附件服务暂不可用');
+        const response = await attachmentService.upload({
+          file,
+          draftId: composerAttachmentDraftId
+        });
+        return response.attachment;
+      }}
+      onDeleteAttachment={async attachment => {
+        if (attachmentService === null || attachment.draftId === undefined) return;
+        await attachmentService.delete({
+          id: attachment.id,
+          draftId: attachment.draftId
+        });
+      }}
+      onSubmit={submitPrompt}
     />
   );
   const conversationPage = (
@@ -4336,83 +4410,7 @@ export function AppController(props: AppControllerProps) {
               onDismiss={() => setPendingMemorySuggestion(undefined)}
             />
           ) : null}
-          <Composer
-            key={composerAttachmentScope}
-            projectId={currentProject?.id ?? ''}
-            projectName={currentProjectName}
-            projects={projects}
-            showProjectSelector={false}
-            permission={effectiveComposerConfig.permission}
-            profile={effectiveComposerConfig.profile}
-            model={effectiveComposerConfig.model}
-            reasoning={effectiveComposerConfig.reasoning}
-            models={codexModels?.models}
-            modelsLoading={codexModelsLoading}
-            modelsError={codexModelsLoadError}
-            modelsNotice={codexModelsNotice}
-            disabled={composerDisabled}
-            disabledReason={composerDisabledReason}
-            promptHint={showConversationEmptyState ? homeSkillPromptHint : undefined}
-            running={currentRunBusy}
-            canceling={currentRunCanceling}
-            permissionChangeDisabled={selectedThread !== undefined && currentRunBusy}
-            slashCommands={slashCommands}
-            slashCommandsLoading={capabilitiesLoading}
-            slashCommandsError={capabilitiesLoadError}
-            showConnectors={false}
-            queuedItems={composerQueuedItems}
-            imageInputSupported={imageInputSupported}
-            imageInputUnsupportedReason={
-              imageInputSupported
-                ? undefined
-                : '当前 Codex 版本不支持图片输入，请更新 Codex'
-            }
-            draftRequest={
-              pendingComposerDraft !== undefined && pendingComposerDraft.threadId === state.selectedThreadId
-                ? pendingComposerDraft.request
-                : undefined
-            }
-            focusRequestId={pendingComposerFocusRequestId}
-            onSelectProject={selectProject}
-            onCreateBlankProject={
-              projectService === null
-                ? undefined
-                : createBlankProject
-            }
-            onAddProjectDirectory={
-              projectService === null || hostBridge.selectProjectDirectory === undefined
-                ? undefined
-                : addProjectDirectory
-            }
-            onPermissionChange={handleComposerPermissionChange}
-            onModelConfigChange={handleComposerModelConfigChange}
-            onDraftApplied={handleComposerDraftApplied}
-            onFocusRequestApplied={handleComposerFocusRequestApplied}
-            onManageSkills={() => navigateToRoute({ view: 'plugins' })}
-            onManageConnectors={() => navigateToRoute({
-              view: 'plugins',
-              tab: 'connections'
-            })}
-            onCancel={() => void cancelActiveRun()}
-            onCancelQueuedRun={(runId) => void cancelQueuedRun(runId)}
-            onSteerQueuedRun={(runId) => void steerQueuedRun(runId)}
-            onUploadAttachment={async file => {
-              if (attachmentService === null) throw new Error('附件服务暂不可用');
-              const response = await attachmentService.upload({
-                file,
-                draftId: composerAttachmentDraftId
-              });
-              return response.attachment;
-            }}
-            onDeleteAttachment={async attachment => {
-              if (attachmentService === null || attachment.draftId === undefined) return;
-              await attachmentService.delete({
-                id: attachment.id,
-                draftId: attachment.draftId
-              });
-            }}
-            onSubmit={submitPrompt}
-          />
+          {conversationComposer}
           {showConversationEmptyState ? creatorDashboard : null}
         </div>
       )}

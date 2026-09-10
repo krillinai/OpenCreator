@@ -613,6 +613,10 @@ test('Creator Preset 在 Browser/Desktop Bridge 下创建相同工作台状态',
   );
 
   const results: Array<{
+    home: {
+      text: string;
+      boxes: Record<string, { width: number; height: number }>;
+    };
     request: Record<string, unknown>;
     route: string;
     text: string;
@@ -650,17 +654,38 @@ test('Creator Preset 在 Browser/Desktop Bridge 下创建相同工作台状态',
       await runtime.openApp(page);
       await page.goto(`${runtime.origin}/#/new`);
       await expect(page.getByRole('heading', { name: '创作模板' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: '创作模块' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: '视频翻译模板' })).toBeVisible();
+      await expect(page.getByText('需要帮你做点什么')).toHaveCount(0);
       await expect(page.getByRole('textbox', { name: '输入任务' })).toHaveCount(0);
+      await expect(page.getByRole('tab', { name: '推荐' }))
+        .toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('tab', { name: '视频创作' })).toBeVisible();
+      await expect(page.getByRole('tab', { name: '图像设计' })).toBeVisible();
       const presetButton = page.getByRole('button', {
         name: '使用B站双语精翻模板'
       });
+      await expect(presetButton).toHaveText('B站双语精翻');
       const cover = presetButton.locator('img');
       await expect.poll(async () => cover.evaluate(image => ({
         complete: image.complete,
         width: image.naturalWidth
       }))).toEqual({ complete: true, width: 1280 });
+      const home = page.locator('.creator-home-wrap');
+      const boxes: Record<string, { width: number; height: number }> = {};
+      for (const [name, locator] of [
+        ['categories', page.getByRole('tablist', { name: '创作模板分类' })],
+        ['first-template', presetButton]
+      ] as const) {
+        const box = await locator.boundingBox();
+        expect(box).not.toBeNull();
+        boxes[name] = {
+          width: Math.round(box!.width),
+          height: Math.round(box!.height)
+        };
+      }
+      const homeSnapshot = {
+        text: normalizeParityText(await home.innerText()),
+        boxes
+      };
 
       await presetButton.click();
       await expect(page).toHaveURL(/#\/workbench\?tool=video-translation&jobId=/);
@@ -684,6 +709,7 @@ test('Creator Preset 在 Browser/Desktop Bridge 下创建相同工作台状态',
       await expect(panel).toBeVisible();
 
       results.push({
+        home: homeSnapshot,
         request: {
           ...createRequest!,
           creationKey: '{creationKey}'
@@ -706,6 +732,7 @@ test('Creator Preset 在 Browser/Desktop Bridge 下创建相同工作台状态',
     }
   }
 
+  expect(results[1]!.home).toEqual(results[0]!.home);
   expect(results[1]!.request).toEqual(results[0]!.request);
   expect(results[1]!.route).toBe(results[0]!.route);
   expect(results[1]!.text).toBe(results[0]!.text);

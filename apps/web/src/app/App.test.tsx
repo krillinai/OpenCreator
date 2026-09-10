@@ -690,12 +690,14 @@ describe('App', () => {
     render(<App fileService={createFileService()} hostBridge={hostBridge} />);
 
     expect(await screen.findByRole('heading', { name: '创作模板' })).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: '创作模块' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '视频翻译模板' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: '工作台' })).not.toHaveAttribute('aria-current');
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: '输入任务' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '推荐' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '视频创作' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '图像设计' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '工作台' })).not.toHaveAttribute('aria-current');
     expect(screen.queryByRole('button', { name: '空白视频翻译' })).not.toBeInTheDocument();
   });
 
@@ -1160,7 +1162,7 @@ describe('App', () => {
       .toBeInTheDocument();
     expect(document.querySelector('.conversation-page')).not.toHaveClass('is-empty');
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '创作模块' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '创作模板' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     history.resolve(jsonResponse({
@@ -1175,8 +1177,9 @@ describe('App', () => {
     });
     expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '创作模块' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '视频翻译模板' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '创作模板' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '推荐' }))
+      .toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: '空白视频翻译' })).not.toBeInTheDocument();
