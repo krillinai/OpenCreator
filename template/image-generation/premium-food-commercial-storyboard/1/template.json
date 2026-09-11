@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "premium-food-commercial-storyboard",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 96,
+  "title": {
+    "zh-CN": "高端食品商业广告分镜",
+    "en-US": "Premium Food Commercial Storyboard"
+  },
+  "description": {
+    "zh-CN": "生成单页高端食品广告分镜与镜头项目板。",
+    "en-US": "Create an image with the Premium Food Commercial Storyboard reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "影视叙事",
+    "食品饮料",
+    "商业广告",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "标题： 高端 {productName} 产品商业项目 格式： • 单页高端项目 • 3:4 竖屏比例 • 奢华食品广告 • 8 个电影级产品特写场景 • 产品始终作为核心主角 • 高端广告代理商演示风格 页眉： • 优雅的衬线字体 • 信息卡片： - 时长：20 秒 - 风格：电影级美食广告 - 产品：{productName} - 音频：柔和的涂抹声 + 食物 ASMR • “为何这种风格有效”板块 • 温暖的棕色、奶油色和金色美学 • 极简的榛子装饰元素 项目： 1. 高端 {productName} 罐装产品放置在抛光的深色木质表面上 2. 极微距视角下的瓶盖开启瞬间 3. 奶油质感的 {productName} 从罐中缓慢涂抹而出 4. 巧克力酱在半空中形成光泽丝带状 5. {productName} 倾泻在松软的煎饼上 6. 展现浓郁巧克力质感与微小反光的极微距镜头 7. 煎饼塔与主角罐装产品及榛子环绕陈列 8. 带有戏剧性 {productName} 涂抹效果的最终奢华产品定格画面 每个面板： • 场景编号 • 时长标签 • 运镜方向 • 视觉画面 • 动作描述 • 产品细节 摄像机： 极微距、慢动作涂抹摄影、俯视食物拍摄、受控推入镜头、浅景深、电影级主角构图。 风格： 超写实食品广告、逼真的涂抹粘稠度、光泽巧克力质感、温暖的摄影棚灯光、高端玻璃包装、精致的美食呈现、8K 分辨率。"
+    },
+    "en-US": {
+      "prompt": "标题： 高端 {productName} 产品商业项目 格式： • 单页高端项目 • 3:4 竖屏比例 • 奢华食品广告 • 8 个电影级产品特写场景 • 产品始终作为核心主角 • 高端广告代理商演示风格 页眉： • 优雅的衬线字体 • 信息卡片： - 时长：20 秒 - 风格：电影级美食广告 - 产品：{productName} - 音频：柔和的涂抹声 + 食物 ASMR • “为何这种风格有效”板块 • 温暖的棕色、奶油色和金色美学 • 极简的榛子装饰元素 项目： 1. 高端 {productName} 罐装产品放置在抛光的深色木质表面上 2. 极微距视角下的瓶盖开启瞬间 3. 奶油质感的 {productName} 从罐中缓慢涂抹而出 4. 巧克力酱在半空中形成光泽丝带状 5. {productName} 倾泻在松软的煎饼上 6. 展现浓郁巧克力质感与微小反光的极微距镜头 7. 煎饼塔与主角罐装产品及榛子环绕陈列 8. 带有戏剧性 {productName} 涂抹效果的最终奢华产品定格画面 每个面板： • 场景编号 • 时长标签 • 运镜方向 • 视觉画面 • 动作描述 • 产品细节 摄像机： 极微距、慢动作涂抹摄影、俯视食物拍摄、受控推入镜头、浅景深、电影级主角构图。 风格： 超写实食品广告、逼真的涂抹粘稠度、光泽巧克力质感、温暖的摄影棚灯光、高端玻璃包装、精致的美食呈现、8K 分辨率。"
+    }
+  }
+}

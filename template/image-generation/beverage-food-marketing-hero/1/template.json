@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "beverage-food-marketing-hero",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 94,
+  "title": {
+    "zh-CN": "饮料食品营销主视觉",
+    "en-US": "Beverage and Food Marketing Hero"
+  },
+  "description": {
+    "zh-CN": "生成饮料、冷冻食品和包装商品的商业营销主视觉。",
+    "en-US": "Create an image with the Beverage and Food Marketing Hero reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "商业广告",
+    "食品饮料",
+    "产品视觉",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "[产品/包装] - 产品名称/类型：{productName} - 吸引力/宣传语：{subText} [设计巧思] - 背景视觉元素：{circleColor} [图像质量、呈现与构图规范] - 风格：流行且生动的日本便利店或食品制造商营销主视觉。具有强烈的诱人感与视觉冲击力。 - 主体：将 {productName} 的罐装、瓶装或包装放置在中心。冰块碎片、水滴、水花或新鲜原材料（如茶叶或水果）在周围动态飞溅。 - 背景：高对比度、清晰的纯色或渐变背景，以 {circleColor} 作为主要图形元素。 - 排版（适用于 GPT-image / Nano Banana Pro）：文案 {subText} 使用粗体、充满活力的字体，放置在不遮挡产品的位置。 - 灯光/色彩：明亮生动的摄影棚灯光、晶莹剔透的反射效果以及充满活力的色彩构成。 [布局与输出的严格限制（强制执行）] - 输出成品设计本身，填满整个画布。设计内部的背景和场景描绘（墙壁、空间、阴影）可遵循正文中的说明。 - 禁止事项：带边框的海报照片、贴在墙上的海报照片、放置在桌子或纸张上的样机照片、纸张边缘的透视变形或投影。 - 输出成品平面 2D 设计本身，填满整个画布。允许使用上述描述的设计内部场景元素。绝对禁止海报样机照片：不得包含相框、不得拍摄贴在墙上或桌上的海报，不得出现艺术品边缘的透视变形或投影。 - 长宽比：--ar 16:9"
+    },
+    "en-US": {
+      "prompt": "[产品/包装] - 产品名称/类型：{productName} - 吸引力/宣传语：{subText} [设计巧思] - 背景视觉元素：{circleColor} [图像质量、呈现与构图规范] - 风格：流行且生动的日本便利店或食品制造商营销主视觉。具有强烈的诱人感与视觉冲击力。 - 主体：将 {productName} 的罐装、瓶装或包装放置在中心。冰块碎片、水滴、水花或新鲜原材料（如茶叶或水果）在周围动态飞溅。 - 背景：高对比度、清晰的纯色或渐变背景，以 {circleColor} 作为主要图形元素。 - 排版（适用于 GPT-image / Nano Banana Pro）：文案 {subText} 使用粗体、充满活力的字体，放置在不遮挡产品的位置。 - 灯光/色彩：明亮生动的摄影棚灯光、晶莹剔透的反射效果以及充满活力的色彩构成。 [布局与输出的严格限制（强制执行）] - 输出成品设计本身，填满整个画布。设计内部的背景和场景描绘（墙壁、空间、阴影）可遵循正文中的说明。 - 禁止事项：带边框的海报照片、贴在墙上的海报照片、放置在桌子或纸张上的样机照片、纸张边缘的透视变形或投影。 - 输出成品平面 2D 设计本身，填满整个画布。允许使用上述描述的设计内部场景元素。绝对禁止海报样机照片：不得包含相框、不得拍摄贴在墙上或桌上的海报，不得出现艺术品边缘的透视变形或投影。 - 长宽比：--ar 16:9"
+    }
+  }
+}

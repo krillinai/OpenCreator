@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "paper-relief-neighborhood-grid",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 86,
+  "title": {
+    "zh-CN": "纸雕浮雕街区网格",
+    "en-US": "Paper Relief Neighborhood Grid"
+  },
+  "description": {
+    "zh-CN": "生成多组统一纸雕浮雕风格的街区或社区场景。",
+    "en-US": "Create an image with the Paper Relief Neighborhood Grid reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "设计参考",
+    "建筑空间",
+    "手工材质",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "2x2 网格，16:9，选择 4 个街区 并展现其全貌： PAPER_RELIEF(TOPIC) ::= layer_00 = 平面衬纸层 layer_01 = 宽幅剪影层 layer_02 = 主要面部 / 物体平面层 layer_03 = 内部轮廓线层 layer_04 = 符号化物体与图表层 layer_05 = 流动卷轴与丝带层 layer_06 = 立体标题排版层 layer_07 = 微小压印细节层 规则： - 每一层都投射出柔和可见的阴影 - 边缘应呈现出物理切割、堆叠、折叠或卷曲的效果 - 细节密度在焦点区域附近增加 - 背景保持简洁且具有纸张质感 - 所有深度均源自真实的材质分层，而非数字渐变"
+    },
+    "en-US": {
+      "prompt": "2x2 网格，16:9，选择 4 个街区 并展现其全貌： PAPER_RELIEF(TOPIC) ::= layer_00 = 平面衬纸层 layer_01 = 宽幅剪影层 layer_02 = 主要面部 / 物体平面层 layer_03 = 内部轮廓线层 layer_04 = 符号化物体与图表层 layer_05 = 流动卷轴与丝带层 layer_06 = 立体标题排版层 layer_07 = 微小压印细节层 规则： - 每一层都投射出柔和可见的阴影 - 边缘应呈现出物理切割、堆叠、折叠或卷曲的效果 - 细节密度在焦点区域附近增加 - 背景保持简洁且具有纸张质感 - 所有深度均源自真实的材质分层，而非数字渐变"
+    }
+  }
+}

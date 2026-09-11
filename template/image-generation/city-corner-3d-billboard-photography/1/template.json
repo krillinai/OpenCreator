@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "city-corner-3d-billboard-photography",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 56,
+  "title": {
+    "zh-CN": "城市巨幕三维广告摄影",
+    "en-US": "City Corner 3D Billboard Photography"
+  },
+  "description": {
+    "zh-CN": "生成蓝调时刻城市街头摄影，核心是一块包裹建筑转角、具有裸眼三维错觉的巨型户外广告屏。",
+    "en-US": "Create an image with the City Corner 3D Billboard Photography reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "商业广告",
+    "旅行城市",
+    "未来科技",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "创建一张 4:5 竖版蓝调时刻城市街头摄影，地点为 `{cityDistrict}`。一块包裹高层建筑转角的弧形 LED 巨幕占据画面上方三分之二，屏幕中的 `{heroSubject}` 以摩天楼尺度呈现，并通过身体、手臂或物体越过屏幕边缘的透视关系，形成逼真的裸眼三维广告错觉。\n\n巨幕发出 `{screenColorA}` 与 `{screenColorB}` 的强烈柔光，真实照亮周围建筑、行人和湿润街道。中景加入高架交通、路标、街树和多层店铺；背景由密集窗灯、不同尺寸广告屏和深钴蓝天空组成；前景是正在穿越路口的人群，轻微运动模糊，雨后地面反射多种光源。\n\n使用平视街拍角度、四层景深和清楚的尺度参照。巨幕人物面部或产品必须锐利，城市环境保持真实复杂但不抢主体。调色使用深钴蓝、洋红、青色、暖琥珀、少量酸绿和红色，保留阴影细节、轻微光晕与胶片颗粒。所有招牌使用虚构品牌或不可辨识通用文字，不复制真实城市地标标识。"
+    },
+    "en-US": {
+      "prompt": "创建一张 4:5 竖版蓝调时刻城市街头摄影，地点为 `{cityDistrict}`。一块包裹高层建筑转角的弧形 LED 巨幕占据画面上方三分之二，屏幕中的 `{heroSubject}` 以摩天楼尺度呈现，并通过身体、手臂或物体越过屏幕边缘的透视关系，形成逼真的裸眼三维广告错觉。\n\n巨幕发出 `{screenColorA}` 与 `{screenColorB}` 的强烈柔光，真实照亮周围建筑、行人和湿润街道。中景加入高架交通、路标、街树和多层店铺；背景由密集窗灯、不同尺寸广告屏和深钴蓝天空组成；前景是正在穿越路口的人群，轻微运动模糊，雨后地面反射多种光源。\n\n使用平视街拍角度、四层景深和清楚的尺度参照。巨幕人物面部或产品必须锐利，城市环境保持真实复杂但不抢主体。调色使用深钴蓝、洋红、青色、暖琥珀、少量酸绿和红色，保留阴影细节、轻微光晕与胶片颗粒。所有招牌使用虚构品牌或不可辨识通用文字，不复制真实城市地标标识。"
+    }
+  }
+}

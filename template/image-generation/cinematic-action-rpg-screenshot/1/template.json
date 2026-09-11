@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "cinematic-action-rpg-screenshot",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 79,
+  "title": {
+    "zh-CN": "电影级动作角色扮演游戏截图",
+    "en-US": "Cinematic Action RPG Screenshot"
+  },
+  "description": {
+    "zh-CN": "生成一张包含玩家角色、巨型首领、战斗瞬间、环境叙事和完整 HUD 的电影级第三人称动作角色扮演游戏截图。",
+    "en-US": "Create an image with the Cinematic Action RPG Screenshot reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "游戏视觉",
+    "角色场景",
+    "未来科技",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "创建一张 16:9 电影级第三人称动作角色扮演游戏截图，世界设定为 `{worldSetting}`，战斗地点为 `{battleLocation}`。\n\n玩家角色 `{playerClass}` 位于左侧前景，采用低机位动态姿态，装备具有真实磨损、材质层次和环境附着物。巨型首领 `{bossName}` 占据右上方，体型、重心、肌肉或机械结构清楚。定格一个即将命中的关键战斗瞬间：武器、弹道、飞散颗粒和首领反应形成明确动作线，但不使用无法解释的炫光。\n\n环境需要包含天气、地表痕迹、废墟或植被、远景层次和与战斗对应的破坏证据。光线使用 `{lightingCondition}`，全局照明自然，阴影柔和，色调克制，角色与背景有清楚分离。\n\n叠加统一、可读、不过度装饰的 HUD：左上角色头像与生命、耐力、能量；顶部中央首领名、阶段和生命条；右上小地图；左下四格物品栏；底部中央武器名与当前效果；右下操作提示；下方任务目标。所有名称、图标和数值使用原创设定。画面应像真实暂停的游戏实机截图，HUD 与场景透视一致，不引用现有游戏名称、角色或标志。"
+    },
+    "en-US": {
+      "prompt": "创建一张 16:9 电影级第三人称动作角色扮演游戏截图，世界设定为 `{worldSetting}`，战斗地点为 `{battleLocation}`。\n\n玩家角色 `{playerClass}` 位于左侧前景，采用低机位动态姿态，装备具有真实磨损、材质层次和环境附着物。巨型首领 `{bossName}` 占据右上方，体型、重心、肌肉或机械结构清楚。定格一个即将命中的关键战斗瞬间：武器、弹道、飞散颗粒和首领反应形成明确动作线，但不使用无法解释的炫光。\n\n环境需要包含天气、地表痕迹、废墟或植被、远景层次和与战斗对应的破坏证据。光线使用 `{lightingCondition}`，全局照明自然，阴影柔和，色调克制，角色与背景有清楚分离。\n\n叠加统一、可读、不过度装饰的 HUD：左上角色头像与生命、耐力、能量；顶部中央首领名、阶段和生命条；右上小地图；左下四格物品栏；底部中央武器名与当前效果；右下操作提示；下方任务目标。所有名称、图标和数值使用原创设定。画面应像真实暂停的游戏实机截图，HUD 与场景透视一致，不引用现有游戏名称、角色或标志。"
+    }
+  }
+}

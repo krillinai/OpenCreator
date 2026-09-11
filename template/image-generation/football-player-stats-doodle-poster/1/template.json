@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "football-player-stats-doodle-poster",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 90,
+  "title": {
+    "zh-CN": "足球球员数据涂鸦海报",
+    "en-US": "Football Player Stats Doodle Poster"
+  },
+  "description": {
+    "zh-CN": "生成以足球运动员、比赛数据和霓虹手写涂鸦为核心的体育宣传海报。",
+    "en-US": "Create an image with the Football Player Stats Doodle Poster reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "体育视觉",
+    "信息图表",
+    "海报设计",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "Create a scrapbook doodle-style football poster of [PLAYER_NAME].\n\nAI auto-generates realistic career stats (club and national team).\n\nMain photo: realistic, unchanged ([PLAYER_NAME] in action or iconic pose).\n\nDoodles and handwritten notes: white and [PRIMARY_COLOR] neon ink (no warm colors unless specified), arrows, stars, scribbles, sketchy outlines. Add a glowing [PRIMARY_COLOR] outline around the player's body.\n\nLayout (bold handwritten titles and stats):\n- Top Title: \"[PLAYER_NAME]\" plus \"[NICKNAME/TITLE]\"\n- Club Career: total matches and goals plus 2–4 main clubs (apps and goals)\n- Highlights: 2–3 standout achievements (e.g., UCL goals, Ballon d'Or, top scorer)\n- National Team: caps and goals plus 1–2 international achievements\n\nStyle: modern football poster x notebook aesthetic, clean but energetic, slightly messy doodles, high contrast, neon accents on dark or muted background.\n\nImportant: all stats must be realistic and proportional to the player's real career."
+    },
+    "en-US": {
+      "prompt": "Create a scrapbook doodle-style football poster of [PLAYER_NAME].\n\nAI auto-generates realistic career stats (club and national team).\n\nMain photo: realistic, unchanged ([PLAYER_NAME] in action or iconic pose).\n\nDoodles and handwritten notes: white and [PRIMARY_COLOR] neon ink (no warm colors unless specified), arrows, stars, scribbles, sketchy outlines. Add a glowing [PRIMARY_COLOR] outline around the player's body.\n\nLayout (bold handwritten titles and stats):\n- Top Title: \"[PLAYER_NAME]\" plus \"[NICKNAME/TITLE]\"\n- Club Career: total matches and goals plus 2–4 main clubs (apps and goals)\n- Highlights: 2–3 standout achievements (e.g., UCL goals, Ballon d'Or, top scorer)\n- National Team: caps and goals plus 1–2 international achievements\n\nStyle: modern football poster x notebook aesthetic, clean but energetic, slightly messy doodles, high contrast, neon accents on dark or muted background.\n\nImportant: all stats must be realistic and proportional to the player's real career."
+    }
+  }
+}

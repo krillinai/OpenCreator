@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "luxury-mechanical-watch-technical-guide",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 58,
+  "title": {
+    "zh-CN": "奢华机械腕表技术图鉴",
+    "en-US": "Luxury Mechanical Watch Technical Guide"
+  },
+  "description": {
+    "zh-CN": "生成多款高级机械腕表的透明结构、零件拆解和材质说明图鉴。",
+    "en-US": "Create an image with the Luxury Mechanical Watch Technical Guide reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "信息图表",
+    "产品视觉",
+    "工业设计",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "2x2 grid 16:9, do this for 4 most expensive strangest watches ever made:\n\nclass Haute_Horlogerie_DNA:\n    def __init__(self):\n        self.subject = \"[TIMEPIECE]\"\n        self.parents = {\n            \"composition_parent\": \"Exploded movement diagram with transparent case\",\n            \"material_parent\": \"Brushed titanium, sapphire crystal, rose gold gears, alligator leather\",\n            \"graphic_parent\": \"Swiss manufacture technical brochure with elegant data panels\",\n            \"atmosphere_parent\": \"Crisp daylight studio, pure white background, subtle reflection on polished surfaces\"\n        }\n        self.mutations = {\n            \"semantic_mutation\": \"The balance wheel reveals a miniature cosmos ticking inside\",\n            \"information_mutation\": \"Power reserve indicator, frequency, complication callouts, hand-finishing grades, assembly timeline\",\n            \"medium_mutation\": \"Smooth matte premium paper with embossed logo\",\n            \"scale_mutation\": \"Grain-level view of Côtes de Genève finishing and jewel bearings\"\n        }\n        self.style_mix = [0.30, 0.30, 0.25, 0.10, 0.05]\n\n    def generate_subject(self):\n        subject = \"\"\"\n        [TIMEPIECE] shown in its full mechanical glory. The dial, hands, movement,\n        and strap float in perfect alignment against a bright, clean background.\n        Every gear and spring is highlighted with exacting clarity.\n        \"\"\"\n        return render(\n            subject,\n            format=\"luxury watch advertisement with technical insert\",\n            title=\"[MODEL REFERENCE]\",\n            subtitle=\"[MANUFACTURE / COLLECTION]\",\n            constraints=\"bright white space, metallic brilliance, hyper-detailed, modern elegance\"\n        )"
+    },
+    "en-US": {
+      "prompt": "2x2 grid 16:9, do this for 4 most expensive strangest watches ever made:\n\nclass Haute_Horlogerie_DNA:\n    def __init__(self):\n        self.subject = \"[TIMEPIECE]\"\n        self.parents = {\n            \"composition_parent\": \"Exploded movement diagram with transparent case\",\n            \"material_parent\": \"Brushed titanium, sapphire crystal, rose gold gears, alligator leather\",\n            \"graphic_parent\": \"Swiss manufacture technical brochure with elegant data panels\",\n            \"atmosphere_parent\": \"Crisp daylight studio, pure white background, subtle reflection on polished surfaces\"\n        }\n        self.mutations = {\n            \"semantic_mutation\": \"The balance wheel reveals a miniature cosmos ticking inside\",\n            \"information_mutation\": \"Power reserve indicator, frequency, complication callouts, hand-finishing grades, assembly timeline\",\n            \"medium_mutation\": \"Smooth matte premium paper with embossed logo\",\n            \"scale_mutation\": \"Grain-level view of Côtes de Genève finishing and jewel bearings\"\n        }\n        self.style_mix = [0.30, 0.30, 0.25, 0.10, 0.05]\n\n    def generate_subject(self):\n        subject = \"\"\"\n        [TIMEPIECE] shown in its full mechanical glory. The dial, hands, movement,\n        and strap float in perfect alignment against a bright, clean background.\n        Every gear and spring is highlighted with exacting clarity.\n        \"\"\"\n        return render(\n            subject,\n            format=\"luxury watch advertisement with technical insert\",\n            title=\"[MODEL REFERENCE]\",\n            subtitle=\"[MANUFACTURE / COLLECTION]\",\n            constraints=\"bright white space, metallic brilliance, hyper-detailed, modern elegance\"\n        )"
+    }
+  }
+}

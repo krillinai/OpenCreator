@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "six-panel-miniature-beverage-ad",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 42,
+  "title": {
+    "zh-CN": "六宫格饮料微缩广告",
+    "en-US": "Six-Panel Miniature Beverage Ad"
+  },
+  "description": {
+    "zh-CN": "使用严格六宫格与微缩人物，生成围绕同一饮料品牌展开的完整商业广告系列。 当前草稿使用适配运行时长度限制的压缩版提示词。",
+    "en-US": "Create an image with the Six-Panel Miniature Beverage Ad reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "商业广告",
+    "食品饮料",
+    "微缩场景",
+    "reference-template",
+    "condensed-source"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "Create a Cannes-level premium summer beverage campaign poster for a fictional lemon drink brand called \"LIMORA\". Use a strict 2-column by 3-row grid with six equal panels, thin white dividers, a consistent horizon, beach-and-ocean setting, and unified bright upper-left seaside lighting. Across all panels, show the same ultra-realistic miniature young woman in a fitted green floral summer dress and white sandals interacting with oversized lemons, juice, sorbet, and the final drink. Keep her face, hair, anatomy, clothing, and scale consistent. The lemon beverage system is the visual hero.\n\nBuild one continuous visual rhythm from panel 1 to panel 6: touch, recline, squeeze, travel, embrace, taste. Repeat directional cues through hair, limbs, droplets, spoon angle, lemon slices, straw, and giant-hand placement.\n\nPanel 1: she hugs a giant whole lemon while a realistic adult hand lowers it from above.\nPanel 2: she reclines inside a halved lemon like a luxury beach chaise, with sunglasses and a tiny parasol pick; a lemon slice descends like a sun.\nPanel 3: a giant hand squeezes a cut lemon, sending translucent juice streams and droplets around her dynamic reaction.\nPanel 4: she rides a grounded refined wooden cart piled with lemons, pulled by a premium lemon-shaped creature or rolling harness.\nPanel 5: the hero panel. A tall LIMORA lemonade glass dominates, with clear glass, ice, lemon slices, pale sparkling liquid, condensation, green straw, and cocktail umbrella. She hugs the glass joyfully.\nPanel 6: she sits in a halved lemon while a polished spoon lowers glossy lemon sorbet or crushed ice.\n\nRender hyper-real citrus peel pores, wet translucent pulp, physically plausible juice, ice refraction, glass condensation, sand pressure marks, natural skin texture, correct hands and fingers, realistic fabric and hair. Use lemon yellow as the dominant color with citrus green, turquoise sea, pale blue sky, beach beige, and crisp white. Keep original minimal branding only on the hero glass, optionally adding \"LIMORA — Bright in Motion\" below the grid.\n\nStyle: luxury FMCG campaign, surreal miniature advertising photography, editorial storyboard energy, elegant humor, polished magazine finish, strong product realism. Avoid copied text, real brands, cartoon or toy styling, distorted anatomy, extra or missing fingers, plastic skin, fake citrus, cloudy glass, inconsistent identity, lighting or horizon, messy grid, clutter, meme styling, low resolution, oversaturation, watermarks, and distorted giant-hand perspective."
+    },
+    "en-US": {
+      "prompt": "Create a Cannes-level premium summer beverage campaign poster for a fictional lemon drink brand called \"LIMORA\". Use a strict 2-column by 3-row grid with six equal panels, thin white dividers, a consistent horizon, beach-and-ocean setting, and unified bright upper-left seaside lighting. Across all panels, show the same ultra-realistic miniature young woman in a fitted green floral summer dress and white sandals interacting with oversized lemons, juice, sorbet, and the final drink. Keep her face, hair, anatomy, clothing, and scale consistent. The lemon beverage system is the visual hero.\n\nBuild one continuous visual rhythm from panel 1 to panel 6: touch, recline, squeeze, travel, embrace, taste. Repeat directional cues through hair, limbs, droplets, spoon angle, lemon slices, straw, and giant-hand placement.\n\nPanel 1: she hugs a giant whole lemon while a realistic adult hand lowers it from above.\nPanel 2: she reclines inside a halved lemon like a luxury beach chaise, with sunglasses and a tiny parasol pick; a lemon slice descends like a sun.\nPanel 3: a giant hand squeezes a cut lemon, sending translucent juice streams and droplets around her dynamic reaction.\nPanel 4: she rides a grounded refined wooden cart piled with lemons, pulled by a premium lemon-shaped creature or rolling harness.\nPanel 5: the hero panel. A tall LIMORA lemonade glass dominates, with clear glass, ice, lemon slices, pale sparkling liquid, condensation, green straw, and cocktail umbrella. She hugs the glass joyfully.\nPanel 6: she sits in a halved lemon while a polished spoon lowers glossy lemon sorbet or crushed ice.\n\nRender hyper-real citrus peel pores, wet translucent pulp, physically plausible juice, ice refraction, glass condensation, sand pressure marks, natural skin texture, correct hands and fingers, realistic fabric and hair. Use lemon yellow as the dominant color with citrus green, turquoise sea, pale blue sky, beach beige, and crisp white. Keep original minimal branding only on the hero glass, optionally adding \"LIMORA — Bright in Motion\" below the grid.\n\nStyle: luxury FMCG campaign, surreal miniature advertising photography, editorial storyboard energy, elegant humor, polished magazine finish, strong product realism. Avoid copied text, real brands, cartoon or toy styling, distorted anatomy, extra or missing fingers, plastic skin, fake citrus, cloudy glass, inconsistent identity, lighting or horizon, messy grid, clutter, meme styling, low resolution, oversaturation, watermarks, and distorted giant-hand perspective."
+    }
+  }
+}

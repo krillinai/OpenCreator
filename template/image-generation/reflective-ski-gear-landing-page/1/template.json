@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "reflective-ski-gear-landing-page",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 50,
+  "title": {
+    "zh-CN": "反射式滑雪装备落地页",
+    "en-US": "Reflective Ski Gear Landing Page"
+  },
+  "description": {
+    "zh-CN": "生成高端滑雪装备品牌的横版网页主视觉，以护目镜特写和镜片内动作反射讲述产品场景。",
+    "en-US": "Create an image with the Reflective Ski Gear Landing Page reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "网页界面",
+    "产品视觉",
+    "创意摄影",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "创建一张 16:9 横版高端滑雪装备品牌落地页主视觉，品牌为“{brandName}”，产品为“{productName}”。背景从雪白过渡到浅冰蓝，漂浮少量带运动模糊的雪粒。\n\n顶部设置极简导航、门店按钮和购物袋图标。主体是偏左构图的运动员超近景肖像，佩戴无真实标识的超大镜面滑雪护目镜。镜片由琥珀金过渡到深洋红，并清晰反射另一位运动员从雪山山脊跃起、粉雪飞散的动作瞬间；反射需要跨越两片镜片自然连续，成为画面核心。人物面部和镜片锐利，边缘逐渐柔化，雪地反光为皮肤提供自然补光。\n\n右侧使用四行紧凑的粗窄体大标题“{headline}”，表达语音命令或产品主张；其下放斜体副标题“{subheadline}”。底部加入原创品牌组合标识、运动员信息和新品服务条。\n\n整体呈现高性能、科技感、年轻而克制的商业摄影。配色以冰蓝、雪白、琥珀金、洋红、自然肤色和深炭灰为主。确保反射场景可辨识、文字不压住眼镜主体，不出现真实品牌 Logo。"
+    },
+    "en-US": {
+      "prompt": "创建一张 16:9 横版高端滑雪装备品牌落地页主视觉，品牌为“{brandName}”，产品为“{productName}”。背景从雪白过渡到浅冰蓝，漂浮少量带运动模糊的雪粒。\n\n顶部设置极简导航、门店按钮和购物袋图标。主体是偏左构图的运动员超近景肖像，佩戴无真实标识的超大镜面滑雪护目镜。镜片由琥珀金过渡到深洋红，并清晰反射另一位运动员从雪山山脊跃起、粉雪飞散的动作瞬间；反射需要跨越两片镜片自然连续，成为画面核心。人物面部和镜片锐利，边缘逐渐柔化，雪地反光为皮肤提供自然补光。\n\n右侧使用四行紧凑的粗窄体大标题“{headline}”，表达语音命令或产品主张；其下放斜体副标题“{subheadline}”。底部加入原创品牌组合标识、运动员信息和新品服务条。\n\n整体呈现高性能、科技感、年轻而克制的商业摄影。配色以冰蓝、雪白、琥珀金、洋红、自然肤色和深炭灰为主。确保反射场景可辨识、文字不压住眼镜主体，不出现真实品牌 Logo。"
+    }
+  }
+}

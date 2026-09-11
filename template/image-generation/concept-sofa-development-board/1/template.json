@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "concept-sofa-development-board",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 67,
+  "title": {
+    "zh-CN": "概念沙发研发板",
+    "en-US": "Concept Sofa Development Board"
+  },
+  "description": {
+    "zh-CN": "生成从形态观察、结构推导到成品展示的概念家具研发视觉板。",
+    "en-US": "Create an image with the Concept Sofa Development Board reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "设计参考",
+    "产品视觉",
+    "工业设计",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "Design Concept: The Crumple Chair Core Philosophy: Translating the \"controlled chaos\" of a tossed paper ball into a sculptural, high-comfort seating experience.\n\nStage 1: Observation & Morphological Analysis The goal is to deconstruct the image of the crumpled paper into usable geometric data. Crease Mapping: Identify the primary \"valley\" and \"ridge\" lines. These represent potential structural ribs or seams in the chair. Faceted Planes: Break down the sphere into a series of non-uniform polygons. Each flat surface of the paper becomes a potential panel for the chair’s upholstery or shell. Shadow Study: Analyze how the \"tossed\" form creates deep recesses. These natural pockets guide where the user’s weight will be cradled.\n\nStage 2: Iterative Form Exploration Moving from a sphere to a seat through \"Digital Crumpling.\" Subtractive Sculpting: Imagine the paper ball as a solid mass. Use Boolean operations to \"carve out\" a seating cavity that fits the human form while maintaining the external jagged texture. Tension Simulation: Use 3D software (like Rhino or Blender) to simulate a flat sheet of material being compressed. This ensures the folds look authentic and not \"modeled.\" The \"Toss\" Logic: Experiment with gravity-based simulation dropping a digital mesh to see how it settles naturally, mimicking the \"tossed\" origin.\n\nStage 3: Ergonomic Translation & Blueprinting Refining the raw aesthetic into a functional object. The Comfort Core: Overlay a standard ergonomic template (Seating Angle: 105°–110°) over the crumpled form. Adjust the internal \"folds\" to provide lumbar support and pressure relief. Blueprint Generation: Create technical orthographic views (Front, Side, Top). Map out the dimensions: Seat Height: 450mm Total Width: 850mm Surface Smoothing: Maintain the sharp \"paper edges\" on the exterior shell while softening the interior contact points for skin comfort.\n\nStage 4: Structural Integration & Scaling Making the concept physically viable. The Skeleton: Design a hidden internal frame (likely CNC-bent steel rods or a 3D-printed lattice) that follows the most prominent ridges of the paper folds to provide rigidity. Material Selection: * Option A (High-End): Faceted, cast aluminum with a white powder coat. Option B (Soft): Vacuum-formed recycled plastic shell covered in \"memory-fold\" technical fabric that retains a wrinkled appearance.\n\nStage 5: Final Prototyping & Material Finish Textural Replication: Apply a matte, slightly porous finish to the material to mimic the tactile feel of heavy-bond paper. Lighting Contrast: Use directional studio lighting in the final renders to emphasize the \"tossed\" shadows, making the chair look like a giant piece of discarded inspiration. Design Tip: To keep the \"tossed\" look authentic, avoid symmetry. The most compelling aspect of a crumpled paper ball is its unique irregularity—ensure the left and right sides of the chair are balance-equivalent but not identical"
+    },
+    "en-US": {
+      "prompt": "Design Concept: The Crumple Chair Core Philosophy: Translating the \"controlled chaos\" of a tossed paper ball into a sculptural, high-comfort seating experience.\n\nStage 1: Observation & Morphological Analysis The goal is to deconstruct the image of the crumpled paper into usable geometric data. Crease Mapping: Identify the primary \"valley\" and \"ridge\" lines. These represent potential structural ribs or seams in the chair. Faceted Planes: Break down the sphere into a series of non-uniform polygons. Each flat surface of the paper becomes a potential panel for the chair’s upholstery or shell. Shadow Study: Analyze how the \"tossed\" form creates deep recesses. These natural pockets guide where the user’s weight will be cradled.\n\nStage 2: Iterative Form Exploration Moving from a sphere to a seat through \"Digital Crumpling.\" Subtractive Sculpting: Imagine the paper ball as a solid mass. Use Boolean operations to \"carve out\" a seating cavity that fits the human form while maintaining the external jagged texture. Tension Simulation: Use 3D software (like Rhino or Blender) to simulate a flat sheet of material being compressed. This ensures the folds look authentic and not \"modeled.\" The \"Toss\" Logic: Experiment with gravity-based simulation dropping a digital mesh to see how it settles naturally, mimicking the \"tossed\" origin.\n\nStage 3: Ergonomic Translation & Blueprinting Refining the raw aesthetic into a functional object. The Comfort Core: Overlay a standard ergonomic template (Seating Angle: 105°–110°) over the crumpled form. Adjust the internal \"folds\" to provide lumbar support and pressure relief. Blueprint Generation: Create technical orthographic views (Front, Side, Top). Map out the dimensions: Seat Height: 450mm Total Width: 850mm Surface Smoothing: Maintain the sharp \"paper edges\" on the exterior shell while softening the interior contact points for skin comfort.\n\nStage 4: Structural Integration & Scaling Making the concept physically viable. The Skeleton: Design a hidden internal frame (likely CNC-bent steel rods or a 3D-printed lattice) that follows the most prominent ridges of the paper folds to provide rigidity. Material Selection: * Option A (High-End): Faceted, cast aluminum with a white powder coat. Option B (Soft): Vacuum-formed recycled plastic shell covered in \"memory-fold\" technical fabric that retains a wrinkled appearance.\n\nStage 5: Final Prototyping & Material Finish Textural Replication: Apply a matte, slightly porous finish to the material to mimic the tactile feel of heavy-bond paper. Lighting Contrast: Use directional studio lighting in the final renders to emphasize the \"tossed\" shadows, making the chair look like a giant piece of discarded inspiration. Design Tip: To keep the \"tossed\" look authentic, avoid symmetry. The most compelling aspect of a crumpled paper ball is its unique irregularity—ensure the left and right sides of the chair are balance-equivalent but not identical"
+    }
+  }
+}

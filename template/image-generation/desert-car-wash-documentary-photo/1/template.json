@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "desert-car-wash-documentary-photo",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 73,
+  "title": {
+    "zh-CN": "沙漠洗车电影感纪实摄影",
+    "en-US": "Desert Car Wash Documentary Photo"
+  },
+  "description": {
+    "zh-CN": "生成沙漠露天洗车场的电影感纪实画面，通过车尾备胎、水柱、泡沫玻璃和车内人物形成多层叙事。",
+    "en-US": "Create an image with the Desert Car Wash Documentary Photo reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "商业广告",
+    "人像摄影",
+    "创意摄影",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "创建一张 2:3 竖版电影感纪实摄影。镜头从后侧拍摄一辆无品牌、方正的复古紧凑型越野车，地点是开阔干旱地区中的简陋露天自助洗车场。\n\n车辆使用 `{vehicleColor}`，车尾备胎占据右侧三分之二并形成强圆形视觉锚点。高压水柱从左上角斜向击中后窗，水滴和泡沫覆盖玻璃。透过流动的湿玻璃，隐约看到车内 `{relationshipDescription}` 正在交谈或微笑，人物面部被水幕柔化和扭曲，但关系仍可读。\n\n左侧保留沙地、低矮灌木、远处地平线、金属水管架、付款箱和盘绕水管，形成环境负空间。强烈午后阳光从左侧照射，突出每颗水滴、泡沫和车辆材质，地面被水浸湿并出现深色反射。\n\n配色包含褪色浅色车漆、黑色轮胎、银色轮毂、白色泡沫、红色尾灯、尘土黄沙地、浅蓝天空和一处高饱和水管色。焦点落在备胎、后窗水幕和水柱，使用细腻胶片颗粒、暖高光、冷阴影和轻微水雾。画面要像偶然捕捉到的夏季公路旅行故事，不出现车标、品牌文字或摄影师模仿要求。"
+    },
+    "en-US": {
+      "prompt": "创建一张 2:3 竖版电影感纪实摄影。镜头从后侧拍摄一辆无品牌、方正的复古紧凑型越野车，地点是开阔干旱地区中的简陋露天自助洗车场。\n\n车辆使用 `{vehicleColor}`，车尾备胎占据右侧三分之二并形成强圆形视觉锚点。高压水柱从左上角斜向击中后窗，水滴和泡沫覆盖玻璃。透过流动的湿玻璃，隐约看到车内 `{relationshipDescription}` 正在交谈或微笑，人物面部被水幕柔化和扭曲，但关系仍可读。\n\n左侧保留沙地、低矮灌木、远处地平线、金属水管架、付款箱和盘绕水管，形成环境负空间。强烈午后阳光从左侧照射，突出每颗水滴、泡沫和车辆材质，地面被水浸湿并出现深色反射。\n\n配色包含褪色浅色车漆、黑色轮胎、银色轮毂、白色泡沫、红色尾灯、尘土黄沙地、浅蓝天空和一处高饱和水管色。焦点落在备胎、后窗水幕和水柱，使用细腻胶片颗粒、暖高光、冷阴影和轻微水雾。画面要像偶然捕捉到的夏季公路旅行故事，不出现车标、品牌文字或摄影师模仿要求。"
+    }
+  }
+}

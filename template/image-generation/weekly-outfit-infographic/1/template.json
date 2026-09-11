@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "weekly-outfit-infographic",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 33,
+  "title": {
+    "zh-CN": "一周穿搭信息图",
+    "en-US": "Weekly Outfit Infographic"
+  },
+  "description": {
+    "zh-CN": "生成按星期排列的七日穿搭图鉴，集中展示人物造型、服装细节、颜色和适用场景。",
+    "en-US": "Create an image with the Weekly Outfit Infographic reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "信息图表",
+    "时尚美妆",
+    "多视角一致性",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "{\n  \"type\": \"7-day fashion lookbook infographic\",\n  \"header\": {\n    \"title\": \"{argument name=\\\"main title\\\" default=\\\"一周穿搭指南\\\"}\",\n    \"subtitle\": \"{argument name=\\\"style keywords\\\" default=\\\"温柔 | 靓丽 | 优雅\\\"}\",\n    \"slogan_cn\": \"优雅不设限，自信每一天\",\n    \"slogan_en\": \"{argument name=\\\"english slogan\\\" default=\\\"ELEGANCE HAS NO LIMIT, BE CONFIDENT EVERY DAY\\\"}\"\n  },\n  \"subject\": \"{argument name=\\\"subject description\\\" default=\\\"young elegant Asian woman\\\"}\",\n  \"layout\": {\n    \"columns\": 7,\n    \"column_elements\": [\n      \"day_header\",\n      \"main_portrait\",\n      \"4_detail_thumbnails\",\n      \"outfit_specs\",\n      \"keywords_colors\",\n      \"3_color_swatches\",\n      \"star_ratings\",\n      \"fabric_price\",\n      \"4_season_icons\"\n    ],\n    \"days\": [\n      { \"day\": \"周一 (MONDAY)\", \"outfit\": \"beige blazer suit\", \"scene\": \"场景：重要会议 / 正式商务\" },\n      { \"day\": \"周二 (TUESDAY)\", \"outfit\": \"pink blazer suit\", \"scene\": \"场景：日常通勤\" },\n      { \"day\": \"周三 (WEDNESDAY)\", \"outfit\": \"cream knit cardigan set\", \"scene\": \"场景：生活休闲\" },\n      { \"day\": \"周四 (THURSDAY)\", \"outfit\": \"champagne slip dress\", \"scene\": \"场景：外出私会\" },\n      { \"day\": \"周五 (FRIDAY)\", \"outfit\": \"blue knit top, white skirt\", \"scene\": \"场景：休闲社交\" },\n      { \"day\": \"周六 (SATURDAY)\", \"outfit\": \"white sports bra, purple leggings\", \"scene\": \"场景：运动休闲\" },\n      { \"day\": \"周日 (SUNDAY)\", \"outfit\": \"beige lounge knitwear\", \"scene\": \"场景：居家 / 约会\" }\n    ]\n  },\n  \"footer\": {\n    \"tips\": \"{argument name=\\\"footer tips\\\" default=\\\"Tips: 根据天气与场合灵活调整，配饰是提升整体造型的关键；保持自信与舒适，才是穿搭的最终目的。\\\"}\",\n    \"legend\": [\n      \"春: 春季适用\",\n      \"夏: 夏季适用\",\n      \"秋: 秋季适用\",\n      \"冬: 冬季适用\"\n    ]\n  }\n}"
+    },
+    "en-US": {
+      "prompt": "{\n  \"type\": \"7-day fashion lookbook infographic\",\n  \"header\": {\n    \"title\": \"{argument name=\\\"main title\\\" default=\\\"一周穿搭指南\\\"}\",\n    \"subtitle\": \"{argument name=\\\"style keywords\\\" default=\\\"温柔 | 靓丽 | 优雅\\\"}\",\n    \"slogan_cn\": \"优雅不设限，自信每一天\",\n    \"slogan_en\": \"{argument name=\\\"english slogan\\\" default=\\\"ELEGANCE HAS NO LIMIT, BE CONFIDENT EVERY DAY\\\"}\"\n  },\n  \"subject\": \"{argument name=\\\"subject description\\\" default=\\\"young elegant Asian woman\\\"}\",\n  \"layout\": {\n    \"columns\": 7,\n    \"column_elements\": [\n      \"day_header\",\n      \"main_portrait\",\n      \"4_detail_thumbnails\",\n      \"outfit_specs\",\n      \"keywords_colors\",\n      \"3_color_swatches\",\n      \"star_ratings\",\n      \"fabric_price\",\n      \"4_season_icons\"\n    ],\n    \"days\": [\n      { \"day\": \"周一 (MONDAY)\", \"outfit\": \"beige blazer suit\", \"scene\": \"场景：重要会议 / 正式商务\" },\n      { \"day\": \"周二 (TUESDAY)\", \"outfit\": \"pink blazer suit\", \"scene\": \"场景：日常通勤\" },\n      { \"day\": \"周三 (WEDNESDAY)\", \"outfit\": \"cream knit cardigan set\", \"scene\": \"场景：生活休闲\" },\n      { \"day\": \"周四 (THURSDAY)\", \"outfit\": \"champagne slip dress\", \"scene\": \"场景：外出私会\" },\n      { \"day\": \"周五 (FRIDAY)\", \"outfit\": \"blue knit top, white skirt\", \"scene\": \"场景：休闲社交\" },\n      { \"day\": \"周六 (SATURDAY)\", \"outfit\": \"white sports bra, purple leggings\", \"scene\": \"场景：运动休闲\" },\n      { \"day\": \"周日 (SUNDAY)\", \"outfit\": \"beige lounge knitwear\", \"scene\": \"场景：居家 / 约会\" }\n    ]\n  },\n  \"footer\": {\n    \"tips\": \"{argument name=\\\"footer tips\\\" default=\\\"Tips: 根据天气与场合灵活调整，配饰是提升整体造型的关键；保持自信与舒适，才是穿搭的最终目的。\\\"}\",\n    \"legend\": [\n      \"春: 春季适用\",\n      \"夏: 夏季适用\",\n      \"秋: 秋季适用\",\n      \"冬: 冬季适用\"\n    ]\n  }\n}"
+    }
+  }
+}

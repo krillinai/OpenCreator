@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "vintage-scientific-botanical-poster",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 57,
+  "title": {
+    "zh-CN": "复古科学植物学海报",
+    "en-US": "Vintage Scientific Botanical Poster"
+  },
+  "description": {
+    "zh-CN": "生成带解剖编号、手写注记和科学图版排版的植物学海报。",
+    "en-US": "Create an image with the Vintage Scientific Botanical Poster reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "教育科普",
+    "自然植物",
+    "手绘插画",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "一张印在米色纸张上的科学植物学海报。画面中心是一朵巨大的 勿忘我 水彩画，包含根部，茎和花瓣上带有细小的编号标签。顶部为斜体衬线字体标题：\"FORGET-ME-NOT\"。副标题：\"A FIELD PLATE\"。底部：\"PLATE VII · 1887\"。边缘处有铅笔笔记。米色、靛蓝色、绿色，2:3 纵横比。"
+    },
+    "en-US": {
+      "prompt": "一张印在米色纸张上的科学植物学海报。画面中心是一朵巨大的 勿忘我 水彩画，包含根部，茎和花瓣上带有细小的编号标签。顶部为斜体衬线字体标题：\"FORGET-ME-NOT\"。副标题：\"A FIELD PLATE\"。底部：\"PLATE VII · 1887\"。边缘处有铅笔笔记。米色、靛蓝色、绿色，2:3 纵横比。"
+    }
+  }
+}

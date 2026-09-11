@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "inside-box-farm-ad-poster",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 84,
+  "title": {
+    "zh-CN": "箱内仰视农场广告海报",
+    "en-US": "Inside-Box Farm Ad Poster"
+  },
+  "description": {
+    "zh-CN": "生成从纸箱内部向上仰视的概念广告海报，通过强透视开口、动物探头和底部品牌文案表达新鲜直达的产品卖点。",
+    "en-US": "Create an image with the Inside-Box Farm Ad Poster reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "商业广告",
+    "食品饮料",
+    "创意摄影",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "创建一张 3:4 竖版概念广告海报。镜头位于打开的牛皮纸箱底部，以第一人称视角垂直向上拍摄。四面纸箱内壁以强烈单点透视汇聚到画面顶部中央的方形开口，纸板保留瓦楞、折痕、磨损和真实阴影。\n\n开口外是明亮浅蓝天空和少量白云。两只 `{animalType}` 从开口左右两侧好奇地探头向下看，眼神友好，距离略有差异，形成自然不对称和尺度反差。阳光从开口照入，照亮纸板上缘，主体清晰，近处纸箱略微虚化。\n\n海报底部在纸板区域排布大号标题“{headline}”、两行卖点“{supportingCopy}”、小型原创品牌标识“{brandName}”、配送或产地信息以及极细页脚。标题使用粗体现代无衬线字体，正文使用中等字重，元信息使用带字距的大写字体。\n\n配色以牛皮纸棕、天空蓝、自然主体色、炭黑和柔和灰为主。整体要像成熟创意广告：概念一眼可懂、留白充足、文字可读、摄影质感真实，不出现真实品牌或水印。"
+    },
+    "en-US": {
+      "prompt": "创建一张 3:4 竖版概念广告海报。镜头位于打开的牛皮纸箱底部，以第一人称视角垂直向上拍摄。四面纸箱内壁以强烈单点透视汇聚到画面顶部中央的方形开口，纸板保留瓦楞、折痕、磨损和真实阴影。\n\n开口外是明亮浅蓝天空和少量白云。两只 `{animalType}` 从开口左右两侧好奇地探头向下看，眼神友好，距离略有差异，形成自然不对称和尺度反差。阳光从开口照入，照亮纸板上缘，主体清晰，近处纸箱略微虚化。\n\n海报底部在纸板区域排布大号标题“{headline}”、两行卖点“{supportingCopy}”、小型原创品牌标识“{brandName}”、配送或产地信息以及极细页脚。标题使用粗体现代无衬线字体，正文使用中等字重，元信息使用带字距的大写字体。\n\n配色以牛皮纸棕、天空蓝、自然主体色、炭黑和柔和灰为主。整体要像成熟创意广告：概念一眼可懂、留白充足、文字可读、摄影质感真实，不出现真实品牌或水印。"
+    }
+  }
+}

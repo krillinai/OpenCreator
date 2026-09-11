@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "drone-orbit-subject",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 50,
+  "title": {
+    "zh-CN": "无人机环绕主体",
+    "en-US": "Drone Orbit Around Subject"
+  },
+  "description": {
+    "zh-CN": "让无人机以固定半径和高度匀速环绕主体，利用地平线旋转和视差建立空间感。",
+    "en-US": "Orbit a subject at constant radius, height, and speed to create continuous horizon rotation and parallax."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "camera-motion",
+    "drone-orbit",
+    "horizontal",
+    "image-to-video"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1280x720",
+    "duration": 8
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "无人机围绕主体进行平滑、匀速的圆周飞行：环绕半径为[8]米，高度为[4]米，向画面[右侧]移动，从上方俯视为顺时针方向，整个镜头覆盖约[200]度的弧线。地平线在主体身后持续旋转；不得改变高度、漂移环绕半径、变焦或使用速度渐变。"
+    },
+    "en-US": {
+      "prompt": "A smooth constant-speed circular drone flight around the subject — [8]-meter radius, [4]-meter altitude, traveling screen-[right] (clockwise seen from above), covering roughly a [200]-degree arc across the shot. The horizon rotates continuously behind the subject; no altitude change, no radius drift, no zoom, no speed ramps."
+    }
+  }
+}

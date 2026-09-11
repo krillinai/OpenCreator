@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "social-media-giveaway-banner",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 81,
+  "title": {
+    "zh-CN": "社交媒体赠礼活动横幅",
+    "en-US": "Social Media Giveaway Banner"
+  },
+  "description": {
+    "zh-CN": "生成适合赠品、抽奖和活动发布的社交媒体宣传横幅。",
+    "en-US": "Create an image with the Social Media Giveaway Banner reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "社交媒体",
+    "活动物料",
+    "商业广告",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "[活动信息] - 活动名称：{campaignName} - 奖品列表：{prizes} - 参与条件/步骤：{entrySteps} [图像质量、呈现方式与构图规范] - 风格：流行、明亮且友好的社交媒体宣传横幅。设计引人注目。 - 主体：{prizes} 的插画或真实产品照片从礼盒中弹出，周围环绕着华丽的丝带和星星装饰，位于画面中心。 - 色彩/色调：采用明亮的粉色、黄色、浅蓝色等柔和色调，营造兴奋感。 - 文字信息（适用于 GPT-image / Nano Banana Pro）：屏幕顶部的文字 {campaignName} 和底部的简易参与步骤 {entrySteps} 需使用粗体、可爱的圆体字清晰排版。 - 光照：扁平、均匀、明亮的光照，带有柔和的阴影。 [布局与输出的严格限制（强制执行）] - 输出成品设计本身，填满整个画布。设计内部的背景和场景描绘（墙壁、空间、阴影）可遵循正文说明。 - 禁止事项：带相框的海报照片、贴在墙上的海报照片、放置在桌子或纸张上的样机照片、纸张边缘的透视变形或投影。 - 输出成品扁平 2D 设计本身，填满整个画布。允许使用上述描述的设计内部场景元素。绝对禁止海报样机照片：不得包含相框、不得拍摄贴在墙上或桌上的海报、不得在艺术品边缘出现透视变形或投影。 - 宽高比：\"--ar 1:1\" 或 \"--ar 16:9\""
+    },
+    "en-US": {
+      "prompt": "[活动信息] - 活动名称：{campaignName} - 奖品列表：{prizes} - 参与条件/步骤：{entrySteps} [图像质量、呈现方式与构图规范] - 风格：流行、明亮且友好的社交媒体宣传横幅。设计引人注目。 - 主体：{prizes} 的插画或真实产品照片从礼盒中弹出，周围环绕着华丽的丝带和星星装饰，位于画面中心。 - 色彩/色调：采用明亮的粉色、黄色、浅蓝色等柔和色调，营造兴奋感。 - 文字信息（适用于 GPT-image / Nano Banana Pro）：屏幕顶部的文字 {campaignName} 和底部的简易参与步骤 {entrySteps} 需使用粗体、可爱的圆体字清晰排版。 - 光照：扁平、均匀、明亮的光照，带有柔和的阴影。 [布局与输出的严格限制（强制执行）] - 输出成品设计本身，填满整个画布。设计内部的背景和场景描绘（墙壁、空间、阴影）可遵循正文说明。 - 禁止事项：带相框的海报照片、贴在墙上的海报照片、放置在桌子或纸张上的样机照片、纸张边缘的透视变形或投影。 - 输出成品扁平 2D 设计本身，填满整个画布。允许使用上述描述的设计内部场景元素。绝对禁止海报样机照片：不得包含相框、不得拍摄贴在墙上或桌上的海报、不得在艺术品边缘出现透视变形或投影。 - 宽高比：\"--ar 1:1\" 或 \"--ar 16:9\""
+    }
+  }
+}

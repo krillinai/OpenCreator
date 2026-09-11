@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "ink-double-exposure-portrait-poster",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 71,
+  "title": {
+    "zh-CN": "水墨双重曝光人物海报",
+    "en-US": "Ink Double-Exposure Portrait Poster"
+  },
+  "description": {
+    "zh-CN": "生成融合人物轮廓、东方水墨、叙事场景和留白的双重曝光竖版海报。",
+    "en-US": "Create an image with the Ink Double-Exposure Portrait Poster reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "海报设计",
+    "人像摄影",
+    "传统文化",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "A cinematic character promotional poster of [SUBJECT], vertical composition (9:16), designed with a refined East-Asian ink aesthetic and high-end visual storytelling.\n\nSTRUCTURE:\nTop-heavy hierarchical layout. The upper half features a large, highly recognizable silhouette of [SUBJECT]'s head / face / mask / upper body, forming a bold, iconic primary shape. The silhouette should be instantly identifiable.\n\nThe middle-lower section contains the full-body version of [SUBJECT] as a secondary subject, standing in a stable pose or subtle action stance, forming the visual core.\n\nCOMPOSITION STYLE:\nInside the large silhouette and around the character, use double exposure and collage storytelling. Integrate multiple elements:\n- key scenes related to [SUBJECT]\n- symbolic imagery and environment\n- small narrative figures and interactions\n- supporting visual motifs\n\nBlend everything seamlessly using clouds, mist, ink diffusion, and negative space.\n\nVISUAL FLOW:\nCreate a continuous flowing visual path from top to bottom, connecting:\n- upper silhouette\n- inner collage elements\n- full-body subject\n\nEnsure smooth eye guidance and compositional cohesion.\n\nSIDE ELEMENTS:\nAdd balanced supporting elements on left and right sides to create tension, depth, and spatial variation.\n\nSTYLE & ATMOSPHERE:\n- Large areas of negative space\n- Ink-wash diffusion edges, soft fading, subtle fragmentation\n- Eastern aesthetic: balance of emptiness and detail\n- Calm, premium, restrained, cinematic tone\n\nQUALITY:\nUltra-detailed, high resolution, layered depth, soft lighting, atmospheric perspective, cohesive series-style design.\n\nOUTPUT:\n9:16 aspect ratio, poster-ready composition."
+    },
+    "en-US": {
+      "prompt": "A cinematic character promotional poster of [SUBJECT], vertical composition (9:16), designed with a refined East-Asian ink aesthetic and high-end visual storytelling.\n\nSTRUCTURE:\nTop-heavy hierarchical layout. The upper half features a large, highly recognizable silhouette of [SUBJECT]'s head / face / mask / upper body, forming a bold, iconic primary shape. The silhouette should be instantly identifiable.\n\nThe middle-lower section contains the full-body version of [SUBJECT] as a secondary subject, standing in a stable pose or subtle action stance, forming the visual core.\n\nCOMPOSITION STYLE:\nInside the large silhouette and around the character, use double exposure and collage storytelling. Integrate multiple elements:\n- key scenes related to [SUBJECT]\n- symbolic imagery and environment\n- small narrative figures and interactions\n- supporting visual motifs\n\nBlend everything seamlessly using clouds, mist, ink diffusion, and negative space.\n\nVISUAL FLOW:\nCreate a continuous flowing visual path from top to bottom, connecting:\n- upper silhouette\n- inner collage elements\n- full-body subject\n\nEnsure smooth eye guidance and compositional cohesion.\n\nSIDE ELEMENTS:\nAdd balanced supporting elements on left and right sides to create tension, depth, and spatial variation.\n\nSTYLE & ATMOSPHERE:\n- Large areas of negative space\n- Ink-wash diffusion edges, soft fading, subtle fragmentation\n- Eastern aesthetic: balance of emptiness and detail\n- Calm, premium, restrained, cinematic tone\n\nQUALITY:\nUltra-detailed, high resolution, layered depth, soft lighting, atmospheric perspective, cohesive series-style design.\n\nOUTPUT:\n9:16 aspect ratio, poster-ready composition."
+    }
+  }
+}

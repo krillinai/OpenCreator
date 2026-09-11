@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "tech-product-review-thumbnail",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 82,
+  "title": {
+    "zh-CN": "科技产品评测缩略图",
+    "en-US": "Tech Product Review Thumbnail"
+  },
+  "description": {
+    "zh-CN": "生成科技产品评测视频使用的高点击率横版缩略图。",
+    "en-US": "Create an image with the Tech Product Review Thumbnail reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "视频缩略图",
+    "产品视觉",
+    "社交媒体",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "制作一张 16:9 横屏格式、视觉冲击力强的 YouTube 科技评测缩略图。在右半部分，展示一位留着深色短卷发年轻男性的特写人像，他佩戴着大型浅灰色头戴式耳机，自信地看向镜头，下巴微抬，带着一丝微妙的微笑；采用胸部以上构图，确保耳机清晰可见。在左半部分，顶部放置醒目的粗体缩略图文本 {headline}，使用白色大写字母；下方放置一个红色矩形横幅，内含亮黄色大写文本 {questionText}，并带有强烈的投影和略微倾斜的动态布局。在主文本下方，添加较小的白色产品文本 {productName}。添加一个粗体手绘白色弯曲箭头，从文本区域指向耳机。左侧背景使用深海军蓝至黑色的渐变，带有微妙的圆点半调纹理；右侧人物背后呈现暖米色径向光晕。设计需清晰、色彩饱和且具有点击吸引力，具备戏剧性的对比度、摄影棚灯光、锐利的面部细节、干净的抠图边缘，且不含任何多余的 Logo、水印或其他文本。"
+    },
+    "en-US": {
+      "prompt": "制作一张 16:9 横屏格式、视觉冲击力强的 YouTube 科技评测缩略图。在右半部分，展示一位留着深色短卷发年轻男性的特写人像，他佩戴着大型浅灰色头戴式耳机，自信地看向镜头，下巴微抬，带着一丝微妙的微笑；采用胸部以上构图，确保耳机清晰可见。在左半部分，顶部放置醒目的粗体缩略图文本 {headline}，使用白色大写字母；下方放置一个红色矩形横幅，内含亮黄色大写文本 {questionText}，并带有强烈的投影和略微倾斜的动态布局。在主文本下方，添加较小的白色产品文本 {productName}。添加一个粗体手绘白色弯曲箭头，从文本区域指向耳机。左侧背景使用深海军蓝至黑色的渐变，带有微妙的圆点半调纹理；右侧人物背后呈现暖米色径向光晕。设计需清晰、色彩饱和且具有点击吸引力，具备戏剧性的对比度、摄影棚灯光、锐利的面部细节、干净的抠图边缘，且不含任何多余的 Logo、水印或其他文本。"
+    }
+  }
+}

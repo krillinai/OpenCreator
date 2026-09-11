@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "fixed-point-pan-right-reveal",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 46,
+  "title": {
+    "zh-CN": "固定点向右横摇揭示",
+    "en-US": "Fixed-Point Pan-Right Reveal"
+  },
+  "description": {
+    "zh-CN": "让摄像机保持原地不位移，只向右水平旋转并在结尾主体上稳定停留。",
+    "en-US": "Rotate right from a fixed camera position and settle on the revealed subject without translating the camera."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "camera-motion",
+    "pan-right",
+    "horizontal",
+    "image-to-video",
+    "reveal"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1280x720",
+    "duration": 8
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "摄像机从一个固定点水平向右旋转，如同站在原地转头，从[起始构图 A]开始，横摇扫过[环境]；不得发生横向位移、推拉移动、轨道侧移、弧线运动、滑动、变焦或俯仰。速度保持平滑、匀速，并在结尾轻柔减速。构图上保持地平线水平，新空间只能通过旋转从画面右侧进入；在旋转将[落点主体]带入画面之前，该主体始终位于右侧画外。结尾稳定停在以[落点主体]为核心的清晰构图，并短暂停留。"
+    },
+    "en-US": {
+      "prompt": "Rotate the camera horizontally from left to right from one fixed point, like a standing head-turn, starting on [composition A] and sweeping across [the environment]; no sideways travel, no dolly, no truck, no arc, no slide, no zoom, no tilt. Speed: smooth constant rotation, decelerating gently at the end. Framing: keep the horizon level while new space enters from the right side of the frame only through rotation; [the landing subject] stays beyond the right edge until the rotation brings them in. End: settle on a clear final composition on [the landing subject] and hold."
+    }
+  }
+}

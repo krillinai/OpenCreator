@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "rack-focus-foreground-background",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 44,
+  "title": {
+    "zh-CN": "前后景转移焦点",
+    "en-US": "Rack Focus Between Foreground and Background"
+  },
+  "description": {
+    "zh-CN": "保持机位和构图完全固定，只在远景锚点与近景主体之间进行一次平滑转焦。",
+    "en-US": "Lock the composition and shift focus once from a distant anchor to a near subject."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "camera-motion",
+    "rack-focus",
+    "horizontal",
+    "image-to-video"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1280x720",
+    "duration": 8
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "摄像机严格锁定在三脚架上，不得横摇、俯仰、向前推进或产生漂移；唯一的光学变化是焦点。首先保持[焦平面 A：远处锚点]清晰，然后只进行一次焦点转移，将清晰焦点缓慢移至[焦平面 B：近处主体]；如果主体继续向镜头移动，则跟随主体持续对焦。转焦速度缓慢、平滑且连续，不得来回搜焦或越过焦点；跟焦过程中不得出现明显呼吸效应。构图始终不变，任何时刻只能有一个焦平面清晰，另一个应融入干净的散景。主体在画面中变大只能来自其真实靠近镜头。结尾稳定对焦于[最终主体构图]，远处焦平面在其后方化为柔和散景。"
+    },
+    "en-US": {
+      "prompt": "The camera hard-locked on a tripod with no pan, no tilt, no push, no drift; the only optical change is FOCUS. Hold sharp on [plane A — the far anchor]; then rack once to [plane B — the near subject]; then follow focus on the subject if they move toward the lens. Speed: the rack is slow, smooth and continuous with no hunting and no overshoot; the follow focus tracks without breathing. Framing: the composition never changes; exactly one plane is sharp at any moment, the other melts into clean bokeh; the subject grows in frame only by physically approaching the lens. End: settle sharp on [the final subject framing], the far plane dissolved to soft bokeh behind."
+    }
+  }
+}

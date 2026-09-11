@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "cooking-sketch-illustration-story",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 77,
+  "title": {
+    "zh-CN": "烹饪速写插画叙事",
+    "en-US": "Cooking Sketch Illustration Story"
+  },
+  "description": {
+    "zh-CN": "将食物或烹饪主题转化为包含食材、准备过程、质地和成品的 4 至 6 格怀旧手绘速写故事。",
+    "en-US": "Create an image with the Cooking Sketch Illustration Story reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "影视叙事",
+    "食品饮料",
+    "手绘插画",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "将主体转化为一个视觉故事，通过 4–6 个小型插画帧 进行呈现。在保持主体可辨识度的同时，将其重新诠释为迷人的手绘序列，展示其食材、准备过程、质地和最终形态。 使用 暖色调奶油纸背景、精致的墨水轮廓、微妙的手写注释、微小的箭头、食材草图、测量标记以及不完美的印刷纹理。 构图应呈现出 古老烹饪速写本 页面的质感——充满艺术感、灵动、怀旧且经过精心策划。 不要仅仅复制照片，而是将主体转化为一段插画视觉叙事。"
+    },
+    "en-US": {
+      "prompt": "将主体转化为一个视觉故事，通过 4–6 个小型插画帧 进行呈现。在保持主体可辨识度的同时，将其重新诠释为迷人的手绘序列，展示其食材、准备过程、质地和最终形态。 使用 暖色调奶油纸背景、精致的墨水轮廓、微妙的手写注释、微小的箭头、食材草图、测量标记以及不完美的印刷纹理。 构图应呈现出 古老烹饪速写本 页面的质感——充满艺术感、灵动、怀旧且经过精心策划。 不要仅仅复制照片，而是将主体转化为一段插画视觉叙事。"
+    }
+  }
+}

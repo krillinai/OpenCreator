@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "portrait-lighting-scheme-grid",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 40,
+  "title": {
+    "zh-CN": "人像摄影灯光方案网格",
+    "en-US": "Portrait Lighting Scheme Grid"
+  },
+  "description": {
+    "zh-CN": "生成同一人物在多种专业摄影灯光方案下的对比网格。",
+    "en-US": "Create an image with the Portrait Lighting Scheme Grid reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "设计参考",
+    "人像摄影",
+    "多视角一致性",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "选取参考图像中的人物，创建一个 2x2 的网格，展示同一张特写肖像在四种不同专业灯光设置下的效果。身份锁定：每个面板中的面部、表情（冷静中性）、发型、深色上衣、头部大小和拍摄角度必须完全一致，仅改变灯光。面板 1 伦勃朗光 (REMBRANDT)：主光位于左上方 45 度，阴影侧脸颊呈现小三角形光斑，光影过渡富有质感。面板 2 蝴蝶光 (BUTTERFLY)：主光位于相机正上方，鼻下形成柔和对称的阴影，呈现美妆肖像光泽。面板 3 侧光 (SPLIT)：主光完全从侧面照射，半边脸受光，另半边处于黑暗中。面板 4 轮廓光 (RIM)：主光位于主体后方，勾勒出头发和肩膀的明亮轮廓，面部仅由微弱的补光提亮，营造近乎剪影的戏剧感。全程使用相同的 medium-gray 背景，85mm 镜头感，焦点清晰对准眼睛。每个面板下方标注白色小标签：“REMBRANDT”、“BUTTERFLY”、“SPLIT”、“RIM”。"
+    },
+    "en-US": {
+      "prompt": "选取参考图像中的人物，创建一个 2x2 的网格，展示同一张特写肖像在四种不同专业灯光设置下的效果。身份锁定：每个面板中的面部、表情（冷静中性）、发型、深色上衣、头部大小和拍摄角度必须完全一致，仅改变灯光。面板 1 伦勃朗光 (REMBRANDT)：主光位于左上方 45 度，阴影侧脸颊呈现小三角形光斑，光影过渡富有质感。面板 2 蝴蝶光 (BUTTERFLY)：主光位于相机正上方，鼻下形成柔和对称的阴影，呈现美妆肖像光泽。面板 3 侧光 (SPLIT)：主光完全从侧面照射，半边脸受光，另半边处于黑暗中。面板 4 轮廓光 (RIM)：主光位于主体后方，勾勒出头发和肩膀的明亮轮廓，面部仅由微弱的补光提亮，营造近乎剪影的戏剧感。全程使用相同的 medium-gray 背景，85mm 镜头感，焦点清晰对准眼睛。每个面板下方标注白色小标签：“REMBRANDT”、“BUTTERFLY”、“SPLIT”、“RIM”。"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "luxury-jewelry-unboxing",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 47,
+  "title": {
+    "zh-CN": "奢华珠宝开箱广告",
+    "en-US": "Luxury Jewelry Unboxing Ad"
+  },
+  "description": {
+    "zh-CN": "生成包含礼盒开箱、宝石微距、人物佩戴和产品陈列的竖屏珠宝商业广告。",
+    "en-US": "Create a vertical luxury jewelry commercial with unboxing, gemstone macro details, styling, and a final product display."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "advertising",
+    "jewelry",
+    "vertical",
+    "text-to-video"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "720x1280",
+    "duration": 10
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "创作一段 30 秒的电影级奢华珠宝广告视频，风格温暖而优雅。\n\n视频以装饰精美的卧室开场，柔和的晨光洒入，一个高级珠宝礼盒放置在木桌上。一位女性轻轻拿起优雅的礼盒，展现出细腻且富有情感的开箱瞬间。\n\n镜头切换至她面部和手部的电影级特写，展示珠宝揭晓的时刻。一颗闪耀的蓝色宝石吊坠在柔和的金色灯光下呈现出精致的微距细节。她优雅地戴上项链，突显其精致的设计与奢华的光泽。\n\n场景延续至窗边宁静的清晨时刻，她手持杯子，沐浴在温暖的阳光中。特写镜头捕捉到吊坠在肌肤上自然闪烁的光芒，伴随着逼真的阴影与倒影。\n\n视频结尾展示了陈列着整套珠宝的高级礼盒。\n\n柔和的电影级灯光、温暖的金色调、奢华商业美学、平滑的运镜、浅景深、照片级真实细节、9:16 竖屏格式。"
+    },
+    "en-US": {
+      "prompt": "创作一段 30 秒的电影级奢华珠宝广告视频，风格温暖而优雅。\n\n视频以装饰精美的卧室开场，柔和的晨光洒入，一个高级珠宝礼盒放置在木桌上。一位女性轻轻拿起优雅的礼盒，展现出细腻且富有情感的开箱瞬间。\n\n镜头切换至她面部和手部的电影级特写，展示珠宝揭晓的时刻。一颗闪耀的蓝色宝石吊坠在柔和的金色灯光下呈现出精致的微距细节。她优雅地戴上项链，突显其精致的设计与奢华的光泽。\n\n场景延续至窗边宁静的清晨时刻，她手持杯子，沐浴在温暖的阳光中。特写镜头捕捉到吊坠在肌肤上自然闪烁的光芒，伴随着逼真的阴影与倒影。\n\n视频结尾展示了陈列着整套珠宝的高级礼盒。\n\n柔和的电影级灯光、温暖的金色调、奢华商业美学、平滑的运镜、浅景深、照片级真实细节、9:16 竖屏格式。"
+    }
+  }
+}

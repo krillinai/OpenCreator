@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "y2k-virtual-try-on-game-ui",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 47,
+  "title": {
+    "zh-CN": "千禧虚拟试衣游戏界面",
+    "en-US": "Y2K Virtual Try-On Game UI"
+  },
+  "description": {
+    "zh-CN": "生成一张把虚拟试衣服务设计成千禧年主机游戏角色选择界面的横版网页视觉。",
+    "en-US": "Create an image with the Y2K Virtual Try-On Game UI reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "网页界面",
+    "时尚美妆",
+    "未来科技",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "创建一张 16:9 横版虚拟试衣服务落地页，品牌名为“{brandName}”。视觉语言来自千禧年前后主机游戏的角色选择界面：低多边形 3D 角色、青蓝透视网格、半透明亮面面板、镀铬斜面、像素字体、扫描线和轻微屏幕光晕。\n\n左上放置大型“SELECT YOUR FIT”游戏标题面板；右上堆叠状态、玩家编号和试衣间等级 HUD。左侧三分之一是当前角色预览：完整低多边形人物、服装编号、旋转与前后切换按钮、已加载单品数和搭配置信度。\n\n画面中央用巨大镀铬立体字显示“{headline}”，下方放一句简短价值主张。右侧建立 7×5 角色缩略图网格，展示不同服装和人物外观；当前选择项使用粉色发光边框，少量未解锁位置显示问号。网格下方放滚动条和加载数量。\n\n底部安排“{primaryCta}”与“{secondaryCta}”两个主按钮、数据统计面板、小地图式导航和极细滚动信息条。配色使用深青蓝、亮洋红、荧光青、镀铬银、像素绿和白色。界面信息丰富但分区清楚，所有文字与按钮可辨识，不使用任何真实游戏、平台或服装品牌标识。"
+    },
+    "en-US": {
+      "prompt": "创建一张 16:9 横版虚拟试衣服务落地页，品牌名为“{brandName}”。视觉语言来自千禧年前后主机游戏的角色选择界面：低多边形 3D 角色、青蓝透视网格、半透明亮面面板、镀铬斜面、像素字体、扫描线和轻微屏幕光晕。\n\n左上放置大型“SELECT YOUR FIT”游戏标题面板；右上堆叠状态、玩家编号和试衣间等级 HUD。左侧三分之一是当前角色预览：完整低多边形人物、服装编号、旋转与前后切换按钮、已加载单品数和搭配置信度。\n\n画面中央用巨大镀铬立体字显示“{headline}”，下方放一句简短价值主张。右侧建立 7×5 角色缩略图网格，展示不同服装和人物外观；当前选择项使用粉色发光边框，少量未解锁位置显示问号。网格下方放滚动条和加载数量。\n\n底部安排“{primaryCta}”与“{secondaryCta}”两个主按钮、数据统计面板、小地图式导航和极细滚动信息条。配色使用深青蓝、亮洋红、荧光青、镀铬银、像素绿和白色。界面信息丰富但分区清楚，所有文字与按钮可辨识，不使用任何真实游戏、平台或服装品牌标识。"
+    }
+  }
+}

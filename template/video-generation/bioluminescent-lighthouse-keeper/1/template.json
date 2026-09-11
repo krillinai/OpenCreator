@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "bioluminescent-lighthouse-keeper",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 54,
+  "title": {
+    "zh-CN": "生物发光灯塔守望者",
+    "en-US": "Bioluminescent Lighthouse Keeper"
+  },
+  "description": {
+    "zh-CN": "生成老灯塔守望者在雾夜悬崖目睹发光球体从海中升起的连续电影镜头。",
+    "en-US": "Create a continuous cinematic night shot of a lighthouse keeper watching luminous orbs rise from the sea."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "cinematic",
+    "fantasy",
+    "horizontal",
+    "text-to-video"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1280x720",
+    "duration": 10
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "一位饱经风霜的老灯塔守望者站在夜晚雾气弥漫的悬崖上，身穿厚重的羊毛大衣，手提一盏古老的黄铜灯。\n\n在他脚下，海浪拍打着岩石，泛起柔和的蓝色生物发光。当他举起灯时，几十个发光的漂浮球体（如同萤火虫般）从水中升起，飘过他身边进入雾气中，在他周围轻轻盘旋。体积光月光穿透了浓雾。\n\n镜头从悬崖的全景开始，随后缓慢地进行电影级推进，聚焦到守望者的面部，当球体环绕他时，最终定格在球体倒映在他眼中的特写镜头上。\n\n青色与暖琥珀色的调色，超写实纹理，浅景深，胶片颗粒感，大气雾气，15 秒，平滑连续的镜头运动，无剪辑。"
+    },
+    "en-US": {
+      "prompt": "一位饱经风霜的老灯塔守望者站在夜晚雾气弥漫的悬崖上，身穿厚重的羊毛大衣，手提一盏古老的黄铜灯。\n\n在他脚下，海浪拍打着岩石，泛起柔和的蓝色生物发光。当他举起灯时，几十个发光的漂浮球体（如同萤火虫般）从水中升起，飘过他身边进入雾气中，在他周围轻轻盘旋。体积光月光穿透了浓雾。\n\n镜头从悬崖的全景开始，随后缓慢地进行电影级推进，聚焦到守望者的面部，当球体环绕他时，最终定格在球体倒映在他眼中的特写镜头上。\n\n青色与暖琥珀色的调色，超写实纹理，浅景深，胶片颗粒感，大气雾气，15 秒，平滑连续的镜头运动，无剪辑。"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "boutique-ecommerce-product-flatlay-grid",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 85,
+  "title": {
+    "zh-CN": "精品电商产品平铺网格",
+    "en-US": "Boutique E-commerce Product Flatlay Grid"
+  },
+  "description": {
+    "zh-CN": "生成精品服饰、配件和生活方式商品的平铺电商展示网格。",
+    "en-US": "Create an image with the Boutique E-commerce Product Flatlay Grid reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "电商视觉",
+    "产品视觉",
+    "时尚美妆",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "[品牌/产品信息] - 品牌名称：{brandName} - 系列名称：{collection} - 典型商品价格：{backpackPrice} [图像质量、呈现与构图规范] - 风格：适用于日本时尚/生活方式品牌电商网站的极简且精致的 Lookbook 照片。 - 构图：在自然光照射的摄影棚内，将服装单品（包袋、外套、鞋履等）整齐地平铺或有序排列在硬木地板或水泥地面上。 - 排版布局（适用于 GPT-image / Nano Banana Pro）：在画布角落隐约呈现品牌名称 {brandName}、{collection} 文字以及价格标注 {backpackPrice}，并使用超细字体。 - 灯光/色彩：如阴天自然光般柔和，低对比度，以大地色系（米色、橄榄绿、炭灰色、灰白色）为主的沉稳色调。 [布局与输出的严格限制（强制性）] - 输出成品设计本身，并填满整个画布。设计内部的背景和场景描绘（墙壁、空间、阴影）可遵循正文中的说明。 - 禁止事项：带相框的海报照片、贴在墙上的海报照片、放置在桌子或纸张上的样机照片、纸张边缘的透视变形或投影。 - 输出成品 2D 平面设计本身，并填满整个画布。允许包含上述描述的场景元素（墙壁、房间、阴影）。绝对禁止任何海报样机效果：不得出现相框、不得出现贴在墙上或放在桌上的照片、不得出现艺术品边缘的透视变形或投影。 - 宽高比：\"--ar 1:1\" 或 \"--ar 4:3\""
+    },
+    "en-US": {
+      "prompt": "[品牌/产品信息] - 品牌名称：{brandName} - 系列名称：{collection} - 典型商品价格：{backpackPrice} [图像质量、呈现与构图规范] - 风格：适用于日本时尚/生活方式品牌电商网站的极简且精致的 Lookbook 照片。 - 构图：在自然光照射的摄影棚内，将服装单品（包袋、外套、鞋履等）整齐地平铺或有序排列在硬木地板或水泥地面上。 - 排版布局（适用于 GPT-image / Nano Banana Pro）：在画布角落隐约呈现品牌名称 {brandName}、{collection} 文字以及价格标注 {backpackPrice}，并使用超细字体。 - 灯光/色彩：如阴天自然光般柔和，低对比度，以大地色系（米色、橄榄绿、炭灰色、灰白色）为主的沉稳色调。 [布局与输出的严格限制（强制性）] - 输出成品设计本身，并填满整个画布。设计内部的背景和场景描绘（墙壁、空间、阴影）可遵循正文中的说明。 - 禁止事项：带相框的海报照片、贴在墙上的海报照片、放置在桌子或纸张上的样机照片、纸张边缘的透视变形或投影。 - 输出成品 2D 平面设计本身，并填满整个画布。允许包含上述描述的场景元素（墙壁、房间、阴影）。绝对禁止任何海报样机效果：不得出现相框、不得出现贴在墙上或放在桌上的照片、不得出现艺术品边缘的透视变形或投影。 - 宽高比：\"--ar 1:1\" 或 \"--ar 4:3\""
+    }
+  }
+}

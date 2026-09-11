@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "rubber-stamp-travel-field-notes",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 68,
+  "title": {
+    "zh-CN": "橡皮章旅行田野笔记",
+    "en-US": "Rubber Stamp Travel Field Notes"
+  },
+  "description": {
+    "zh-CN": "把旅行照片与手工橡皮章、旧纸张和少量档案文字组合成旅行田野笔记。 当前草稿使用适配运行时长度限制的压缩版提示词。",
+    "en-US": "Create an image with the Rubber Stamp Travel Field Notes reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "旅行城市",
+    "拼贴设计",
+    "手工材质",
+    "reference-template",
+    "condensed-source"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1536x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "Create a separate 4:3 landscape Rubber Stamp Travel Field Notes Poster for each uploaded photo. Never combine photos. Blend the authentic original photograph on the left (about 58%) into a warm aged-paper field-note area on the right (about 42%) without an obvious divider.\n\nPreserve the photograph's recognizable subject, perspective, terrain, architecture, people, spatial relationships, natural light, shadows, textures, and atmosphere. Allow only natural cropping and subtle editorial balancing, softened highlights, restrained color, and very fine film grain. Do not stretch, move, replace, redesign, or redraw the main subject; avoid HDR and artificial clarity.\n\nThe right side is believable matte off-white notebook paper with subtle fibers, fine grain, faint handling marks, and generous unprinted space. In its lower-middle area, place a compact imperfect multi-color rubber-stamp impression occupying about 30–38% of the paper height. Study the photo and reduce only its most recognizable architecture, silhouette, terrain, shoreline or road direction, vegetation, settlement layers, and one or two key foreground shapes. Remove crowds, cars, repetitive windows, dense buildings, tiny vegetation, and decorative clutter. It must look physically carved and stamped, not like a miniature digital illustration.\n\nExtract 2–4 restrained spot colors from the photo, such as carbon black, deep green, muted brick, ochre, slate blue, taupe, or other naturally appropriate colors. Render separate physical ink layers with slightly uneven pressure, tiny gaps, dry areas, paper showing through, rough carved edges, irregular line thickness, contour breaks, granular ink, faint ghosting, and slight natural misregistration. Avoid smooth vectors, gradients, perfect alignment, or exaggerated distress.\n\nAdd only quiet field-note text based on the actual location: English location name, a number, three short English keywords, and Gregorian year. Use small understated typewriter or archival typography with slight mechanical irregularity. Spell all text correctly; no slogans, brands, tourist phrases, decorative quotes, or excess copy.\n\nOverall feel: a real travel photograph mounted beside a handmade field stamp in an architect's notebook; tactile, documentary, restrained, collectible, and naturally imperfect. Avoid dividing lines, circular seals, postage borders, wax seals, stickers, souvenir-card templates, cartoons, 3D rendering, plastic texture, glossy gradients, excess saturation, dense text, decorative clutter, and alteration of the source photo."
+    },
+    "en-US": {
+      "prompt": "Create a separate 4:3 landscape Rubber Stamp Travel Field Notes Poster for each uploaded photo. Never combine photos. Blend the authentic original photograph on the left (about 58%) into a warm aged-paper field-note area on the right (about 42%) without an obvious divider.\n\nPreserve the photograph's recognizable subject, perspective, terrain, architecture, people, spatial relationships, natural light, shadows, textures, and atmosphere. Allow only natural cropping and subtle editorial balancing, softened highlights, restrained color, and very fine film grain. Do not stretch, move, replace, redesign, or redraw the main subject; avoid HDR and artificial clarity.\n\nThe right side is believable matte off-white notebook paper with subtle fibers, fine grain, faint handling marks, and generous unprinted space. In its lower-middle area, place a compact imperfect multi-color rubber-stamp impression occupying about 30–38% of the paper height. Study the photo and reduce only its most recognizable architecture, silhouette, terrain, shoreline or road direction, vegetation, settlement layers, and one or two key foreground shapes. Remove crowds, cars, repetitive windows, dense buildings, tiny vegetation, and decorative clutter. It must look physically carved and stamped, not like a miniature digital illustration.\n\nExtract 2–4 restrained spot colors from the photo, such as carbon black, deep green, muted brick, ochre, slate blue, taupe, or other naturally appropriate colors. Render separate physical ink layers with slightly uneven pressure, tiny gaps, dry areas, paper showing through, rough carved edges, irregular line thickness, contour breaks, granular ink, faint ghosting, and slight natural misregistration. Avoid smooth vectors, gradients, perfect alignment, or exaggerated distress.\n\nAdd only quiet field-note text based on the actual location: English location name, a number, three short English keywords, and Gregorian year. Use small understated typewriter or archival typography with slight mechanical irregularity. Spell all text correctly; no slogans, brands, tourist phrases, decorative quotes, or excess copy.\n\nOverall feel: a real travel photograph mounted beside a handmade field stamp in an architect's notebook; tactile, documentary, restrained, collectible, and naturally imperfect. Avoid dividing lines, circular seals, postage borders, wax seals, stickers, souvenir-card templates, cartoons, 3D rendering, plastic texture, glossy gradients, excess saturation, dense text, decorative clutter, and alteration of the source photo."
+    }
+  }
+}

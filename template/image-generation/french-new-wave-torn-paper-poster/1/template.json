@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "french-new-wave-torn-paper-poster",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "draft",
+  "featured": false,
+  "sortOrder": 74,
+  "title": {
+    "zh-CN": "法新浪潮撕纸电影海报",
+    "en-US": "French New Wave Torn-Paper Poster"
+  },
+  "description": {
+    "zh-CN": "生成具有撕纸、复印颗粒、网点和手工拼贴质感的法国新浪潮电影海报。",
+    "en-US": "Create an image with the French New Wave Torn-Paper Poster reference template."
+  },
+  "cover": "cover.jpg",
+  "tags": [
+    "影视叙事",
+    "海报设计",
+    "拼贴设计",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "Create a vertical poster composition on aged cream paper with a handmade analog feel. Use rough ripped paper edges, layered magazine cutouts, photocopy grain, halftone texture, ink bleed, and slightly imperfect screen-print registration. Keep the subject as the main black-and-white photographic portrait, placed prominently in the center or upper center. Surround the subject with graphic blocks of deep red, cobalt blue, warm yellow, black, and ivory.\n\nAdd supporting collage fragments such as a rainy European street, film-strip borders, newspaper clippings, urban silhouettes, and cinematic details, arranged like a handmade 1960s art-house movie poster. Use bold condensed typography with a strong visual hierarchy. Add large headline text: \"[MAIN TITLE]\". Add smaller subtitle text: \"[SUBTITLE]\". Add bottom text: \"[BRAND NAME / EVENT NAME / COMING SOON / DATE]\". If needed, include a small top line reading \"[TAGLINE]\".\n\nThe final result should feel cinematic, intellectual, rebellious, and editorial — like a lost 1960s European film poster with a strong point of view. Keep it raw, tactile, printed, imperfect, and handmade. Avoid a glossy modern finish."
+    },
+    "en-US": {
+      "prompt": "Create a vertical poster composition on aged cream paper with a handmade analog feel. Use rough ripped paper edges, layered magazine cutouts, photocopy grain, halftone texture, ink bleed, and slightly imperfect screen-print registration. Keep the subject as the main black-and-white photographic portrait, placed prominently in the center or upper center. Surround the subject with graphic blocks of deep red, cobalt blue, warm yellow, black, and ivory.\n\nAdd supporting collage fragments such as a rainy European street, film-strip borders, newspaper clippings, urban silhouettes, and cinematic details, arranged like a handmade 1960s art-house movie poster. Use bold condensed typography with a strong visual hierarchy. Add large headline text: \"[MAIN TITLE]\". Add smaller subtitle text: \"[SUBTITLE]\". Add bottom text: \"[BRAND NAME / EVENT NAME / COMING SOON / DATE]\". If needed, include a small top line reading \"[TAGLINE]\".\n\nThe final result should feel cinematic, intellectual, rebellious, and editorial — like a lost 1960s European film poster with a strong point of view. Keep it raw, tactile, printed, imperfect, and handmade. Avoid a glossy modern finish."
+    }
+  }
+}
