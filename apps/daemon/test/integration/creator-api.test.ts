@@ -247,6 +247,27 @@ describe('creator api', () => {
       url: 'https://x.com/volkan_iras/status/2051403524966141980',
       avatarUrl: expect.stringMatching(/^\/creator-presets\/[a-f0-9]{64}\.webp$/)
     });
+    const videoPreset = catalog.json().presets.find(
+      (preset: { id: string }) => preset.id === 'aerial-pullback-rise-reveal'
+    );
+    expect(videoPreset.previewVideoUrl)
+      .toMatch(/^\/creator-presets\/[a-f0-9]{64}\.mp4$/);
+    expect(videoPreset.author).toEqual({
+      name: 'Higgsfield.AI Team',
+      url: 'https://higgsfield.ai/academy/how-to-use/turn-your-video-into-cinema-using-wan-camera-control'
+    });
+    const videoRange = await server!.inject({
+      method: 'GET',
+      url: videoPreset.previewVideoUrl,
+      headers: {
+        authorization: 'Bearer secret',
+        range: 'bytes=0-11'
+      }
+    });
+    expect(videoRange.statusCode).toBe(206);
+    expect(videoRange.headers['content-type']).toContain('video/mp4');
+    expect(videoRange.headers['content-range']).toMatch(/^bytes 0-11\/\d+$/);
+    expect(videoRange.rawPayload).toHaveLength(12);
 
     const created = await request('POST', '/creator/jobs', {
       projectId: 'project_preset_api',

@@ -1,5 +1,6 @@
 import react from '@vitejs/plugin-react';
 import {
+  createReadStream,
   cpSync,
   existsSync,
   mkdirSync,
@@ -73,11 +74,11 @@ function opencreatorStaticResourcesPlugin(): Plugin {
           'http://opencreator.local'
         ).pathname;
         const presetMatch = pathname.match(
-          /^\/creator-presets\/([a-f0-9]{64}\.(?:png|jpe?g|webp))$/
+          /^\/creator-presets\/([a-f0-9]{64}\.(?:png|jpe?g|webp|mp4))$/
         );
         if (presetMatch !== null) {
           sendStaticFile(
-            request.method,
+            request,
             response,
             join(presetAssetsRoot, presetMatch[1]!),
             contentTypeForStaticResource(presetMatch[1]!)
@@ -89,7 +90,7 @@ function opencreatorStaticResourcesPlugin(): Plugin {
         );
         if (fontMatch !== null) {
           sendStaticFile(
-            request.method,
+            request,
             response,
             join(creatorSubtitleFontRoot, fontMatch[1]!),
             'font/woff2'
@@ -115,11 +116,12 @@ function opencreatorStaticResourcesPlugin(): Plugin {
 }
 
 function sendStaticFile(
-  method: string | undefined,
+  request: import('node:http').IncomingMessage,
   response: import('node:http').ServerResponse,
   file: string,
   contentType: string
 ): void {
+  const method = request.method;
   if (method !== 'GET' && method !== 'HEAD') {
     response.statusCode = 405;
     response.setHeader('Allow', 'GET, HEAD');
@@ -131,12 +133,45 @@ function sendStaticFile(
     response.end();
     return;
   }
-  const contents = readFileSync(file);
-  response.statusCode = 200;
+  const size = statSync(file).size;
+  const range = parseByteRange(request.headers.range, size);
+  if (request.headers.range !== undefined && range === undefined) {
+    response.statusCode = 416;
+    response.setHeader('Content-Range', `bytes */${size}`);
+    response.end();
+    return;
+  }
+  const start = range?.start ?? 0;
+  const end = range?.end ?? size - 1;
+  const length = Math.max(0, end - start + 1);
+  response.statusCode = range === undefined ? 200 : 206;
+  response.setHeader('Accept-Ranges', 'bytes');
   response.setHeader('Content-Type', contentType);
-  response.setHeader('Content-Length', String(contents.byteLength));
+  response.setHeader('Content-Length', String(length));
+  if (range !== undefined) {
+    response.statusCode = 206;
+    response.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
+  }
   response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  response.end(method === 'HEAD' ? undefined : contents);
+  if (method === 'HEAD') {
+    response.end();
+    return;
+  }
+  createReadStream(file, { start, end }).pipe(response);
+}
+
+function parseByteRange(
+  value: string | undefined,
+  size: number
+): { start: number; end: number } | undefined {
+  if (value === undefined) return undefined;
+  const match = /^bytes=(\d+)-(\d*)$/.exec(value);
+  if (match === null) return undefined;
+  const start = Number(match[1]);
+  const requestedEnd = match[2] === '' ? size - 1 : Number(match[2]);
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd)) return undefined;
+  if (start < 0 || start >= size || requestedEnd < start) return undefined;
+  return { start, end: Math.min(requestedEnd, size - 1) };
 }
 
 function assertStaticBuildInput(path: string): void {
@@ -162,6 +197,7 @@ function replaceDirectory(source: string, destination: string): void {
 }
 
 function contentTypeForStaticResource(file: string): string {
+  if (file.endsWith('.mp4')) return 'video/mp4';
   if (file.endsWith('.webp')) return 'image/webp';
   if (file.endsWith('.png')) return 'image/png';
   return 'image/jpeg';

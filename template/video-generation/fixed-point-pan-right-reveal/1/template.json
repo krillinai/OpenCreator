@@ -7,7 +7,7 @@
     "id": "video-generation",
     "version": 1
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 46,
   "title": {
@@ -38,5 +38,10 @@
     "en-US": {
       "prompt": "Rotate the camera horizontally from left to right from one fixed point, like a standing head-turn, starting on [composition A] and sweeping across [the environment]; no sideways travel, no dolly, no truck, no arc, no slide, no zoom, no tilt. Speed: smooth constant rotation, decelerating gently at the end. Framing: keep the horizon level while new space enters from the right side of the frame only through rotation; [the landing subject] stays beyond the right edge until the rotation brings them in. End: settle on a clear final composition on [the landing subject] and hold."
     }
+  },
+  "previewVideo": "example.mp4",
+  "author": {
+    "name": "Higgsfield.AI Team",
+    "url": "https://higgsfield.ai/academy/how-to-use/turn-your-video-into-cinema-using-wan-camera-control"
   }
 }

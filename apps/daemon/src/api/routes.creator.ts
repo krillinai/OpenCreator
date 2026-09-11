@@ -103,8 +103,24 @@ export async function registerCreatorRoutes(
       const file = resolveCreatorPresetAsset(options.presetCatalogRoot, fileName);
       const info = await stat(file);
       if (!info.isFile()) throw new Error('Preset asset is not a file');
+      const rangeHeader = typeof request.headers.range === 'string'
+        ? request.headers.range
+        : undefined;
+      const range = parseByteRange(rangeHeader, info.size);
+      if (rangeHeader !== undefined && range === undefined) {
+        reply.header('Content-Range', `bytes */${info.size}`);
+        return reply.code(416).send();
+      }
       reply.type(contentTypeForPresetAsset(fileName));
+      reply.header('Accept-Ranges', 'bytes');
       reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+      if (range !== undefined) {
+        reply.code(206);
+        reply.header('Content-Length', String(range.end - range.start + 1));
+        reply.header('Content-Range', `bytes ${range.start}-${range.end}/${info.size}`);
+        return reply.send(createReadStream(file, range));
+      }
+      reply.header('Content-Length', String(info.size));
       return reply.send(createReadStream(file));
     } catch {
       return reply.code(404).send(apiError('creator_preset_not_found', 'Creator preset asset not found'));
@@ -718,9 +734,24 @@ export async function registerCreatorRoutes(
 
 function contentTypeForPresetAsset(fileName: string): string {
   const extension = extname(fileName).toLowerCase();
+  if (extension === '.mp4') return 'video/mp4';
   if (extension === '.png') return 'image/png';
   if (extension === '.webp') return 'image/webp';
   return 'image/jpeg';
+}
+
+function parseByteRange(
+  value: string | undefined,
+  size: number
+): { start: number; end: number } | undefined {
+  if (value === undefined) return undefined;
+  const match = /^bytes=(\d+)-(\d*)$/.exec(value);
+  if (match === null) return undefined;
+  const start = Number(match[1]);
+  const requestedEnd = match[2] === '' ? size - 1 : Number(match[2]);
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd)) return undefined;
+  if (start < 0 || start >= size || requestedEnd < start) return undefined;
+  return { start, end: Math.min(requestedEnd, size - 1) };
 }
 
 function emptyAgentTimeline(): CreatorAgentHistoryResponse {

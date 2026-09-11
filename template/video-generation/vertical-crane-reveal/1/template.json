@@ -7,7 +7,7 @@
     "id": "video-generation",
     "version": 1
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 43,
   "title": {
@@ -33,10 +33,15 @@
   },
   "defaultsByLocale": {
     "zh-CN": {
-      "prompt": "整个镜头中，摄像机通过摇臂从 1.2 米高度平滑升至 9 米，同时持续轻柔向下俯仰，使主体始终固定在画面下三分之一位置，周围及上方的空间逐步展开。不得进行横向环绕、轨道侧移、变焦或速度渐变；使用一次连续的垂直揭示运动，并在高位缓慢减速后稳定停留。"
+      "prompt": "整个镜头中，摄像机通过摇臂从 1.2 米高度平滑升至 9 米，同时持续轻柔向下俯仰，使[主体]始终固定在画面下三分之一位置，周围及上方的空间逐步展开。不得进行横向环绕、轨道侧移、变焦或速度渐变；使用一次连续的垂直揭示运动，并在高位缓慢减速后稳定停留。"
     },
     "en-US": {
-      "prompt": "A smooth jib rise from 1.2 meters to 9 meters altitude over the shot, with a gentle continuous downward tilt that keeps the subject anchored in the lower third of frame as the world opens above and around them. No lateral orbit, no truck, no zoom, no speed ramps; one continuous vertical reveal easing into a high hold."
+      "prompt": "A smooth jib rise from 1.2 meters to 9 meters altitude over the shot, with a gentle continuous downward tilt that keeps the [subject] anchored in the lower third of frame as the world opens above and around them. No lateral orbit, no truck, no zoom, no speed ramps; one continuous vertical reveal easing into a high hold."
     }
+  },
+  "previewVideo": "example.mp4",
+  "author": {
+    "name": "Higgsfield.AI Team",
+    "url": "https://higgsfield.ai/academy/how-to-use/turn-your-video-into-cinema-using-wan-camera-control"
   }
 }

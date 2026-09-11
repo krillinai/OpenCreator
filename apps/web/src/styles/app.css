@@ -3759,13 +3759,18 @@ html.is-pane-resizing * {
   cursor: zoom-in;
 }
 
-.creator-template-outcome-media img {
+.creator-template-outcome-media img,
+.creator-template-outcome-media video {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
   object-fit: contain;
+}
+
+.creator-template-outcome-video {
+  cursor: default;
 }
 
 .creator-template-outcome-media:hover img {
@@ -3793,6 +3798,17 @@ html.is-pane-resizing * {
   pointer-events: none;
 }
 
+button.creator-template-outcome-expand {
+  padding: 0;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: zoom-in;
+  pointer-events: auto;
+}
+
+button.creator-template-outcome-expand:hover {
+  background: rgba(42, 44, 49, 0.96);
+}
+
 .creator-template-preview-backdrop {
   position: fixed;
   inset: 0;
@@ -3811,7 +3827,8 @@ html.is-pane-resizing * {
   place-items: center;
 }
 
-.creator-template-preview-dialog img {
+.creator-template-preview-dialog img,
+.creator-template-preview-dialog video {
   max-width: 100%;
   max-height: calc(100dvh - 48px);
   display: block;

@@ -226,21 +226,48 @@ export function CreatorDashboard(props: {
             <h2 id="creator-template-outcome-title">
               {language === 'en-US' ? 'Example result' : '成果预览'}
             </h2>
-            <button
-              ref={previewTriggerRef}
-              type="button"
-              className="creator-template-outcome-media"
-              aria-label={language === 'en-US'
-                ? `View full ${selectedPreset.title} result`
-                : `全屏查看${selectedPreset.title}完整作品`}
-              title={language === 'en-US' ? 'View full result' : '查看完整作品'}
-              onClick={() => setPreviewOpen(true)}
-            >
-              <img src={previewUrl} alt={selectedPreset.title} />
-              <span className="creator-template-outcome-expand" aria-hidden="true">
-                <Maximize2 size={17} />
-              </span>
-            </button>
+            {selectedPreset.previewVideoUrl === undefined ? (
+              <button
+                ref={previewTriggerRef}
+                type="button"
+                className="creator-template-outcome-media"
+                aria-label={language === 'en-US'
+                  ? `View full ${selectedPreset.title} result`
+                  : `全屏查看${selectedPreset.title}完整作品`}
+                title={language === 'en-US' ? 'View full result' : '查看完整作品'}
+                onClick={() => setPreviewOpen(true)}
+              >
+                <img src={previewUrl} alt={selectedPreset.title} />
+                <span className="creator-template-outcome-expand" aria-hidden="true">
+                  <Maximize2 size={17} />
+                </span>
+              </button>
+            ) : (
+              <div className="creator-template-outcome-media creator-template-outcome-video">
+                <video
+                  src={selectedPreset.previewVideoUrl}
+                  poster={previewUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  aria-label={language === 'en-US'
+                    ? `${selectedPreset.title} example video`
+                    : `${selectedPreset.title}示例视频`}
+                />
+                <button
+                  ref={previewTriggerRef}
+                  type="button"
+                  className="creator-template-outcome-expand"
+                  aria-label={language === 'en-US'
+                    ? `View full ${selectedPreset.title} result`
+                    : `全屏查看${selectedPreset.title}完整作品`}
+                  title={language === 'en-US' ? 'View full result' : '查看完整作品'}
+                  onClick={() => setPreviewOpen(true)}
+                >
+                  <Maximize2 size={17} />
+                </button>
+              </div>
+            )}
           </section>
 
           <aside className="creator-template-detail-info">
@@ -381,7 +408,21 @@ export function CreatorDashboard(props: {
                 ? `${selectedPreset.title} full result`
                 : `${selectedPreset.title}完整作品`}
             >
-              <img src={previewUrl} alt={selectedPreset.title} />
+              {selectedPreset.previewVideoUrl === undefined ? (
+                <img src={previewUrl} alt={selectedPreset.title} />
+              ) : (
+                <video
+                  src={selectedPreset.previewVideoUrl}
+                  poster={previewUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  autoPlay
+                  aria-label={language === 'en-US'
+                    ? `${selectedPreset.title} full example video`
+                    : `${selectedPreset.title}完整示例视频`}
+                />
+              )}
               <button
                 ref={previewCloseRef}
                 type="button"
@@ -572,10 +613,21 @@ function renderPromptVariables(
   prompt: string,
   language: 'zh-CN' | 'en-US'
 ) {
-  const variablePattern = /(\[(?:插入[^\]\n]+|[A-Z][A-Z0-9 _/.-]{1,79}|(?:品牌|城市|车辆)[^\]\n]*名称[^\]\n]*)\]|\{(?!\s*["'])[^{}\n]{1,80}\})/g;
-  const completeVariablePattern = /^(?:\[(?:插入[^\]\n]+|[A-Z][A-Z0-9 _/.-]{1,79}|(?:品牌|城市|车辆)[^\]\n]*名称[^\]\n]*)\]|\{(?!\s*["'])[^{}\n]{1,80}\})$/;
+  const variablePattern = /(@Image\d+|\[[^\]\n]{1,80}\]|\{(?!\s*["'])[^{}\n]{1,80}\})/g;
+  const nonVariableLabels = new Set(['结束', 'end']);
+  const isVariable = (part: string): boolean => {
+    if (/^@Image\d+$/.test(part) || /^\{(?!\s*["'])[^{}\n]{1,80}\}$/.test(part)) {
+      return true;
+    }
+    const bracketMatch = part.match(/^\[([^\]\n]{1,80})\]$/);
+    if (bracketMatch === null) return false;
+    const label = bracketMatch[1]?.trim() ?? '';
+    if (nonVariableLabels.has(label.toLowerCase())) return false;
+    if (/(?:强制执行|严格限制|strict (?:rules?|requirements?))/i.test(label)) return false;
+    return !/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(label);
+  };
   return prompt.split(variablePattern).map((part, index) => (
-    completeVariablePattern.test(part) ? (
+    isVariable(part) ? (
       <mark
         className="creator-template-prompt-variable"
         title={language === 'en-US' ? 'Replaceable variable' : '可替换变量'}

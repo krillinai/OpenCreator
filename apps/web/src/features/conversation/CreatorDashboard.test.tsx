@@ -56,6 +56,24 @@ const presets: CreatorPresetSummary[] = [{
   requirements: null,
   highlights: [{ text: '1024 × 1536', colors: [] }]
 }, {
+  module: 'video-generation',
+  id: 'cinematic-preview',
+  version: 1,
+  title: '电影感视频预览',
+  description: '使用完整视频展示模板效果。',
+  coverUrl: `/creator-presets/${'7'.repeat(64)}.jpg`,
+  previewVideoUrl: `/creator-presets/${'8'.repeat(64)}.mp4`,
+  author: {
+    name: '@video_author',
+    url: 'https://example.com/video-source'
+  },
+  prompt: '镜头从[2.5]米外围绕[主体名称]平滑运动，参考@Image1。[结束]',
+  tags: ['video'],
+  featured: false,
+  sortOrder: 18,
+  requirements: null,
+  highlights: [{ text: '1280 × 720', colors: [] }, { text: '8 秒', colors: [] }]
+}, {
   module: 'video-download',
   id: 'audio-download',
   version: 1,
@@ -165,6 +183,37 @@ describe('CreatorDashboard', () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
+  it('renders video examples with controls and a full preview', async () => {
+    render(<CreatorDashboard presets={presets} />);
+    fireEvent.click(screen.getByRole('tab', { name: '视频创作' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看电影感视频预览模板详情' }));
+
+    const inlineVideo = screen.getByLabelText('电影感视频预览示例视频');
+    expect(inlineVideo).toHaveAttribute(
+      'src',
+      `/creator-presets/${'8'.repeat(64)}.mp4`
+    );
+    expect(inlineVideo).toHaveAttribute(
+      'poster',
+      `/creator-presets/${'7'.repeat(64)}.jpg`
+    );
+    expect(inlineVideo).toHaveAttribute('controls');
+    expect(inlineVideo).toHaveAttribute('preload', 'metadata');
+
+    const trigger = screen.getByRole('button', {
+      name: '全屏查看电影感视频预览完整作品'
+    });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: '电影感视频预览完整作品' });
+    const fullVideo = screen.getByLabelText('电影感视频预览完整示例视频');
+    expect(dialog).toContainElement(fullVideo);
+    expect(fullVideo).toHaveAttribute('controls');
+    expect(fullVideo).toHaveAttribute('autoplay');
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭预览' }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
   it('groups every preset into the video and image categories', () => {
     render(<CreatorDashboard presets={presets} />);
 
@@ -195,6 +244,20 @@ describe('CreatorDashboard', () => {
     ]);
     expect(variables.every(variable => variable.getAttribute('title') === '可替换变量'))
       .toBe(true);
+  });
+
+  it('highlights video prompt variables and image slots without styling numeric parameters', () => {
+    render(<CreatorDashboard presets={presets} />);
+    fireEvent.click(screen.getByRole('tab', { name: '视频创作' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看电影感视频预览模板详情' }));
+
+    const variables = [...document.querySelectorAll('.creator-template-prompt-variable')];
+    expect(variables.map(variable => variable.textContent)).toEqual([
+      '[主体名称]',
+      '@Image1'
+    ]);
+    expect(screen.getByText('[2.5]', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('[结束]', { exact: false })).toBeInTheDocument();
   });
 
   it('opens, filters and closes template search', async () => {

@@ -25,6 +25,7 @@ export type CreatorPresetSourceManifest = CreatorPresetRef & {
   description: CreatorPresetLocalizedText;
   cover: string;
   preview?: string;
+  previewVideo?: string;
   author?: {
     name: string;
     url?: string;
@@ -46,9 +47,21 @@ export type CompiledCreatorPresetAsset = {
   size: number;
 };
 
-export type CompiledCreatorPreset = Omit<CreatorPresetSourceManifest, 'cover' | 'preview' | 'author'> & {
+export type CompiledCreatorPresetVideoAsset = {
+  source: string;
+  asset: string;
+  sha256: string;
+  mime: 'video/mp4';
+  size: number;
+};
+
+export type CompiledCreatorPreset = Omit<
+  CreatorPresetSourceManifest,
+  'cover' | 'preview' | 'previewVideo' | 'author'
+> & {
   cover: CompiledCreatorPresetAsset;
   preview?: CompiledCreatorPresetAsset;
+  previewVideo?: CompiledCreatorPresetVideoAsset;
   author?: {
     name: string;
     url?: string;

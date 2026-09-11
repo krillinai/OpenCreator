@@ -64,6 +64,7 @@ export async function loadCreatorPresetCatalog(input: {
     for (const [kind, asset] of [
       ['cover', preset.cover],
       ['preview', preset.preview],
+      ['preview video', preset.previewVideo],
       ['author avatar', preset.author?.avatar]
     ] as const) {
       if (asset !== undefined && !knownFiles.has(asset.asset)) {
@@ -148,7 +149,7 @@ export function resolveCreatorPresetAsset(
   root: string,
   fileName: string
 ): string {
-  if (!/^[a-f0-9]{64}\.(?:png|jpe?g|webp)$/.test(fileName)) {
+  if (!/^[a-f0-9]{64}\.(?:png|jpe?g|webp|mp4)$/.test(fileName)) {
     throw new Error('Invalid creator preset asset name');
   }
   return resolveCatalogFile(root, `assets/${fileName}`);
@@ -166,6 +167,7 @@ function parseCatalog(bytes: Buffer, file: string): CreatorPresetCatalog {
     const {
       cover: compiledCover,
       preview: compiledPreview,
+      previewVideo: compiledPreviewVideo,
       author: compiledAuthor,
       contentHash,
       ...sourceCandidate
@@ -184,6 +186,11 @@ function parseCatalog(bytes: Buffer, file: string): CreatorPresetCatalog {
       cover: compiledCover.source,
       ...(compiledPreview === undefined ? {} : {
         preview: isRecord(compiledPreview) ? compiledPreview.source : compiledPreview
+      }),
+      ...(compiledPreviewVideo === undefined ? {} : {
+        previewVideo: isRecord(compiledPreviewVideo)
+          ? compiledPreviewVideo.source
+          : compiledPreviewVideo
       })
     });
     if (
@@ -201,6 +208,9 @@ function parseCatalog(bytes: Buffer, file: string): CreatorPresetCatalog {
     if (compiledPreview !== undefined && !isCompiledAsset(compiledPreview)) {
       throw new Error(`${file}.presets.${index}: invalid compiled preview metadata`);
     }
+    if (compiledPreviewVideo !== undefined && !isCompiledVideoAsset(compiledPreviewVideo)) {
+      throw new Error(`${file}.presets.${index}: invalid compiled preview video metadata`);
+    }
     if (compiledAvatar !== undefined && !isCompiledAsset(compiledAvatar)) {
       throw new Error(`${file}.presets.${index}: invalid compiled author avatar metadata`);
     }
@@ -208,6 +218,7 @@ function parseCatalog(bytes: Buffer, file: string): CreatorPresetCatalog {
       ...source,
       cover: compiledCover,
       ...(compiledPreview === undefined ? {} : { preview: compiledPreview }),
+      ...(compiledPreviewVideo === undefined ? {} : { previewVideo: compiledPreviewVideo }),
       ...(source.author === undefined ? {} : {
         author: {
           name: source.author.name,
@@ -275,6 +286,9 @@ function localizePreset(
     previewUrl: `/creator-presets/${path.basename(
       preset.preview?.asset ?? preset.cover.asset
     )}`,
+    ...(preset.previewVideo === undefined ? {} : {
+      previewVideoUrl: `/creator-presets/${path.basename(preset.previewVideo.asset)}`
+    }),
     ...(preset.author === undefined ? {} : {
       author: {
         name: preset.author.name,
@@ -301,6 +315,17 @@ function isCompiledAsset(value: unknown): value is CompiledCreatorPreset['cover'
     && typeof value.mime === 'string'
     && typeof value.width === 'number'
     && typeof value.height === 'number'
+    && typeof value.size === 'number';
+}
+
+function isCompiledVideoAsset(
+  value: unknown
+): value is NonNullable<CompiledCreatorPreset['previewVideo']> {
+  return isRecord(value)
+    && typeof value.source === 'string'
+    && typeof value.asset === 'string'
+    && typeof value.sha256 === 'string'
+    && value.mime === 'video/mp4'
     && typeof value.size === 'number';
 }
 

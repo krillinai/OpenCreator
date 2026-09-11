@@ -183,6 +183,30 @@ describe('creator preset compiler', () => {
     );
   });
 
+  it('validates and packages an MP4 example video', async () => {
+    const fixture = setup();
+    copyOfficialPreset({
+      sourceRoot: fixture.sourceRoot,
+      module: 'video-generation',
+      sourceId: 'aerial-pullback-rise-reveal'
+    });
+
+    await compileCreatorPresets(fixture);
+    const catalog = JSON.parse(readFileSync(
+      join(fixture.outputRoot, 'catalog.json'),
+      'utf8'
+    ));
+    const previewVideo = catalog.presets[0].previewVideo;
+    expect(previewVideo).toMatchObject({
+      source: 'video-generation/aerial-pullback-rise-reveal/1/example.mp4',
+      asset: `assets/${previewVideo.sha256}.mp4`,
+      mime: 'video/mp4'
+    });
+    expect(readFileSync(join(fixture.outputRoot, previewVideo.asset))).toEqual(
+      readFileSync(join(fixture.sourceRoot, previewVideo.source))
+    );
+  });
+
   it('compiles the English video translation locale with Runtime language ids', async () => {
     const fixture = setup();
     copyOfficialPreset({

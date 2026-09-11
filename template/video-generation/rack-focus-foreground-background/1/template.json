@@ -7,7 +7,7 @@
     "id": "video-generation",
     "version": 1
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 44,
   "title": {
@@ -37,5 +37,10 @@
     "en-US": {
       "prompt": "The camera hard-locked on a tripod with no pan, no tilt, no push, no drift; the only optical change is FOCUS. Hold sharp on [plane A — the far anchor]; then rack once to [plane B — the near subject]; then follow focus on the subject if they move toward the lens. Speed: the rack is slow, smooth and continuous with no hunting and no overshoot; the follow focus tracks without breathing. Framing: the composition never changes; exactly one plane is sharp at any moment, the other melts into clean bokeh; the subject grows in frame only by physically approaching the lens. End: settle sharp on [the final subject framing], the far plane dissolved to soft bokeh behind."
     }
+  },
+  "previewVideo": "example.mp4",
+  "author": {
+    "name": "Higgsfield.AI Team",
+    "url": "https://higgsfield.ai/academy/how-to-use/turn-your-video-into-cinema-using-wan-camera-control"
   }
 }

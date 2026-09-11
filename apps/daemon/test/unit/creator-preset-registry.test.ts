@@ -176,6 +176,28 @@ describe('creator preset registry', () => {
     });
   });
 
+  it('returns a content-addressed video preview URL', async () => {
+    const fixture = setup();
+    copyOfficialPreset({
+      sourceRoot: fixture.sourceRoot,
+      module: 'video-generation',
+      sourceId: 'aerial-pullback-rise-reveal'
+    });
+    await compileCreatorPresets(fixture);
+    const registry = await loadCreatorPresetCatalog({
+      root: fixture.outputRoot,
+      templates: createDefaultCreatorTemplateRegistry()
+    });
+
+    const preset = registry.listPublished('zh-CN')[0];
+    expect(preset?.previewVideoUrl)
+      .toMatch(/^\/creator-presets\/[a-f0-9]{64}\.mp4$/);
+    expect(preset?.author).toEqual({
+      name: 'Higgsfield.AI Team',
+      url: 'https://higgsfield.ai/academy/how-to-use/turn-your-video-into-cinema-using-wan-camera-control'
+    });
+  });
+
   it('fails catalog health when runtime binding asset or catalog hash is invalid', async () => {
     const fixture = setup();
     copyOfficialPreset({

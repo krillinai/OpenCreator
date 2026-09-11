@@ -146,6 +146,7 @@ export type CreatorPresetSummary = CreatorPresetRef & {
   description: string;
   coverUrl: string;
   previewUrl?: string;
+  previewVideoUrl?: string;
   author?: CreatorPresetAuthor;
   prompt: string | null;
   tags: string[];

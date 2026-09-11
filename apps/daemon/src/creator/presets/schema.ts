@@ -51,6 +51,7 @@ export const creatorPresetSourceManifestSchema = z.object({
   description: localeTextSchema,
   cover: z.string().trim().min(1).max(240),
   preview: z.string().trim().min(1).max(240).optional(),
+  previewVideo: z.string().trim().min(1).max(240).optional(),
   author: authorSchema.optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   requirements: requirementSchema.optional(),

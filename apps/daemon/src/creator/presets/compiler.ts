@@ -24,10 +24,12 @@ import type {
   CreatorPresetCompilerOptions,
   CreatorPresetModuleDefinition,
   CompiledCreatorPresetAsset,
+  CompiledCreatorPresetVideoAsset,
   CreatorPresetSourceManifest
 } from './types.js';
 
 const COVER_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+const RESOURCE_EXTENSIONS = new Set([...COVER_EXTENSIONS, '.mp4']);
 const MIME_BY_EXTENSION = new Map([
   ['.png', 'image/png'],
   ['.jpg', 'image/jpeg'],
@@ -37,6 +39,7 @@ const MIME_BY_EXTENSION = new Map([
 const MAX_COVER_SIZE = 2 * 1024 * 1024;
 const MAX_PREVIEW_SIZE = 4 * 1024 * 1024;
 const MAX_AUTHOR_AVATAR_SIZE = 512 * 1024;
+const MAX_PREVIEW_VIDEO_SIZE = 48 * 1024 * 1024;
 
 export async function validateCreatorPresets(
   options: CreatorPresetCompilerOptions
@@ -75,6 +78,14 @@ export async function validateCreatorPresets(
           manifest.preview,
           entry.relativeFile
         );
+    const previewVideo = manifest.previewVideo === undefined
+      ? undefined
+      : await validatePreviewVideo(
+          sourceRoot,
+          entry.directory,
+          manifest.previewVideo,
+          entry.relativeFile
+        );
     const authorAvatar = manifest.author?.avatar === undefined
       ? undefined
       : await validateAuthorAvatar(
@@ -87,6 +98,7 @@ export async function validateCreatorPresets(
     const {
       cover: _normalizedCover,
       preview: _normalizedPreview,
+      previewVideo: _normalizedPreviewVideo,
       author: normalizedAuthor,
       ...normalizedPreset
     } = normalizedManifest;
@@ -102,6 +114,12 @@ export async function validateCreatorPresets(
           sha256: preview.sha256
         }
       }),
+      ...(previewVideo === undefined ? {} : {
+        previewVideo: {
+          path: toPosix(manifest.previewVideo!),
+          sha256: previewVideo.sha256
+        }
+      }),
       ...(authorAvatar === undefined ? {} : {
         authorAvatar: {
           path: toPosix(manifest.author!.avatar!),
@@ -113,6 +131,9 @@ export async function validateCreatorPresets(
       ...normalizedPreset,
       cover: compileAsset(sourceRoot, cover),
       ...(preview === undefined ? {} : { preview: compileAsset(sourceRoot, preview) }),
+      ...(previewVideo === undefined ? {} : {
+        previewVideo: compileVideoAsset(sourceRoot, previewVideo)
+      }),
       ...(normalizedAuthor === undefined ? {} : {
         author: {
           name: normalizedAuthor.name,
@@ -153,7 +174,12 @@ export async function compileCreatorPresets(
 
   try {
     for (const preset of catalog.presets) {
-      for (const asset of [preset.cover, preset.preview, preset.author?.avatar]) {
+      for (const asset of [
+        preset.cover,
+        preset.preview,
+        preset.previewVideo,
+        preset.author?.avatar
+      ]) {
         if (asset === undefined) continue;
         const source = path.join(path.resolve(options.sourceRoot), asset.source);
         const destination = path.join(temporary, asset.asset);
@@ -253,7 +279,7 @@ async function findTemplateManifests(sourceRoot: string): Promise<Array<{
             throw new Error(`${toPosix(path.relative(sourceRoot, path.join(versionPath, file.name)))}: only regular files are allowed`);
           }
           const extension = path.extname(file.name).toLowerCase();
-          if (file.name !== 'template.json' && !COVER_EXTENSIONS.has(extension)) {
+          if (file.name !== 'template.json' && !RESOURCE_EXTENSIONS.has(extension)) {
             throw new Error(`${toPosix(path.relative(sourceRoot, path.join(versionPath, file.name)))}: unsupported template resource`);
           }
         }
@@ -410,6 +436,43 @@ async function validateAuthorAvatar(
   return image;
 }
 
+type ValidatedVideoResource = {
+  file: string;
+  extension: '.mp4';
+  mime: 'video/mp4';
+  sha256: string;
+  size: number;
+};
+
+async function validatePreviewVideo(
+  sourceRoot: string,
+  directory: string,
+  videoPath: string,
+  relativeFile: string
+): Promise<ValidatedVideoResource> {
+  const resource = await validateRegularResource({
+    sourceRoot,
+    directory,
+    resourcePath: videoPath,
+    relativeFile,
+    field: 'previewVideo',
+    maxSize: MAX_PREVIEW_VIDEO_SIZE
+  });
+  if (path.extname(videoPath).toLowerCase() !== '.mp4') {
+    throw new Error(`${relativeFile}.previewVideo: unsupported video extension`);
+  }
+  const bytes = await readFile(resource.file);
+  if (bytes.length < 12 || bytes.subarray(4, 8).toString('ascii') !== 'ftyp') {
+    throw new Error(`${relativeFile}.previewVideo: video contents do not match MP4`);
+  }
+  return {
+    ...resource,
+    extension: '.mp4',
+    mime: 'video/mp4',
+    sha256: sha256(bytes)
+  };
+}
+
 type ValidatedImageResource = {
   file: string;
   extension: '.png' | '.jpg' | '.jpeg' | '.webp';
@@ -429,16 +492,46 @@ async function validateImageResource(input: {
   maxSize: number;
 }): Promise<ValidatedImageResource> {
   const { sourceRoot, directory, resourcePath, relativeFile, field, maxSize } = input;
+  const resource = await validateRegularResource(input);
+  const extension = path.extname(resourcePath).toLowerCase() as '.png' | '.jpg' | '.jpeg' | '.webp';
+  if (!COVER_EXTENSIONS.has(extension)) {
+    throw new Error(`${relativeFile}.${field}: unsupported image extension`);
+  }
+  const bytes = await readFile(resource.file);
+  const dimensions = imageSize(bytes);
+  if (dimensions.width === undefined || dimensions.height === undefined) {
+    throw new Error(`${relativeFile}.${field}: image dimensions are unavailable`);
+  }
+  const detectedExtension = detectedImageExtension(bytes);
+  if (detectedExtension === undefined || !extensionsMatch(extension, detectedExtension)) {
+    throw new Error(`${relativeFile}.${field}: image contents do not match extension`);
+  }
+  return {
+    file: resource.file,
+    extension,
+    mime: MIME_BY_EXTENSION.get(extension)!,
+    sha256: sha256(bytes),
+    width: dimensions.width,
+    height: dimensions.height,
+    size: resource.size
+  };
+}
+
+async function validateRegularResource(input: {
+  sourceRoot: string;
+  directory: string;
+  resourcePath: string;
+  relativeFile: string;
+  field: 'cover' | 'preview' | 'author.avatar' | 'previewVideo';
+  maxSize: number;
+}): Promise<{ file: string; size: number }> {
+  const { sourceRoot, directory, resourcePath, relativeFile, field, maxSize } = input;
   if (path.isAbsolute(resourcePath) || resourcePath.includes('\\')) {
     throw new Error(`${relativeFile}.${field}: ${field} must be a POSIX relative path`);
   }
   const segments = resourcePath.split('/');
   if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
     throw new Error(`${relativeFile}.${field}: traversal is not allowed`);
-  }
-  const extension = path.extname(resourcePath).toLowerCase() as '.png' | '.jpg' | '.jpeg' | '.webp';
-  if (!COVER_EXTENSIONS.has(extension)) {
-    throw new Error(`${relativeFile}.${field}: unsupported image extension`);
   }
   const file = path.resolve(directory, resourcePath);
   const relative = path.relative(sourceRoot, file);
@@ -457,24 +550,7 @@ async function validateImageResource(input: {
   if (fileInfo.size > maxSize) {
     throw new Error(`${relativeFile}.${field}: ${field} exceeds ${maxSize / 1024 / 1024} MiB`);
   }
-  const bytes = await readFile(file);
-  const dimensions = imageSize(bytes);
-  if (dimensions.width === undefined || dimensions.height === undefined) {
-    throw new Error(`${relativeFile}.${field}: image dimensions are unavailable`);
-  }
-  const detectedExtension = detectedImageExtension(bytes);
-  if (detectedExtension === undefined || !extensionsMatch(extension, detectedExtension)) {
-    throw new Error(`${relativeFile}.${field}: image contents do not match extension`);
-  }
-  return {
-    file,
-    extension,
-    mime: MIME_BY_EXTENSION.get(extension)!,
-    sha256: sha256(bytes),
-    width: dimensions.width,
-    height: dimensions.height,
-    size: fileInfo.size
-  };
+  return { file, size: fileInfo.size };
 }
 
 function compileAsset(
@@ -492,11 +568,27 @@ function compileAsset(
   };
 }
 
+function compileVideoAsset(
+  sourceRoot: string,
+  resource: ValidatedVideoResource
+): CompiledCreatorPresetVideoAsset {
+  return {
+    source: toPosix(path.relative(sourceRoot, resource.file)),
+    asset: `assets/${resource.sha256}${resource.extension}`,
+    sha256: resource.sha256,
+    mime: resource.mime,
+    size: resource.size
+  };
+}
+
 function normalizeSourceManifest(manifest: CreatorPresetSourceManifest): CreatorPresetSourceManifest {
   return {
     ...manifest,
     cover: toPosix(manifest.cover),
     ...(manifest.preview === undefined ? {} : { preview: toPosix(manifest.preview) }),
+    ...(manifest.previewVideo === undefined
+      ? {}
+      : { previewVideo: toPosix(manifest.previewVideo) }),
     ...(manifest.author === undefined ? {} : {
       author: {
         ...manifest.author,
