@@ -33,7 +33,7 @@
   },
   "defaultsByLocale": {
     "zh-CN": {
-      "prompt": "Transform the uploaded photo into a vertical mixed-media memory card with a strict 50/50 split.\n\nKeep the original photo unchanged in the top half. In the bottom half, use textured off-white handmade paper and add a muted, irregular color patch matching the photo’s tones.\n\nRedraw the main subjects as a simple dark wax-crayon sketch with loose, imperfect lines and minimal details. Add a short handwritten English phrase and subtle Risograph grain.\n\nCreate a quiet, nostalgic Morandi-style aesthetic with generous negative space. Do not add extra elements or copy the reference composition exactly."
+      "prompt": "将上传的照片转换为严格按 50/50 分割的竖版混合媒介回忆卡。\n\n上半部分保持原始照片不变。在下半部分，使用有纹理的灰白色手工纸，并添加与照片色调相匹配的柔和、不规则的色块。\n\n将主要人物或主体重新绘制为简单的深色蜡笔草图，具有松散、不完美的线条和最少的细节。添加简短的手写英文短语和细腻的 Risograph 孔版印刷颗粒。\n\n以宽敞的负空间营造出安静、怀旧的莫兰迪风格美学。不要添加额外的元素或完全复制参考构图。"
     },
     "en-US": {
       "prompt": "Transform the uploaded photo into a vertical mixed-media memory card with a strict 50/50 split.\n\nKeep the original photo unchanged in the top half. In the bottom half, use textured off-white handmade paper and add a muted, irregular color patch matching the photo’s tones.\n\nRedraw the main subjects as a simple dark wax-crayon sketch with loose, imperfect lines and minimal details. Add a short handwritten English phrase and subtle Risograph grain.\n\nCreate a quiet, nostalgic Morandi-style aesthetic with generous negative space. Do not add extra elements or copy the reference composition exactly."
