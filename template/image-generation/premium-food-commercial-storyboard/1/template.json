@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 96,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Premium Food Commercial Storyboard reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@ÀBDŪLLÂH",
+    "url": "https://x.com/itxabdullaa/status/2096915887504982258",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "影视叙事",
     "食品饮料",

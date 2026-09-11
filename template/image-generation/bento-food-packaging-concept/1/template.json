@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 41,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Bento Food Packaging Concept reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@小小东",
+    "url": "https://x.com/xiaoxiaodong01/status/2096609211870576683",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "产品视觉",
     "食品饮料",

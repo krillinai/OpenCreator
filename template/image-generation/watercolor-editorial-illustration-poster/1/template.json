@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 72,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Watercolor Editorial Illustration Poster reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@小小东",
+    "url": "https://x.com/xiaoxiaodong01/status/2089893684527730867",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "海报设计",
     "图片转绘",

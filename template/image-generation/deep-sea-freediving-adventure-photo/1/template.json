@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 76,
   "title": {
@@ -19,6 +19,11 @@
     "en-US": "Create an image with the Deep-Sea Freediving Adventure Photo reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@steampunk_donut_jade65",
+    "url": "https://higgsfield.ai/publications/32410751-27ee-425f-aa0f-dbc0a67aaf34"
+  },
   "tags": [
     "体育视觉",
     "人像摄影",

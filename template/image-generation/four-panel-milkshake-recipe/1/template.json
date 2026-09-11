@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 54,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Four-Panel Milkshake Recipe reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Dua Fatima",
+    "url": "https://x.com/DuaFatimaAi/status/2096033405259682193",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "信息图表",
     "食品饮料",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 73,
   "title": {
@@ -19,6 +19,11 @@
     "en-US": "Create an image with the Desert Car Wash Documentary Photo reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@institutional_butterflying",
+    "url": "https://higgsfield.ai/publications/bdeaf74f-4300-4ebd-9125-7df4f37d2733"
+  },
   "tags": [
     "商业广告",
     "人像摄影",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 70,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Wuhan Breakfast Food Map Infographic reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@mm_zzm44854",
+    "url": "https://x.com/mm_zzm44854",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "信息图表",
     "食品饮料",

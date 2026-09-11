@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 78,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Modern Art Event Flyer reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@AI Guide-Note - 実務で使えるAI活用メディア",
+    "url": "https://x.com/AIGuideNote/status/2096710919900582307",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "活动物料",
     "海报设计",

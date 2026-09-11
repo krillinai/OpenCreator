@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 49,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Duotone Studio Commercial Portrait reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Abkr Sadiq",
+    "url": "https://x.com/abs_uiux/status/2097210827652968512",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "商业广告",
     "人像摄影",

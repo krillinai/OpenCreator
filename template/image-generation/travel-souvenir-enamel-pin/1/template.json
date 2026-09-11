@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 61,
   "title": {
@@ -19,6 +19,11 @@
     "en-US": "Create an image with the Travel Souvenir Enamel Pin reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Emmma__0",
+    "url": "https://x.com/Emmma__0/status/2093194689222705645"
+  },
   "tags": [
     "产品视觉",
     "旅行城市",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 36,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Chinese Luxury Beauty Poster reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@panchaaan_2",
+    "url": "https://x.com/panchaaan_2",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "商业广告",
     "时尚美妆",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 37,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Solar Terms Editorial Visual reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@小小东",
+    "url": "https://x.com/xiaoxiaodong01/status/2089291663466508680",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "海报设计",
     "传统文化",

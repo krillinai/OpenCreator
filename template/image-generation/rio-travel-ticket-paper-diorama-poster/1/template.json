@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 91,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Rio Travel Ticket Paper Diorama Poster reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@john_my07",
+    "url": "https://x.com/john_my07/status/2091408386466214031",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "旅行城市",
     "拼贴设计",

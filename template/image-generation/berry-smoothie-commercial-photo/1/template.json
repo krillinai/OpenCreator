@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 75,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Berry Smoothie Commercial Photo reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Dua Fatima",
+    "url": "https://x.com/DuaFatimaAi/status/2096555489073279173",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "商业广告",
     "食品饮料",

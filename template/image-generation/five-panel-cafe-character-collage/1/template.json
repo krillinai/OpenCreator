@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 39,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Five-Panel Cafe Character Collage reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@🇻🇳 Gdragon_stk 🇸🇪",
+    "url": "https://x.com/zaizai36077041/status/2097032853410197878#reversed-0",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "社交媒体",
     "人像摄影",

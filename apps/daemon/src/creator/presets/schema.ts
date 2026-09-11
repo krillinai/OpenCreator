@@ -16,6 +16,14 @@ const requirementSchema = z.object({
   model: z.string().trim().min(1).max(128).optional()
 }).strict();
 
+const authorSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  url: z.string().trim().url().max(500)
+    .refine(value => value.startsWith('https://'), 'Author URL must use HTTPS')
+    .optional(),
+  avatar: z.string().trim().min(1).max(240).optional()
+}).strict();
+
 const creatorJsonSchema: z.ZodType<CreatorJson> = z.lazy(() => z.union([
   z.null(),
   z.boolean(),
@@ -42,6 +50,8 @@ export const creatorPresetSourceManifestSchema = z.object({
   title: localeTextSchema,
   description: localeTextSchema,
   cover: z.string().trim().min(1).max(240),
+  preview: z.string().trim().min(1).max(240).optional(),
+  author: authorSchema.optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   requirements: requirementSchema.optional(),
   defaults: creatorJsonRecordSchema,

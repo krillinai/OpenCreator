@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 60,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Hand-Torn Paper Poster reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@小小东",
+    "url": "https://x.com/xiaoxiaodong01/status/2089252321603862547",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "活动物料",
     "海报设计",

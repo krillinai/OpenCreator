@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 51,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Croissant Baking Storyboard reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@TechieBySA",
+    "url": "https://x.com/TechieBySA/status/2053523784481554759",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "影视叙事",
     "食品饮料",

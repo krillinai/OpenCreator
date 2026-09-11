@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 77,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Cooking Sketch Illustration Story reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@simeon-sanai",
+    "url": "https://x.com/Naiknelofar788/status/2096823849702785331",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "影视叙事",
     "食品饮料",

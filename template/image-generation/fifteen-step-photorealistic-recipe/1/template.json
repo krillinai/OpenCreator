@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 46,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Fifteen-Step Photorealistic Recipe reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "Oleksa AI（X：@OleksaFrame）",
+    "url": "https://x.com/OleksaFrame/status/2097669808800113040",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "信息图表",
     "食品饮料",

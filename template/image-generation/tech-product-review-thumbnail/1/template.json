@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 82,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Tech Product Review Thumbnail reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@BLCNYY",
+    "url": "https://x.com/BLCNYY/status/2090897198351368575#reversed-1",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "视频缩略图",
     "产品视觉",

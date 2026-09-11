@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 81,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Social Media Giveaway Banner reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@AI Guide-Note - 実務で使えるAI活用メディア",
+    "url": "https://x.com/AIGuideNote/status/2097183473601569109",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "社交媒体",
     "活动物料",

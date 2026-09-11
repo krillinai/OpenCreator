@@ -24,21 +24,35 @@ export type CreatorPresetSourceManifest = CreatorPresetRef & {
   title: CreatorPresetLocalizedText;
   description: CreatorPresetLocalizedText;
   cover: string;
+  preview?: string;
+  author?: {
+    name: string;
+    url?: string;
+    avatar?: string;
+  };
   tags: string[];
   requirements?: CreatorPresetRequirements;
   defaults: Record<string, CreatorJson>;
   defaultsByLocale?: Partial<Record<CreatorPresetLocale, Record<string, CreatorJson>>>;
 };
 
-export type CompiledCreatorPreset = Omit<CreatorPresetSourceManifest, 'cover'> & {
-  cover: {
-    source: string;
-    asset: string;
-    sha256: string;
-    mime: 'image/png' | 'image/jpeg' | 'image/webp';
-    width: number;
-    height: number;
-    size: number;
+export type CompiledCreatorPresetAsset = {
+  source: string;
+  asset: string;
+  sha256: string;
+  mime: 'image/png' | 'image/jpeg' | 'image/webp';
+  width: number;
+  height: number;
+  size: number;
+};
+
+export type CompiledCreatorPreset = Omit<CreatorPresetSourceManifest, 'cover' | 'preview' | 'author'> & {
+  cover: CompiledCreatorPresetAsset;
+  preview?: CompiledCreatorPresetAsset;
+  author?: {
+    name: string;
+    url?: string;
+    avatar?: CompiledCreatorPresetAsset;
   };
   contentHash: string;
 };

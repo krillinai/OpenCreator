@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 47,
   "title": {
@@ -19,6 +19,11 @@
     "en-US": "Create an image with the Y2K Virtual Try-On Game UI reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@steampunk_donut_jade65",
+    "url": "https://higgsfield.ai/publications/fb624032-7cc1-47b5-8df4-d8a8cfc5823e"
+  },
   "tags": [
     "网页界面",
     "时尚美妆",

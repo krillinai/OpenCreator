@@ -131,6 +131,51 @@ describe('creator preset registry', () => {
     })).toThrow('Unknown creator preset');
   });
 
+  it('returns a complete preview URL and falls back to the cover for older presets', async () => {
+    const fixture = setup();
+    copyOfficialPreset({
+      sourceRoot: fixture.sourceRoot,
+      module: 'image-generation',
+      sourceId: 'ecommerce-product'
+    });
+    copyOfficialPreset({
+      sourceRoot: fixture.sourceRoot,
+      module: 'image-generation',
+      sourceId: 'y2k-streetwear-mobile-landing-page'
+    });
+    copyOfficialPreset({
+      sourceRoot: fixture.sourceRoot,
+      module: 'image-generation',
+      sourceId: 'felt-country-miniature-world'
+    });
+    await compileCreatorPresets(fixture);
+    const registry = await loadCreatorPresetCatalog({
+      root: fixture.outputRoot,
+      templates: createDefaultCreatorTemplateRegistry()
+    });
+
+    const summaries = registry.listPublished('zh-CN');
+    const legacy = summaries.find(preset => preset.id === 'ecommerce-product');
+    const withPreview = summaries.find(
+      preset => preset.id === 'y2k-streetwear-mobile-landing-page'
+    );
+    const withAvatar = summaries.find(
+      preset => preset.id === 'felt-country-miniature-world'
+    );
+    expect(legacy?.previewUrl).toBe(legacy?.coverUrl);
+    expect(withPreview?.previewUrl).toMatch(/^\/creator-presets\/[a-f0-9]{64}\.webp$/);
+    expect(withPreview?.previewUrl).not.toBe(withPreview?.coverUrl);
+    expect(withPreview?.author).toEqual({
+      name: '@cezanne_cupcake_haze12',
+      url: 'https://higgsfield.ai/publications/0bbfc974-900c-4a1e-8561-3d9ada80177a'
+    });
+    expect(withAvatar?.author).toEqual({
+      name: '@volkan_iras',
+      url: 'https://x.com/volkan_iras/status/2051403524966141980',
+      avatarUrl: expect.stringMatching(/^\/creator-presets\/[a-f0-9]{64}\.webp$/)
+    });
+  });
+
   it('fails catalog health when runtime binding asset or catalog hash is invalid', async () => {
     const fixture = setup();
     copyOfficialPreset({

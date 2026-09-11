@@ -30,6 +30,12 @@ const presets: CreatorPresetSummary[] = [{
   title: '电商商品主图增强版',
   description: '从 Daemon catalog 动态加载的商品视觉模板。',
   coverUrl: `/creator-presets/${'a'.repeat(64)}.webp`,
+  previewUrl: `/creator-presets/${'f'.repeat(64)}.webp`,
+  author: {
+    name: '@example_author',
+    url: 'https://example.com/original',
+    avatarUrl: `/creator-presets/${'9'.repeat(64)}.webp`
+  },
   prompt: '专业电商商品主图，主体清晰，突出核心卖点。',
   tags: ['ecommerce', 'product'],
   featured: true,
@@ -43,7 +49,7 @@ const presets: CreatorPresetSummary[] = [{
   title: '社交媒体海报',
   description: '生成醒目的社交媒体海报。',
   coverUrl: `/creator-presets/${'e'.repeat(64)}.webp`,
-  prompt: '高对比方形海报，主体明确。',
+  prompt: '高对比方形海报：[插入国家/地区名称]，品牌为 {brandName}。\n[布局与输出的严格限制（强制执行）]',
   tags: ['poster'],
   featured: false,
   sortOrder: 15,
@@ -104,15 +110,59 @@ describe('CreatorDashboard', () => {
     expect(onSelectPreset).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'B站双语精翻' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '成果预览' })).toBeInTheDocument();
+    const previewTrigger = screen.getByRole('button', { name: '全屏查看B站双语精翻完整作品' });
+    expect(previewTrigger.querySelector('img'))
+      .toHaveAttribute('src', `/creator-presets/${'d'.repeat(64)}.webp`);
     expect(screen.getByText('英文视频翻译为简体中文。')).toBeInTheDocument();
     expect(screen.getByText('英语 → 简体中文')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '提示词' })).toBeInTheDocument();
     expect(screen.getByText('此模板使用固定配置，无需预设提示词。')).toBeInTheDocument();
+    const detailPage = document.querySelector<HTMLElement>('.creator-template-detail-page');
+    const detailLayout = document.querySelector<HTMLElement>('.creator-template-detail-layout');
+    const promptSection = document.querySelector<HTMLElement>('.creator-template-prompt-section');
+    expect(detailLayout).not.toContainElement(promptSection);
+    expect(detailPage?.lastElementChild).toBe(promptSection);
     expect(screen.getByRole('list', { name: '模板标签' })).toHaveTextContent('B站双语字幕翻译');
     expect(screen.getByRole('button', { name: '使用此模板' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '返回模板列表' }));
     expect(screen.getByRole('heading', { name: '精选模板' })).toBeInTheDocument();
+  });
+
+  it('uses the complete preview and restores focus after closing it', async () => {
+    render(<CreatorDashboard presets={presets} />);
+    fireEvent.click(screen.getByRole('button', {
+      name: '查看电商商品主图增强版模板详情'
+    }));
+
+    const trigger = screen.getByRole('button', {
+      name: '全屏查看电商商品主图增强版完整作品'
+    });
+    expect(screen.getByText('@example_author')).toBeInTheDocument();
+    expect(document.querySelector('.creator-template-author-avatar img'))
+      .toHaveAttribute('src', `/creator-presets/${'9'.repeat(64)}.webp`);
+    const avatar = document.querySelector<HTMLImageElement>('.creator-template-author-avatar img');
+    fireEvent.error(avatar!);
+    expect(avatar).toHaveAttribute('hidden');
+    expect(screen.getByRole('link', { name: '查看@example_author的原始来源' }))
+      .toHaveAttribute('href', 'https://example.com/original');
+    expect(screen.getByRole('link', { name: '查看@example_author的原始来源' }))
+      .toHaveAttribute('rel', 'noreferrer');
+    expect(document.querySelector('.creator-template-prompt-card'))
+      .toContainElement(screen.getByText('专业电商商品主图，主体清晰，突出核心卖点。'));
+    expect(trigger.querySelector('img'))
+      .toHaveAttribute('src', `/creator-presets/${'f'.repeat(64)}.webp`);
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: '电商商品主图增强版完整作品' });
+    expect(dialog.querySelector('img'))
+      .toHaveAttribute('src', `/creator-presets/${'f'.repeat(64)}.webp`);
+    expect(screen.getByRole('button', { name: '关闭预览' })).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '电商商品主图增强版完整作品' }))
+      .not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it('groups every preset into the video and image categories', () => {
@@ -131,6 +181,20 @@ describe('CreatorDashboard', () => {
       .toBeInTheDocument();
     expect(screen.getByRole('button', { name: '查看个人成长封面模板详情' }))
       .toBeInTheDocument();
+  });
+
+  it('highlights replaceable prompt variables without styling section headings', () => {
+    render(<CreatorDashboard presets={presets} />);
+    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看社交媒体海报模板详情' }));
+
+    const variables = [...document.querySelectorAll('.creator-template-prompt-variable')];
+    expect(variables.map(variable => variable.textContent)).toEqual([
+      '[插入国家/地区名称]',
+      '{brandName}'
+    ]);
+    expect(variables.every(variable => variable.getAttribute('title') === '可替换变量'))
+      .toBe(true);
   });
 
   it('opens, filters and closes template search', async () => {

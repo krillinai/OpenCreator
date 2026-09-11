@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 50,
   "title": {
@@ -19,6 +19,11 @@
     "en-US": "Create an image with the Reflective Ski Gear Landing Page reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@surreal_pencil_sage24",
+    "url": "https://higgsfield.ai/publications/0a69afb4-50d7-4ed7-aa39-48b16353f4e2"
+  },
   "tags": [
     "网页界面",
     "产品视觉",

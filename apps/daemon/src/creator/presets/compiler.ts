@@ -23,6 +23,7 @@ import type {
   CreatorPresetCatalog,
   CreatorPresetCompilerOptions,
   CreatorPresetModuleDefinition,
+  CompiledCreatorPresetAsset,
   CreatorPresetSourceManifest
 } from './types.js';
 
@@ -34,6 +35,8 @@ const MIME_BY_EXTENSION = new Map([
   ['.webp', 'image/webp']
 ] as const);
 const MAX_COVER_SIZE = 2 * 1024 * 1024;
+const MAX_PREVIEW_SIZE = 4 * 1024 * 1024;
+const MAX_AUTHOR_AVATAR_SIZE = 512 * 1024;
 
 export async function validateCreatorPresets(
   options: CreatorPresetCompilerOptions
@@ -64,25 +67,59 @@ export async function validateCreatorPresets(
     }
     identities.add(identity);
     const cover = await validateCover(sourceRoot, entry.directory, manifest.cover, entry.relativeFile);
+    const preview = manifest.preview === undefined
+      ? undefined
+      : await validatePreview(
+          sourceRoot,
+          entry.directory,
+          manifest.preview,
+          entry.relativeFile
+        );
+    const authorAvatar = manifest.author?.avatar === undefined
+      ? undefined
+      : await validateAuthorAvatar(
+          sourceRoot,
+          entry.directory,
+          manifest.author.avatar,
+          entry.relativeFile
+        );
     const normalizedManifest = normalizeSourceManifest(manifest);
+    const {
+      cover: _normalizedCover,
+      preview: _normalizedPreview,
+      author: normalizedAuthor,
+      ...normalizedPreset
+    } = normalizedManifest;
     const contentHash = sha256(canonicalJson({
       ...normalizedManifest,
       cover: {
         path: toPosix(manifest.cover),
         sha256: cover.sha256
-      }
+      },
+      ...(preview === undefined ? {} : {
+        preview: {
+          path: toPosix(manifest.preview!),
+          sha256: preview.sha256
+        }
+      }),
+      ...(authorAvatar === undefined ? {} : {
+        authorAvatar: {
+          path: toPosix(manifest.author!.avatar!),
+          sha256: authorAvatar.sha256
+        }
+      })
     }));
     presets.push({
-      ...normalizedManifest,
-      cover: {
-        source: toPosix(path.relative(sourceRoot, cover.file)),
-        asset: `assets/${cover.sha256}${cover.extension}`,
-        sha256: cover.sha256,
-        mime: cover.mime,
-        width: cover.width,
-        height: cover.height,
-        size: cover.size
-      },
+      ...normalizedPreset,
+      cover: compileAsset(sourceRoot, cover),
+      ...(preview === undefined ? {} : { preview: compileAsset(sourceRoot, preview) }),
+      ...(normalizedAuthor === undefined ? {} : {
+        author: {
+          name: normalizedAuthor.name,
+          ...(normalizedAuthor.url === undefined ? {} : { url: normalizedAuthor.url }),
+          ...(authorAvatar === undefined ? {} : { avatar: compileAsset(sourceRoot, authorAvatar) })
+        }
+      }),
       contentHash
     });
   }
@@ -116,12 +153,15 @@ export async function compileCreatorPresets(
 
   try {
     for (const preset of catalog.presets) {
-      const source = path.join(path.resolve(options.sourceRoot), preset.cover.source);
-      const destination = path.join(temporary, preset.cover.asset);
-      try {
-        await stat(destination);
-      } catch {
-        await copyFile(source, destination);
+      for (const asset of [preset.cover, preset.preview, preset.author?.avatar]) {
+        if (asset === undefined) continue;
+        const source = path.join(path.resolve(options.sourceRoot), asset.source);
+        const destination = path.join(temporary, asset.asset);
+        try {
+          await stat(destination);
+        } catch {
+          await copyFile(source, destination);
+        }
       }
     }
     const catalogBytes = Buffer.from(`${canonicalJson(catalog)}\n`);
@@ -310,48 +350,121 @@ async function validateCover(
   height: number;
   size: number;
 }> {
-  if (path.isAbsolute(coverPath) || coverPath.includes('\\')) {
-    throw new Error(`${relativeFile}.cover: cover must be a POSIX relative path`);
+  const image = await validateImageResource({
+    sourceRoot,
+    directory,
+    resourcePath: coverPath,
+    relativeFile,
+    field: 'cover',
+    maxSize: MAX_COVER_SIZE
+  });
+  if (image.width < 640 || image.height < 360) {
+    throw new Error(`${relativeFile}.cover: cover must be at least 640x360`);
   }
-  const segments = coverPath.split('/');
+  if (image.width * 9 !== image.height * 16) {
+    throw new Error(`${relativeFile}.cover: cover must have a 16:9 aspect ratio`);
+  }
+  return image;
+}
+
+async function validatePreview(
+  sourceRoot: string,
+  directory: string,
+  previewPath: string,
+  relativeFile: string
+): Promise<ValidatedImageResource> {
+  const image = await validateImageResource({
+    sourceRoot,
+    directory,
+    resourcePath: previewPath,
+    relativeFile,
+    field: 'preview',
+    maxSize: MAX_PREVIEW_SIZE
+  });
+  if (image.width < 640 || image.height < 360) {
+    throw new Error(`${relativeFile}.preview: preview must be at least 640x360`);
+  }
+  return image;
+}
+
+async function validateAuthorAvatar(
+  sourceRoot: string,
+  directory: string,
+  avatarPath: string,
+  relativeFile: string
+): Promise<ValidatedImageResource> {
+  const image = await validateImageResource({
+    sourceRoot,
+    directory,
+    resourcePath: avatarPath,
+    relativeFile,
+    field: 'author.avatar',
+    maxSize: MAX_AUTHOR_AVATAR_SIZE
+  });
+  if (image.width < 48 || image.height < 48) {
+    throw new Error(`${relativeFile}.author.avatar: avatar must be at least 48x48`);
+  }
+  if (image.width !== image.height) {
+    throw new Error(`${relativeFile}.author.avatar: avatar must be square`);
+  }
+  return image;
+}
+
+type ValidatedImageResource = {
+  file: string;
+  extension: '.png' | '.jpg' | '.jpeg' | '.webp';
+  mime: 'image/png' | 'image/jpeg' | 'image/webp';
+  sha256: string;
+  width: number;
+  height: number;
+  size: number;
+};
+
+async function validateImageResource(input: {
+  sourceRoot: string;
+  directory: string;
+  resourcePath: string;
+  relativeFile: string;
+  field: 'cover' | 'preview' | 'author.avatar';
+  maxSize: number;
+}): Promise<ValidatedImageResource> {
+  const { sourceRoot, directory, resourcePath, relativeFile, field, maxSize } = input;
+  if (path.isAbsolute(resourcePath) || resourcePath.includes('\\')) {
+    throw new Error(`${relativeFile}.${field}: ${field} must be a POSIX relative path`);
+  }
+  const segments = resourcePath.split('/');
   if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
-    throw new Error(`${relativeFile}.cover: traversal is not allowed`);
+    throw new Error(`${relativeFile}.${field}: traversal is not allowed`);
   }
-  const extension = path.extname(coverPath).toLowerCase() as '.png' | '.jpg' | '.jpeg' | '.webp';
+  const extension = path.extname(resourcePath).toLowerCase() as '.png' | '.jpg' | '.jpeg' | '.webp';
   if (!COVER_EXTENSIONS.has(extension)) {
-    throw new Error(`${relativeFile}.cover: unsupported image extension`);
+    throw new Error(`${relativeFile}.${field}: unsupported image extension`);
   }
-  const file = path.resolve(directory, coverPath);
+  const file = path.resolve(directory, resourcePath);
   const relative = path.relative(sourceRoot, file);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error(`${relativeFile}.cover: cover escapes the template root`);
+    throw new Error(`${relativeFile}.${field}: ${field} escapes the template root`);
   }
   const fileInfo = await lstat(file).catch(() => undefined);
   if (fileInfo === undefined || !fileInfo.isFile() || fileInfo.isSymbolicLink()) {
-    throw new Error(`${relativeFile}.cover: cover must be a regular file`);
+    throw new Error(`${relativeFile}.${field}: ${field} must be a regular file`);
   }
   const sourceReal = await realpath(sourceRoot);
   const fileReal = await realpath(file);
   if (!isInside(sourceReal, fileReal)) {
-    throw new Error(`${relativeFile}.cover: resolved cover escapes the template root`);
+    throw new Error(`${relativeFile}.${field}: resolved ${field} escapes the template root`);
   }
-  if (fileInfo.size > MAX_COVER_SIZE) {
-    throw new Error(`${relativeFile}.cover: cover exceeds 2 MiB`);
+  if (fileInfo.size > maxSize) {
+    throw new Error(`${relativeFile}.${field}: ${field} exceeds ${maxSize / 1024 / 1024} MiB`);
   }
   const bytes = await readFile(file);
   const dimensions = imageSize(bytes);
   if (dimensions.width === undefined || dimensions.height === undefined) {
-    throw new Error(`${relativeFile}.cover: image dimensions are unavailable`);
-  }
-  if (dimensions.width < 640 || dimensions.height < 360) {
-    throw new Error(`${relativeFile}.cover: cover must be at least 640x360`);
-  }
-  if (dimensions.width * 9 !== dimensions.height * 16) {
-    throw new Error(`${relativeFile}.cover: cover must have a 16:9 aspect ratio`);
+    throw new Error(`${relativeFile}.${field}: image dimensions are unavailable`);
   }
   const detectedExtension = detectedImageExtension(bytes);
   if (detectedExtension === undefined || !extensionsMatch(extension, detectedExtension)) {
-    throw new Error(`${relativeFile}.cover: image contents do not match extension`);
+    throw new Error(`${relativeFile}.${field}: image contents do not match extension`);
   }
   return {
     file,
@@ -364,10 +477,34 @@ async function validateCover(
   };
 }
 
+function compileAsset(
+  sourceRoot: string,
+  resource: ValidatedImageResource
+): CompiledCreatorPresetAsset {
+  return {
+    source: toPosix(path.relative(sourceRoot, resource.file)),
+    asset: `assets/${resource.sha256}${resource.extension}`,
+    sha256: resource.sha256,
+    mime: resource.mime,
+    width: resource.width,
+    height: resource.height,
+    size: resource.size
+  };
+}
+
 function normalizeSourceManifest(manifest: CreatorPresetSourceManifest): CreatorPresetSourceManifest {
   return {
     ...manifest,
     cover: toPosix(manifest.cover),
+    ...(manifest.preview === undefined ? {} : { preview: toPosix(manifest.preview) }),
+    ...(manifest.author === undefined ? {} : {
+      author: {
+        ...manifest.author,
+        ...(manifest.author.avatar === undefined
+          ? {}
+          : { avatar: toPosix(manifest.author.avatar) })
+      }
+    }),
     tags: [...new Set(manifest.tags)].sort((left, right) => left.localeCompare(right))
   };
 }

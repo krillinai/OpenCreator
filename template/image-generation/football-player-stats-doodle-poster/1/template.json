@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 90,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Football Player Stats Doodle Poster reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@ryanpp27",
+    "url": "https://x.com/ryanpp27/status/2048602248524214542",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "体育视觉",
     "信息图表",

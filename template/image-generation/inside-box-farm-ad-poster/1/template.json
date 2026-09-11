@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 84,
   "title": {
@@ -19,6 +19,11 @@
     "en-US": "Create an image with the Inside-Box Farm Ad Poster reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@wer",
+    "url": "https://higgsfield.ai/publications/bf3260f9-7da3-4eda-a8b4-04ca42bed096"
+  },
   "tags": [
     "商业广告",
     "食品饮料",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 93,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Exploded Food Infographic reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Strength04_X",
+    "url": "https://x.com/Strength04_X/status/2056018963084226866",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "信息图表",
     "食品饮料",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 45,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Animated Campus World Reference Board reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@さんかくてん",
+    "url": "https://x.com/sankakuten91256/status/2096447146614747210#reversed-0",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "影视叙事",
     "角色场景",

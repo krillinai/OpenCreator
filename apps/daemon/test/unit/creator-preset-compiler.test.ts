@@ -106,7 +106,6 @@ describe('creator preset compiler', () => {
       module: 'image-generation',
       sourceId: 'ecommerce-product'
     });
-
     const firstOutput = join(tempDir, 'first');
     const secondOutput = join(tempDir, 'second');
     const first = await compileCreatorPresets({
@@ -124,6 +123,64 @@ describe('creator preset compiler', () => {
     expect(catalog.presets.every((preset: { cover: { asset: string; sha256: string } }) => (
       preset.cover.asset === `assets/${preset.cover.sha256}.webp`
     ))).toBe(true);
+  });
+
+  it('validates and packages an uncropped complete preview', async () => {
+    const fixture = setup();
+    copyOfficialPreset({
+      sourceRoot: fixture.sourceRoot,
+      module: 'image-generation',
+      sourceId: 'y2k-streetwear-mobile-landing-page'
+    });
+
+    await compileCreatorPresets(fixture);
+    const catalog = JSON.parse(readFileSync(
+      join(fixture.outputRoot, 'catalog.json'),
+      'utf8'
+    ));
+    const presetWithPreview = catalog.presets[0];
+    expect(presetWithPreview.preview).toMatchObject({
+      source: 'image-generation/y2k-streetwear-mobile-landing-page/1/preview.webp',
+      asset: `assets/${presetWithPreview.preview.sha256}.webp`,
+      mime: 'image/webp'
+    });
+    expect(presetWithPreview.preview.height).toBeGreaterThan(presetWithPreview.preview.width);
+    expect(presetWithPreview.author).toEqual({
+      name: '@cezanne_cupcake_haze12',
+      url: 'https://higgsfield.ai/publications/0bbfc974-900c-4a1e-8561-3d9ada80177a'
+    });
+    expect(readFileSync(join(fixture.outputRoot, presetWithPreview.preview.asset))).toEqual(
+      readFileSync(join(
+        fixture.sourceRoot,
+        presetWithPreview.preview.source
+      ))
+    );
+  });
+
+  it('validates and packages a square author avatar', async () => {
+    const fixture = setup();
+    copyOfficialPreset({
+      sourceRoot: fixture.sourceRoot,
+      module: 'image-generation',
+      sourceId: 'felt-country-miniature-world'
+    });
+
+    await compileCreatorPresets(fixture);
+    const catalog = JSON.parse(readFileSync(
+      join(fixture.outputRoot, 'catalog.json'),
+      'utf8'
+    ));
+    const avatar = catalog.presets[0].author.avatar;
+    expect(avatar).toMatchObject({
+      source: 'image-generation/felt-country-miniature-world/1/author-avatar.webp',
+      asset: `assets/${avatar.sha256}.webp`,
+      mime: 'image/webp',
+      width: 96,
+      height: 96
+    });
+    expect(readFileSync(join(fixture.outputRoot, avatar.asset))).toEqual(
+      readFileSync(join(fixture.sourceRoot, avatar.source))
+    );
   });
 
   it('compiles the English video translation locale with Runtime language ids', async () => {

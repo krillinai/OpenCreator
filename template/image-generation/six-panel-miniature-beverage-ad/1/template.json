@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 42,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Six-Panel Miniature Beverage Ad reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@ou_zhen599",
+    "url": "https://x.com/ou_zhen599/status/2091160215928574397",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "商业广告",
     "食品饮料",

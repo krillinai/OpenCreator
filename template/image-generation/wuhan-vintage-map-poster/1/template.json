@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 69,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Wuhan Vintage Map Poster reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "雪瑜（@xueyu1125）",
+    "url": "https://x.com/xueyu1125/status/2094015423775994116",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "海报设计",
     "旅行城市",

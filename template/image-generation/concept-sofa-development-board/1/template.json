@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 67,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Concept Sofa Development Board reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@ShamsAmin56",
+    "url": "https://x.com/ShamsAmin56/status/2050281206139461780",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "设计参考",
     "产品视觉",

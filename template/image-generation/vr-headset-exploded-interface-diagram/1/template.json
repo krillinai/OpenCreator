@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 80,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the VR Headset Exploded Interface Diagram reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@wory37303852",
+    "url": "https://x.com/wory37303852",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "信息图表",
     "产品视觉",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 85,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Boutique E-commerce Product Flatlay Grid reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@AI Guide-Note - 実務で使えるAI活用メディア",
+    "url": "https://x.com/AIGuideNote/status/2096906819713081810",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "电商视觉",
     "产品视觉",

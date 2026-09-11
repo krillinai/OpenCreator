@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 38,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Half Photo Half Crayon Memory Card reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Sairah_0",
+    "url": "https://x.com/Sairah_0/status/2093212900160868430",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "海报设计",
     "图片转绘",

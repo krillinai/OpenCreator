@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 34,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Consistent Interior Multiview Grid reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@M. Asif",
+    "url": "https://x.com/meAsifAi/status/2095979782068666556",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "设计参考",
     "建筑空间",

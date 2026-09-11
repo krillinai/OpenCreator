@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 58,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Luxury Mechanical Watch Technical Guide reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Gdgtify",
+    "url": "https://x.com/Gdgtify/status/2056928396991488312",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "信息图表",
     "产品视觉",

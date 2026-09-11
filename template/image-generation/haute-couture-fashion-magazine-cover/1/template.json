@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 95,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Haute Couture Fashion Magazine Cover reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@SPEEDAI07",
+    "url": "https://x.com/SPEEDAI07/status/2048573343066992919",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "海报设计",
     "时尚美妆",

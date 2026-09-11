@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 48,
   "title": {
@@ -19,6 +19,11 @@
     "en-US": "Create an image with the Y2K Streetwear Mobile Landing Page reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@cezanne_cupcake_haze12",
+    "url": "https://higgsfield.ai/publications/0bbfc974-900c-4a1e-8561-3d9ada80177a"
+  },
   "tags": [
     "网页界面",
     "时尚美妆",

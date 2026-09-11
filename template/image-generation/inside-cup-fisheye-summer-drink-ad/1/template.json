@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 63,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Inside-Cup Fisheye Summer Drink Ad reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@lovimg_com",
+    "url": "https://x.com/lovimg_com/status/2077036659028484375",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "商业广告",
     "食品饮料",

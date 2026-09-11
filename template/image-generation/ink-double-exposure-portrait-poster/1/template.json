@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 71,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Ink Double-Exposure Portrait Poster reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Goodmanprotocol",
+    "url": "https://x.com/Goodmanprotocol/status/2049002279051895243",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "海报设计",
     "人像摄影",

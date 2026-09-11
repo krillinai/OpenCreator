@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 53,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Four-City Minimal Travel Poster Series reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Taaruk_",
+    "url": "https://x.com/Taaruk_/status/2059188921096085888",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "海报设计",
     "旅行城市",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 92,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Blue-and-White, Dunhuang and Embroidery Quadriptych reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@zhidawang219555",
+    "url": "https://x.com/zhidawang219555/status/2090310144190218272",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "传统文化",
     "系列视觉",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 62,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Futuristic Biophilic Atrium reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Christopher J. DiMarco",
+    "url": "https://x.com/chrisjdimarco/status/2097067604531646936#reversed-0",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "设计参考",
     "建筑空间",

@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 86,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Paper Relief Neighborhood Grid reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Gadgetify",
+    "url": "https://x.com/Gdgtify/status/2096022497791721564",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "设计参考",
     "建筑空间",

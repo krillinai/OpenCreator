@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 79,
   "title": {
@@ -19,6 +19,11 @@
     "en-US": "Create an image with the Cinematic Action RPG Screenshot reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@karimsky_dev",
+    "url": "https://higgsfield.ai/publications/4051f3f1-9e66-418d-aa75-024f2c5ffc62"
+  },
   "tags": [
     "游戏视觉",
     "角色场景",

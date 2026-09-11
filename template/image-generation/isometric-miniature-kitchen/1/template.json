@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 83,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Isometric Miniature Kitchen reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Berryxia.AI",
+    "url": "https://x.com/berryxia/status/2096158415894835518#reversed-0",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "设计参考",
     "建筑空间",

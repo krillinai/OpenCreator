@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 89,
   "title": {
@@ -19,6 +19,11 @@
     "en-US": "Create an image with the Playful Ceramic E-commerce Hero reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@impressionist_cookie_haze96",
+    "url": "https://higgsfield.ai/publications/2f589a2f-cc4e-422c-9285-97d65fd49540"
+  },
   "tags": [
     "网页界面",
     "产品视觉",

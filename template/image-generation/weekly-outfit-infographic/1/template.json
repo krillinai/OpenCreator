@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 33,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Weekly Outfit Infographic reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@yyyole",
+    "url": "https://x.com/yyyole",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "信息图表",
     "时尚美妆",

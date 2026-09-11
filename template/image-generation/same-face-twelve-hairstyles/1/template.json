@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 52,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Same Face, Twelve Hairstyles reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "@Ciri_ai",
+    "url": "https://x.com/Ciri_ai/status/2092452220768002400",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "设计参考",
     "人像摄影",

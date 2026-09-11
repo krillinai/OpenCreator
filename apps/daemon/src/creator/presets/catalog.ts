@@ -61,9 +61,14 @@ export async function loadCreatorPresetCatalog(input: {
     throw new Error(`${manifestPath}: asset set hash does not match`);
   }
   for (const preset of catalog.presets) {
-    const asset = preset.cover.asset;
-    if (!knownFiles.has(asset)) {
-      throw new Error(`${catalogPath}: missing cover asset ${asset}`);
+    for (const [kind, asset] of [
+      ['cover', preset.cover],
+      ['preview', preset.preview],
+      ['author avatar', preset.author?.avatar]
+    ] as const) {
+      if (asset !== undefined && !knownFiles.has(asset.asset)) {
+        throw new Error(`${catalogPath}: missing ${kind} asset ${asset.asset}`);
+      }
     }
     try {
       input.templates.get(preset.runtimeTemplate.id, preset.runtimeTemplate.version);
@@ -160,12 +165,26 @@ function parseCatalog(bytes: Buffer, file: string): CreatorPresetCatalog {
     }
     const {
       cover: compiledCover,
+      preview: compiledPreview,
+      author: compiledAuthor,
       contentHash,
       ...sourceCandidate
     } = candidate;
+    const compiledAvatar = isRecord(compiledAuthor) ? compiledAuthor.avatar : undefined;
     const source = creatorPresetSourceManifestSchema.parse({
       ...sourceCandidate,
-      cover: compiledCover.source
+      ...(compiledAuthor === undefined ? {} : {
+        author: {
+          ...(compiledAuthor as Record<string, unknown>),
+          ...(compiledAvatar === undefined ? {} : {
+            avatar: isRecord(compiledAvatar) ? compiledAvatar.source : compiledAvatar
+          })
+        }
+      }),
+      cover: compiledCover.source,
+      ...(compiledPreview === undefined ? {} : {
+        preview: isRecord(compiledPreview) ? compiledPreview.source : compiledPreview
+      })
     });
     if (
       typeof contentHash !== 'string'
@@ -179,9 +198,23 @@ function parseCatalog(bytes: Buffer, file: string): CreatorPresetCatalog {
     ) {
       throw new Error(`${file}.presets.${index}: invalid compiled cover metadata`);
     }
+    if (compiledPreview !== undefined && !isCompiledAsset(compiledPreview)) {
+      throw new Error(`${file}.presets.${index}: invalid compiled preview metadata`);
+    }
+    if (compiledAvatar !== undefined && !isCompiledAsset(compiledAvatar)) {
+      throw new Error(`${file}.presets.${index}: invalid compiled author avatar metadata`);
+    }
     return {
       ...source,
       cover: compiledCover,
+      ...(compiledPreview === undefined ? {} : { preview: compiledPreview }),
+      ...(source.author === undefined ? {} : {
+        author: {
+          name: source.author.name,
+          ...(source.author.url === undefined ? {} : { url: source.author.url }),
+          ...(compiledAvatar === undefined ? {} : { avatar: compiledAvatar })
+        }
+      }),
       contentHash
     } as CompiledCreatorPreset;
   });
@@ -239,6 +272,18 @@ function localizePreset(
     title: preset.title[locale],
     description: preset.description[locale],
     coverUrl: `/creator-presets/${path.basename(preset.cover.asset)}`,
+    previewUrl: `/creator-presets/${path.basename(
+      preset.preview?.asset ?? preset.cover.asset
+    )}`,
+    ...(preset.author === undefined ? {} : {
+      author: {
+        name: preset.author.name,
+        ...(preset.author.url === undefined ? {} : { url: preset.author.url }),
+        ...(preset.author.avatar === undefined ? {} : {
+          avatarUrl: `/creator-presets/${path.basename(preset.author.avatar.asset)}`
+        })
+      }
+    }),
     prompt: createCreatorPresetPrompt(preset, locale),
     tags: createCreatorPresetTags(preset, locale),
     featured: preset.featured,
@@ -246,6 +291,17 @@ function localizePreset(
     requirements: preset.requirements ?? null,
     highlights: createCreatorPresetHighlights(preset, locale)
   };
+}
+
+function isCompiledAsset(value: unknown): value is CompiledCreatorPreset['cover'] {
+  return isRecord(value)
+    && typeof value.source === 'string'
+    && typeof value.asset === 'string'
+    && typeof value.sha256 === 'string'
+    && typeof value.mime === 'string'
+    && typeof value.width === 'number'
+    && typeof value.height === 'number'
+    && typeof value.size === 'number';
 }
 
 function resolveCatalogFile(root: string, relative: string): string {

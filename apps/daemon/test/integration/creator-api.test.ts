@@ -229,6 +229,24 @@ describe('creator api', () => {
         { text: '2 images', colors: [] }
       ]
     }));
+    const fullPreviewPreset = catalog.json().presets.find(
+      (preset: { id: string }) => preset.id === 'y2k-streetwear-mobile-landing-page'
+    );
+    expect(fullPreviewPreset.previewUrl)
+      .toMatch(/^\/creator-presets\/[a-f0-9]{64}\.webp$/);
+    expect(fullPreviewPreset.previewUrl).not.toBe(fullPreviewPreset.coverUrl);
+    expect(fullPreviewPreset.author).toEqual({
+      name: '@cezanne_cupcake_haze12',
+      url: 'https://higgsfield.ai/publications/0bbfc974-900c-4a1e-8561-3d9ada80177a'
+    });
+    const avatarPreset = catalog.json().presets.find(
+      (preset: { id: string }) => preset.id === 'felt-country-miniature-world'
+    );
+    expect(avatarPreset.author).toEqual({
+      name: '@volkan_iras',
+      url: 'https://x.com/volkan_iras/status/2051403524966141980',
+      avatarUrl: expect.stringMatching(/^\/creator-presets\/[a-f0-9]{64}\.webp$/)
+    });
 
     const created = await request('POST', '/creator/jobs', {
       projectId: 'project_preset_api',

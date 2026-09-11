@@ -135,10 +135,18 @@ export type CreatorPresetHighlight = {
   colors: string[];
 };
 
+export type CreatorPresetAuthor = {
+  name: string;
+  url?: string;
+  avatarUrl?: string;
+};
+
 export type CreatorPresetSummary = CreatorPresetRef & {
   title: string;
   description: string;
   coverUrl: string;
+  previewUrl?: string;
+  author?: CreatorPresetAuthor;
   prompt: string | null;
   tags: string[];
   featured: boolean;

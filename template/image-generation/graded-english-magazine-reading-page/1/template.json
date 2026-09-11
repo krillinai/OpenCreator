@@ -7,7 +7,7 @@
     "id": "image-generation",
     "version": 2
   },
-  "status": "draft",
+  "status": "published",
   "featured": false,
   "sortOrder": 44,
   "title": {
@@ -19,6 +19,12 @@
     "en-US": "Create an image with the Graded English Magazine Reading Page reference template."
   },
   "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "author": {
+    "name": "knowledgefxg",
+    "url": "https://x.com/knowledgefxg/status/2096249812194869289",
+    "avatar": "author-avatar.webp"
+  },
   "tags": [
     "教育科普",
     "信息图表",
