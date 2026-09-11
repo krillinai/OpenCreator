@@ -3,8 +3,10 @@ import type {
   CreatorRuntimeWorkspace
 } from '@opencreator/protocol';
 import {
+  ArrowLeft,
   RefreshCw,
   Search,
+  WandSparkles,
   X
 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
@@ -59,6 +61,7 @@ export function CreatorDashboard(props: {
   const [category, setCategory] = useState<CreatorHomeCategory>('recommended');
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [selectedPresetIdentity, setSelectedPresetIdentity] = useState<string>();
   const [recentPresetIds, setRecentPresetIds] = useState<string[]>(readRecentPresetIds);
   const [busyIdentities, setBusyIdentities] = useState<Set<string>>(
     () => new Set()
@@ -86,6 +89,9 @@ export function CreatorDashboard(props: {
       .toLocaleLowerCase()
       .includes(normalizedQuery)
   )), [categoryPresets, normalizedQuery]);
+  const selectedPreset = selectedPresetIdentity === undefined
+    ? undefined
+    : presets.find(preset => presetIdentity(preset) === selectedPresetIdentity);
 
   function selectCategory(nextCategory: CreatorHomeCategory) {
     setCategory(nextCategory);
@@ -117,6 +123,117 @@ export function CreatorDashboard(props: {
     }
   }
 
+  if (selectedPreset !== undefined) {
+    const identity = presetIdentity(selectedPreset);
+    const busy = busyIdentities.has(identity);
+    return (
+      <div className="creator-dashboard creator-template-detail-page">
+        <header className="creator-template-detail-toolbar">
+          <button
+            type="button"
+            className="creator-template-back"
+            onClick={() => {
+              setSelectedPresetIdentity(undefined);
+              setActionError(undefined);
+            }}
+          >
+            <ArrowLeft size={16} aria-hidden="true" />
+            {language === 'en-US' ? 'Back to templates' : '返回模板列表'}
+          </button>
+          <span>{moduleLabel(selectedPreset.module, language)}</span>
+        </header>
+
+        <div className="creator-template-detail-layout">
+          <section
+            className="creator-template-outcome"
+            aria-labelledby="creator-template-outcome-title"
+          >
+            <h2 id="creator-template-outcome-title">
+              {language === 'en-US' ? 'Example result' : '成果预览'}
+            </h2>
+            <div className="creator-template-outcome-media">
+              <img src={selectedPreset.coverUrl} alt={selectedPreset.title} />
+            </div>
+          </section>
+
+          <aside className="creator-template-detail-info">
+            <div className="creator-template-detail-intro">
+              <h1>{selectedPreset.title}</h1>
+              <p>{selectedPreset.description}</p>
+            </div>
+
+            {selectedPreset.highlights.length > 0 ? (
+              <section className="creator-template-detail-section">
+                <h2>{language === 'en-US' ? 'Template settings' : '模板配置'}</h2>
+                <div className="creator-template-highlights">
+                  {selectedPreset.highlights.map(highlight => (
+                    <span className="creator-template-highlight" key={highlight.text}>
+                      {highlight.colors.length > 0 ? (
+                        <span className="creator-template-swatches" aria-hidden="true">
+                          {highlight.colors.map(color => (
+                            <span key={color} style={{ backgroundColor: color }} />
+                          ))}
+                        </span>
+                      ) : null}
+                      <span>{highlight.text}</span>
+                    </span>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="creator-template-detail-section">
+              <h2>{language === 'en-US' ? 'Prompt' : '提示词'}</h2>
+              <p className={selectedPreset.prompt === null
+                ? 'creator-template-detail-empty'
+                : 'creator-template-prompt'}>
+                {selectedPreset.prompt ?? (language === 'en-US'
+                  ? 'This template uses fixed settings and does not require a preset prompt.'
+                  : '此模板使用固定配置，无需预设提示词。')}
+              </p>
+            </section>
+
+            <section className="creator-template-detail-section">
+              <h2>{language === 'en-US' ? 'Tags' : '标签'}</h2>
+              <ul className="creator-template-tags" aria-label={language === 'en-US'
+                ? 'Template tags'
+                : '模板标签'}>
+                {selectedPreset.tags.map(tag => <li key={tag}>{tag}</li>)}
+              </ul>
+            </section>
+
+            {selectedPreset.requirements !== null ? (
+              <p className="creator-template-runtime-requirement">
+                {language === 'en-US' ? 'Requires' : '运行需要'}: {' '}
+                {selectedPreset.requirements.provider}
+                {selectedPreset.requirements.model === undefined
+                  ? ''
+                  : ` / ${selectedPreset.requirements.model}`}
+              </p>
+            ) : null}
+
+            {actionError ? (
+              <p className="creator-template-action-error" role="alert">{actionError}</p>
+            ) : null}
+
+            <button
+              className="creator-template-use-button"
+              type="button"
+              disabled={busy}
+              aria-busy={busy}
+              onClick={() => void selectPreset(selectedPreset)}
+            >
+              <WandSparkles size={17} aria-hidden="true" />
+              {busy
+                ? (language === 'en-US' ? 'Creating...' : '正在创建...')
+                : (language === 'en-US' ? 'Use this template' : '使用此模板')}
+            </button>
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="creator-dashboard">
       <div
@@ -146,7 +263,7 @@ export function CreatorDashboard(props: {
       >
         <div className="creator-dashboard-heading">
           <h1 id="creator-templates-title">
-            {language === 'en-US' ? 'Creation Templates' : '创作模板'}
+            {language === 'en-US' ? 'Featured Templates' : '精选模板'}
           </h1>
           {searchOpen ? (
             <div className="creator-template-search">
@@ -226,27 +343,22 @@ export function CreatorDashboard(props: {
           <div className="creator-template-grid">
             {visiblePresets.map(preset => {
               const identity = presetIdentity(preset);
-              const busy = busyIdentities.has(identity);
               return (
                 <button
                   className="creator-template-card"
                   type="button"
                   key={identity}
                   data-preset-id={identity}
-                  disabled={busy}
-                  aria-busy={busy}
-                  onClick={() => void selectPreset(preset)}
+                  onClick={() => {
+                    setSelectedPresetIdentity(identity);
+                    setActionError(undefined);
+                  }}
                   aria-label={language === 'en-US'
-                    ? `Use ${preset.title} preset`
-                    : `使用${preset.title}模板`}
+                    ? `View ${preset.title} template details`
+                    : `查看${preset.title}模板详情`}
                 >
                   <span className="creator-template-media">
                     <img src={preset.coverUrl} alt="" loading="lazy" />
-                    {busy ? (
-                      <span className="creator-template-busy">
-                        {language === 'en-US' ? 'Creating...' : '正在创建...'}
-                      </span>
-                    ) : null}
                   </span>
                   <span className="creator-template-copy">
                     <strong>{preset.title}</strong>
@@ -301,6 +413,21 @@ function categoryLabel(
     image: { zh: '图像设计', en: 'Image Design' }
   };
   return language === 'en-US' ? labels[category].en : labels[category].zh;
+}
+
+function moduleLabel(
+  module: CreatorRuntimeWorkspace,
+  language: 'zh-CN' | 'en-US'
+): string {
+  const labels: Record<CreatorRuntimeWorkspace, { zh: string; en: string }> = {
+    'video-translation': { zh: '视频翻译', en: 'Video translation' },
+    'video-download': { zh: '视频下载', en: 'Video download' },
+    'image-generation': { zh: '图像生成', en: 'Image generation' },
+    'video-generation': { zh: '视频生成', en: 'Video generation' },
+    'cover-generator': { zh: '封面生成', en: 'Cover generation' },
+    'smart-dubbing': { zh: '智能配音', en: 'Smart dubbing' }
+  };
+  return language === 'en-US' ? labels[module].en : labels[module].zh;
 }
 
 function readRecentPresetIds(): string[] {

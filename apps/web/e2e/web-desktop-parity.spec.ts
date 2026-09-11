@@ -653,7 +653,7 @@ test('Creator Preset 在 Browser/Desktop Bridge 下创建相同工作台状态',
     try {
       await runtime.openApp(page);
       await page.goto(`${runtime.origin}/#/new`);
-      await expect(page.getByRole('heading', { name: '创作模板' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '精选模板' })).toBeVisible();
       await expect(page.getByText('需要帮你做点什么')).toHaveCount(0);
       await expect(page.getByRole('textbox', { name: '输入任务' })).toHaveCount(0);
       await expect(page.getByRole('tab', { name: '推荐' }))

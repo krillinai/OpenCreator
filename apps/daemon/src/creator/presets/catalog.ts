@@ -16,7 +16,11 @@ import type {
   CreatorPresetLocale,
   CreatorPresetRegistry
 } from './types.js';
-import { createCreatorPresetHighlights } from './presentation.js';
+import {
+  createCreatorPresetHighlights,
+  createCreatorPresetPrompt,
+  createCreatorPresetTags
+} from './presentation.js';
 
 export async function loadCreatorPresetCatalog(input: {
   root?: string;
@@ -235,7 +239,8 @@ function localizePreset(
     title: preset.title[locale],
     description: preset.description[locale],
     coverUrl: `/creator-presets/${path.basename(preset.cover.asset)}`,
-    tags: preset.tags,
+    prompt: createCreatorPresetPrompt(preset, locale),
+    tags: createCreatorPresetTags(preset, locale),
     featured: preset.featured,
     sortOrder: preset.sortOrder,
     requirements: preset.requirements ?? null,

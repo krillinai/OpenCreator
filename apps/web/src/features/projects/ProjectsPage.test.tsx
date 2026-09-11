@@ -4,6 +4,7 @@ import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import ProjectsPage, { isMeaningfulCreatorJob, youtubeThumbnailUrls } from './ProjectsPage.js';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
+import { ApiClientError } from '../../runtime/client.js';
 
 const workspaces = [{
   id: 'workspace_1',
@@ -301,6 +302,139 @@ describe('ProjectsPage', () => {
     fireEvent.click(within(dialogWithFiles).getByRole('button', { name: '删除' }));
     await waitFor(() => expect(onDeleteJob)
       .toHaveBeenLastCalledWith('job_cover', { deleteFiles: true }));
+  });
+
+  it('selects projects without opening them and selects only the current search results', () => {
+    const onOpenJob = vi.fn();
+    render(
+      <ProjectsPage
+        jobs={jobs}
+        workspaces={workspaces}
+        onOpenJob={onOpenJob}
+        onDeleteJob={vi.fn(async () => undefined)}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '批量管理' }));
+    fireEvent.click(screen.getByRole('button', { name: '选择项目 如何建立内容创作流程' }));
+    expect(onOpenJob).not.toHaveBeenCalled();
+    expect(screen.getByRole('checkbox', { name: '选择项目 如何建立内容创作流程' })).toBeChecked();
+    expect(screen.getByText('已选择 1 个')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索项目' }), {
+      target: { value: '夏季新品' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '全选当前结果' }));
+    expect(screen.getByText('已选择 2 个')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索项目' }), {
+      target: { value: '' }
+    });
+    expect(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '选择项目 如何建立内容创作流程' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '选择项目 youtube.com · launch-talk' })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.queryByRole('checkbox', { name: /^选择项目/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开项目 夏季新品封面' })).toBeInTheDocument();
+  });
+
+  it('deletes selected projects in one confirmed batch with the chosen file option', async () => {
+    const onDeleteJob = vi.fn(async () => undefined);
+    render(
+      <ProjectsPage
+        jobs={jobs}
+        workspaces={workspaces}
+        onOpenJob={vi.fn()}
+        onDeleteJob={onDeleteJob}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '批量管理' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 youtube.com · launch-talk' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除已选 (2)' }));
+
+    const dialog = screen.getByRole('alertdialog', { name: '批量删除项目' });
+    expect(dialog).toHaveTextContent('确认永久删除已选择的 2 个项目');
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: '同时删除项目文件' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除 2 个项目' }));
+
+    await waitFor(() => expect(onDeleteJob).toHaveBeenCalledTimes(2));
+    expect(onDeleteJob.mock.calls).toEqual([
+      ['job_cover', { deleteFiles: true }],
+      ['job_translation', { deleteFiles: true }]
+    ]);
+    await waitFor(() => expect(screen.queryByRole('alertdialog', { name: '批量删除项目' }))
+      .not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: '批量管理' })).toBeInTheDocument();
+  });
+
+  it('continues a batch after a failure and keeps only failed projects selected', async () => {
+    const onDeleteJob = vi.fn(async (jobId: string) => {
+      if (jobId === 'job_cover') {
+        throw new ApiClientError({
+          status: 409,
+          code: 'creator_job_has_active_run',
+          message: 'active run'
+        });
+      }
+    });
+    render(
+      <ProjectsPage
+        jobs={jobs}
+        workspaces={workspaces}
+        onOpenJob={vi.fn()}
+        onDeleteJob={onDeleteJob}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '批量管理' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 如何建立内容创作流程' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除已选 (2)' }));
+    fireEvent.click(within(
+      screen.getByRole('alertdialog', { name: '批量删除项目' })
+    ).getByRole('button', { name: '删除 2 个项目' }));
+
+    await waitFor(() => expect(onDeleteJob).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+      '已删除 1 个项目，另有 1 个项目仍在运行'
+    ));
+    expect(screen.getByText('已选择 1 个')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '选择项目 如何建立内容创作流程' })).not.toBeChecked();
+  });
+
+  it('prevents repeated batch deletion submissions while a deletion is running', async () => {
+    let finishDeletion: (() => void) | undefined;
+    const onDeleteJob = vi.fn(() => new Promise<void>(resolve => {
+      finishDeletion = resolve;
+    }));
+    render(
+      <ProjectsPage
+        jobs={[jobs[0]!]}
+        workspaces={workspaces}
+        onOpenJob={vi.fn()}
+        onDeleteJob={onDeleteJob}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '批量管理' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除已选 (1)' }));
+    fireEvent.click(within(
+      screen.getByRole('alertdialog', { name: '批量删除项目' })
+    ).getByRole('button', { name: '删除 1 个项目' }));
+
+    await waitFor(() => expect(onDeleteJob).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: '处理中' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '处理中' }));
+    expect(onDeleteJob).toHaveBeenCalledTimes(1);
+
+    finishDeletion?.();
+    await waitFor(() => expect(screen.queryByRole('alertdialog', { name: '批量删除项目' }))
+      .not.toBeInTheDocument());
   });
 
   it('explains that projects appear after the user starts creating', () => {

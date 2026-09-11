@@ -61,6 +61,7 @@ const testCreatorPresets: CreatorPresetSummary[] = [{
   title: '电商商品主图增强版',
   description: '从测试 catalog 动态加载。',
   coverUrl: `/creator-presets/${'a'.repeat(64)}.webp`,
+  prompt: '专业电商商品主图',
   tags: ['ecommerce', 'product'],
   featured: true,
   sortOrder: 10,
@@ -689,7 +690,7 @@ describe('App', () => {
     hostBridge.kind = hostKind;
     render(<App fileService={createFileService()} hostBridge={hostBridge} />);
 
-    expect(await screen.findByRole('heading', { name: '创作模板' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '精选模板' })).toBeInTheDocument();
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: '输入任务' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '推荐' }))
@@ -746,6 +747,7 @@ describe('App', () => {
 
   it('creates a preset job from the catalog and opens the real job workspace', async () => {
     const user = userEvent.setup();
+    window.history.replaceState(null, '', '#/new');
     const [project] = persistProjects('/Users/test/develop/preset-project');
     window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: project.id
@@ -779,10 +781,11 @@ describe('App', () => {
       />
     );
 
-    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
     await user.click(screen.getByRole('button', {
-      name: '使用电商商品主图增强版模板'
+      name: '查看电商商品主图增强版模板详情'
     }));
+    await user.click(screen.getByRole('button', { name: '使用此模板' }));
 
     await waitFor(() => expect(window.location.hash).toBe(
       '#/workbench?tool=image-generation&jobId=creator-job-1&returnTo=home'
@@ -821,13 +824,14 @@ describe('App', () => {
     ).getAllByRole('button', { name: '返回' })[0]!);
 
     await waitFor(() => expect(window.location.hash).toBe('#/new'));
-    expect(await screen.findByRole('heading', { name: '图像生成模板' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /^图像生成，1 个模板/ }))
+    expect(await screen.findByRole('heading', { name: '精选模板' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '推荐' }))
       .toHaveAttribute('aria-selected', 'true');
   });
 
   it('reuses the preset creation key after remounting and clears it after recovery', async () => {
     const user = userEvent.setup();
+    window.history.replaceState(null, '', '#/new');
     const [project] = persistProjects('/Users/test/develop/preset-remount');
     window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: project.id
@@ -867,10 +871,11 @@ describe('App', () => {
         subscribeRunEvents={async () => undefined}
       />
     );
-    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
     await user.click(screen.getByRole('button', {
-      name: '使用电商商品主图增强版模板'
+      name: '查看电商商品主图增强版模板详情'
     }));
+    await user.click(screen.getByRole('button', { name: '使用此模板' }));
     await waitFor(() => expect(testCreatorJobs).toHaveLength(1));
     expect(creatorPresetCreationStorageKeys()).toHaveLength(1);
     firstRender.unmount();
@@ -885,10 +890,11 @@ describe('App', () => {
         subscribeRunEvents={async () => undefined}
       />
     );
-    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
     await user.click(screen.getByRole('button', {
-      name: '使用电商商品主图增强版模板'
+      name: '查看电商商品主图增强版模板详情'
     }));
+    await user.click(screen.getByRole('button', { name: '使用此模板' }));
 
     await waitFor(() => expect(window.location.hash).toBe(
       '#/workbench?tool=image-generation&jobId=creator-job-1&returnTo=home'
@@ -901,6 +907,7 @@ describe('App', () => {
 
   it('retries a timed-out preset creation with the same creation key', async () => {
     const user = userEvent.setup();
+    window.history.replaceState(null, '', '#/new');
     const [project] = persistProjects('/Users/test/develop/preset-timeout');
     window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: project.id
@@ -946,18 +953,17 @@ describe('App', () => {
         subscribeRunEvents={async () => undefined}
       />
     );
-    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
     await user.click(screen.getByRole('button', {
-      name: '使用电商商品主图增强版模板'
+      name: '查看电商商品主图增强版模板详情'
     }));
+    await user.click(screen.getByRole('button', { name: '使用此模板' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '模板任务创建超时，请重试。'
     );
     expect(creatorPresetCreationStorageKeys()).toHaveLength(1);
 
-    await user.click(screen.getByRole('button', {
-      name: '使用电商商品主图增强版模板'
-    }));
+    await user.click(screen.getByRole('button', { name: '使用此模板' }));
     await waitFor(() => expect(window.location.hash).toBe(
       '#/workbench?tool=image-generation&jobId=creator-job-1&returnTo=home'
     ));
@@ -968,6 +974,7 @@ describe('App', () => {
 
   it('refreshes the catalog and clears the creation key when a preset disappears', async () => {
     const user = userEvent.setup();
+    window.history.replaceState(null, '', '#/new');
     const [project] = persistProjects('/Users/test/develop/preset-missing');
     window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: project.id
@@ -1013,10 +1020,11 @@ describe('App', () => {
         subscribeRunEvents={async () => undefined}
       />
     );
-    await user.click(await screen.findByRole('tab', { name: /^图像生成，/ }));
+    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
     await user.click(screen.getByRole('button', {
-      name: '使用电商商品主图增强版模板'
+      name: '查看电商商品主图增强版模板详情'
     }));
+    await user.click(screen.getByRole('button', { name: '使用此模板' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '该模板已不可用，模板目录已刷新。'
@@ -1162,7 +1170,7 @@ describe('App', () => {
       .toBeInTheDocument();
     expect(document.querySelector('.conversation-page')).not.toHaveClass('is-empty');
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '创作模板' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '精选模板' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     history.resolve(jsonResponse({
@@ -1177,7 +1185,7 @@ describe('App', () => {
     });
     expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '创作模板' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '精选模板' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '推荐' }))
       .toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();

@@ -139,6 +139,7 @@ export type CreatorPresetSummary = CreatorPresetRef & {
   title: string;
   description: string;
   coverUrl: string;
+  prompt: string | null;
   tags: string[];
   featured: boolean;
   sortOrder: number;

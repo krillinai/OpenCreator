@@ -113,14 +113,17 @@
 
 .projects-library-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
   margin-bottom: 14px;
 }
 
-.projects-library-heading.is-count-only {
-  justify-content: flex-end;
+.projects-library-summary {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .projects-library-heading h2 {
@@ -128,9 +131,59 @@
   font-weight: 650;
 }
 
-.projects-library-heading span {
+.projects-library-summary span,
+.projects-selected-count {
   color: var(--muted);
   font-size: 12px;
+}
+
+.projects-batch-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.projects-selected-count {
+  margin-right: 3px;
+  white-space: nowrap;
+}
+
+.projects-batch-button {
+  min-width: 0;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 580;
+  white-space: nowrap;
+}
+
+.projects-batch-button:not(:disabled):hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.projects-batch-button.is-destructive {
+  border-color: color-mix(in srgb, var(--destructive) 34%, var(--border));
+  color: var(--destructive);
+}
+
+.projects-batch-button.is-destructive:not(:disabled):hover {
+  background: var(--destructive-soft);
+}
+
+.projects-batch-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .projects-card-grid {
@@ -150,6 +203,11 @@
 
 .project-card[data-current="true"] {
   border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+}
+
+.project-card.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .project-card-open {
@@ -222,6 +280,30 @@
   place-items: center;
   border-radius: 6px;
   color: var(--muted);
+}
+
+.project-card-checkbox {
+  position: absolute;
+  z-index: 2;
+  top: 9px;
+  right: 9px;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.project-card-checkbox:disabled {
+  cursor: not-allowed;
+}
+
+.project-card.is-managing .project-card-open {
+  cursor: pointer;
+}
+
+.project-card.is-managing .project-card-copy {
+  padding-right: 12px;
 }
 
 .project-card:hover .project-card-cover img {
@@ -326,6 +408,18 @@
   .projects-category-tabs {
     grid-template-columns: repeat(3, minmax(112px, 1fr));
     overflow-x: auto;
+  }
+
+  .projects-library-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .projects-batch-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }
 

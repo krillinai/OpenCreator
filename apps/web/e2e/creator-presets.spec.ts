@@ -58,7 +58,7 @@ test('@AC-1 catalog 动态驱动首页、本地化和封面资源，升级后移
 
   await runtime.openApp(page);
   await page.goto(`${runtime.origin}/#/new`);
-  await expect(page.getByRole('heading', { name: '创作模板' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '精选模板' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: '输入任务' })).toHaveCount(0);
   await selectCreatorModule(page, '图像生成');
   const zhCard = page.getByRole('button', {

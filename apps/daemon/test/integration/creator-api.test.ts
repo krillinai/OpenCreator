@@ -221,6 +221,8 @@ describe('creator api', () => {
       version: 1,
       title: 'E-commerce Product Hero',
       coverUrl: expect.stringMatching(/^\/creator-presets\/[a-f0-9]{64}\.webp$/),
+      prompt: expect.stringContaining('Professional e-commerce product hero image'),
+      tags: ['E-commerce', 'Image', 'Product'],
       highlights: [
         { text: '1536 × 1024', colors: [] },
         { text: 'Standard quality', colors: [] },

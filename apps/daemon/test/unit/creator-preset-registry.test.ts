@@ -16,6 +16,7 @@ import {
 import {
   loadCreatorPresetCatalog
 } from '../../src/creator/presets/catalog.js';
+import { createCreatorPresetTags } from '../../src/creator/presets/presentation.js';
 import { createDefaultCreatorTemplateRegistry } from '../../src/creator/templates/registry.js';
 import {
   copyOfficialPreset
@@ -37,6 +38,25 @@ function setup() {
 }
 
 describe('creator preset registry', () => {
+  it('localizes identifier and source-language tags while preserving unknown tags', () => {
+    const preset = {
+      tags: ['camera-motion', '商业广告', 'reference-template', 'custom-tag']
+    };
+
+    expect(createCreatorPresetTags(preset, 'zh-CN')).toEqual([
+      '镜头运动',
+      '商业广告',
+      '参考模板',
+      'custom-tag'
+    ]);
+    expect(createCreatorPresetTags(preset, 'en-US')).toEqual([
+      'Camera motion',
+      'Commercial advertising',
+      'Reference template',
+      'custom-tag'
+    ]);
+  });
+
   it('returns localized latest published presets and keeps hidden presets addressable', async () => {
     const fixture = setup();
     copyOfficialPreset({
@@ -85,6 +105,10 @@ describe('creator preset registry', () => {
     const enPresets = registry.listPublished('en-US');
     expect(zhPresets.map(preset => preset.title)).toEqual(['新版']);
     expect(enPresets.map(preset => preset.title)).toEqual(['New version']);
+    expect(zhPresets[0]?.prompt).toContain('专业电商商品主图');
+    expect(enPresets[0]?.prompt).toContain('Professional e-commerce product hero image');
+    expect(zhPresets[0]?.tags).toEqual(['电商', '图像', '商品']);
+    expect(enPresets[0]?.tags).toEqual(['E-commerce', 'Image', 'Product']);
     expect(zhPresets[0]?.highlights).toEqual([
       { text: '1536 × 1024', colors: [] },
       { text: '标准质量', colors: [] },

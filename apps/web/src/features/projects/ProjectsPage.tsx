@@ -1,8 +1,10 @@
 import type { CreatorJob } from '@opencreator/protocol';
 import {
   FolderKanban,
+  ListChecks,
   Search,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
@@ -52,8 +54,12 @@ export default function ProjectsPage(props: {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<ProjectCategory>('全部');
   const [projectPendingDeletion, setProjectPendingDeletion] = useState<CreatorProject>();
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(() => new Set());
+  const [batchPendingDeletion, setBatchPendingDeletion] = useState(false);
   const [deleteProjectFiles, setDeleteProjectFiles] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState<string>();
+  const [batchDeleting, setBatchDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string>();
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const projects = useMemo(
@@ -73,6 +79,37 @@ export default function ProjectsPage(props: {
     ].join(' ').toLocaleLowerCase().includes(normalizedQuery))
     .sort((left, right) => right.job.updatedAt.localeCompare(left.job.updatedAt)),
   [category, normalizedQuery, projects]);
+  const selectedProjectCount = selectedProjectIds.size;
+  const allVisibleProjectsSelected = visibleProjects.length > 0
+    && visibleProjects.every(project => selectedProjectIds.has(project.job.id));
+  const deleting = deletingProjectId !== undefined || batchDeleting;
+
+  useEffect(() => {
+    const availableProjectIds = new Set(projects.map(project => project.job.id));
+    setSelectedProjectIds(current => {
+      const next = new Set([...current].filter(projectId => availableProjectIds.has(projectId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [projects]);
+
+  const toggleProjectSelection = (projectId: string) => {
+    if (batchDeleting) return;
+    setSelectedProjectIds(current => {
+      const next = new Set(current);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  };
+
+  const leaveBatchMode = () => {
+    if (batchDeleting) return;
+    setBatchMode(false);
+    setBatchPendingDeletion(false);
+    setSelectedProjectIds(new Set());
+    setDeleteProjectFiles(false);
+    setDeleteError(undefined);
+  };
 
   return (
     <main className="projects-page">
@@ -109,11 +146,76 @@ export default function ProjectsPage(props: {
         </div>
 
         <section className="projects-library" aria-label={l('项目列表', 'Project list')}>
-          <div className={`projects-library-heading${category === '全部' ? ' is-count-only' : ''}`}>
-            {category === '全部' ? null : (
-              <h2>{localizeProjectCategory(category, l)}</h2>
-            )}
-            <span>{`${visibleProjects.length} ${l('个项目', 'projects')}`}</span>
+          <div className="projects-library-heading">
+            <div className="projects-library-summary">
+              {category === '全部' ? null : (
+                <h2>{localizeProjectCategory(category, l)}</h2>
+              )}
+              <span>{`${visibleProjects.length} ${l('个项目', 'projects')}`}</span>
+            </div>
+            {props.onDeleteJob !== undefined && projects.length > 0 ? (
+              batchMode ? (
+                <div className="projects-batch-actions">
+                  <span className="projects-selected-count">
+                    {l(`已选择 ${selectedProjectCount} 个`, `${selectedProjectCount} selected`)}
+                  </span>
+                  <button
+                    type="button"
+                    className="projects-batch-button"
+                    disabled={visibleProjects.length === 0 || batchDeleting}
+                    onClick={() => {
+                      setSelectedProjectIds(current => {
+                        const next = new Set(current);
+                        visibleProjects.forEach(project => {
+                          if (allVisibleProjectsSelected) next.delete(project.job.id);
+                          else next.add(project.job.id);
+                        });
+                        return next;
+                      });
+                    }}
+                  >
+                    <ListChecks size={15} strokeWidth={1.8} aria-hidden="true" />
+                    {allVisibleProjectsSelected
+                      ? l('取消选择当前结果', 'Deselect results')
+                      : l('全选当前结果', 'Select all results')}
+                  </button>
+                  <button
+                    type="button"
+                    className="projects-batch-button"
+                    disabled={batchDeleting}
+                    onClick={leaveBatchMode}
+                  >
+                    <X size={15} strokeWidth={1.8} aria-hidden="true" />
+                    {l('取消', 'Cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="projects-batch-button is-destructive"
+                    disabled={selectedProjectCount === 0 || batchDeleting}
+                    onClick={() => {
+                      setDeleteError(undefined);
+                      setDeleteProjectFiles(false);
+                      setBatchPendingDeletion(true);
+                    }}
+                  >
+                    <Trash2 size={15} strokeWidth={1.8} aria-hidden="true" />
+                    {l(`删除已选 (${selectedProjectCount})`, `Delete selected (${selectedProjectCount})`)}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="projects-batch-button"
+                  onClick={() => {
+                    setDeleteError(undefined);
+                    setBatchMode(true);
+                  }}
+                >
+                  <ListChecks size={15} strokeWidth={1.8} aria-hidden="true" />
+                  {l('批量管理', 'Batch manage')}
+                </button>
+              )
+            ) : null}
           </div>
 
           {props.error !== undefined ? (
@@ -129,13 +231,26 @@ export default function ProjectsPage(props: {
             </div>
           ) : visibleProjects.length > 0 ? (
             <div className="projects-card-grid" role="list" aria-label={l('项目列表', 'Project list')}>
-              {visibleProjects.map(project => (
-                <article className="project-card" role="listitem" key={project.job.id}>
+              {visibleProjects.map(project => {
+                const selected = selectedProjectIds.has(project.job.id);
+                return (
+                <article
+                  className={`project-card${batchMode ? ' is-managing' : ''}${selected ? ' is-selected' : ''}`}
+                  role="listitem"
+                  key={project.job.id}
+                >
                   <button
                     type="button"
                     className="project-card-open"
-                    aria-label={`${l('打开项目', 'Open project')} ${project.title}`}
-                    onClick={() => props.onOpenJob(project.job)}
+                    aria-label={`${batchMode
+                      ? l('选择项目', 'Select project')
+                      : l('打开项目', 'Open project')} ${project.title}`}
+                    aria-pressed={batchMode ? selected : undefined}
+                    disabled={batchDeleting}
+                    onClick={() => {
+                      if (batchMode) toggleProjectSelection(project.job.id);
+                      else props.onOpenJob(project.job);
+                    }}
                   >
                     <span className="project-card-cover">
                       <ProjectCoverImage
@@ -152,7 +267,16 @@ export default function ProjectsPage(props: {
                       <span>{formatProjectTime(project.job.updatedAt, language)}</span>
                     </span>
                   </button>
-                  {props.onDeleteJob !== undefined ? (
+                  {batchMode ? (
+                    <input
+                      type="checkbox"
+                      className="project-card-checkbox"
+                      aria-label={`${l('选择项目', 'Select project')} ${project.title}`}
+                      checked={selected}
+                      disabled={batchDeleting}
+                      onChange={() => toggleProjectSelection(project.job.id)}
+                    />
+                  ) : props.onDeleteJob !== undefined ? (
                     <button
                       type="button"
                       className="project-card-menu"
@@ -169,7 +293,8 @@ export default function ProjectsPage(props: {
                     </button>
                   ) : null}
                 </article>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="projects-empty" role="status">
@@ -189,12 +314,19 @@ export default function ProjectsPage(props: {
         </section>
       </div>
       <ConfirmDialog
-        open={projectPendingDeletion !== undefined}
-        title={l('删除项目', 'Delete project')}
+        open={projectPendingDeletion !== undefined || batchPendingDeletion}
+        title={batchPendingDeletion
+          ? l('批量删除项目', 'Delete projects')
+          : l('删除项目', 'Delete project')}
         description={(
           <span className="project-delete-description">
             <span>
-              {projectPendingDeletion === undefined
+              {batchPendingDeletion
+                ? l(
+                    `确认永久删除已选择的 ${selectedProjectCount} 个项目？项目记录及创作历史将无法恢复。`,
+                    `Permanently delete the ${selectedProjectCount} selected projects? Their project records and creation history cannot be restored.`
+                  )
+                : projectPendingDeletion === undefined
                 ? l('项目记录及创作历史将无法恢复。', 'The project record and creation history cannot be restored.')
                 : l(
                     `确认永久删除“${projectPendingDeletion.title}”？项目记录及创作历史将无法恢复。`,
@@ -206,7 +338,7 @@ export default function ProjectsPage(props: {
                 type="checkbox"
                 aria-label={l('同时删除项目文件', 'Also delete project files')}
                 checked={deleteProjectFiles}
-                disabled={deletingProjectId !== undefined}
+                disabled={deleting}
                 onChange={event => setDeleteProjectFiles(event.target.checked)}
               />
               <span>
@@ -222,15 +354,58 @@ export default function ProjectsPage(props: {
             )}
           </span>
         )}
-        confirmLabel={l('删除', 'Delete')}
+        confirmLabel={batchPendingDeletion
+          ? l(`删除 ${selectedProjectCount} 个项目`, `Delete ${selectedProjectCount} projects`)
+          : l('删除', 'Delete')}
         destructive
-        busy={deletingProjectId !== undefined}
+        busy={deleting}
         onCancel={() => {
           setDeleteError(undefined);
           setDeleteProjectFiles(false);
           setProjectPendingDeletion(undefined);
+          setBatchPendingDeletion(false);
         }}
         onConfirm={() => {
+          if (batchPendingDeletion) {
+            if (batchDeleting || selectedProjectCount === 0 || props.onDeleteJob === undefined) return;
+            const deleteJob = props.onDeleteJob;
+            const selectedProjects = projects.filter(project => selectedProjectIds.has(project.job.id));
+            setBatchDeleting(true);
+            setDeleteError(undefined);
+            void (async () => {
+              const failedProjectIds = new Set<string>();
+              let activeFailureCount = 0;
+              for (const project of selectedProjects) {
+                try {
+                  await deleteJob(project.job.id, { deleteFiles: deleteProjectFiles });
+                } catch (error) {
+                  failedProjectIds.add(project.job.id);
+                  if (error instanceof ApiClientError && error.code === 'creator_job_has_active_run') {
+                    activeFailureCount += 1;
+                  }
+                }
+              }
+
+              const deletedCount = selectedProjects.length - failedProjectIds.size;
+              setSelectedProjectIds(failedProjectIds);
+              if (failedProjectIds.size === 0) {
+                setBatchPendingDeletion(false);
+                setBatchMode(false);
+                setDeleteProjectFiles(false);
+                return;
+              }
+              setDeleteError(activeFailureCount === failedProjectIds.size
+                ? l(
+                    `已删除 ${deletedCount} 个项目，另有 ${failedProjectIds.size} 个项目仍在运行，请停止任务后重试。`,
+                    `Deleted ${deletedCount} projects. ${failedProjectIds.size} are still running; stop them and try again.`
+                  )
+                : l(
+                    `已删除 ${deletedCount} 个项目，另有 ${failedProjectIds.size} 个删除失败，请重试。`,
+                    `Deleted ${deletedCount} projects. ${failedProjectIds.size} could not be deleted; please try again.`
+                  ));
+            })().finally(() => setBatchDeleting(false));
+            return;
+          }
           if (
             projectPendingDeletion === undefined
             || deletingProjectId !== undefined
