@@ -1182,7 +1182,8 @@ function isTtsProvider(value: unknown): value is CreatorTtsProvider {
   return value === 'openai'
     || value === 'aliyun'
     || value === 'minimax'
-    || value === 'edge-tts';
+    || value === 'edge-tts'
+    || value === 'volcengine';
 }
 
 function cloneScriptManifest(value: ScriptManifest): ScriptManifest {

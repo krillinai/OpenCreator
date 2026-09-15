@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +20,7 @@ describe('CreatorServicesConfigStore', () => {
   afterEach(() => {
     if (root !== undefined) rmSync(root, { recursive: true, force: true });
     root = undefined;
+    vi.unstubAllEnvs();
   });
 
   it('returns KrillinAI-compatible defaults when no credential is saved', async () => {
@@ -74,6 +75,8 @@ describe('CreatorServicesConfigStore', () => {
   });
 
   it('stores public settings in config.toml and credentials in credentials.json', async () => {
+    vi.stubEnv('VOLCENGINE_APP_ID', '');
+    vi.stubEnv('VOLCENGINE_ACCESS_TOKEN', '');
     root = mkdtempSync(join(tmpdir(), 'opencreator-creator-services-'));
     const configFile = join(root, 'config.toml');
     const credentialsFile = join(root, 'credentials.json');
@@ -96,6 +99,28 @@ describe('CreatorServicesConfigStore', () => {
         'image.gemini.apiKey': 'gemini-private-key'
       }
     });
+  });
+
+  it('fills volcengine speech credentials from environment without persisting them', async () => {
+    vi.stubEnv('VOLCENGINE_APP_ID', 'env-app-id');
+    vi.stubEnv('VOLCENGINE_ACCESS_TOKEN', 'env-access-token');
+    root = mkdtempSync(join(tmpdir(), 'opencreator-creator-services-'));
+    const configFile = join(root, 'config.toml');
+    const credentialsFile = join(root, 'credentials.json');
+    const store = createOpenCreatorCreatorServicesConfigStore({
+      configFile,
+      credentialsFile
+    });
+
+    const config = await store.read();
+    expect(config.transcription.provider).toBe('volcengine');
+    expect(config.transcription.volcengine.appId).toBe('env-app-id');
+    expect(config.transcription.volcengine.accessToken).toBe('env-access-token');
+    expect(config.tts.provider).toBe('volcengine');
+    expect(config.tts.volcengine.appId).toBe('env-app-id');
+    expect(config.tts.volcengine.apiKey).toBe('env-access-token');
+    expect(existsSync(configFile)).toBe(false);
+    expect(existsSync(credentialsFile)).toBe(false);
   });
 
   it('redacts and retains credentials for every image and video provider', () => {
@@ -154,6 +179,30 @@ describe('CreatorServicesConfigStore', () => {
     expect(presented.config.tts.minimax.apiKey).toBe('');
     expect(presented.config.tts.aliyun.apiKey).toBe('');
     expect(retainCreatorServicesCredentials(presented.config, current).tts).toEqual(current.tts);
+  });
+
+  it('redacts and retains Volcengine speech credentials', () => {
+    const current = createDefaultCreatorServicesConfig();
+    current.transcription.volcengine.appId = 'asr-app';
+    current.transcription.volcengine.accessToken = 'asr-token';
+    current.tts.volcengine.appId = 'tts-app';
+    current.tts.volcengine.apiKey = 'tts-token';
+
+    const presented = presentCreatorServicesConfig(current);
+    expect(presented.configuredCredentials).toEqual(expect.arrayContaining([
+      'transcription.volcengine.appId',
+      'transcription.volcengine.accessToken',
+      'tts.volcengine.appId',
+      'tts.volcengine.apiKey'
+    ]));
+    expect(presented.config.transcription.volcengine.appId).toBe('');
+    expect(presented.config.transcription.volcengine.accessToken).toBe('');
+    expect(presented.config.tts.volcengine.appId).toBe('');
+    expect(presented.config.tts.volcengine.apiKey).toBe('');
+    expect(retainCreatorServicesCredentials(presented.config, current).transcription.volcengine)
+      .toEqual(current.transcription.volcengine);
+    expect(retainCreatorServicesCredentials(presented.config, current).tts.volcengine)
+      .toEqual(current.tts.volcengine);
   });
 
   it('uses Codex as fallback until a custom text model is configured', async () => {

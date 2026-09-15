@@ -181,7 +181,7 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
     });
     throw error;
   } finally {
-    await rm(launcherRoot, { recursive: true, force: true });
+    await removeLauncherRootBestEffort(launcherRoot);
   }
 }
 
@@ -197,6 +197,7 @@ function stageConfig(
     && provider !== 'aliyun'
     && provider !== 'minimax'
     && provider !== 'edge-tts'
+    && provider !== 'volcengine'
   ) return source;
   const config = structuredClone(source);
   config.tts.provider = provider;
@@ -783,6 +784,23 @@ async function installYtDlpCommand(
 
 function quoteShellArgument(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+async function removeLauncherRootBestEffort(launcherRoot: string): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await rm(launcherRoot, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (!isBusyCleanupError(error) || attempt === 7) return;
+      await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+    }
+  }
+}
+
+function isBusyCleanupError(error: unknown): boolean {
+  if (error === null || typeof error !== 'object' || !('code' in error)) return false;
+  return ['EBUSY', 'EPERM', 'EACCES'].includes(String(error.code));
 }
 
 function isWindowsLinkFallbackError(error: unknown): boolean {

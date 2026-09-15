@@ -358,13 +358,26 @@ function createVideoConfig() {
       aliyun: {
         oss: { accessKeyId: '', accessKeySecret: '', bucket: '' },
         speech: { accessKeyId: '', accessKeySecret: '', appKey: '' }
+      },
+      volcengine: {
+        appId: '',
+        accessToken: '',
+        resourceId: 'volc.seedasr.auc',
+        baseUrl: 'https://openspeech.bytedance.com'
       }
     },
     tts: {
       provider: 'openai' as const,
       openai: { baseUrl: '', apiKey: '', model: '', defaultVoiceId: '' },
       minimax: { baseUrl: '', apiKey: '', model: '', defaultVoiceId: '' },
-      aliyun: { baseUrl: '', apiKey: '', model: '', defaultVoiceId: '' }
+      aliyun: { baseUrl: '', apiKey: '', model: '', defaultVoiceId: '' },
+      volcengine: {
+        baseUrl: 'https://openspeech.bytedance.com',
+        apiKey: '',
+        model: 'volcano_tts',
+        defaultVoiceId: 'BV001_streaming',
+        appId: ''
+      }
     },
     image: {
       provider: 'openai' as const,

@@ -2,6 +2,7 @@ import type {
   CreatorTtsProvider,
   CreatorTtsVoice
 } from '@opencreator/protocol';
+import { listVolcengineTtsVoices } from './volcengine-tts-catalog.js';
 
 const QWEN3_TTS_FLASH = 'qwen3-tts-flash';
 const QWEN3_TTS_FLASH_2025_11_27 = 'qwen3-tts-flash-2025-11-27';
@@ -89,6 +90,9 @@ export function listBundledTtsVoices(
 ): CreatorTtsVoice[] | undefined {
   if (provider === 'openai') {
     return openAiVoices.map(voice => ({ ...voice }));
+  }
+  if (provider === 'volcengine') {
+    return listVolcengineTtsVoices(model);
   }
   if (provider !== 'aliyun') return undefined;
   const normalizedModel = model.trim().toLowerCase();

@@ -10,6 +10,7 @@ import (
 	pkgimage "krillin-ai/pkg/image"
 	"krillin-ai/pkg/localtts"
 	"krillin-ai/pkg/openai"
+	"krillin-ai/pkg/volcengine"
 	"krillin-ai/pkg/whisper"
 	"krillin-ai/pkg/whispercpp"
 	"krillin-ai/pkg/whisperkit"
@@ -48,6 +49,14 @@ func NewService() *Service {
 			return nil
 		}
 		transcriber = cc
+	case "volcengine":
+		transcriber = volcengine.NewAsrClient(
+			config.Conf.Transcribe.Volcengine.BaseUrl,
+			config.Conf.Transcribe.Volcengine.AppId,
+			config.Conf.Transcribe.Volcengine.AccessToken,
+			config.Conf.Transcribe.Volcengine.ResourceId,
+			config.Conf.App.Proxy,
+		)
 	}
 	log.GetLogger().Info("当前选择的转录源： ", zap.String("transcriber", config.Conf.Transcribe.Provider))
 
@@ -62,6 +71,8 @@ func NewService() *Service {
 		ttsClient = localtts.NewEdgeTtsClient()
 	case "minimax":
 		ttsClient, _ = ttsprovider.New("minimax")
+	case "volcengine":
+		ttsClient, _ = ttsprovider.New("volcengine")
 	}
 
 	s := &Service{

@@ -8,6 +8,7 @@ import (
 	"krillin-ai/pkg/aliyun"
 	"krillin-ai/pkg/minimax"
 	"krillin-ai/pkg/openai"
+	"krillin-ai/pkg/volcengine"
 )
 
 func New(provider string) (types.TTSProvider, error) {
@@ -31,6 +32,14 @@ func New(provider string) (types.TTSProvider, error) {
 			config.Conf.Tts.Minimax.BaseUrl,
 			config.Conf.Tts.Minimax.ApiKey,
 			config.Conf.Tts.Minimax.Model,
+		), nil
+	case "volcengine":
+		return volcengine.NewTtsClient(
+			config.Conf.Tts.Volcengine.BaseUrl,
+			config.Conf.Tts.Volcengine.AppId,
+			config.Conf.Tts.Volcengine.AccessToken,
+			config.Conf.Tts.Volcengine.Cluster,
+			config.Conf.App.Proxy,
 		), nil
 	default:
 		return nil, fmt.Errorf("unsupported tts provider: %s", provider)

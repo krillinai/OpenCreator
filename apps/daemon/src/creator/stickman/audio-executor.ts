@@ -250,6 +250,7 @@ function resolveTtsSelection(stage: CreatorExecutorInput, config: CreatorService
   const provider = stage.job.state.ttsProvider === 'openai'
     || stage.job.state.ttsProvider === 'aliyun'
     || stage.job.state.ttsProvider === 'minimax'
+    || stage.job.state.ttsProvider === 'volcengine'
     ? stage.job.state.ttsProvider
     : config.tts.provider === 'edge-tts'
       ? undefined

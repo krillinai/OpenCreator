@@ -1,13 +1,31 @@
+import { defaultVideoGenerationModels } from './media-generation.js';
+
 export type OpenAiCompatibleConfig = {
   baseUrl: string;
   apiKey: string;
   model: string;
 };
 
-export type CreatorTtsProvider = 'openai' | 'aliyun' | 'edge-tts' | 'minimax';
+export const creatorTtsProviders = ['openai', 'aliyun', 'edge-tts', 'minimax', 'volcengine'] as const;
+export type CreatorTtsProvider = (typeof creatorTtsProviders)[number];
+
+export function isCreatorTtsProvider(value: unknown): value is CreatorTtsProvider {
+  return creatorTtsProviders.some(provider => provider === value);
+}
 
 export type CreatorTtsProviderConfig = OpenAiCompatibleConfig & {
   defaultVoiceId: string;
+};
+
+export type VolcengineTtsConfig = CreatorTtsProviderConfig & {
+  appId: string;
+};
+
+export type VolcengineAsrConfig = {
+  appId: string;
+  accessToken: string;
+  resourceId: string;
+  baseUrl: string;
 };
 
 export type CreatorTtsVoice = {
@@ -54,12 +72,21 @@ export type AliyunSpeechConfig = {
   appKey: string;
 };
 
-export type CreatorTranscriptionProvider =
-  | 'openai'
-  | 'faster-whisper'
-  | 'whisperkit'
-  | 'whisper.cpp'
-  | 'aliyun';
+export const creatorTranscriptionProviders = [
+  'openai',
+  'faster-whisper',
+  'whisperkit',
+  'whisper.cpp',
+  'aliyun',
+  'volcengine'
+] as const;
+export type CreatorTranscriptionProvider = (typeof creatorTranscriptionProviders)[number];
+
+export function isCreatorTranscriptionProvider(
+  value: unknown
+): value is CreatorTranscriptionProvider {
+  return creatorTranscriptionProviders.some(provider => provider === value);
+}
 
 export type CreatorServicesConfig = {
   proxy: string;
@@ -78,12 +105,14 @@ export type CreatorServicesConfig = {
       oss: AliyunOssConfig;
       speech: AliyunSpeechConfig;
     };
+    volcengine: VolcengineAsrConfig;
   };
   tts: {
     provider: CreatorTtsProvider;
     openai: CreatorTtsProviderConfig;
     minimax: CreatorTtsProviderConfig;
     aliyun: CreatorTtsProviderConfig;
+    volcengine: VolcengineTtsConfig;
   };
   image: {
     provider: 'openai' | 'jimeng' | 'kling' | 'gemini';
@@ -130,9 +159,13 @@ export type CreatorServicesCredentialField =
   | 'transcription.aliyun.speech.accessKeyId'
   | 'transcription.aliyun.speech.accessKeySecret'
   | 'transcription.aliyun.speech.appKey'
+  | 'transcription.volcengine.appId'
+  | 'transcription.volcengine.accessToken'
   | 'tts.openai.apiKey'
   | 'tts.minimax.apiKey'
   | 'tts.aliyun.apiKey'
+  | 'tts.volcengine.appId'
+  | 'tts.volcengine.apiKey'
   | 'image.openai.apiKey'
   | 'image.jimeng.apiKey'
   | 'image.kling.accessKey'
@@ -142,6 +175,11 @@ export type CreatorServicesCredentialField =
   | 'video.kling.accessKey'
   | 'video.kling.secretKey'
   | 'video.veo.apiKey';
+
+export const defaultVolcengineSpeechBaseUrl = 'https://openspeech.bytedance.com';
+export const defaultVolcengineAsrResourceId = 'volc.seedasr.auc';
+export const defaultVolcengineTtsCluster = 'volcano_tts';
+export const defaultVolcengineTtsVoiceId = 'BV001_streaming';
 
 export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
   return {
@@ -167,6 +205,12 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
       aliyun: {
         oss: { accessKeyId: '', accessKeySecret: '', bucket: '' },
         speech: { accessKeyId: '', accessKeySecret: '', appKey: '' }
+      },
+      volcengine: {
+        appId: '',
+        accessToken: '',
+        resourceId: defaultVolcengineAsrResourceId,
+        baseUrl: defaultVolcengineSpeechBaseUrl
       }
     },
     tts: {
@@ -188,6 +232,13 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
         apiKey: '',
         model: 'qwen3-tts-flash',
         defaultVoiceId: 'Cherry'
+      },
+      volcengine: {
+        baseUrl: defaultVolcengineSpeechBaseUrl,
+        apiKey: '',
+        model: defaultVolcengineTtsCluster,
+        defaultVoiceId: defaultVolcengineTtsVoiceId,
+        appId: ''
       }
     },
     image: {
@@ -235,4 +286,3 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
     }
   };
 }
-import { defaultVideoGenerationModels } from './media-generation.js';

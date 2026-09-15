@@ -62,6 +62,21 @@ type AliyunTranscribeConfig struct {
 	Speech AliyunSpeechConfig `toml:"speech"`
 }
 
+type VolcengineAsrConfig struct {
+	AppId       string `toml:"app_id"`
+	AccessToken string `toml:"access_token"`
+	ResourceId  string `toml:"resource_id"`
+	BaseUrl     string `toml:"base_url"`
+}
+
+type VolcengineTtsConfig struct {
+	AppId          string `toml:"app_id"`
+	AccessToken    string `toml:"access_token"`
+	Cluster        string `toml:"cluster"`
+	DefaultVoiceId string `toml:"default_voice_id"`
+	BaseUrl        string `toml:"base_url"`
+}
+
 type Transcribe struct {
 	Provider              string                 `toml:"provider"`
 	EnableGpuAcceleration bool                   `toml:"enable_gpu_acceleration"`
@@ -70,6 +85,7 @@ type Transcribe struct {
 	Whisperkit            LocalModelConfig       `toml:"whisperkit"`
 	Whispercpp            LocalModelConfig       `toml:"whispercpp"`
 	Aliyun                AliyunTranscribeConfig `toml:"aliyun"`
+	Volcengine            VolcengineAsrConfig    `toml:"volcengine"`
 }
 
 type AliyunTtsConfig struct {
@@ -81,10 +97,11 @@ type AliyunTtsConfig struct {
 }
 
 type Tts struct {
-	Provider string                 `toml:"provider"`
-	Openai   OpenaiCompatibleConfig `toml:"openai"`
-	Aliyun   AliyunTtsConfig        `toml:"aliyun"`
-	Minimax  OpenaiCompatibleConfig `toml:"minimax"`
+	Provider   string                 `toml:"provider"`
+	Openai     OpenaiCompatibleConfig `toml:"openai"`
+	Aliyun     AliyunTtsConfig        `toml:"aliyun"`
+	Minimax    OpenaiCompatibleConfig `toml:"minimax"`
+	Volcengine VolcengineTtsConfig    `toml:"volcengine"`
 }
 
 type Dubbing struct {
@@ -152,6 +169,10 @@ var Conf = Config{
 		Whispercpp: LocalModelConfig{
 			Model: "large-v2",
 		},
+		Volcengine: VolcengineAsrConfig{
+			ResourceId: "volc.seedasr.auc",
+			BaseUrl:    "https://openspeech.bytedance.com",
+		},
 	},
 	Tts: Tts{
 		Provider: "openai",
@@ -165,6 +186,11 @@ var Conf = Config{
 		Minimax: OpenaiCompatibleConfig{
 			BaseUrl: "https://api.minimax.io",
 			Model:   "speech-2.8-hd",
+		},
+		Volcengine: VolcengineTtsConfig{
+			BaseUrl:        "https://openspeech.bytedance.com",
+			Cluster:        "volcano_tts",
+			DefaultVoiceId: "BV001_streaming",
 		},
 	},
 	Dubbing: Dubbing{
@@ -219,6 +245,10 @@ func ValidateTranscriptionConfig() error {
 		if Conf.Transcribe.Aliyun.Speech.AccessKeyId == "" || Conf.Transcribe.Aliyun.Speech.AccessKeySecret == "" || Conf.Transcribe.Aliyun.Speech.AppKey == "" {
 			return errors.New("使用阿里云语音服务需要配置相关密钥")
 		}
+	case "volcengine":
+		if Conf.Transcribe.Volcengine.AppId == "" || Conf.Transcribe.Volcengine.AccessToken == "" {
+			return errors.New("使用火山引擎语音识别需要配置 App ID 和 Access Token")
+		}
 	default:
 		return errors.New("不支持的转录提供商")
 	}
@@ -239,6 +269,10 @@ func ValidateTTSConfig() error {
 	case "minimax":
 		if Conf.Tts.Minimax.ApiKey == "" {
 			return errors.New("使用 MiniMax 配音服务需要配置 API Key")
+		}
+	case "volcengine":
+		if Conf.Tts.Volcengine.AppId == "" || Conf.Tts.Volcengine.AccessToken == "" {
+			return errors.New("使用火山引擎配音服务需要配置 App ID 和 Access Token")
 		}
 	case "edge-tts":
 		return nil

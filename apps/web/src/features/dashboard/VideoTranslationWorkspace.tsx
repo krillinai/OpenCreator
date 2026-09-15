@@ -243,6 +243,7 @@ function languageLabel(options: LanguageOption[], value: string) {
 function ttsProviderLabel(provider: CreatorTtsProvider, l: LocalizeCopy): string {
   if (provider === 'aliyun') return l('阿里云百炼', 'Alibaba Cloud Model Studio');
   if (provider === 'minimax') return 'MiniMax';
+  if (provider === 'volcengine') return l('火山引擎', 'Volcengine');
   if (provider === 'edge-tts') return 'Edge TTS';
   return 'OpenAI TTS';
 }
@@ -985,7 +986,8 @@ function isTtsProvider(value: unknown): value is CreatorTtsProvider {
   return value === 'openai'
     || value === 'aliyun'
     || value === 'minimax'
-    || value === 'edge-tts';
+    || value === 'edge-tts'
+    || value === 'volcengine';
 }
 
 function readSubtitleFontSetting(

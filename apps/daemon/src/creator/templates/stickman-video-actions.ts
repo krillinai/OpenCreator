@@ -444,6 +444,7 @@ export function createStickmanVideoWorkflow(input: {
     const provider = job.state.ttsProvider === 'openai'
       || job.state.ttsProvider === 'aliyun'
       || job.state.ttsProvider === 'minimax'
+      || job.state.ttsProvider === 'volcengine'
       ? job.state.ttsProvider
       : config.tts.provider;
     if (provider === 'edge-tts') {

@@ -24,7 +24,7 @@
     json = false # 所使用的llm接口是否支持json格式，如果支持请设置为true，若不知道这是什么，请保持为false
 
 [transcribe] # 视频转文本支持多种方案，配置时先填provider，再填对应的配置
-    provider = "openai" #语音识别，当前可选值：openai,fasterwhisper,whisperkit,whisper.cpp,aliyun。(fasterwhisper不支持macOS,whisperkit只支持M芯片)
+    provider = "openai" #语音识别，当前可选值：openai,fasterwhisper,whisperkit,whisper.cpp,aliyun,volcengine。(fasterwhisper不支持macOS,whisperkit只支持M芯片)
     enable_gpu_acceleration = false # 给fasterwhisper进行GPU加速选项,50系显卡请务必开启,否则无法正常运行
     [transcribe.openai]
         base_url = ""
@@ -45,9 +45,14 @@
             access_key_id = ""
             access_key_secret = ""
             app_key= ""
+    [transcribe.volcengine] # 豆包录音文件识别大模型，provider选volcengine时填写
+        app_id = ""
+        access_token = ""
+        resource_id = "volc.seedasr.auc"
+        base_url = "https://openspeech.bytedance.com"
 
 [tts]
-    provider = "aliyun" # 可选值：openai,aliyun,edge-tts,minimax
+    provider = "aliyun" # 可选值：openai,aliyun,edge-tts,minimax,volcengine
     [tts.openai]
         base_url = ""
         api_key = ""
@@ -60,6 +65,12 @@
         base_url = "https://dashscope.aliyuncs.com/api/v1"
         api_key = ""
         model = "qwen3-tts-flash"
+    [tts.volcengine] # 豆包语音合成。小模型 volcano_tts 走 V1；seed-tts-2.0 / seed-icl-2.0 走 V3
+        app_id = ""
+        access_token = ""
+        cluster = "volcano_tts" # volcano_tts | seed-tts-2.0 | seed-tts-1.0 | seed-icl-2.0 | seed-icl-1.0 | volcano_icl
+        default_voice_id = "BV001_streaming" # 2.0 可填 zh_female_gaolengyujie_uranus_bigtts；复刻填 S_ 开头 Speaker ID
+        base_url = "https://openspeech.bytedance.com"
 
 [dubbing]
     min_subtitle_duration = 2.5 # 最短配音字幕时长，短句会优先合并
