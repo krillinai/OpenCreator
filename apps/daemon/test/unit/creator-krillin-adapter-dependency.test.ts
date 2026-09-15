@@ -36,6 +36,8 @@ describe('KrillinAI configured transcription dependency', () => {
 
     await expect(executor.run({
       signal: new AbortController().signal,
+      job: { templateId: 'video-translation', state: {} },
+      inputArtifacts: [],
       stageRun: {
         stageId: 'subtitle',
         progress: {}

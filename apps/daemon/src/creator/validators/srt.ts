@@ -4,7 +4,7 @@ export type SrtCue = { index: number; startMs: number; endMs: number; text: stri
 export type ParseSrtOptions = { allowOverlaps?: boolean };
 
 export async function validateSrtFile(path: string, options: ParseSrtOptions = {}): Promise<SrtCue[]> {
-  return parseSrt(await readFile(path, 'utf8'), options);
+  return parseSrt(new TextDecoder('utf-8', { fatal: true }).decode(await readFile(path)), options);
 }
 
 export function parseSrt(content: string, options: ParseSrtOptions = {}): SrtCue[] {
@@ -28,6 +28,15 @@ export function parseSrt(content: string, options: ParseSrtOptions = {}): SrtCue
 }
 
 function timestamp(value: string): number {
-  const parts = value.replace(',', '.').split(':');
-  return Number(parts[0]) * 3_600_000 + Number(parts[1]) * 60_000 + Number(parts[2]) * 1_000;
+  const [hours, minutes, seconds, milliseconds] = value.split(/[:,.]/).map(Number);
+  if (minutes! >= 60 || seconds! >= 60) throw new Error('invalid_srt: timestamp out of range');
+  return hours! * 3_600_000 + minutes! * 60_000 + seconds! * 1_000 + milliseconds!;
+}
+
+export function formatSrtTimestamp(value: number): string {
+  const hours = Math.floor(value / 3_600_000);
+  const minutes = Math.floor((value % 3_600_000) / 60_000);
+  const seconds = Math.floor((value % 60_000) / 1_000);
+  const milliseconds = value % 1_000;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
 }

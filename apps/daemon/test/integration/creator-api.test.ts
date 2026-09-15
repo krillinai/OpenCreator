@@ -32,6 +32,42 @@ afterEach(async () => {
 });
 
 describe('creator api', () => {
+  it.each(['source_subtitle', 'target_subtitle'])('imports %s and runs downstream workflow with the persisted input', async kind => {
+    const calls: string[] = [];
+    await setupServer({ llmConfigured: kind === 'source_subtitle', creatorExecutors: [{
+      id: 'krillinai', async run(stage) {
+        calls.push(stage.stageRun.stageId);
+        const path = join(stage.workdir, 'output.srt');
+        writeFileSync(path, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+        if (stage.stageRun.stageId === 'subtitle') {
+          expect(stage.inputArtifacts.some(a => a.kind === kind && a.metadata.source === 'local-upload')).toBe(true);
+          return { outputs: ['source_video', 'target_subtitle', 'vertical_subtitle'].map(kind => ({ kind, status: 'completed' as const, path })) };
+        }
+        return { outputs: [{ kind: stage.stageRun.stageId === 'tts' ? 'dubbed_audio' : stage.stageRun.stageId === 'render-horizontal' ? 'horizontal_video' : 'vertical_video', status: 'completed', path }] };
+      }
+    }] });
+    const created = await request('POST', '/creator/jobs', { projectId: 'project_import', templateId: 'video-translation', state: {
+      sourceUrl: 'https://www.youtube.com/watch?v=import', dubbing: true, ttsProvider: 'edge-tts', composeVideo: true, videoFormat: 'all'
+    } });
+    const job = created.json().job;
+    const payload = { action: 'import-subtitle', expectedRevision: 0, input: { kind, language: 'en', fileName: 'captions.srt', contentBase64: Buffer.from('1\n00:00:00,000 --> 00:00:01,000\nHello\n').toString('base64') } };
+    const invalid = await request('POST', `/creator/jobs/${job.id}/actions`, {
+      ...payload, input: { ...payload.input, contentBase64: Buffer.from([0xff, 0xfe, 0x41, 0x00]).toString('base64') }
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect((await request('GET', `/creator/jobs/${job.id}`)).json().job).toMatchObject({ revision: 0, artifacts: [] });
+    const imported = await request('POST', `/creator/jobs/${job.id}/actions`, payload);
+    expect(imported.statusCode).toBe(200);
+    const artifact = imported.json().job.artifacts[0];
+    expect(artifact).toMatchObject({ kind, metadata: { source: 'local-upload', language: 'en', cueCount: 1 } });
+    expect(existsSync(artifact.path)).toBe(true);
+    const started = await request('POST', `/creator/jobs/${job.id}/actions`, { action: 'run-stage', expectedRevision: imported.json().job.revision, input: { stageId: 'subtitle', workflow: true } });
+    expect(started.statusCode).toBe(200);
+    await waitForCreatorJob(job.id, job => job.artifacts.some((a: { kind: string }) => a.kind === 'vertical_video'));
+    expect(calls).toEqual(['subtitle', 'tts', 'render-horizontal', 'render-vertical']);
+    const old = await request('GET', `/creator/jobs/${job.id}/artifacts/${artifact.id}/content`);
+    expect(old.statusCode).toBe(200);
+  });
   it('serves built-in stickman visual asset previews in development', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-api-'));
     server = await buildServer({

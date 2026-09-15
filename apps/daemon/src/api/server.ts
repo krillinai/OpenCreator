@@ -444,6 +444,7 @@ export async function buildServer(input: BuildServerInput) {
   });
   creatorAgentReconciler.reconcileAfterDaemonRestart();
   const creatorService = input.creatorService ?? createCreatorService({
+    jobsRoot: creatorJobsRoot,
     repository: creatorRepository,
     templates: createDefaultCreatorTemplateRegistry(),
     providerRequestLedger: creatorProviderRequestLedger

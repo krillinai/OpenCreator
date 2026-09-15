@@ -12,6 +12,47 @@ import { CreatorSessionProvider, useCreatorSession } from './creator-session-sto
 import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
 
 describe('VideoTranslationWorkspace task controls', () => {
+  it('keeps an imported translation in configuration and shows its persisted metadata', async () => {
+    let current = job({ status: 'draft', revision: 0, stages: [], state: { currentStep: 1, furthestStep: 1 } });
+    const applyAction = vi.fn(async (_id: string, request: { action: string; input: Record<string, CreatorJson> }) => {
+      if (request.action === 'import-subtitle') {
+        const artifact = subtitleArtifact(1, '已导入字幕');
+        artifact.metadata = { ...artifact.metadata, fileName: 'translated.srt', source: 'local-upload', language: 'zh_cn', cueCount: 1 };
+        current = { ...current, revision: current.revision + 1, artifacts: [artifact], state: { ...current.state, importedTargetSubtitleId: artifact.id,
+          resultSnapshots: [{ version: 1, createdAt: current.createdAt, action: 'import-subtitle', stageId: null, description: '导入本地字幕', artifactRefs: { target_subtitle: [artifact.id] }, changedArtifactIds: [artifact.id], staleArtifactIds: [], state: current.state }]
+        } };
+      } else current = { ...current, revision: current.revision + 1, state: { ...current.state, ...request.input.patch as object } };
+      return { job: current };
+    });
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={current} service={{ applyAction, runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+    fireEvent.change(screen.getByRole('combobox', { name: '字幕类型' }), { target: { value: 'target_subtitle' } });
+    fireEvent.change(screen.getByLabelText('UTF-8 SRT 文件'), { target: { files: [new File(['srt'], 'translated.srt')] } });
+    expect(await screen.findByText('本地导入 · translated.srt · zh_cn · 1 条字幕 · v1')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '设置翻译语言' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(within(screen.getByRole('region', { name: '视频翻译操作区' })).getByRole('button', { name: '开始翻译' }));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({ action: 'run-stage', input: { stageId: 'subtitle', workflow: true } })));
+  });
+  it.each(['source_subtitle', 'target_subtitle'])('uploads %s through the shared action and displays daemon validation errors', async kind => {
+    const initial = job({ status: 'draft', revision: 0, stages: [], state: { currentStep: 1, furthestStep: 1 } });
+    const applyAction = vi.fn(async (_id: string, request: { action: string; input: Record<string, CreatorJson> }) => {
+      if (request.action === 'import-subtitle') throw new Error('Invalid UTF-8 SRT: timeline 2');
+      return { job: { ...initial, revision: 1, state: { ...initial.state, ...request.input.patch as object } } };
+    });
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={initial} service={{ applyAction, runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+    fireEvent.change(screen.getByRole('combobox', { name: '字幕类型' }), { target: { value: kind } });
+    fireEvent.change(screen.getByLabelText('UTF-8 SRT 文件'), { target: { files: [new File(['invalid'], 'local.srt', { type: 'application/x-subrip' })] } });
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({ action: 'import-subtitle', input: {
+      kind, fileName: 'local.srt', language: kind === 'source_subtitle' ? 'en' : 'zh_cn', contentBase64: btoa('invalid')
+    } })));
+    expect(await within(screen.getByRole('group', { name: '导入已有字幕' })).findByText('Invalid UTF-8 SRT: timeline 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('UTF-8 SRT 文件')).not.toBeDisabled();
+  });
   it('offers the complete target language catalog without expanding unsupported source languages', () => {
     render(
       <LanguageProvider initialPreference="zh-CN">

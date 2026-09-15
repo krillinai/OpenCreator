@@ -5,9 +5,11 @@ import (
 	"krillin-ai/internal/service"
 	"krillin-ai/internal/types"
 	pkgimage "krillin-ai/pkg/image"
+	"krillin-ai/pkg/util"
 )
 
 type StageService interface {
+	TranslateSubtitleBlocks(context.Context, []*util.SrtBlock, *types.SubtitleTaskStepParam) error
 	PrepareMedia(context.Context, *types.SubtitleTaskStepParam) error
 	GenerateSubtitlesFromAudio(context.Context, *types.SubtitleTaskStepParam) error
 	GenerateSpeechFromSRT(context.Context, *types.SubtitleTaskStepParam) error
@@ -16,6 +18,10 @@ type StageService interface {
 	ProcessYouTubeSubtitle(context.Context, *service.YoutubeSubtitleReq) (string, error)
 	RenderVideo(context.Context, service.RenderVideoRequest) (string, error)
 	GenerateCoverImage(context.Context, pkgimage.GenerateRequest) (pkgimage.GenerateResult, error)
+}
+
+func (a *ServiceAdapter) TranslateSubtitleBlocks(ctx context.Context, blocks []*util.SrtBlock, p *types.SubtitleTaskStepParam) error {
+	return a.svc.TranslateSubtitleBlocks(ctx, blocks, p)
 }
 
 type ServiceAdapter struct {

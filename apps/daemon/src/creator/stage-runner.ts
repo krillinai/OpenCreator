@@ -104,7 +104,7 @@ export function createCreatorStageRunner(input: {
           `Creator result version ${inputResultVersion} was not found`
         );
       }
-      const resolved = resolveInputs(job, stage.inputArtifacts, inputSnapshot?.artifactRefs);
+      const resolved = resolveInputs(job, stage.inputArtifacts, inputSnapshot?.artifactRefs, inputSnapshot?.state);
       updateStageRun({
         id: stageRun.id,
         status: resolved.missing.length === 0 ? 'queued' : 'failed',
@@ -202,7 +202,11 @@ export function createCreatorStageRunner(input: {
             scopeKey: stageRun!.scopeKey,
             inputFingerprint: stageRun!.inputFingerprint,
             sha256: outputHashes[outputIndex] ?? null,
-            sourceArtifactIds: output.sourceArtifactIds ?? resolved.artifacts.map(artifact => artifact.id),
+            sourceArtifactIds: output.sourceArtifactIds ?? (
+              job.templateId === 'video-translation' && stageId === 'subtitle'
+                ? subtitleOutputSources(output.kind, insertedArtifacts, resolved.artifacts)
+                : resolved.artifacts.map(artifact => artifact.id)
+            ),
             metadata: {
               ...(output.metadata ?? {}),
               ...(resultVersion === undefined ? {} : { resultVersion })
@@ -435,6 +439,16 @@ async function sha256File(path: string): Promise<string> {
   return createHash('sha256').update(content).digest('hex');
 }
 
+function subtitleOutputSources(kind: string, outputs: CreatorArtifact[], inputs: CreatorArtifact[]): string[] {
+  if (kind === 'source_video') return inputs.filter(artifact => artifact.kind === 'source_video').map(artifact => artifact.id);
+  const imported = inputs.find(artifact => artifact.kind === kind);
+  if (imported !== undefined) return [imported.id];
+  const sourceKinds = kind === 'source_subtitle' ? ['source_video']
+    : kind === 'target_subtitle' ? ['source_subtitle']
+    : ['source_subtitle', 'target_subtitle'];
+  return outputs.filter(artifact => sourceKinds.includes(artifact.kind)).map(artifact => artifact.id);
+}
+
 function resolveInputs(
   job: CreatorJob,
   requirements: Array<{
@@ -443,13 +457,16 @@ function resolveInputs(
     stateKey?: string;
     optional?: boolean;
   }>,
-  explicitArtifactRefs?: Record<string, string[]>
+  explicitArtifactRefs?: Record<string, string[]>,
+  snapshotState?: Record<string, CreatorJson>
 ): { artifacts: CreatorArtifact[]; missing: string[] } {
   const artifacts: CreatorArtifact[] = [];
   const missing: string[] = [];
   for (const requirement of requirements) {
     if (!creatorInputArtifactEnabled(job, requirement.kind)) continue;
-    if (explicitArtifactRefs !== undefined) {
+    const importedSubtitle = requirement.stateKey === 'importedSourceSubtitleId'
+      || requirement.stateKey === 'importedTargetSubtitleId';
+    if (explicitArtifactRefs !== undefined && !importedSubtitle) {
       const explicitIds = explicitArtifactRefs[requirement.kind] ?? [];
       const artifact = [...explicitIds].reverse().flatMap(id => {
         const candidate = job.artifacts.find(item => (
@@ -465,7 +482,7 @@ function resolveInputs(
     }
     const selectedId = requirement.selector === 'state-artifact-id'
       && requirement.stateKey !== undefined
-      ? job.state[requirement.stateKey]
+      ? (importedSubtitle ? snapshotState ?? job.state : job.state)[requirement.stateKey]
       : undefined;
     if (
       job.templateId === 'stickman-video'

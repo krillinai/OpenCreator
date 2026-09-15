@@ -12,6 +12,8 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
       sourceType: z.enum(['url', 'file']).default('url'),
       sourceUrl: z.string().default(''),
       sourceArtifactId: z.string().nullable().optional(),
+      importedSourceSubtitleId: z.string().nullable().optional(),
+      importedTargetSubtitleId: z.string().nullable().optional(),
       sourceLanguage: z.string().default('zh_cn'),
       targetLanguage: z.string().default('en'),
       preferPlatformCaptions: z.boolean().default(true),
@@ -42,7 +44,8 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
           selector: 'state-artifact-id',
           stateKey: 'sourceArtifactId',
           optional: true
-        }],
+        }, { kind: 'source_subtitle', selector: 'state-artifact-id', stateKey: 'importedSourceSubtitleId', optional: true },
+        { kind: 'target_subtitle', selector: 'state-artifact-id', stateKey: 'importedTargetSubtitleId', optional: true }],
         outputArtifacts: [
           { kind: 'source_video', status: 'completed' },
           { kind: 'source_subtitle', status: 'completed' },
@@ -103,6 +106,7 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
       }
     ],
     actions: [
+      { id: 'import-subtitle', inputSchema: jsonRecord, allowedStages: ['subtitle', 'tts', 'render-horizontal', 'render-vertical'] },
       {
         id: 'update-settings',
         inputSchema: jsonRecord,
@@ -142,6 +146,7 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
       { kind: 'vertical_video', required: false }
     ],
     agentGuidance: [
+      '导入用户提供的 UTF-8 SRT 使用 import-subtitle，input 包含 fileName、contentBase64（原文件字节的 base64，最多512 KiB）、kind（source_subtitle 或 target_subtitle）和 language。原文跳过 ASR，译文跳过 ASR 与翻译。不要编造字幕。',
       '帮助用户调整视频翻译内容与参数，修改前读取最新 revision。',
       '更新设置必须写入 input.patch。',
       '字幕样式字段为 subtitleStyle，可包含 primaryColor、secondaryColor、outlineColor、outlineWidth；不要使用 subtitleColor 等未定义别名。',

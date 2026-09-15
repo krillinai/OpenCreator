@@ -41,6 +41,26 @@ function setup() {
 }
 
 describe('creator runtime advanced contracts', () => {
+  it('does not treat generated subtitles from an older result snapshot as imported subtitles', async () => {
+    const { db, repository, service, templates, dispatcher } = setup();
+    const runner = createCreatorStageRunner({ repository, templates, workRoot: join(tempDir, 'work'), executors: [{
+      id: 'krillinai', async run({ inputArtifacts, workdir }) {
+        expect(inputArtifacts.some(artifact => artifact.kind.endsWith('_subtitle'))).toBe(false);
+        const path = join(workdir, 'fixture');
+        writeFileSync(path, 'fixture');
+        return { outputs: ['source_video', 'source_subtitle', 'target_subtitle'].map(kind => ({ kind, path, status: 'completed' as const })) };
+      }
+    }] });
+    try {
+      const job = service.createJob({ projectId: 'p1', templateId: 'video-translation', state: { sourceUrl: 'https://youtu.be/test' } });
+      expect((await runner.run(job.id, 'subtitle')).status).toBe('succeeded');
+      const first = service.getJob(job.id)!;
+      const target = first.artifacts.find(artifact => artifact.kind === 'target_subtitle')!;
+      expect(target.sourceArtifactIds).toContain(first.artifacts.find(artifact => artifact.kind === 'source_subtitle')!.id);
+      const next = dispatcher.dispatch(job.id, { action: 'run-stage', expectedRevision: first.revision, idempotencyKey: 'regenerate', input: { stageId: 'subtitle', inputResultVersion: 1 } }, 'user');
+      expect((await runner.runStageRun(next.commandReceipt.stageRunId!)).status).toBe('succeeded');
+    } finally { await runner.close(); db.close(); }
+  });
   it('runs distinct shot scopes concurrently while keeping unscoped stages serial', async () => {
     const { db, repository, service, templates } = setup();
     let active = 0;

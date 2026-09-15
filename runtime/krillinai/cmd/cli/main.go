@@ -135,7 +135,7 @@ func configureOpenCreatorProgress(cmd *cli.Command, output *jsonLineWriter) {
 }
 
 func requiresTranscriptionAtStart(cmd cli.Command) bool {
-	if cmd.Name != "subtitle" {
+	if cmd.Name != "subtitle" || cmd.Subtitle.InputSRT != "" {
 		return false
 	}
 	if cmd.Subtitle.CaptionSource == pipeline.CaptionSourceWhisper {

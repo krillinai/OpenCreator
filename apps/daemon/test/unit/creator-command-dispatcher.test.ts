@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +20,59 @@ afterEach(() => {
 });
 
 describe('creator command dispatcher', () => {
+  it('imports subtitle versions through user and agent commands and invalidates only dependencies', () => {
+    const fixture = setup();
+    try {
+      const dispatcher = createCreatorCommandDispatcher({ service: fixture.service, repository: fixture.repository, receipts: fixture.receipts });
+      const content = '1\n00:00:00,000 --> 00:00:01,000\nHello\n';
+      const command = { action: 'import-subtitle', expectedRevision: 0, idempotencyKey: 'import-1', input: {
+        fileName: 'local.srt', contentBase64: Buffer.from(content).toString('base64'), kind: 'target_subtitle', language: 'en'
+      } };
+      const first = dispatcher.dispatch(fixture.jobId, command, 'user');
+      expect(dispatcher.dispatch(fixture.jobId, command, 'user').job.artifacts).toHaveLength(1);
+      const old = first.job.artifacts[0]!;
+      const insert = (kind: string, sources: string[]) => fixture.repository.insertArtifact({ jobId: fixture.jobId, kind, sourceArtifactIds: sources, path: null, status: 'completed', metadata: {} });
+      const audio = insert('dubbed_audio', [old.id]);
+      const video = insert('horizontal_video', [audio.id]);
+      const unrelated = insert('horizontal_video', []);
+      const sourceVideo = insert('source_video', []);
+      const legacyVariant = fixture.repository.insertArtifact({ jobId: fixture.jobId, kind: 'vertical_subtitle', sourceArtifactIds: [sourceVideo.id], path: null, status: 'completed', metadata: { resultVersion: 1 } });
+      const verticalVideo = insert('vertical_video', [legacyVariant.id]);
+      const second = dispatcher.dispatch(fixture.jobId, { ...command, expectedRevision: first.job.revision, idempotencyKey: 'import-2' }, 'agent');
+      expect(second.job.artifacts.filter(a => a.kind === 'target_subtitle')).toHaveLength(2);
+      expect(second.job.artifacts.filter(a => a.status === 'stale').map(a => a.id).sort()).toEqual([audio.id, video.id, legacyVariant.id, verticalVideo.id].sort());
+      for (const id of [old.id, unrelated.id, sourceVideo.id]) expect(second.job.artifacts.find(a => a.id === id)?.status).toBe('completed');
+      expect(readFileSync(old.path!, 'utf8')).toBe(content);
+      expect(second.job.artifacts.find(a => a.kind === 'target_subtitle' && a.id !== old.id)?.path).not.toBe(old.path);
+      expect(second.job.state.resultSnapshots).toHaveLength(2);
+      const switched = dispatcher.dispatch(fixture.jobId, {
+        ...command, expectedRevision: second.job.revision, idempotencyKey: 'import-source',
+        input: { ...command.input, kind: 'source_subtitle', contentBase64: Buffer.from('1\n00:00:01,001 --> 00:00:02,001\nSource\n').toString('base64') }
+      }, 'user').job;
+      expect(switched.artifacts.find(a => a.kind === 'source_subtitle')?.metadata.cues).toEqual([
+        { id: 1, start: '00:00:01,001', end: '00:00:02,001', text: 'Source' }
+      ]);
+      expect(switched.artifacts.find(a => a.id === sourceVideo.id)?.status).toBe('completed');
+      expect(switched.state.importedTargetSubtitleId).toBeNull();
+    } finally { fixture.db.close(); }
+  });
+
+  it.each([
+    Buffer.from(''), Buffer.from([0xff, 0xfe, 0x41, 0x00]),
+    Buffer.from('1\n00:60:00,000 --> 01:01:00,000\ntext'),
+    Buffer.from('1\n00:00:02,000 --> 00:00:01,000\ntext'),
+    Buffer.from('1\n00:00:00,000 --> 00:00:01,000\n'),
+    Buffer.from('1\n00:00:00,000 --> 00:00:02,000\na\n\n2\n00:00:01,000 --> 00:00:03,000\nb')
+  ])('rejects invalid SRT without an artifact or revision change', bytes => {
+    const fixture = setup();
+    try {
+      const dispatcher = createCreatorCommandDispatcher({ service: fixture.service, repository: fixture.repository, receipts: fixture.receipts });
+      expect(() => dispatcher.dispatch(fixture.jobId, { action: 'import-subtitle', expectedRevision: 0, idempotencyKey: 'invalid', input: {
+        fileName: 'bad.srt', contentBase64: bytes.toString('base64'), kind: 'source_subtitle', language: 'en'
+      } }, 'user')).toThrow();
+      expect(fixture.service.getJob(fixture.jobId)).toMatchObject({ revision: 0, artifacts: [] });
+    } finally { fixture.db.close(); }
+  });
   it('commits revision, activity, StageRun and receipt once', () => {
     const fixture = setup();
     const wake = vi.fn();
@@ -192,6 +245,7 @@ function setup() {
   const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const repository = createCreatorRepository(db);
   const service = createCreatorService({
+    jobsRoot: join(tempDir, 'jobs'),
     repository,
     templates: createDefaultCreatorTemplateRegistry()
   });

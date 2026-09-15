@@ -31,6 +31,7 @@ import VideoTranslationAgentPanel from './VideoTranslationAgentPanel.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import VideoSourceInput from './VideoSourceInput.js';
 import VideoSourcePreview from './VideoSourcePreview.js';
+import { VideoTranslationSubtitleImport } from './VideoTranslationSubtitleImport.js';
 import VideoTranslationResultWorkspace, {
   type SubtitleCue,
   type SubtitleResultOutput,
@@ -1370,6 +1371,11 @@ export default function VideoTranslationWorkspace(props: {
       latestVersion: latest?.value ?? null
     };
     setResultVersions(artifactVersions);
+    if (creatorSession.job.status === 'draft' && readCreatorResultSnapshots(persisted.resultSnapshots).at(-1)?.action === 'import-subtitle') {
+      setDraftBaseVersion(undefined);
+      setWorkspacePhase('configure');
+      return;
+    }
     if (latest !== undefined) {
       if (!shouldRestoreLatestResult) return;
       setCurrentStep(3);
@@ -2686,6 +2692,7 @@ export default function VideoTranslationWorkspace(props: {
               </div>
 
               <div className="video-translation-toggle-list" data-agent-focus={agentFocus === 'subtitles'}>
+                <VideoTranslationSubtitleImport sourceLanguage={sourceLanguage} targetLanguage={targetLanguage} disabled={submitting || activeStage !== undefined} />
                 <Switch
                   checked={bilingual}
                   label={l('双语字幕', 'Bilingual subtitles')}

@@ -7,8 +7,11 @@ import (
 	subtitlestyle "krillin-ai/internal/subtitle_style"
 	"krillin-ai/internal/types"
 	pkgimage "krillin-ai/pkg/image"
+	"krillin-ai/pkg/util"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -28,6 +31,57 @@ type fakeStageService struct {
 	preparedAudioPath string
 	audioProgress     []uint8
 	omitPreparedVideo bool
+}
+
+func TestImportedSubtitlesSkipRecognitionAndPreserveMultilineText(t *testing.T) {
+	for _, translated := range []bool{false, true} {
+		t.Run(fmtBool(translated), func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "input.srt")
+			content := "1\n00:00:00,000 --> 00:00:01,000\nfirst line\nsecond line\n"
+			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			fake := &fakeStageService{}
+			response, err := GenerateSubtitles(context.Background(), fake, SubtitleRequest{Input: "https://www.youtube.com/watch?v=import", Workdir: root, TaskID: "import", OriginLang: "en", TargetLang: "zh_cn", PrepareVideo: true, InputSRT: path, SRTTranslated: translated})
+			if err != nil {
+				t.Fatal(err)
+			}
+			expected := []string{"prepare"}
+			if !translated {
+				expected = append(expected, "translate-import")
+			}
+			if !reflect.DeepEqual(fake.calls, expected) {
+				t.Fatalf("calls = %v, want %v", fake.calls, expected)
+			}
+			if translated && (response.Outputs.OriginSRT != "" || response.Outputs.BilingualSRT != "") {
+				t.Fatal("translated import fabricated source subtitles")
+			}
+			output, err := os.ReadFile(response.Outputs.TargetSRT)
+			if err != nil || !strings.Contains(string(output), "first line\nsecond line") {
+				t.Fatalf("multiline content lost: %s, %v", output, err)
+			}
+			original, _ := os.ReadFile(path)
+			if string(original) != content {
+				t.Fatal("input was overwritten")
+			}
+		})
+	}
+}
+
+func fmtBool(value bool) string {
+	if value {
+		return "translated"
+	}
+	return "source"
+}
+
+func (f *fakeStageService) TranslateSubtitleBlocks(_ context.Context, blocks []*util.SrtBlock, _ *types.SubtitleTaskStepParam) error {
+	f.calls = append(f.calls, "translate-import")
+	for _, block := range blocks {
+		block.TargetLanguageSentence = "translated " + block.OriginLanguageSentence
+	}
+	return f.processErr
 }
 
 func (f *fakeStageService) PrepareMedia(_ context.Context, p *types.SubtitleTaskStepParam) error {

@@ -18,6 +18,7 @@ export function createVideoTranslationWorkflow(input: {
     if (job.templateId !== 'video-translation') return;
     if (stageId === 'subtitle') {
       validateSource(job);
+      if (job.artifacts.some(artifact => artifact.id === job.state.importedTargetSubtitleId && artifact.kind === 'target_subtitle' && artifact.status === 'completed')) return;
       const config = await input.configStore.read();
       if (!config.llm.apiKey) {
         setConfigurationNeeded(input.creator, job.id, {

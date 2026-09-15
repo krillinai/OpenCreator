@@ -10,7 +10,8 @@ import type {
   CreatorJson
 } from '@opencreator/protocol';
 import { wechatArticleSourceLimit } from '@opencreator/protocol';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { basename, extname, join, dirname } from 'node:path';
 import type { CreatorRepository } from './repository.js';
 import { CreatorProviderRequestLedger } from './provider-requests.js';
@@ -22,6 +23,7 @@ import {
 } from './result-snapshots.js';
 import type { CreatorTemplateRegistry } from './templates/types.js';
 import { videoTranslationArtifactRefsPatch } from './templates/video-translation-results.js';
+import { formatSrtTimestamp, parseSrt } from './validators/srt.js';
 
 export type CreatorService = ReturnType<typeof createCreatorService>;
 
@@ -40,6 +42,7 @@ export function createCreatorService(input: {
   repository: CreatorRepository;
   templates: CreatorTemplateRegistry;
   providerRequestLedger?: CreatorProviderRequestLedger;
+  jobsRoot?: string;
 }) {
   const { repository, templates } = input;
   const providerRequestLedger = input.providerRequestLedger
@@ -705,6 +708,71 @@ export function createCreatorService(input: {
                 : 'draft';
             }
           }
+        } else if (request.action === 'import-subtitle') {
+          if (input.jobsRoot === undefined || current.templateId !== 'video-translation') {
+            throw new CreatorServiceError('creator_action_not_allowed', 'Subtitle import is unavailable');
+          }
+          if (current.stages.some(stage => stage.status === 'queued' || stage.status === 'running')) {
+            throw new CreatorServiceError('creator_job_has_active_run', 'Stop the active task before replacing subtitles');
+          }
+          const fileName = basename(readString(parsedInput.fileName, 'fileName').replaceAll('\\', '/'));
+          const encoded = readString(parsedInput.contentBase64, 'contentBase64');
+          const language = readString(parsedInput.language, 'language');
+          const kind = parsedInput.kind;
+          if (!/\.srt$/i.test(fileName) || !/^[a-zA-Z][a-zA-Z0-9_-]{0,34}$/.test(language)
+            || (kind !== 'source_subtitle' && kind !== 'target_subtitle')
+            || encoded.length > 700_000) {
+            throw new CreatorServiceError('creator_action_invalid', 'Import requires an SRT file (maximum 512 KiB), subtitle type and language');
+          }
+          const bytes = Buffer.from(encoded, 'base64');
+          let content: string;
+          let cues: ReturnType<typeof parseSrt>;
+          try {
+            if (bytes.toString('base64') !== encoded) throw new Error('Invalid base64 file content');
+            if (bytes.length > 512 * 1024) throw new Error('SRT exceeds 512 KiB');
+            content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+            if (content.includes('\u0000')) throw new Error('SRT must be UTF-8');
+            cues = parseSrt(content);
+          } catch (error) {
+            throw new CreatorServiceError('creator_action_invalid', `Invalid UTF-8 SRT: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          const resultVersion = nextCreatorResultVersion(current);
+          const directory = join(input.jobsRoot, current.id, 'subtitles');
+          mkdirSync(directory, { recursive: true });
+          const path = join(directory, `${kind}-${randomUUID()}.srt`);
+          writeFileSync(path, content.replace(/^\uFEFF/, ''), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+          const downstreamKinds = new Set(['dubbed_audio', 'dubbed_video', 'horizontal_video', 'vertical_video', 'bilingual_subtitle', 'vertical_subtitle', ...(kind === 'source_subtitle' ? ['target_subtitle'] : [])]);
+          const replaced = current.artifacts.filter(artifact => artifact.kind === kind
+            || (kind === 'source_subtitle' && artifact.kind === 'target_subtitle'));
+          // Older subtitle runs recorded sibling outputs without edges between subtitle variants.
+          const variants = current.artifacts.filter(artifact => (
+            ['bilingual_subtitle', 'vertical_subtitle', ...(kind === 'source_subtitle' ? ['target_subtitle'] : [])].includes(artifact.kind)
+            && typeof artifact.metadata.resultVersion === 'number'
+            && replaced.some(source => source.metadata.resultVersion === artifact.metadata.resultVersion)
+          ));
+          for (const source of [...replaced, ...variants]) {
+            for (const artifact of [...(variants.includes(source) ? [source] : []), ...dependentArtifacts(current.artifacts, source.id)]) {
+              if (artifact.status !== 'completed' || !downstreamKinds.has(artifact.kind) || affectedArtifactIds.includes(artifact.id)) continue;
+              repository.setArtifactStatus(artifact.id, 'stale');
+              affectedArtifactIds.push(artifact.id);
+            }
+          }
+          const artifact = repository.insertArtifact({
+            jobId, kind, status: 'completed', path, sourceArtifactIds: [],
+            metadata: { fileName, source: 'local-upload', language, cueCount: cues.length, size: bytes.length, resultVersion,
+              cues: cues.map(cue => ({ id: cue.index, start: formatSrtTimestamp(cue.startMs), end: formatSrtTimestamp(cue.endMs), text: cue.text })) }
+          });
+          const artifactRefsPatch = Object.fromEntries([...downstreamKinds].map(value => [value, [] as string[]]));
+          if (kind === 'target_subtitle') artifactRefsPatch.source_subtitle = [];
+          nextState = { ...nextState, currentStage: null, needsInput: null,
+            importedSourceSubtitleId: kind === 'source_subtitle' ? artifact.id : null,
+            importedTargetSubtitleId: kind === 'target_subtitle' ? artifact.id : null,
+            [kind === 'source_subtitle' ? 'sourceLanguage' : 'targetLanguage']: language };
+          nextState = { ...nextState, ...appendCreatorResultSnapshot({ job: current, version: resultVersion,
+            changedArtifacts: [artifact], artifactRefsPatch, staleArtifactIds: affectedArtifactIds,
+            action: request.action, description: '导入本地字幕', state: nextState }) };
+          affectedArtifactIds.push(artifact.id);
+          nextStatus = 'draft';
         } else if (request.action === 'edit-subtitle') {
           const artifactId = readString(parsedInput.artifactId, 'artifactId');
           const preserveResultVersion = readOptionalBoolean(
@@ -1244,6 +1312,7 @@ function dependentArtifacts(artifacts: CreatorArtifact[], sourceId: string): Cre
 }
 
 function summarizeAction(action: string, input: Record<string, CreatorJson>): string {
+  if (action === 'import-subtitle') return '导入本地字幕并保留旧版本';
   if (action === 'edit-subtitle') return '更新字幕并保留下游旧版本';
   if (action === 'commit-version') return '保存项目版本设置';
   if (action === 'run-stage') return `启动阶段 ${String(input.stageId ?? '')}`.trim();
@@ -1252,6 +1321,7 @@ function summarizeAction(action: string, input: Record<string, CreatorJson>): st
   if (action === 'undo-action') return '撤销上一次创作修改';
   return '更新创作设置';
 }
+
 
 function readNonEmptyRecord(value: CreatorJson | undefined, field: string): Record<string, CreatorJson> {
   if (value === null || Array.isArray(value) || typeof value !== 'object') {

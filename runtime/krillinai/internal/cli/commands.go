@@ -123,6 +123,8 @@ Flags:
   --caption-source <source>  any, platform, manual, auto, or whisper
   --prepare-video            download original video for later rendering
   --source-only              generate source-language subtitles without translation
+  --input-srt <file>         use existing UTF-8 SRT instead of transcription
+  --srt-translated           input SRT is already translated; skip translation
   --bilingual-top            Put target subtitle on top (default true)
   --max-word-one-line <n>    Max words per subtitle line
   --subtitle-style-file <file>  JSON subtitle style override file
@@ -491,6 +493,8 @@ func parseSubtitle(name string, args []string) (Command, error) {
 	captionSource := fs.String("caption-source", string(pipeline.CaptionSourceAny), "caption source")
 	prepareVideo := fs.Bool("prepare-video", false, "prepare original video for later rendering")
 	sourceOnly := fs.Bool("source-only", false, "generate source-language subtitles without translation")
+	inputSRT := fs.String("input-srt", "", "existing UTF-8 SRT")
+	srtTranslated := fs.Bool("srt-translated", false, "SRT is already translated")
 	bilingualTop := fs.Bool("bilingual-top", true, "put target subtitle on top")
 	maxWordOneLine := fs.Int("max-word-one-line", 0, "max words per line")
 	subtitleStyleFile := fs.String("subtitle-style-file", "", "subtitle style JSON file")
@@ -524,6 +528,8 @@ func parseSubtitle(name string, args []string) (Command, error) {
 			CaptionSource:  pipeline.CaptionSource(*captionSource),
 			PrepareVideo:   *prepareVideo,
 			SourceOnly:     *sourceOnly,
+			InputSRT:       *inputSRT,
+			SRTTranslated:  *srtTranslated,
 			BilingualTop:   *bilingualTop,
 			MaxWordOneLine: *maxWordOneLine,
 		},

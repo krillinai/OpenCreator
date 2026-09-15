@@ -14,7 +14,7 @@ import type {
 } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { validateMediaFile } from '../validators/media.js';
-import { validateSrtFile } from '../validators/srt.js';
+import { formatSrtTimestamp, validateSrtFile } from '../validators/srt.js';
 import {
   KrillinCliError,
   resolveKrillinCliSource,
@@ -118,6 +118,11 @@ async function ensureKrillinTranscriptionDependency(
   config: CreatorServicesConfig,
   stage: CreatorExecutorInput
 ): Promise<void> {
+  if (stage.job.templateId === 'video-translation' && (
+    stage.stageRun.stageId === 'subtitle'
+      ? stage.inputArtifacts.some(artifact => artifact.kind === 'source_subtitle' || artifact.kind === 'target_subtitle')
+      : typeof stage.job.state.importedSourceSubtitleId === 'string' || typeof stage.job.state.importedTargetSubtitleId === 'string'
+  )) return;
   await loader.ensure({
     config,
     signal: stage.signal,
@@ -284,6 +289,7 @@ export async function validateResultArtifacts(input: {
     outputs.push({ kind: outputKind, status: 'completed', path, metadata });
   }
   for (const required of contract.requiredOutputKinds) {
+    if (required === 'source_subtitle' && input.stage.inputArtifacts.some(artifact => artifact.kind === 'target_subtitle')) continue;
     if (!outputs.some(output => output.kind === required)) {
       throw new CreatorExecutorError('krillin_output_missing', `KrillinAI did not produce ${required}`);
     }
@@ -400,12 +406,4 @@ function nonEmptyString(value: CreatorJson | undefined): string | undefined {
 
 function finiteNumber(value: CreatorJson | undefined): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function formatSrtTimestamp(value: number): string {
-  const hours = Math.floor(value / 3_600_000);
-  const minutes = Math.floor((value % 3_600_000) / 60_000);
-  const seconds = Math.floor((value % 60_000) / 1_000);
-  const milliseconds = value % 1_000;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
 }

@@ -1,6 +1,7 @@
 import { dirname } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildKrillinCliCommandArguments,
   createKrillinCliEnvironment,
   outputMappings,
   parseKrillinCliProgressFrame,
@@ -8,6 +9,13 @@ import {
 } from '../../src/creator/krillin/cli-runner.js';
 
 describe('KrillinAI CLI protocol', () => {
+  it.each(['source_subtitle', 'target_subtitle'])('passes %s as an explicit CLI input', kind => {
+    const args = buildKrillinCliCommandArguments({ stageRun: { stageId: 'subtitle', id: 'stage' }, workdir: '/job/stage' } as never,
+      [{ id: 'srt', kind, path: '/job/local.srt' }], { sourceUrl: 'https://youtu.be/test', originLanguage: 'en', targetLanguage: 'zh_cn' }, undefined);
+    expect(args).toContain('--input-srt');
+    expect(args).toContain('/job/local.srt');
+    expect(args).toContain(`--srt-translated=${kind === 'target_subtitle'}`);
+  });
   it('uses the original YouTube URL for platform captions and local media otherwise', () => {
     expect(resolveKrillinCliSource([
       { id: 'source-1', kind: 'source_video', path: 'D:\\media\\source.webm' }

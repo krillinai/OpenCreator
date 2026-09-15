@@ -27,6 +27,8 @@ type SubtitleRequest struct {
 	SubtitleStyle  *subtitlestyle.StyleSet
 	PrepareVideo   bool
 	SourceOnly     bool
+	InputSRT       string
+	SRTTranslated  bool
 	ReportProgress func(phase string, percent int, message string)
 }
 
@@ -58,6 +60,17 @@ func GenerateSubtitles(ctx context.Context, svc StageService, req SubtitleReques
 		return failSubtitleStage(req, manifest, ErrorKindRetryable, "prepare_media_failed", err)
 	}
 	syncPreparedMediaOutputs(manifest, stepParam)
+	if req.InputSRT != "" {
+		reportSubtitleProgress(req, "importing_subtitles", 30, "正在使用本地字幕")
+		if err := importSubtitleFile(ctx, svc, req, stepParam, manifest); err != nil {
+			return failSubtitleStage(req, manifest, ErrorKindRetryable, "subtitle_import_failed", err)
+		}
+		if req.SRTTranslated {
+			manifest.Outputs.OriginSRT = ""
+			manifest.Outputs.BilingualSRT = ""
+		}
+		return saveSubtitleSuccess(manifest, req, CaptionSource("local_srt"))
+	}
 
 	var platformCaptionErr error
 	if IsYouTubeInput(req.Input) && req.CaptionSource != CaptionSourceWhisper {
@@ -218,7 +231,7 @@ func subtitleStepParam(req SubtitleRequest) *types.SubtitleTaskStepParam {
 		VideoSrc: req.Input,
 		Status:   types.SubtitleTaskStatusProcessing,
 	}
-	vttSwitch := IsYouTubeInput(req.Input) && req.CaptionSource != CaptionSourceWhisper
+	vttSwitch := req.InputSRT == "" && IsYouTubeInput(req.Input) && req.CaptionSource != CaptionSourceWhisper
 	embedSubtitleVideoType := "none"
 	if req.PrepareVideo && !vttSwitch {
 		embedSubtitleVideoType = "all"

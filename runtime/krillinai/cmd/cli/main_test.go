@@ -16,6 +16,13 @@ func TestRequiresTranscriptionAtStart(t *testing.T) {
 		want bool
 	}{
 		{
+			name: "imported captions do not require ASR even when platform captions are disabled",
+			cmd: cli.Command{Name: "subtitle", Subtitle: pipeline.SubtitleRequest{
+				Input: "video.mp4", InputSRT: "local.srt", CaptionSource: pipeline.CaptionSourceWhisper,
+			}},
+			want: false,
+		},
+		{
 			name: "youtube platform captions can start without ASR",
 			cmd: cli.Command{Name: "subtitle", Subtitle: pipeline.SubtitleRequest{
 				Input: "https://www.youtube.com/watch?v=demo", CaptionSource: pipeline.CaptionSourceAny,
