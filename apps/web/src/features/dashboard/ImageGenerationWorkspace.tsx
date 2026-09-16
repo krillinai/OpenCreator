@@ -78,7 +78,7 @@ export default function ImageGenerationWorkspace(props: {
   const [count, setCount] = useState(() => readCount(session?.state.candidateCount));
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState('');
-  const [resultVersion, setResultVersion] = useState<number>();
+  const resultVersion = session?.job.state.resultVersion;
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
   const [previewError, setPreviewError] = useState('');
   const [error, setError] = useState('');
@@ -119,10 +119,6 @@ export default function ImageGenerationWorkspace(props: {
   );
   const currentReferenceName = referenceFile?.name
     ?? readArtifactString(activeReferenceArtifact, 'fileName');
-
-  useEffect(() => {
-    if (latestVersion !== undefined) setResultVersion(latestVersion);
-  }, [latestVersion]);
 
   useEffect(() => {
     if (session !== null && session.state.provider !== 'openai') {
@@ -322,7 +318,6 @@ export default function ImageGenerationWorkspace(props: {
   }
 
   function selectVersion(version: number) {
-    setResultVersion(version);
     openStep(2);
     setNotice(l(`正在查看 V${version}`, `Viewing V${version}`));
   }

@@ -149,7 +149,7 @@ export default function StickmanVideoWorkspace(props: {
   const { job, state } = session;
   const [activeStep, setActiveStep] = useState(0);
   const [notice, setNotice] = useState('');
-  const [selectedVersion, setSelectedVersion] = useState(0);
+  const selectedVersion = typeof session?.job.state.resultVersion === 'number' ? session.job.state.resultVersion : 0;
   const [controlPending, setControlPending] = useState<'canceling' | 'resuming'>();
   const [ttsConfigurationStatus, setTtsConfigurationStatus] = useState<TtsConfigurationStatus>('loading');
   const [imageConfigurationStatus, setImageConfigurationStatus] = useState<ImageConfigurationStatus>('loading');
@@ -332,7 +332,6 @@ export default function StickmanVideoWorkspace(props: {
     const previousVersion = observedSnapshotVersion.current;
     observedSnapshotVersion.current = latestSnapshot?.version;
     if (latestSnapshot === undefined) return;
-    setSelectedVersion(latestSnapshot.version);
     if (previousVersion !== latestSnapshot.version) {
       setActiveStep(current => current === 4 ? 5 : current);
     }
@@ -844,7 +843,7 @@ export default function StickmanVideoWorkspace(props: {
                 versions={snapshots.map(snapshot => ({ value: snapshot.version, description: snapshot.description }))}
                 manifest={deliveryManifest}
                 l={l}
-                onVersionChange={setSelectedVersion}
+                onVersionChange={() => setActiveStep(5)}
                 onOpen={artifact => void openArtifact(session.openArtifact, artifact)}
                 onDownload={artifact => void downloadArtifact(session.openArtifact, artifact)}
                 onBack={() => setActiveStep(4)}

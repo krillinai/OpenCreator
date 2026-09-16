@@ -451,11 +451,13 @@ describe('creator runtime advanced contracts', () => {
         id: 'clip',
         async run() {
           analysis += 1;
+          const path = join(tempDir, `clip-candidates-v${analysis}.json`);
+          writeFileSync(path, JSON.stringify({ candidates: [{ id: `clip-${analysis}` }] }));
           return {
             outputs: [{
               kind: 'clip_candidates',
               status: 'completed' as const,
-              path: join(tempDir, `clip-candidates-v${analysis}.json`),
+              path,
               metadata: { candidates: [{ id: `clip-${analysis}` }] }
             }]
           };
@@ -481,8 +483,8 @@ describe('creator runtime advanced contracts', () => {
       metadata: {}
     });
 
-    await runner.run(job.id, 'analyze');
-    await runner.run(job.id, 'analyze');
+    expect(await runner.run(job.id, 'analyze')).toMatchObject({ status: 'succeeded' });
+    expect(await runner.run(job.id, 'analyze')).toMatchObject({ status: 'succeeded' });
 
     const completed = service.getJob(job.id)!;
     expect(completed.state).toMatchObject({

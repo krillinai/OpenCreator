@@ -1,0 +1,17 @@
+.creator-artifact-details { grid-column: 1 / -1; min-width: 0; border-top: 1px solid var(--border); padding-top: 8px; font-size: 12px; line-height: 1.5; color: var(--text); }
+.creator-artifact-details summary { cursor: pointer; font-weight: 600; }
+.creator-artifact-details section { display: grid; gap: 10px; max-height: min(40vh, 380px); overflow: auto; padding-top: 12px; }
+.creator-artifact-details label { display: grid; gap: 4px; }
+.creator-artifact-details select { width: 100%; min-width: 0; padding: 6px; color: inherit; background: var(--surface, #fff); }
+.creator-artifact-details dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 0; }
+.creator-artifact-details dd { margin: 0; overflow-wrap: anywhere; }
+.creator-artifact-details p, .creator-artifact-details h3 { margin: 0; font-size: 12px; }
+.creator-artifact-details button { padding: 6px; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); }
+.creator-artifact-details button:disabled { cursor: default; opacity: .55; }
+.creator-artifact-comparison { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.creator-artifact-comparison > div { min-width: 0; display: grid; align-content: start; gap: 6px; }
+.creator-artifact-comparison strong { overflow-wrap: anywhere; font-size: 12px; }
+.creator-artifact-comparison img, .creator-artifact-comparison audio, .creator-artifact-comparison video { width: 100%; }
+.creator-artifact-comparison pre { margin: 0; max-height: 300px; overflow: auto; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.creator-artifact-comparison pre span { display: block; }
+.creator-artifact-comparison .is-changed { background: #fff0b3; color: #3d3100; }

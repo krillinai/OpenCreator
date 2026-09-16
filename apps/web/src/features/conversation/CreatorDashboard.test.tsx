@@ -19,8 +19,8 @@ describe('CreatorDashboard', () => {
     expect(screen.getByRole('tab', { name: '推荐' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('tab', { name: '最近' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '创作模板' })).toBeInTheDocument();
-    expect(container.querySelector('.creator-dashboard')).toHaveAttribute('data-template-count', '5');
-    expect(screen.getAllByRole('button', { name: /使用.+模板/ })).toHaveLength(5);
+    expect(container.querySelector('.creator-dashboard')).toHaveAttribute('data-template-count', '6');
+    expect(screen.getAllByRole('button', { name: /使用.+模板/ })).toHaveLength(6);
     const recommendedSkills = screen.getAllByRole('button', { name: /使用.+模板/ });
     expect(recommendedSkills[1]).toHaveAccessibleName('使用视频下载模板');
     expect(recommendedSkills[1]?.querySelector('img'))
@@ -34,6 +34,9 @@ describe('CreatorDashboard', () => {
     expect(recommendedSkills[4]).toHaveAccessibleName('使用图像生成模板');
     expect(recommendedSkills[4]?.querySelector('img'))
       .toHaveAttribute('src', '/dashboard/templates/image-generation-cover.png');
+    expect(recommendedSkills[5]).toHaveAccessibleName('使用视频切片模板');
+    expect(recommendedSkills[5]?.querySelector('img'))
+      .toHaveAttribute('src', '/dashboard/templates/intelligent-clipping-cover.png');
     expect(screen.getByRole('button', { name: '使用火柴人动画模板' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '使用数字人口播模板' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '使用智能剪辑模板' })).not.toBeInTheDocument();
@@ -45,6 +48,11 @@ describe('CreatorDashboard', () => {
     const onSelectSkill = vi.fn();
     render(<CreatorDashboard onSelectSkill={onSelectSkill} />);
 
+    fireEvent.click(screen.getByRole('button', { name: '使用视频切片模板' }));
+    expect(onSelectSkill).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'intelligent-clipping',
+      interaction: { type: 'workspace', workspace: 'auto-clips' }
+    }));
     fireEvent.click(screen.getByRole('button', { name: '使用图像生成模板' }));
     expect(onSelectSkill).toHaveBeenLastCalledWith(expect.objectContaining({
       id: 'image-generation',

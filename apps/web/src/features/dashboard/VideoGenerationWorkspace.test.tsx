@@ -324,7 +324,10 @@ function renderWorkspace(
       <CreatorSessionProvider
         initialJob={initialJob}
         service={{
-          applyAction: vi.fn(),
+          applyAction: vi.fn(async (_id, request) => ({
+            job: { ...initialJob, revision: initialJob.revision + 1, state: { ...initialJob.state, ...(request.action === 'select-result-version' ? { resultVersion: request.input.version } : request.input.patch) } },
+            receipt: {}
+          })),
           openArtifact: overrides.openArtifact ?? vi.fn(),
           runAgentTurn: vi.fn()
         } as never}

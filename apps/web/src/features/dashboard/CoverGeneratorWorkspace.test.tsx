@@ -293,7 +293,7 @@ describe('CoverGeneratorWorkspace', () => {
     expect(screen.queryByRole('textbox', { name: '封面提示词' })).not.toBeInTheDocument();
   });
 
-  it('opens an existing project on its latest generated version', async () => {
+  it('opens an existing project on its persisted result version', async () => {
     const fixture = createFixture();
     const createdAt = fixture.currentJob().createdAt;
     const versionOne = {
@@ -324,10 +324,10 @@ describe('CoverGeneratorWorkspace', () => {
     renderWorkspace(fixture, initialJob);
 
     expect(await screen.findByRole('region', { name: '封面生成项目产出' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '项目 V2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '项目 V1' })).toBeInTheDocument();
     await waitFor(() => expect(fixture.openArtifact).toHaveBeenCalledWith(
       initialJob.id,
-      versionTwo.id
+      versionOne.id
     ));
   });
 

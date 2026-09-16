@@ -13,7 +13,6 @@ import type {
   CreatorStageRun,
   RuntimeErrorCode
 } from '@opencreator/protocol';
-import { readCreatorResultSnapshots } from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { rm, stat } from 'node:fs/promises';
@@ -583,13 +582,9 @@ export async function registerCreatorRoutes(
       return reply.code(404).send(apiError('creator_job_not_found', 'Creator job not found'));
     }
     const artifact = job.artifacts.find(candidate => candidate.id === artifactId);
-    const referencedBySnapshot = artifact === undefined ? false : readCreatorResultSnapshots(
-      job.state.resultSnapshots
-    ).some(snapshot => Object.values(snapshot.artifactRefs).flat().includes(artifact.id));
     if (
       artifact?.path === null
       || artifact === undefined
-      || (artifact.status === 'stale' && !referencedBySnapshot)
     ) {
       return reply.code(404).send(apiError('creator_artifact_not_found', 'Creator artifact not found'));
     }

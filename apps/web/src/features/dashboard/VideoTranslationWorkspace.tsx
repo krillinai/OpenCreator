@@ -1370,11 +1370,13 @@ export default function VideoTranslationWorkspace(props: {
       latestVersion: latest?.value ?? null
     };
     setResultVersions(artifactVersions);
+    const persistedVersion = artifactVersions.find(version => version.value === persisted.resultVersion);
+    if (persistedVersion !== undefined) setResultVersion(persistedVersion.value);
     if (latest !== undefined) {
       if (!shouldRestoreLatestResult) return;
       setCurrentStep(3);
       setFurthestStep(3);
-      setResultVersion(latest.value);
+      setResultVersion(persistedVersion?.value ?? latest.value);
       setDraftBaseVersion(latest.value);
       setResultTab('video');
       setWorkspacePhase('result');
@@ -1457,7 +1459,6 @@ export default function VideoTranslationWorkspace(props: {
       currentStep,
       furthestStep,
       workspacePhase,
-      resultVersion: resultVersions.length > 0 ? resultVersion : null,
       latestResultVersion: resultVersions.at(-1)?.value ?? null,
       resultTab,
       resultVersions: serializeResultVersions(resultVersions),

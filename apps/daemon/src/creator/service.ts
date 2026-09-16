@@ -694,6 +694,17 @@ export function createCreatorService(input: {
 
         if (stickmanAction.handled) {
           // Template-specific mutations have already produced the authoritative state.
+        } else if (request.action === 'select-result-version') {
+          if (current.status === 'running' || current.stages.some(stage => (
+            stage.status === 'queued' || stage.status === 'running'
+          ))) {
+            throw new CreatorServiceError('creator_job_has_active_run', 'Wait for the active stage before selecting a result version');
+          }
+          const version = readResultVersion(current, parsedInput.version, 'version', true)!;
+          const snapshot = creatorResultSnapshotForVersion(current, version)!;
+          // Selecting a result changes only the existing project selection, never its history or validity.
+          nextState.resultVersion = version;
+          affectedArtifactIds.push(...Object.values(snapshot.artifactRefs).flat());
         } else if (request.action === 'update-settings' || request.action === 'undo-action') {
           const patch = readNonEmptyRecord(parsedInput.patch, 'patch');
           nextState = { ...nextState, ...patch };
@@ -1037,6 +1048,7 @@ function writeActivity(input: {
     objectId: typeof objectId === 'string' ? objectId : '',
     affectedArtifactIds: input.affectedArtifactIds
   };
+  if (input.action === 'select-result-version') details.version = input.input.version!;
   if (input.action === 'run-stage' && typeof input.input.stageId === 'string') {
     details.stageId = input.input.stageId;
   }
@@ -1250,6 +1262,7 @@ function dependentArtifacts(artifacts: CreatorArtifact[], sourceId: string): Cre
 }
 
 function summarizeAction(action: string, input: Record<string, CreatorJson>): string {
+  if (action === 'select-result-version') return `选择项目结果 V${String(input.version)}`;
   if (action === 'edit-subtitle') return '更新字幕并保留下游旧版本';
   if (action === 'commit-version') return '保存项目版本设置';
   if (action === 'run-stage') return `启动阶段 ${String(input.stageId ?? '')}`.trim();

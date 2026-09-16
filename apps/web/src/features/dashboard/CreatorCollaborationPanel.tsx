@@ -29,6 +29,7 @@ import {
   type CreatorStageProgressView
 } from './creator-panel-adapters.js';
 import { useOptionalCreatorSession } from './creator-session-store.js';
+import CreatorArtifactDetails from './CreatorArtifactDetails.js';
 
 export type CreatorPanelQuickAction = {
   id: string;
@@ -228,6 +229,7 @@ export default function CreatorCollaborationPanel(props: {
           <small>{l('当前任务', 'Current task')}</small>
           <strong>{props.currentIssue ?? props.contextSummary}</strong>
         </span>
+        <CreatorArtifactDetails />
       </div>
 
       {session === null ? (

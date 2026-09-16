@@ -48,7 +48,7 @@ export function createKrillinExecutor(input: {
           resolveKrillinStageContract(stage).stageType,
           {
             sourceUrl: stringValue(options.sourceUrl),
-            mediaSource: resolveKrillinCliSource(materializedArtifacts, options)
+            mediaSource: resolveKrillinCliSource(materializedArtifacts, { ...options, captionSource: 'whisper' })
           },
           options
         );

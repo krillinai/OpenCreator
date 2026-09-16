@@ -861,6 +861,9 @@ function normalizeCommonActivity(
   ) => string | null = () => null
 ): NormalizedCreatorActivity | null {
   if (activity.action === 'create-job') return null;
+  if (activity.action === 'select-result-version') {
+    return { label: l(`选择了项目结果 V${activity.details.version}`, `Selected project result V${activity.details.version}`), fields: [] };
+  }
   if (activity.action.startsWith('update-settings')) {
     const objectId = readString(activity.details.objectId) ?? '';
     const fields = objectId

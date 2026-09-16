@@ -111,7 +111,7 @@ export default function VideoGenerationWorkspace(props: {
   const [duration, setDuration] = useState<VideoGenerationDuration>(() => (
     readDuration(session?.state.duration, readProvider(session?.state.provider))
   ));
-  const [resultVersion, setResultVersion] = useState<number>();
+  const resultVersion = session?.job.state.resultVersion;
   const [videoUrl, setVideoUrl] = useState('');
   const [previewError, setPreviewError] = useState('');
   const [error, setError] = useState('');
@@ -184,10 +184,6 @@ export default function VideoGenerationWorkspace(props: {
   const progressLabel = latestStage === undefined
     ? l('正在准备任务', 'Preparing the task')
     : videoPhaseLabel(readString(latestStage.progress.phase), l);
-
-  useEffect(() => {
-    if (latestVersion !== undefined) setResultVersion(latestVersion);
-  }, [latestVersion]);
 
   useEffect(() => {
     if (props.creatorServicesService === null || props.creatorServicesService === undefined) {
@@ -475,7 +471,6 @@ export default function VideoGenerationWorkspace(props: {
   }
 
   function selectVersion(version: number) {
-    setResultVersion(version);
     openStep(2);
     setNotice(l(`正在查看 V${version}`, `Viewing V${version}`));
   }

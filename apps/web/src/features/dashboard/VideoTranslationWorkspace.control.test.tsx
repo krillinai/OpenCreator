@@ -372,7 +372,7 @@ describe('VideoTranslationWorkspace task controls', () => {
     ))).toBe(true);
   });
 
-  it('opens an existing project on its latest completed version', async () => {
+  it('opens an existing project on its persisted completed version', async () => {
     const artifacts = [
       subtitleArtifact(1, '第一版本字幕'),
       subtitleArtifact(2, '第二版本字幕')
@@ -426,9 +426,9 @@ describe('VideoTranslationWorkspace task controls', () => {
     );
 
     expect(await screen.findByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '项目 V2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '项目 V1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '生成物' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('target-subtitle-v2.srt')).toBeInTheDocument();
+    expect(screen.getByText('target-subtitle-v1.srt')).toBeInTheDocument();
     expect(screen.queryByText('正在基于 V1 调整')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: '配音' }));

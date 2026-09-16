@@ -72,6 +72,13 @@ function createInMemoryCreatorService(): CreatorWebService {
         state: { ...current.state, ...patch },
         updatedAt: new Date().toISOString()
       };
+    } else if (request.action === 'select-result-version') {
+      job = {
+        ...current,
+        revision: current.revision + 1,
+        state: { ...current.state, resultVersion: request.input.version! },
+        updatedAt: new Date().toISOString()
+      };
     } else if (current.templateId === 'video-translation' && request.action === 'edit-subtitle') {
       job = editTranslationSubtitles(current, request.input);
     } else if (current.templateId === 'video-translation' && request.action === 'commit-version') {
@@ -783,12 +790,13 @@ describe('DashboardPage', () => {
     expect(within(videoTranslationCard).getByText('HOT')).toBeInTheDocument();
     expect(within(videoTranslationCard).queryByText('NEW')).not.toBeInTheDocument();
     const appCards = Array.from(container.querySelectorAll('.dashboard-app-card'));
-    expect(appCards).toHaveLength(10);
+    expect(appCards).toHaveLength(11);
     expect(appCards.map(card => card.querySelector('strong')?.textContent)).toEqual([
       '文章写作',
       '视频翻译',
       '火柴人动画',
       '视频下载',
+      '视频切片',
       '封面生成',
       '小红书帖子',
       '短视频脚本',
@@ -1291,7 +1299,8 @@ describe('DashboardPage', () => {
     const reopenedVersionMenu = screen.getByRole('menu');
     fireEvent.click(within(reopenedVersionMenu).getByText('项目 V1').closest('button') as HTMLButtonElement);
 
-    expect(screen.getByText('项目 V1')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '项目 V1' })).toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(screen.queryByText('正在查看 V1')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     const settings = screen.getByText('目标语言').closest('dl');

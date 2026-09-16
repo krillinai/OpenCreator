@@ -1,4 +1,5 @@
 import { createVideoTranslationTemplate } from './video-translation.js';
+import { z } from 'zod';
 import {
   createLegacyVideoDownloadTemplate,
   createVideoDownloadTemplate
@@ -66,7 +67,14 @@ export function createCreatorTemplateRegistry(
     validateTemplate(template);
     const key = templateKey(template.id, template.version);
     if (byKey.has(key)) throw new Error(`Duplicate template: ${key}`);
-    byKey.set(key, template);
+    byKey.set(key, {
+      ...template,
+      actions: [...template.actions, {
+        id: 'select-result-version',
+        inputSchema: z.object({ version: z.number().int().positive() }).strict(),
+        allowedStages: template.stages.map(stage => stage.id)
+      }]
+    });
   }
 
   return {
