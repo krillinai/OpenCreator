@@ -7814,6 +7814,22 @@ function handleDefaultCreatorApiRequest(
     const job = testCreatorJobs.find(candidate => candidate.id === decodeURIComponent(jobRoute[1]!));
     return job === undefined ? jsonResponse({}, { status: 404 }) : jsonResponse({ job });
   }
+  const preflightRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)\/preflight$/);
+  if (preflightRoute !== null && method === 'GET') {
+    const job = testCreatorJobs.find(candidate => candidate.id === decodeURIComponent(preflightRoute[1]!));
+    if (job === undefined) return jsonResponse({}, { status: 404 });
+    return jsonResponse({
+      templateId: job.templateId,
+      templateVersion: job.templateVersion,
+      stageId: parsedUrl.searchParams.get('stageId') ?? 'subtitle',
+      executionMode: 'mixed',
+      canStart: true,
+      ready: [],
+      warning: [],
+      blocked: [],
+      checkedAt: new Date(0).toISOString()
+    });
+  }
   const historyRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)\/agent-history$/);
   if (historyRoute !== null && method === 'GET') return jsonResponse({ turns: [] });
   const eventsRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)\/events$/);

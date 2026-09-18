@@ -93,6 +93,7 @@ import {
   type CreatorDocumentUploadService
 } from '../creator/document-upload.js';
 import { createCreatorArtifactImportService } from '../creator/artifact-import.js';
+import { createCreatorPreflight } from '../creator/preflight.js';
 import { validateMediaFile, type MediaProbe } from '../creator/validators/media.js';
 import {
   createCoverWorkflow,
@@ -617,6 +618,7 @@ export async function buildServer(input: BuildServerInput) {
   let creatorFfmpegPath: string | undefined;
   let creatorFfprobePath: string | undefined;
   let creatorYtDlpUpdateManager = input.creatorYtDlpUpdateManager;
+  let getYtDlpRuntime: (() => ReturnType<typeof resolveYtDlpRuntime>) | undefined;
   let getCreatorYtDlpRuntime: (() => ReturnType<typeof resolveYtDlpRuntime>) | undefined;
   try {
     const runtimeManifest = readKrillinRuntimeManifest(creatorRuntimeRoot);
@@ -653,7 +655,7 @@ export async function buildServer(input: BuildServerInput) {
         console.warn(`yt-dlp updater is unavailable: ${formatError(error)}`);
       }
     }
-    const getYtDlpRuntime = () =>
+    getYtDlpRuntime = () =>
       creatorYtDlpUpdateManager?.getRuntime() ?? ytDlp;
     getCreatorYtDlpRuntime = getYtDlpRuntime;
     if (input.creatorExecutors === undefined) {
@@ -676,7 +678,7 @@ export async function buildServer(input: BuildServerInput) {
         ytDlpPath: ytDlp.executable,
         ytDlpPrefixArgs: ytDlp.prefixArgs,
         ytDlpEnv: ytDlp.env,
-        getYtDlpRuntime: () => getYtDlpRuntime()!,
+        getYtDlpRuntime: () => getYtDlpRuntime!()!,
         ffmpegPath: creatorFfmpegPath,
         ffprobePath: creatorFfprobePath
       }));
@@ -687,7 +689,7 @@ export async function buildServer(input: BuildServerInput) {
         ytDlpPath: ytDlp.executable,
         ytDlpPrefixArgs: ytDlp.prefixArgs,
         ytDlpEnv: ytDlp.env,
-        getYtDlpRuntime: () => getYtDlpRuntime()!
+        getYtDlpRuntime: () => getYtDlpRuntime!()!
       }));
     }
     if (input.creatorExecutors === undefined && creatorFfmpegPath && creatorFfprobePath) {
@@ -757,6 +759,18 @@ export async function buildServer(input: BuildServerInput) {
       imageGenerator: createArticleImageGenerator({ configStore: creatorServicesConfigStore })
     }));
   }
+  const creatorPreflight = createCreatorPreflight({
+    configStore: creatorServicesConfigStore,
+    readCapabilities: () => krillinDependencyLoader.capabilities(),
+    resourceRoot: creatorRuntimeRoot,
+    jobsRoot: creatorJobsRoot,
+    ffmpegPath: creatorFfmpegPath,
+    ffprobePath: creatorFfprobePath,
+    stickmanRuntimeRoot,
+    ...(getYtDlpRuntime === undefined ? {} : { getYtDlpRuntime }),
+    executorIds: creatorExecutors.map(executor => executor.id),
+    validateRuntimeAssets: input.creatorExecutors === undefined
+  });
   const creatorProjectCoverService = createCreatorProjectCoverService({
     jobsRoot: creatorJobsRoot,
     ...(creatorFfmpegPath === undefined ? {} : { ffmpegPath: creatorFfmpegPath })
@@ -981,6 +995,7 @@ export async function buildServer(input: BuildServerInput) {
     threads: threadManager,
     contextBuilder: creatorAgentContextBuilder,
     runtime: creatorAgentRuntime,
+    preflight: creatorPreflight,
     onEvent(event) {
       const job = creatorService.getJob(event.jobId);
       if (job === undefined) return;
@@ -1222,6 +1237,7 @@ export async function buildServer(input: BuildServerInput) {
     documentUploadService: creatorDocumentUploadService,
     artifactImportService: creatorArtifactImportService,
     dispatcher: creatorCommandDispatcher,
+    preflight: creatorPreflight,
     stageRunner: creatorStageRunner
   });
   await registerAttachmentRoutes(server, attachmentService, {

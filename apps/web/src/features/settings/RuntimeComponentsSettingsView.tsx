@@ -77,6 +77,8 @@ export function RuntimeComponentsSettingsView(props: {
               </span>
             </div>
             <p>{t('settings.runtimeComponents.ytDlpDescription')}</p>
+            <p>{t('settings.runtimeComponents.autoCheck')}</p>
+            {error === undefined ? <p>{t('settings.runtimeComponents.fallback')}</p> : null}
           </div>
           <CheckCircle2
             size={19}

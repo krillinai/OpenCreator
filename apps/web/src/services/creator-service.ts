@@ -14,6 +14,7 @@ import type {
   CreatorEventEnvelope,
   CreatorJob,
   CreatorJobListResponse,
+  CreatorPreflightResponse,
   CreatorStageRun,
   CreatorSourceUploadResponse,
   CreatorTemplateListResponse,
@@ -77,6 +78,9 @@ export function createCreatorService(client: ClientLike) {
     },
     getJob(jobId: string): Promise<{ job: CreatorJob }> {
       return client.get(`/creator/jobs/${encodeURIComponent(jobId)}`) as Promise<{ job: CreatorJob }>;
+    },
+    preflight(jobId: string, stageId: string): Promise<CreatorPreflightResponse> {
+      return client.get(`/creator/jobs/${encodeURIComponent(jobId)}/preflight?stageId=${encodeURIComponent(stageId)}`) as Promise<CreatorPreflightResponse>;
     },
     deleteJob(jobId: string, options: { deleteFiles?: boolean } = {}): Promise<void> {
       const query = options.deleteFiles === true ? '?deleteFiles=true' : '';

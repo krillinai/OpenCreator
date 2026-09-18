@@ -122,6 +122,34 @@ export type CreatorServicesCapabilitiesResponse = {
   };
 };
 
+export type CreatorPreflightExecutionMode = 'local' | 'remote' | 'mixed';
+
+export type CreatorPreflightRepair = {
+  label: string;
+  deepLink?: string;
+  capability?: string;
+};
+
+export type CreatorPreflightCheck = {
+  id: string;
+  title: string;
+  message: string;
+  executionMode: CreatorPreflightExecutionMode;
+  repair?: CreatorPreflightRepair;
+};
+
+export type CreatorPreflightResponse = {
+  templateId: string;
+  templateVersion: number;
+  stageId: string;
+  executionMode: CreatorPreflightExecutionMode;
+  canStart: boolean;
+  ready: CreatorPreflightCheck[];
+  warning: CreatorPreflightCheck[];
+  blocked: Array<CreatorPreflightCheck & { repair: CreatorPreflightRepair }>;
+  checkedAt: string;
+};
+
 export type CreatorServicesCredentialField =
   | 'llm.apiKey'
   | 'transcription.openai.apiKey'

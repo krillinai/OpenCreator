@@ -1,5 +1,6 @@
 import type { CreatorJob } from '@opencreator/protocol';
-import { render, screen } from '@testing-library/react';
+import { useEffect } from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import CreatorCollaborationPanel from './CreatorCollaborationPanel.js';
@@ -12,7 +13,15 @@ import {
   videoDownloadPanelAdapter,
   videoGenerationPanelAdapter
 } from './creator-panel-adapters.js';
-import { CreatorSessionProvider } from './creator-session-store.js';
+import { CreatorSessionProvider, useCreatorSession } from './creator-session-store.js';
+
+function PreflightHarness(props: { stageId: string }) {
+  const session = useCreatorSession();
+  useEffect(() => {
+    void session.runPreflight(props.stageId).catch(() => undefined);
+  }, [props.stageId, session]);
+  return null;
+}
 
 describe('Short video script panel', () => {
   it('语义化并合并短视频脚本设置动态，同时显示标准 Stage 状态和真实进度', () => {
@@ -47,6 +56,57 @@ describe('Short video script panel', () => {
 });
 
 describe('CreatorCollaborationPanel', () => {
+  it('Browser/Desktop 使用同一份 preflight 结果，且不渲染 Desktop-only 修复入口', async () => {
+    const preflight = {
+      templateId: 'cover',
+      templateVersion: 2,
+      stageId: 'generate',
+      executionMode: 'remote' as const,
+      canStart: false,
+      ready: [],
+      warning: [],
+      blocked: [{
+        id: 'image-provider',
+        title: '图像服务配置不完整',
+        message: '请配置图像服务。',
+        executionMode: 'remote' as const,
+        repair: {
+          label: '打开 AI 服务设置',
+          deepLink: '#/settings?tab=ai-services&section=image'
+        }
+      }],
+      checkedAt: '2026-09-18T00:00:00.000Z'
+    };
+    const service = {
+      applyAction: vi.fn(),
+      runAgentTurn: vi.fn(),
+      preflight: vi.fn(async () => preflight)
+    };
+    const results: string[] = [];
+
+    for (let platform = 0; platform < 2; platform += 1) {
+      const view = render(
+        <LanguageProvider initialPreference="zh-CN">
+          <CreatorSessionProvider initialJob={coverJob()} service={service as never}>
+            <PreflightHarness stageId="generate" />
+            <CreatorCollaborationPanel
+              adapter={coverPanelAdapter}
+              stepLabel="正在生成封面"
+              contextSummary="2 个方案"
+            />
+          </CreatorSessionProvider>
+        </LanguageProvider>
+      );
+      await waitFor(() => expect(screen.getByText('请配置图像服务。')).toBeInTheDocument());
+      results.push(screen.getByRole('region', { name: '启动前体检' }).textContent ?? '');
+      expect(screen.queryByText(/Desktop-only|原生/)).not.toBeInTheDocument();
+      view.unmount();
+    }
+
+    expect(results[0]).toBe(results[1]);
+    expect(service.preflight).toHaveBeenCalledWith('cover_job', 'generate');
+  });
+
   it('语义化并合并封面动态，同时显示标准 Stage 进度', () => {
     const job = coverJob();
     const { container } = render(

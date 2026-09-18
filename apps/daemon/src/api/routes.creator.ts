@@ -51,6 +51,7 @@ import {
 } from '../creator/stickman/visual-assets.js';
 import type { CreatorProjectCoverService } from '../creator/project-cover.js';
 import type { CreatorStageRunner } from '../creator/stage-runner.js';
+import { CreatorPreflightError, type CreatorPreflight } from '../creator/preflight.js';
 import {
   CreatorArtifactImportError,
   type CreatorArtifactImportService
@@ -89,6 +90,7 @@ export async function registerCreatorRoutes(
     artifactImportService?: CreatorArtifactImportService;
     jobsRoot: string;
     dispatcher: CreatorCommandDispatcher;
+    preflight?: Pick<CreatorPreflight, 'check'>;
     stageRunner?: Pick<CreatorStageRunner, 'cancel' | 'cancelJob'>;
   }
 ): Promise<void> {
@@ -327,6 +329,28 @@ export async function registerCreatorRoutes(
     }))
   }));
 
+  server.get<{ Params: { id: string }; Querystring: { stageId?: string; inputResultVersion?: string } }>(
+    '/creator/jobs/:id/preflight',
+    async (request, reply) => {
+      try {
+        const job = requireCreatorJob(service, request.params.id);
+        if (options.preflight === undefined) {
+          return reply.code(503).send(apiError('creator_preflight_unavailable' as RuntimeErrorCode, 'Creator preflight is unavailable'));
+        }
+        const stageId = readString(request.query.stageId, 'stageId');
+        const stage = service.templates.get(job.templateId, job.templateVersion).stages.find(candidate => candidate.id === stageId);
+        if (stage === undefined) throw new CreatorServiceError('creator_stage_not_found', 'Creator stage was not found');
+        return options.preflight.check(job, stage, {
+          ...(request.query.inputResultVersion === undefined
+            ? {}
+            : { inputResultVersion: readQueryInteger(request.query.inputResultVersion, 'inputResultVersion') })
+        });
+      } catch (error) {
+        return sendCreatorError(reply, error);
+      }
+    }
+  );
+
   server.post<{ Body: unknown }>('/creator/jobs', async (request, reply) => {
     try {
       const body = readObject(request.body);
@@ -472,6 +496,16 @@ export async function registerCreatorRoutes(
           'creator_job_not_resumable',
           'Creator job has no canceled or interrupted stage to resume'
         );
+      }
+      if (options.preflight !== undefined) {
+        const stage = service.templates.get(job.templateId, job.templateVersion).stages.find(candidate => candidate.id === latest.stageId);
+        if (stage === undefined) throw new CreatorServiceError('creator_stage_not_found', 'Creator stage was not found');
+        const preflight = await options.preflight.check(job, stage, {
+          ...(typeof latest.progress.inputResultVersion === 'number'
+            ? { inputResultVersion: latest.progress.inputResultVersion }
+            : {})
+        });
+        if (!preflight.canStart) throw new CreatorPreflightError(preflight);
       }
       if (job.templateId === 'video-translation' && options.videoTranslationWorkflow !== undefined) {
         try {
@@ -634,6 +668,22 @@ export async function registerCreatorRoutes(
               payload: { revision: latest.revision }
             });
           }
+          if (
+            options.preflight !== undefined
+            && error instanceof VideoTranslationWorkflowError
+            && (error.code === 'creator_llm_config_missing' || error.code === 'creator_tts_config_missing')
+          ) {
+            const stageId = readString(actionInput.stageId, 'stageId');
+            const stage = service.templates.get(jobBeforeAction.templateId, jobBeforeAction.templateVersion).stages.find(candidate => candidate.id === stageId);
+            if (stage !== undefined) {
+              const preflight = await options.preflight.check(jobBeforeAction, stage, {
+                ...(typeof actionInput.inputResultVersion === 'number'
+                  ? { inputResultVersion: actionInput.inputResultVersion }
+                  : {})
+              });
+              if (!preflight.canStart) throw new CreatorPreflightError(preflight);
+            }
+          }
           throw error;
         }
       }
@@ -658,6 +708,17 @@ export async function registerCreatorRoutes(
           }
           throw error;
         }
+      }
+      if (action === 'run-stage' && options.preflight !== undefined) {
+        const stageId = readString(actionInput.stageId, 'stageId');
+        const stage = service.templates.get(jobBeforeAction.templateId, jobBeforeAction.templateVersion).stages.find(candidate => candidate.id === stageId);
+        if (stage === undefined) throw new CreatorServiceError('creator_stage_not_found', 'Creator stage was not found');
+        const preflight = await options.preflight.check(jobBeforeAction, stage, {
+          ...(typeof actionInput.inputResultVersion === 'number'
+            ? { inputResultVersion: actionInput.inputResultVersion }
+            : {})
+        });
+        if (!preflight.canStart) throw new CreatorPreflightError(preflight);
       }
       if (
         (action === 'run-stage' || action === 'retry-stage')
@@ -844,7 +905,10 @@ export async function registerCreatorRoutes(
           payload: { revision: job.revision, reset: true }
         });
       } else {
-        for (const event of persistent.slice(cursorIndex + 1)) writeEvent(event);
+        for (const event of persistent.slice(cursorIndex + 1)) {
+          if (event.revision === job.revision && event.kind !== 'snapshot_changed') continue;
+          writeEvent(event);
+        }
       }
     }
     replaying = false;
@@ -998,6 +1062,14 @@ function readCreatorAgentSandbox(
 }
 
 function sendCreatorError(reply: FastifyReply, error: unknown) {
+  if (error instanceof CreatorPreflightError) {
+    return reply.code(400).send({
+      error: {
+        ...apiError(error.code as RuntimeErrorCode, error.message).error,
+        preflight: error.result
+      }
+    });
+  }
   if (error instanceof StickmanVisualAssetError) {
     const status = error.code.endsWith('_not_found') ? 404 : 422;
     return reply.code(status).send(apiError(error.code as RuntimeErrorCode, error.message));

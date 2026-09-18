@@ -232,6 +232,31 @@ export default function CreatorCollaborationPanel(props: {
         <CreatorArtifactDetails />
       </div>
 
+      {session?.preflight !== null && session?.preflight !== undefined ? (
+        <section className="creator-collaboration-preflight" aria-label={l('启动前体检', 'Preflight check')}>
+          <strong>{l('启动前体检', 'Preflight check')}</strong>
+          <span>{session.preflight.executionMode === 'local'
+            ? l('本地服务', 'Local services')
+            : session.preflight.executionMode === 'remote'
+              ? l('远程服务', 'Remote services')
+              : l('本地 + 远程服务', 'Local + remote services')}</span>
+          {session.preflight.blocked.length > 0 ? (
+            <ul>
+              {session.preflight.blocked.map(item => (
+                <li key={item.id}>
+                  <span>{item.message}</span>
+                  {item.repair.deepLink === undefined ? null : (
+                    <a href={item.repair.deepLink}>{item.repair.label}</a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span>{l('已通过，可以启动阶段。', 'Ready to start this stage.')}</span>
+          )}
+        </section>
+      ) : null}
+
       {session === null ? (
         <div className="creator-collaboration-unavailable" role="alert">
           <ServerOff size={16} aria-hidden="true" />

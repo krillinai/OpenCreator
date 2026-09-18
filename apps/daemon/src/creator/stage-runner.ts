@@ -18,7 +18,7 @@ import {
   nextCreatorResultVersion
 } from './result-snapshots.js';
 import { currentStickmanScopedArtifacts } from './stickman/lineage.js';
-import type { CreatorTemplateRegistry } from './templates/types.js';
+import type { CreatorTemplateRegistry, CreatorTemplateStage } from './templates/types.js';
 import { videoTranslationArtifactRefsPatch } from './templates/video-translation-results.js';
 
 export type CreatorStageRunner = ReturnType<typeof createCreatorStageRunner>;
@@ -110,7 +110,7 @@ export function createCreatorStageRunner(input: {
           `Creator result version ${inputResultVersion} was not found`
         );
       }
-      const resolved = resolveInputs(job, stage.inputArtifacts, inputSnapshot?.artifactRefs, inputSnapshot?.state);
+      const resolved = resolveCreatorStageInputs(job, stage.inputArtifacts, inputSnapshot?.artifactRefs, inputSnapshot?.state);
       updateStageRun({
         id: stageRun.id,
         status: resolved.missing.length === 0 ? 'queued' : 'failed',
@@ -458,14 +458,9 @@ function subtitleOutputSources(kind: string, outputs: CreatorArtifact[], inputs:
   return outputs.filter(artifact => sourceKinds.includes(artifact.kind)).map(artifact => artifact.id);
 }
 
-function resolveInputs(
+export function resolveCreatorStageInputs(
   job: CreatorJob,
-  requirements: Array<{
-    kind: string;
-    selector?: 'latest-completed' | 'explicit-version' | 'state-artifact-id';
-    stateKey?: string;
-    optional?: boolean;
-  }>,
+  requirements: CreatorTemplateStage['inputArtifacts'],
   explicitArtifactRefs?: Record<string, string[]>,
   snapshotState?: Record<string, CreatorJson>
 ): { artifacts: CreatorArtifact[]; missing: string[] } {

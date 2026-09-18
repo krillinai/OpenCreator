@@ -11,6 +11,7 @@ import type {
   CreatorEventEnvelope,
   CreatorJob,
   CreatorJson,
+  CreatorPreflightResponse,
   CreatorStageRun
 } from '@opencreator/protocol';
 import {
@@ -31,6 +32,8 @@ type CreatorSessionContextValue = {
   state: Record<string, CreatorJson>;
   conflictedFields: string[];
   error: CreatorSessionError | null;
+  preflight: CreatorPreflightResponse | null;
+  runPreflight(stageId: string): Promise<CreatorPreflightResponse>;
   updateDraft(
     patch: Record<string, CreatorJson>,
     options?: { semantic?: boolean; persist?: boolean }
@@ -67,6 +70,13 @@ export type CreatorSessionError = {
   message: string;
 };
 
+export class CreatorPreflightBlockedError extends Error {
+  constructor(readonly result: CreatorPreflightResponse) {
+    super('Creator preflight blocked this stage');
+    this.name = 'CreatorPreflightBlockedError';
+  }
+}
+
 const CreatorSessionContext = createContext<CreatorSessionContextValue | null>(null);
 
 export function CreatorSessionProvider(props: {
@@ -87,6 +97,7 @@ export function CreatorSessionProvider(props: {
     | 'uploadSourceDocument'
     | 'cancelJob'
     | 'resumeJob'
+    | 'preflight'
     | 'subscribeJobEvents'>>;
   children: ReactNode;
 }) {
@@ -95,6 +106,7 @@ export function CreatorSessionProvider(props: {
   const [dirtyFields, setDirtyFields] = useState<Set<string>>(() => new Set());
   const [conflictedFields, setConflictedFields] = useState<string[]>([]);
   const [error, setError] = useState<CreatorSessionError | null>(null);
+  const [preflight, setPreflight] = useState<CreatorPreflightResponse | null>(null);
   const [agentSession, setAgentSession] = useState<CreatorAgentSession | null>(null);
   const [turns, setTurns] = useState<CreatorAgentTurn[]>([]);
   const [items, setItems] = useState<CreatorAgentItem[]>([]);
@@ -253,6 +265,18 @@ export function CreatorSessionProvider(props: {
 
   const clearError = useCallback(() => setError(null), []);
 
+  const runPreflight = useCallback(async (stageId: string) => {
+    if (props.service.preflight === undefined) {
+      throw new Error('Creator preflight is unavailable');
+    }
+    await flush();
+    await ensurePersistedJob();
+    const result = await props.service.preflight(confirmedRef.current.id, stageId);
+    setPreflight(result);
+    if (!result.canStart) throw new CreatorPreflightBlockedError(result);
+    return result;
+  }, [ensurePersistedJob, flush, props.service]);
+
   const applyRemoteSnapshot = useCallback((next: CreatorJob) => {
     const conflicts = [...dirtyRef.current].filter(field => (
       JSON.stringify(next.state[field]) !== JSON.stringify(draftRef.current[field])
@@ -345,6 +369,10 @@ export function CreatorSessionProvider(props: {
       await flush();
       await ensurePersistedJob();
       requestRevision = confirmedRef.current.revision;
+      if (request.action === 'run-stage' && props.service.preflight !== undefined) {
+        const stageId = request.input.stageId;
+        if (typeof stageId === 'string') await runPreflight(stageId);
+      }
       const response = await props.service.applyAction(confirmedRef.current.id, {
         ...request,
         expectedRevision: requestRevision
@@ -367,7 +395,7 @@ export function CreatorSessionProvider(props: {
       }
       throw cause;
     }
-  }, [applyRemoteSnapshot, ensurePersistedJob, flush, props.service]);
+  }, [applyRemoteSnapshot, ensurePersistedJob, flush, props.service, runPreflight]);
 
   const uploadSourceVideo = useCallback(async (file: File) => {
     if (props.service.uploadSourceVideo === undefined) {
@@ -626,6 +654,8 @@ export function CreatorSessionProvider(props: {
     state: { ...confirmedJob.state, ...draft },
     conflictedFields,
     error,
+    preflight,
+    runPreflight,
     updateDraft,
     flush,
     clearError,
@@ -648,7 +678,7 @@ export function CreatorSessionProvider(props: {
     steerAgentTurn,
     interruptAgentTurn,
     respondAgentApproval
-  }), [agentBusy, agentSession, applyAction, applyRemoteSnapshot, approvals, cancelJob, clearError, confirmedJob, conflictedFields, draft, error, flush, interruptAgentTurn, items, openArtifact, openArtifactJson, respondAgentApproval, resumeJob, runAgentTurn, steerAgentTurn, turns, updateDraft, uploadArticleImage, uploadReferenceImage, uploadSourceDocument, uploadSourceVideo]);
+  }), [agentBusy, agentSession, applyAction, applyRemoteSnapshot, approvals, cancelJob, clearError, confirmedJob, conflictedFields, draft, error, flush, interruptAgentTurn, items, openArtifact, openArtifactJson, preflight, respondAgentApproval, resumeJob, runAgentTurn, runPreflight, steerAgentTurn, turns, updateDraft, uploadArticleImage, uploadReferenceImage, uploadSourceDocument, uploadSourceVideo]);
 
   return (
     <CreatorSessionContext.Provider value={value}>

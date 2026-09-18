@@ -21,6 +21,7 @@ import {
 import { CreatorServiceError, type CreatorService } from '../service.js';
 import type { AgentContextBuilder } from './context-builder.js';
 import { normalizeCreatorRuntimeEvent } from './event-normalizer.js';
+import { CreatorPreflightError, type CreatorPreflight } from '../preflight.js';
 import { createCreatorAgentReconciler } from './reconciler.js';
 import type { CreatorAgentRepository } from './repository.js';
 import type { AgentRuntimeAdapter } from './runtime-adapter.js';
@@ -41,6 +42,7 @@ export function createCreatorAgentService(input: {
   threads: Pick<ThreadManager, 'createThread' | 'getThread' | 'updateThread'>;
   contextBuilder: AgentContextBuilder;
   runtime: AgentRuntimeAdapter;
+  preflight?: Pick<CreatorPreflight, 'check'>;
   now?(): string;
   onEvent?(event: CreatorAgentEvent): void;
 }) {
@@ -177,6 +179,23 @@ export function createCreatorAgentService(input: {
         });
         if (runtimeResult.action === undefined) break;
         try {
+          if (runtimeResult.action.action === 'run-stage' && input.preflight !== undefined) {
+            const requestedStage = runtimeResult.action.input.stageId;
+            if (typeof requestedStage === 'string') {
+              const latestJob = input.creator.getJob(jobId);
+              const stage = latestJob === undefined
+                ? undefined
+                : input.creator.templates.get(latestJob.templateId, latestJob.templateVersion).stages.find(candidate => candidate.id === requestedStage);
+              if (latestJob !== undefined && stage !== undefined) {
+                const result = await input.preflight.check(latestJob, stage, {
+                  ...(typeof runtimeResult.action.input.inputResultVersion === 'number'
+                    ? { inputResultVersion: runtimeResult.action.input.inputResultVersion }
+                    : {})
+                });
+                if (!result.canStart) throw new CreatorPreflightError(result);
+              }
+            }
+          }
           const dispatched = input.dispatcher.dispatch(jobId, {
             ...runtimeResult.action,
             idempotencyKey: `${assistantTurn.id}:action:${conflictAttempt}`

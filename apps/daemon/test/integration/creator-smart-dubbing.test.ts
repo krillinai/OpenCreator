@@ -21,6 +21,8 @@ describe('creator smart dubbing', () => {
   it('runs TTS through Creator Job, Stage, Artifact and ResultSnapshot', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'creator-smart-dubbing-'));
     const config = createDefaultCreatorServicesConfig();
+    config.tts.openai.baseUrl = 'https://api.openai.com/v1';
+    config.tts.openai.apiKey = 'test-key';
     const audio = Buffer.from('creator-smart-dubbing-audio');
     const synthesize = vi.fn(async () => ({
       content: audio,
