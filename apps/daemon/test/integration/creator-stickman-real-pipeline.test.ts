@@ -583,7 +583,7 @@ function inMemoryConfigStore(config: CreatorServicesConfig) {
 }
 
 function configuredTts(config: CreatorServicesConfig): {
-  provider: 'openai' | 'aliyun' | 'minimax';
+  provider: 'openai' | 'aliyun' | 'minimax' | 'volcengine';
   model: string;
   voiceId: string;
 } {

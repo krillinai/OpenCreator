@@ -25,7 +25,7 @@ export type SmartDubbingResult = {
   fileName: string;
   mime: 'audio/mpeg' | 'audio/wav';
   size: number;
-  provider: 'openai' | 'aliyun' | 'minimax';
+  provider: 'openai' | 'aliyun' | 'minimax' | 'volcengine';
   model: string;
   voice: SmartDubbingVoice;
   voiceName?: string;

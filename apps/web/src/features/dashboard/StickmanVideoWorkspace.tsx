@@ -2,6 +2,7 @@ import {
   readCreatorResultSnapshots,
   type CreatorArtifact,
   type CreatorJson,
+  type CreatorServicesConfigResponse,
   type CreatorStageRun,
   type CreatorTtsProvider,
   type CreatorVisualAssetRef,
@@ -277,11 +278,7 @@ export default function StickmanVideoWorkspace(props: {
         const providerConfig = provider === 'edge-tts'
           ? null
           : response.config.tts[provider];
-        const configured = provider === 'edge-tts'
-          || (providerConfig !== null && (
-            providerConfig.apiKey.trim().length > 0
-            || response.configuredCredentials.some(credential => credential === `tts.${provider}.apiKey`)
-          ));
+        const configured = ttsCredentialsConfigured(provider, response);
         setTtsConfigurationStatus(configured ? 'configured' : 'missing');
         const imageProvider = response.config.image.provider;
         if (imageProvider !== 'openai' && imageProvider !== 'gemini') {
@@ -1181,7 +1178,26 @@ function isTtsProvider(value: unknown): value is CreatorTtsProvider {
   return value === 'openai'
     || value === 'aliyun'
     || value === 'minimax'
-    || value === 'edge-tts';
+    || value === 'edge-tts'
+    || value === 'volcengine';
+}
+
+function ttsCredentialsConfigured(
+  provider: CreatorTtsProvider,
+  response: CreatorServicesConfigResponse
+): boolean {
+  if (provider === 'edge-tts') return true;
+  if (provider === 'volcengine') {
+    const value = response.config.tts.volcengine;
+    return (value.appId.trim().length > 0 && value.accessToken.trim().length > 0)
+      || (
+        response.configuredCredentials.includes('tts.volcengine.appId')
+        && response.configuredCredentials.includes('tts.volcengine.accessToken')
+      );
+  }
+  const providerConfig = response.config.tts[provider];
+  return providerConfig.apiKey.trim().length > 0
+    || response.configuredCredentials.some(credential => credential === `tts.${provider}.apiKey`);
 }
 
 function cloneScriptManifest(value: ScriptManifest): ScriptManifest {

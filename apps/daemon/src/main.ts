@@ -38,7 +38,6 @@ import {
   installManagedParentWatch,
   parseManagedParentPid
 } from './managed-parent.js';
-
 type BootstrapPhase = 'starting_runtime';
 
 let server: FastifyInstance | undefined;

@@ -11,7 +11,7 @@ export function createSmartDubbingTemplate(): CreatorTemplateDefinition {
     renderer: 'smart-dubbing',
     inputSchema: z.object({
       text: z.string().max(5_000).default(''),
-      ttsProvider: z.enum(['openai', 'aliyun', 'minimax']).optional(),
+      ttsProvider: z.enum(['openai', 'aliyun', 'minimax', 'volcengine']).optional(),
       ttsModel: z.string().max(256).optional(),
       voiceCode: z.string().max(256).optional(),
       voiceName: z.string().max(256).optional(),

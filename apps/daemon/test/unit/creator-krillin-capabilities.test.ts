@@ -7,6 +7,21 @@ describe('KrillinAI transcription capabilities', () => {
 
     expect(capabilities.transcription.providers).toEqual(expect.arrayContaining([
       expect.objectContaining({
+        provider: 'openai',
+        kind: 'cloud',
+        available: true
+      }),
+      expect.objectContaining({
+        provider: 'aliyun',
+        kind: 'cloud',
+        available: true
+      }),
+      expect.objectContaining({
+        provider: 'volcengine',
+        kind: 'cloud',
+        available: true
+      }),
+      expect.objectContaining({
         provider: 'whisperkit',
         kind: 'local',
         available: true,

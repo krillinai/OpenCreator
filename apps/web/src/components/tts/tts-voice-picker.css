@@ -53,9 +53,34 @@
   opacity: 0.5;
 }
 
+.tts-voice-picker-custom,
 .tts-voice-picker-meta,
 .tts-voice-picker-error {
   grid-column: 1 / -1;
+}
+
+.tts-voice-picker-custom {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tts-voice-picker-custom input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0 11px;
+  font: inherit;
+}
+
+.tts-voice-picker-meta,
+.tts-voice-picker-error {
   min-height: 16px;
   font-size: 11px;
 }

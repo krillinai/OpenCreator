@@ -105,6 +105,39 @@ describe('KrillinAI CLI runner', () => {
     });
   });
 
+  it('bridges Volcengine ASR and TTS credentials into KrillinAI config', () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.transcription.provider = 'volcengine';
+    config.transcription.volcengine.appId = 'asr-app';
+    config.transcription.volcengine.accessToken = 'asr-token';
+    config.tts.provider = 'volcengine';
+    config.tts.volcengine.appId = 'tts-app';
+    config.tts.volcengine.accessToken = 'tts-token';
+
+    const value = parse(createKrillinConfigToml(config)) as {
+      transcribe: { provider: string; volcengine: Record<string, string> };
+      tts: { provider: string; volcengine: Record<string, string> };
+    };
+
+    expect(value.transcribe).toMatchObject({
+      provider: 'volcengine',
+      volcengine: {
+        app_id: 'asr-app',
+        access_token: 'asr-token',
+        resource_id: 'volc.seedasr.auc'
+      }
+    });
+    expect(value.tts).toMatchObject({
+      provider: 'volcengine',
+      volcengine: {
+        app_id: 'tts-app',
+        access_token: 'tts-token',
+        cluster: 'volcano_tts',
+        default_voice_id: 'BV001_streaming'
+      }
+    });
+  });
+
   it('recovers only the known Windows ASS drive-letter failure with the auto-video relative-path command', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-windows-ass-'));
     const resourceRoot = join(tempDir, 'runtime');

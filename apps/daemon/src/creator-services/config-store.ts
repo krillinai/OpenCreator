@@ -14,6 +14,7 @@ import {
   readOpenCreatorCredentials,
   updateOpenCreatorCredentials
 } from '../config/credentials-file.js';
+import { applyVolcengineEnvironmentOverrides } from './volcengine-env.js';
 
 
 const boundedString = (maximum: number) => z.string().max(maximum);
@@ -44,6 +45,12 @@ const aliyunSpeechSchema = z.object({
 const aliyunSchema = z.object({
   oss: aliyunOssSchema,
   speech: aliyunSpeechSchema
+}).strict();
+const volcengineAsrSchema = z.object({
+  appId: boundedString(256),
+  accessToken: boundedString(4096),
+  resourceId: boundedString(128),
+  baseUrl: boundedString(2048)
 }).strict();
 const creatorServicesDefaults = createDefaultCreatorServicesConfig();
 const imageConfigDefault = creatorServicesDefaults.image;
@@ -86,27 +93,43 @@ const legacyVideoConfigSchema = z.object({
 const legacyAliyunTtsSchema = aliyunSchema.transform(() => (
   structuredClone(creatorServicesDefaults.tts.aliyun)
 ));
+const volcengineTtsSchema = z.object({
+  baseUrl: boundedString(2048),
+  accessToken: boundedString(4096).optional(),
+  apiKey: boundedString(4096).optional(),
+  model: boundedString(128),
+  defaultVoiceId: boundedString(256).default(creatorServicesDefaults.tts.volcengine.defaultVoiceId),
+  appId: boundedString(256).default('')
+}).strict().transform(value => ({
+  baseUrl: value.baseUrl,
+  accessToken: value.accessToken || value.apiKey || '',
+  model: value.model,
+  defaultVoiceId: value.defaultVoiceId,
+  appId: value.appId
+}));
 const ttsConfigSchema = z.object({
-  provider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax']),
+  provider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax', 'volcengine']),
   openai: ttsProviderSchema(creatorServicesDefaults.tts.openai.defaultVoiceId),
   minimax: ttsProviderSchema(creatorServicesDefaults.tts.minimax.defaultVoiceId),
   aliyun: z.union([
     ttsProviderSchema(creatorServicesDefaults.tts.aliyun.defaultVoiceId),
     legacyAliyunTtsSchema
-  ])
+  ]),
+  volcengine: volcengineTtsSchema.default(creatorServicesDefaults.tts.volcengine)
 }).strict();
 
 export const creatorServicesConfigSchema = z.object({
   proxy: boundedString(2048),
   llm: llmConfigSchema,
   transcription: z.object({
-    provider: z.enum(['openai', 'faster-whisper', 'whisperkit', 'whisper.cpp', 'aliyun']),
+    provider: z.enum(['openai', 'faster-whisper', 'whisperkit', 'whisper.cpp', 'aliyun', 'volcengine']),
     enableGpuAcceleration: z.boolean(),
     openai: openAiCompatibleSchema,
     fasterWhisper: z.object({ model: z.enum(['tiny', 'medium', 'large-v2']) }).strict(),
     whisperKit: z.object({ model: z.literal('large-v2') }).strict(),
     whisperCpp: z.object({ model: z.enum(['tiny', 'medium', 'large-v2']) }).strict(),
-    aliyun: aliyunSchema
+    aliyun: aliyunSchema,
+    volcengine: volcengineAsrSchema.default(creatorServicesDefaults.transcription.volcengine)
   }).strict(),
   tts: ttsConfigSchema,
   image: z.union([imageConfigSchema, legacyImageConfigSchema]),
@@ -198,7 +221,9 @@ export function createOpenCreatorCreatorServicesConfigStore(input: {
     async read() {
       const snapshot = readOpenCreatorConfig(input.configFile);
       if (!snapshot.configured.creatorServices) {
-        return createDefaultCreatorServicesConfig();
+        return applyVolcengineEnvironmentOverrides(
+          createDefaultCreatorServicesConfig()
+        );
       }
       const publicConfig = parseCreatorServicesConfig(
         snapshot.document.creatorServices
@@ -206,7 +231,9 @@ export function createOpenCreatorCreatorServicesConfigStore(input: {
       const credentials = (
         await readOpenCreatorCredentials(input.credentialsFile)
       ).creatorServices ?? {};
-      return applyCreatorServiceCredentials(publicConfig, credentials);
+      return applyVolcengineEnvironmentOverrides(
+        applyCreatorServiceCredentials(publicConfig, credentials)
+      );
     },
     async write(config) {
       const normalized = parseCreatorServicesConfig(config);
@@ -232,7 +259,9 @@ export function createOpenCreatorCreatorServicesConfigStore(input: {
         delete next.creatorServices;
         return next;
       });
-      return createDefaultCreatorServicesConfig();
+      return applyVolcengineEnvironmentOverrides(
+        createDefaultCreatorServicesConfig()
+      );
     }
   };
   return store;
@@ -270,9 +299,13 @@ const creatorCredentialPaths = [
   'transcription.aliyun.speech.accessKeyId',
   'transcription.aliyun.speech.accessKeySecret',
   'transcription.aliyun.speech.appKey',
+  'transcription.volcengine.appId',
+  'transcription.volcengine.accessToken',
   'tts.openai.apiKey',
   'tts.minimax.apiKey',
   'tts.aliyun.apiKey',
+  'tts.volcengine.appId',
+  'tts.volcengine.accessToken',
   'image.openai.apiKey',
   'image.jimeng.apiKey',
   'image.kling.accessKey',
@@ -303,11 +336,24 @@ function applyCreatorServiceCredentials(
   credentials: Record<string, string>
 ): CreatorServicesConfig {
   const merged = structuredClone(config);
+  const migrated = migrateVolcengineTtsCredentials(credentials);
   for (const path of creatorCredentialPaths) {
-    const value = credentials[path];
+    const value = migrated[path];
     if (value !== undefined) writePath(merged, path, value);
   }
   return parseCreatorServicesConfig(merged);
+}
+
+function migrateVolcengineTtsCredentials(
+  credentials: Record<string, string>
+): Record<string, string> {
+  if (credentials['tts.volcengine.accessToken'] || !credentials['tts.volcengine.apiKey']) {
+    return credentials;
+  }
+  const next = { ...credentials };
+  next['tts.volcengine.accessToken'] = credentials['tts.volcengine.apiKey'];
+  delete next['tts.volcengine.apiKey'];
+  return next;
 }
 
 function readPath(value: unknown, path: string): unknown {
@@ -347,9 +393,17 @@ export function presentCreatorServicesConfig(
     redacted.transcription.openai.apiKey = '';
   });
   redactAliyunCredentials('transcription.aliyun', redacted.transcription.aliyun, configuredCredentials);
+  redact('transcription.volcengine.appId', redacted.transcription.volcengine.appId, () => {
+    redacted.transcription.volcengine.appId = '';
+  });
+  redact('transcription.volcengine.accessToken', redacted.transcription.volcengine.accessToken, () => {
+    redacted.transcription.volcengine.accessToken = '';
+  });
   redact('tts.openai.apiKey', redacted.tts.openai.apiKey, () => { redacted.tts.openai.apiKey = ''; });
   redact('tts.minimax.apiKey', redacted.tts.minimax.apiKey, () => { redacted.tts.minimax.apiKey = ''; });
   redact('tts.aliyun.apiKey', redacted.tts.aliyun.apiKey, () => { redacted.tts.aliyun.apiKey = ''; });
+  redact('tts.volcengine.appId', redacted.tts.volcengine.appId, () => { redacted.tts.volcengine.appId = ''; });
+  redact('tts.volcengine.accessToken', redacted.tts.volcengine.accessToken, () => { redacted.tts.volcengine.accessToken = ''; });
   redact('image.openai.apiKey', redacted.image.openai.apiKey, () => { redacted.image.openai.apiKey = ''; });
   redact('image.jimeng.apiKey', redacted.image.jimeng.apiKey, () => { redacted.image.jimeng.apiKey = ''; });
   redact('image.kling.accessKey', redacted.image.kling.accessKey, () => { redacted.image.kling.accessKey = ''; });
@@ -375,9 +429,21 @@ export function retainCreatorServicesCredentials(
     current.transcription.openai.apiKey
   );
   retainAliyunCredentials(merged.transcription.aliyun, current.transcription.aliyun);
+  retainBlank(
+    () => merged.transcription.volcengine.appId,
+    value => { merged.transcription.volcengine.appId = value; },
+    current.transcription.volcengine.appId
+  );
+  retainBlank(
+    () => merged.transcription.volcengine.accessToken,
+    value => { merged.transcription.volcengine.accessToken = value; },
+    current.transcription.volcengine.accessToken
+  );
   retainBlank(() => merged.tts.openai.apiKey, value => { merged.tts.openai.apiKey = value; }, current.tts.openai.apiKey);
   retainBlank(() => merged.tts.minimax.apiKey, value => { merged.tts.minimax.apiKey = value; }, current.tts.minimax.apiKey);
   retainBlank(() => merged.tts.aliyun.apiKey, value => { merged.tts.aliyun.apiKey = value; }, current.tts.aliyun.apiKey);
+  retainBlank(() => merged.tts.volcengine.appId, value => { merged.tts.volcengine.appId = value; }, current.tts.volcengine.appId);
+  retainBlank(() => merged.tts.volcengine.accessToken, value => { merged.tts.volcengine.accessToken = value; }, current.tts.volcengine.accessToken);
   retainBlank(() => merged.image.openai.apiKey, value => { merged.image.openai.apiKey = value; }, current.image.openai.apiKey);
   retainBlank(() => merged.image.jimeng.apiKey, value => { merged.image.jimeng.apiKey = value; }, current.image.jimeng.apiKey);
   retainBlank(() => merged.image.kling.accessKey, value => { merged.image.kling.accessKey = value; }, current.image.kling.accessKey);

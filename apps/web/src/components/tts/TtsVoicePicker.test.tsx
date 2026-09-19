@@ -145,4 +145,29 @@ describe('TtsVoicePicker', () => {
     fireEvent.click(screen.getByRole('button', { name: '刷新音色列表' }));
     await waitFor(() => expect(tts.getTtsVoices).toHaveBeenCalledTimes(2));
   });
+
+  it('accepts a cloned Volcengine speaker ID', async () => {
+    const onChange = vi.fn();
+    const tts = createService();
+
+    render(
+      <TtsVoicePicker
+        id="voice"
+        provider="volcengine"
+        model="seed-icl-2.0"
+        value=""
+        service={tts.service}
+        onChange={onChange}
+      />
+    );
+
+    const input = await screen.findByLabelText('克隆 / 自定义 Speaker ID');
+    fireEvent.change(input, { target: { value: 'S_cloned_speaker' } });
+    fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenCalledWith('S_cloned_speaker', expect.objectContaining({
+      id: 'S_cloned_speaker',
+      kind: 'custom'
+    }));
+  });
 });

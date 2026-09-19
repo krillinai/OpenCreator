@@ -243,7 +243,23 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.getByText('语音服务')).toBeInTheDocument();
     expect(screen.getAllByLabelText('Access Key Secret')).toHaveLength(2);
 
+    await user.click(screen.getByRole('combobox', { name: '语音识别服务' }));
+    await user.click(screen.getByRole('option', { name: '火山引擎' }));
+    expect(screen.getByLabelText('Access Token')).toBeInTheDocument();
+    expect(screen.getByLabelText('资源 ID')).toHaveValue('volc.seedasr.auc');
+    expect(screen.getByText(/共用同一套 Access Token/)).toBeInTheDocument();
+    expect(screen.queryByText('OSS 存储')).not.toBeInTheDocument();
+
     await user.click(screen.getByRole('tab', { name: '配音服务' }));
+    await user.click(screen.getByRole('combobox', { name: '服务商' }));
+    await user.click(screen.getByRole('option', { name: '火山引擎' }));
+    expect(screen.getByRole('combobox', { name: '接口 / 集群' }))
+      .toHaveTextContent('小模型 TTS（volcano_tts）');
+    expect(screen.getByLabelText('Access Token')).toBeInTheDocument();
+    expect(screen.getByLabelText('克隆 / 自定义 Speaker ID')).toBeInTheDocument();
+    expect(screen.getByText(/使用与语音识别相同的豆包语音控制台/)).toBeInTheDocument();
+    expect(screen.getByText(/豆包 2.0 \/ 声音复刻走 V3/)).toBeInTheDocument();
+
     await user.click(screen.getByRole('combobox', { name: '服务商' }));
     await user.click(screen.getByRole('option', { name: 'Edge TTS' }));
     expect(screen.getByText('无需填写凭据。运行时会使用本地 Edge TTS 服务。'))
@@ -528,6 +544,13 @@ function runtimeCapabilities(
         },
         {
           provider: 'aliyun',
+          kind: 'cloud',
+          available: true,
+          models: [],
+          gpuAcceleration: false
+        },
+        {
+          provider: 'volcengine',
           kind: 'cloud',
           available: true,
           models: [],

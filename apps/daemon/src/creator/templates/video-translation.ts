@@ -32,7 +32,7 @@ function createVideoTranslationTemplateDefinition(version: 1 | 2): CreatorTempla
         ? { subtitleStyle: creatorSubtitleStyleSchema }
         : {}),
       dubbing: z.boolean().default(false),
-      ttsProvider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax']).optional(),
+      ttsProvider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax', 'volcengine']).optional(),
       ttsModel: z.string().optional(),
       voiceCode: z.string().optional(),
       voiceName: z.string().optional(),

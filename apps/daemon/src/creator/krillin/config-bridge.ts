@@ -27,13 +27,26 @@ export function createKrillinConfigToml(config: CreatorServicesConfig): string {
       aliyun: {
         oss: snakeAliyunOss(config.transcription.aliyun.oss),
         speech: snakeAliyunSpeech(config.transcription.aliyun.speech)
+      },
+      volcengine: {
+        app_id: config.transcription.volcengine.appId,
+        access_token: config.transcription.volcengine.accessToken,
+        resource_id: config.transcription.volcengine.resourceId,
+        base_url: config.transcription.volcengine.baseUrl
       }
     },
     tts: {
       provider: config.tts.provider,
       openai: ttsProvider(config.tts.openai),
       minimax: ttsProvider(config.tts.minimax),
-      aliyun: ttsProvider(config.tts.aliyun)
+      aliyun: ttsProvider(config.tts.aliyun),
+      volcengine: {
+        app_id: config.tts.volcengine.appId,
+        access_token: config.tts.volcengine.accessToken,
+        cluster: config.tts.volcengine.model,
+        default_voice_id: config.tts.volcengine.defaultVoiceId,
+        base_url: config.tts.volcengine.baseUrl
+      }
     },
     image: {
       provider: config.image.provider,

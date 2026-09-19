@@ -214,7 +214,7 @@ function isSmartDubbingResult(value: unknown): value is SmartDubbingResult {
     && typeof value.fileName === 'string'
     && (value.mime === 'audio/mpeg' || value.mime === 'audio/wav')
     && typeof value.size === 'number'
-    && (value.provider === 'openai' || value.provider === 'aliyun' || value.provider === 'minimax')
+    && (value.provider === 'openai' || value.provider === 'aliyun' || value.provider === 'minimax' || value.provider === 'volcengine')
     && typeof value.model === 'string'
     && typeof value.voice === 'string'
     && value.voice.length > 0

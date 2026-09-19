@@ -145,6 +145,9 @@ function hasTtsCredentials(
   if (provider === 'edge-tts') return true;
   if (provider === 'openai') return config.tts.openai.apiKey.length > 0;
   if (provider === 'minimax') return config.tts.minimax.apiKey.length > 0;
+  if (provider === 'volcengine') {
+    return config.tts.volcengine.appId.length > 0 && config.tts.volcengine.accessToken.length > 0;
+  }
   return config.tts.aliyun.apiKey.length > 0;
 }
 
@@ -152,7 +155,8 @@ function isTtsProvider(value: unknown): value is CreatorTtsProvider {
   return value === 'openai'
     || value === 'aliyun'
     || value === 'edge-tts'
-    || value === 'minimax';
+    || value === 'minimax'
+    || value === 'volcengine';
 }
 
 function queueNextStage(

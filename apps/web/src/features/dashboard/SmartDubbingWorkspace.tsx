@@ -532,7 +532,7 @@ function readLatestResult(artifacts: CreatorArtifact[]): DubbingResult | undefin
     artifact,
     fileName: readString(metadata.fileName) || `OpenCreator-dubbing.${readFormat(metadata.format)}`,
     size: readNonNegativeNumber(metadata.bytes),
-    provider: provider === 'aliyun' || provider === 'minimax' ? provider : 'openai',
+    provider: provider === 'aliyun' || provider === 'minimax' || provider === 'volcengine' ? provider : 'openai',
     model: readString(metadata.model),
     voice: readString(metadata.voiceCode),
     voiceName: readString(metadata.voiceName) || readString(metadata.voiceCode),
@@ -549,6 +549,7 @@ function providerLabel(
 ): string {
   if (provider === 'aliyun') return l('阿里云百炼', 'Alibaba Cloud Model Studio');
   if (provider === 'minimax') return 'MiniMax';
+  if (provider === 'volcengine') return l('火山引擎', 'Volcengine');
   if (provider === 'edge-tts') return 'Edge TTS';
   return 'OpenAI TTS';
 }
@@ -592,7 +593,7 @@ function readString(value: CreatorJson | undefined): string {
 }
 
 function readProvider(value: CreatorJson | undefined): CreatorTtsProvider | undefined {
-  return value === 'openai' || value === 'aliyun' || value === 'minimax' || value === 'edge-tts'
+  return value === 'openai' || value === 'aliyun' || value === 'minimax' || value === 'edge-tts' || value === 'volcengine'
     ? value
     : undefined;
 }

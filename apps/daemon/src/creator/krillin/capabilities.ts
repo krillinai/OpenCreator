@@ -38,14 +38,15 @@ export function createKrillinCreatorServicesCapabilities(
           false,
           whisperCppAvailable ? undefined : 'unsupported_platform'
         ),
-        cloudProvider('aliyun', [])
+        cloudProvider('aliyun', []),
+        cloudProvider('volcengine', [])
       ]
     }
   };
 }
 
 function cloudProvider(
-  provider: 'openai' | 'aliyun',
+  provider: 'openai' | 'aliyun' | 'volcengine',
   models: string[]
 ): CreatorTranscriptionProviderCapability {
   return {
