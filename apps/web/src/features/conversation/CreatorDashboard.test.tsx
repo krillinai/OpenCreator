@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CreatorPresetSummary } from '@opencreator/protocol';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import {
   CreatorDashboard,
@@ -101,10 +101,19 @@ const presets: CreatorPresetSummary[] = [{
   highlights: [{ text: '16:9', colors: [] }]
 }];
 
+function mockNarrowTagRow() {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const width = this.classList.contains('creator-template-tags-filter') ? 350 : 100;
+    return { width } as DOMRect;
+  });
+}
+
 describe('CreatorDashboard', () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   it.each([
     ['video-generation', true],
@@ -142,7 +151,7 @@ describe('CreatorDashboard', () => {
     render(<CreatorDashboard presets={presets} onSelectPreset={onSelectPreset} />);
 
     expect(screen.getByRole('heading', { name: '精选模板' })).toBeInTheDocument();
-    expect(screen.getAllByRole('tab')).toHaveLength(4);
+    expect(screen.getAllByRole('tab')).toHaveLength(5);
     expect(screen.getByRole('tab', { name: '推荐' }))
       .toHaveAttribute('aria-selected', 'true');
     const presetCard = screen.getByRole('button', { name: '查看B站双语精翻模板详情' });
@@ -261,6 +270,342 @@ describe('CreatorDashboard', () => {
       .toBeInTheDocument();
     expect(screen.getByRole('button', { name: '查看个人成长封面模板详情' }))
       .toBeInTheDocument();
+  });
+
+  it('omits tag filters on Recent, Recommended and All while keeping search available', () => {
+    render(<CreatorDashboard presets={presets} />);
+
+    for (const category of ['推荐', '全部', '最近']) {
+      fireEvent.click(screen.getByRole('tab', { name: category }));
+      expect(screen.queryByRole('group', { name: '筛选模板' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '搜索模板' })).toBeInTheDocument();
+    }
+
+    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
+    expect(screen.getByRole('group', { name: '筛选模板' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '商品产品' }));
+    fireEvent.click(screen.getByRole('tab', { name: '全部' }));
+    expect(screen.queryByRole('group', { name: '筛选模板' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看社交媒体海报模板详情' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
+    expect(screen.getByRole('button', { name: '全部' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('uses one tag at a time and resets with All or a category change', () => {
+    const catalog = [
+      { ...presets[1]!, tags: ['商业广告', '产品视觉', '创意摄影'] },
+      { ...presets[2]!, tags: ['海报设计', '手绘插画', '角色场景'] },
+      { ...presets[3]!, tags: ['商业广告', 'cinematic', '产品视觉'] }
+    ];
+    render(<CreatorDashboard presets={catalog} />);
+
+    expect(screen.queryByRole('group', { name: '筛选模板' })).not.toBeInTheDocument();
+    expect(screen.queryByText('使用场景')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '视频创作' }));
+    expect(screen.getByRole('button', { name: '全部' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '电影短片' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '海报设计' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '电影短片' }));
+    expect(screen.getByRole('tab', { name: '视频创作' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('button', { name: '查看电商商品主图增强版模板详情' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看电影感视频预览模板详情' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '全部' }));
+    expect(screen.getByRole('tab', { name: '视频创作' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('button', { name: '查看电商商品主图增强版模板详情' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
+    fireEvent.click(screen.getByRole('button', { name: '商品产品' }));
+    expect(screen.getByRole('tab', { name: '图像设计' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: '查看电商商品主图增强版模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看社交媒体海报模板详情' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '全部' }));
+    expect(screen.queryByRole('button', { name: '商品产品' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '筛选模板' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '查看社交媒体海报模板详情' })).toBeInTheDocument();
+  });
+
+  it('keeps one tag row and moves overflow selections into view without changing the category', () => {
+    mockNarrowTagRow();
+    render(<CreatorDashboard presets={[
+      { ...presets[3]!, tags: ['cinematic', 'camera-motion', 'action'] },
+      presets[0]!,
+      { ...presets[1]!, tags: ['产品视觉', '电商视觉', '人像摄影'] },
+      { ...presets[2]!, tags: ['海报设计'] }
+    ]} />);
+
+    fireEvent.click(screen.getByRole('tab', { name: '视频创作' }));
+    const filter = screen.getByRole('group', { name: '筛选模板' });
+    const line = filter.querySelector('.creator-template-tags-line')!;
+    expect(within(line as HTMLElement).getByRole('button', { name: '视频翻译' })).toBeInTheDocument();
+    expect(within(line as HTMLElement).queryByRole('button', { name: '镜头运动' })).not.toBeInTheDocument();
+    const more = within(line as HTMLElement).getByRole('button', { name: '更多' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(filter.querySelectorAll('.creator-template-tags-measure button[tabindex="-1"]')).toHaveLength(
+      filter.querySelectorAll('.creator-template-tags-measure button').length
+    );
+
+    fireEvent.click(more);
+    const overflow = screen.getByRole('group', { name: '更多模板分类' });
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+    expect(more).toHaveTextContent('收起');
+    expect(within(overflow).queryByRole('button', { name: '视频翻译' })).not.toBeInTheDocument();
+    fireEvent.click(more);
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(more).toHaveTextContent('更多');
+    expect(screen.queryByRole('group', { name: '更多模板分类' })).not.toBeInTheDocument();
+    fireEvent.click(more);
+    fireEvent.click(within(screen.getByRole('group', { name: '更多模板分类' }))
+      .getByRole('button', { name: '镜头运动' }));
+    expect(screen.queryByRole('group', { name: '更多模板分类' })).not.toBeInTheDocument();
+    expect(within(line as HTMLElement).getByRole('button', { name: '镜头运动' }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('tab', { name: '视频创作' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: '查看电影感视频预览模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看B站双语精翻模板详情' })).not.toBeInTheDocument();
+
+    fireEvent.click(more);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('group', { name: '更多模板分类' })).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
+    fireEvent.click(more);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('group', { name: '更多模板分类' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
+    expect(within(line as HTMLElement).getByRole('button', { name: '人像写真' })).toBeInTheDocument();
+    fireEvent.click(within(line as HTMLElement).getByRole('button', { name: '更多' }));
+    fireEvent.click(within(screen.getByRole('group', { name: '更多模板分类' }))
+      .getByRole('button', { name: '商品产品' }));
+    expect(within(line as HTMLElement).getByRole('button', { name: '商品产品' }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('tab', { name: '图像设计' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: '查看电商商品主图增强版模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看社交媒体海报模板详情' })).not.toBeInTheDocument();
+  });
+
+  it('localizes the overflow control and its options in English', () => {
+    mockNarrowTagRow();
+    render(
+      <LanguageProvider initialPreference="en-US">
+        <CreatorDashboard presets={[{ ...presets[3]!, tags: ['cinematic', 'camera-motion'] }]} />
+      </LanguageProvider>
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Video Creation' }));
+    const more = screen.getByRole('button', { name: 'More' });
+    fireEvent.click(more);
+    expect(more).toHaveTextContent('Show less');
+    const overflow = screen.getByRole('group', { name: 'More template filters' });
+    fireEvent.click(within(overflow).getByRole('button', { name: 'Camera Motion' }));
+    expect(screen.getByRole('button', { name: 'Camera Motion' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('tab', { name: 'Video Creation' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('matches localized English tags within the selected category', () => {
+    const catalog = [
+      { ...presets[1]!, title: 'Product Hero', tags: ['Commercial advertising', 'Product visuals'] },
+      { ...presets[2]!, title: 'Illustrated Poster', tags: ['Poster design', 'Hand-drawn illustration'] },
+      { ...presets[3]!, title: 'Cinematic Motion', tags: ['Cinematic storytelling', 'Animation'] }
+    ];
+    render(
+      <LanguageProvider initialPreference="en-US">
+        <CreatorDashboard presets={catalog} />
+      </LanguageProvider>
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Image Design' }));
+    expect(screen.getByRole('button', { name: 'Brand Ads' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Posters' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cinematic' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Brand Ads' }));
+    expect(screen.getByRole('tab', { name: 'Image Design' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'View Product Hero template details' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View Illustrated Poster template details' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(screen.getByRole('tab', { name: 'Image Design' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'View Illustrated Poster template details' })).toBeInTheDocument();
+  });
+
+  it('shows video workflows and motion tags separately from image design tags', () => {
+    const catalog = [
+      presets[0]!,
+      presets[4]!,
+      { ...presets[3]!, tags: ['camera-motion', 'action', 'image-to-video'] },
+      { ...presets[1]!, tags: ['产品视觉', '产品摄影'] },
+      { ...presets[2]!, tags: ['海报设计', '手绘插画'] }
+    ];
+    render(<CreatorDashboard presets={catalog} />);
+
+    fireEvent.click(screen.getByRole('tab', { name: '视频创作' }));
+    expect(screen.getByRole('button', { name: '视频翻译' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '火柴人动画' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '视频下载' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '镜头运动' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '运动动作' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '海报设计' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '镜头运动' }));
+    expect(screen.getByRole('button', { name: '查看电影感视频预览模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看B站双语精翻模板详情' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
+    expect(screen.getByRole('button', { name: '海报设计' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '摄影' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '镜头运动' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '视频翻译' })).not.toBeInTheDocument();
+  });
+
+  it('shows specific image uses, styles and subjects in one localized filter', () => {
+    const catalog: CreatorPresetSummary[] = [
+      {
+        ...presets[1]!,
+        title: '极简城市海报',
+        tags: ['极简设计', '城市街景', '海报设计'],
+        tagIds: ['minimalist', 'city-street', '海报设计']
+      },
+      {
+        ...presets[2]!,
+        title: '水彩故事分镜',
+        tags: ['水彩', '故事分镜', '手绘插画'],
+        tagIds: ['watercolor', 'storyboard', '手绘插画']
+      },
+      {
+        ...presets[5]!,
+        title: '品牌商品广告',
+        tags: ['商业广告', '产品视觉', '电商'],
+        tagIds: ['商业广告', '产品视觉', 'ecommerce']
+      }
+    ];
+    const view = render(<CreatorDashboard presets={catalog} />);
+    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
+    const filter = screen.getByRole('group', { name: '筛选模板' });
+    expect(filter.querySelectorAll('button').length).toBeGreaterThan(9);
+    for (const label of ['海报设计', '故事分镜', '电商主图', '品牌广告', '水彩画', '极简设计', '城市街景', '商品产品']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: '游戏视觉' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '城市街景' }));
+    expect(screen.getByRole('tab', { name: '图像设计' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: '查看极简城市海报模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看水彩故事分镜模板详情' })).not.toBeInTheDocument();
+
+    view.unmount();
+    render(
+      <LanguageProvider initialPreference="en-US">
+        <CreatorDashboard presets={[
+          { ...catalog[0]!, title: 'Minimal City Poster', tags: ['Minimalist', 'City streets', 'Poster design'] },
+          { ...catalog[1]!, title: 'Watercolor Storyboard', tags: ['Watercolor', 'Storyboard', 'Hand-drawn illustration'] }
+        ]} />
+      </LanguageProvider>
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Image Design' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Watercolor' }));
+    expect(screen.getByRole('tab', { name: 'Image Design' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'View Watercolor Storyboard template details' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View Minimal City Poster template details' })).not.toBeInTheDocument();
+  });
+
+  it('shows localized video-specific tags in English', () => {
+    render(
+      <LanguageProvider initialPreference="en-US">
+        <CreatorDashboard presets={[
+          { ...presets[0]!, title: 'Bilingual Translation', tags: ['Bilingual', 'Subtitles'] },
+          { ...presets[3]!, title: 'Moving Camera', tags: ['Camera motion', 'Cinematic'] }
+        ]} />
+      </LanguageProvider>
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Video Creation' }));
+    expect(screen.getByRole('button', { name: 'Video Translation' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stick Figure Animation' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Camera Motion' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cinematic Shorts' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Camera Motion' }));
+    expect(screen.getByRole('tab', { name: 'Video Creation' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'View Moving Camera template details' })).toBeInTheDocument();
+  });
+
+  it('shows the complete video tag list in order, including tags awaiting templates', () => {
+    const catalog = [
+      { ...presets[3]!, tags: ['nature-landscape', 'city-street', 'architecture-interior', 'anime-style'] },
+      { ...presets[3]!, id: 'stickman-preview', title: '火柴人动画预览', tags: ['stickman-video'], tagIds: ['stickman-video'] },
+      presets[0]!
+    ];
+    render(<CreatorDashboard presets={catalog} />);
+    fireEvent.click(screen.getByRole('tab', { name: '视频创作' }));
+    expect(Array.from(document.querySelectorAll('.creator-template-tags-line button'), button => button.textContent))
+      .toEqual([
+        '全部', '视频翻译', '火柴人动画', '电影短片', '生活 Vlog', '品牌广告', 'UGC 内容', '知识讲解',
+        '片头包装', '游戏宣传', '写实电影感', '奇幻冒险', '未来科幻',
+        '动漫风格', '复古胶片', '梦境视觉', '定格动画', '手绘动画',
+        '人物角色', '运动动作', '自然风光', '建筑空间', '城市街景',
+        '美食料理', '产品特写', '镜头运动', '视频配音', '视频下载'
+      ]);
+    fireEvent.click(screen.getByRole('button', { name: '视频翻译' }));
+    expect(screen.getByRole('button', { name: '查看B站双语精翻模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看火柴人动画预览模板详情' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '火柴人动画' }));
+    expect(screen.getByRole('button', { name: '查看火柴人动画预览模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看B站双语精翻模板详情' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '片头包装' }));
+    expect(screen.getByText('该标签暂时没有模板。')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '视频创作' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '城市街景' }));
+    expect(screen.getByRole('button', { name: '查看电影感视频预览模板详情' })).toBeInTheDocument();
+  });
+
+  it('filters localized video presets by stable tag IDs in Chinese and English', () => {
+    const catalog: CreatorPresetSummary[] = [
+      {
+        ...presets[3]!,
+        title: '城市自然镜头',
+        tags: ['电影感', '镜头运动', '自然风光', '城市街景', '建筑空间'],
+        tagIds: ['cinematic', 'camera-motion', 'nature-landscape', 'city-street', 'architecture-interior']
+      },
+      {
+        ...presets[3]!,
+        id: 'anime-action',
+        title: '动漫动作',
+        tags: ['动漫风格', '动作', '怀旧'],
+        tagIds: ['anime-style', 'action', 'nostalgic']
+      },
+      presets[0]!
+    ];
+    const view = render(<CreatorDashboard presets={catalog} />);
+    fireEvent.click(screen.getByRole('tab', { name: '视频创作' }));
+
+    const filter = screen.getByRole('group', { name: '筛选模板' });
+    expect(filter.querySelectorAll('button').length).toBeGreaterThan(5);
+    for (const label of ['视频翻译', '火柴人动画', '电影短片', '写实电影感', '镜头运动', '自然风光', '城市街景', '建筑空间', '动漫风格', '运动动作', '复古胶片']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole('button', { name: '自然风光' }));
+    expect(screen.getByRole('tab', { name: '视频创作' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: '查看城市自然镜头模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看动漫动作模板详情' })).not.toBeInTheDocument();
+
+    view.unmount();
+    render(
+      <LanguageProvider initialPreference="en-US">
+        <CreatorDashboard presets={[
+          {
+            ...catalog[0]!,
+            title: 'City and Nature Camera',
+            tags: ['Cinematic', 'Camera motion', 'Natural landscapes', 'City streets', 'Architecture and interiors']
+          },
+          {
+            ...catalog[1]!,
+            title: 'Anime Action',
+            tags: ['Anime style', 'Action', 'Nostalgic']
+          },
+          catalog[2]!
+        ]} />
+      </LanguageProvider>
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Video Creation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Natural Landscapes' }));
+    expect(screen.getByRole('tab', { name: 'Video Creation' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'View City and Nature Camera template details' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View Anime Action template details' })).not.toBeInTheDocument();
   });
 
   it('highlights replaceable prompt variables without styling section headings', () => {

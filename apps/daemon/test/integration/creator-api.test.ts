@@ -316,6 +316,7 @@ describe('creator api', () => {
       coverUrl: expect.stringMatching(/^\/creator-presets\/[a-f0-9]{64}\.jpg$/),
       prompt: expect.stringContaining('Create a hyper-realistic exploded vertical infographic'),
       tags: ['Reference template', 'Product visuals', 'Infographics', 'Food and beverage'],
+      tagIds: ['reference-template', '产品视觉', '信息图表', '食品饮料'],
       highlights: [
         { text: '1024 × 1024', colors: [] },
         { text: 'High quality', colors: [] },

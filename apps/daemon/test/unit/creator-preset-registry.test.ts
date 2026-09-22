@@ -100,6 +100,73 @@ describe('creator preset registry', () => {
     ]);
   });
 
+  it('validates and localizes video taxonomy tags from their source manifests', async () => {
+    const fixture = setup();
+    const cases = [
+      ['rainforest-mysterious-light', 'nature-landscape', '自然风光', 'Natural landscapes'],
+      ['brutalist-courtyard-martial-arts', 'architecture-interior', '建筑空间', 'Architecture and interiors'],
+      ['bedroom-falling-book-catch', 'architecture-interior', '建筑空间', 'Architecture and interiors'],
+      ['nyc-parkour-web-swing', 'city-street', '城市街景', 'City streets'],
+      ['anime-skateboard-chase-nyc', 'anime-style', '动漫风格', 'Anime style'],
+      ['seoul-sunday-dv-home-video', 'city-street', '城市街景', 'City streets']
+    ] as const;
+    for (const [id, tag, zh, en] of cases) {
+      const source = JSON.parse(readFileSync(
+        join(officialPresetRoot, 'video-generation', id, '1', 'template.json'),
+        'utf8'
+      )) as { tags: string[] };
+      expect(source.tags).toContain(tag);
+      expect(createCreatorPresetTags(source, 'zh-CN')).toContain(zh);
+      expect(createCreatorPresetTags(source, 'en-US')).toContain(en);
+      copyOfficialPreset({ sourceRoot: fixture.sourceRoot, module: 'video-generation', sourceId: id });
+    }
+    const catalog = await validateCreatorPresets({ sourceRoot: fixture.sourceRoot });
+    const registry = createCreatorPresetRegistry({
+      catalog,
+      catalogHash: sha256(canonicalJson(catalog))
+    });
+    for (const [id, tag, zh, en] of cases) {
+      const chinese = registry.listPublished('zh-CN').find(preset => preset.id === id);
+      const english = registry.listPublished('en-US').find(preset => preset.id === id);
+      expect(chinese?.tags).toContain(zh);
+      expect(english?.tags).toContain(en);
+      expect(chinese?.tagIds).toEqual(english?.tagIds);
+      expect(chinese?.tagIds).toContain(tag);
+    }
+  });
+
+  it('keeps specific image filter tags available in both locales', async () => {
+    const fixture = setup();
+    const cases = [
+      ['animated-campus-world-reference-board', 'anime-style', '动漫风格', 'Anime style'],
+      ['city-corner-3d-billboard-photography', '3d-render', '三维场景', '3D render'],
+      ['croissant-baking-storyboard', 'storyboard', '故事分镜', 'Storyboard'],
+      ['watercolor-editorial-illustration-poster', 'watercolor', '水彩', 'Watercolor'],
+      ['minimal-conceptual-line-art-poster', 'minimalist', '极简设计', 'Minimalist']
+    ] as const;
+    for (const [id, tag] of cases) {
+      copyOfficialPreset({ sourceRoot: fixture.sourceRoot, module: 'image-generation', sourceId: id });
+      const source = JSON.parse(readFileSync(
+        join(officialPresetRoot, 'image-generation', id, '1', 'template.json'),
+        'utf8'
+      )) as { tags: string[] };
+      expect(source.tags).toContain(tag);
+    }
+    const catalog = await validateCreatorPresets({ sourceRoot: fixture.sourceRoot });
+    const registry = createCreatorPresetRegistry({
+      catalog,
+      catalogHash: sha256(canonicalJson(catalog))
+    });
+    for (const [id, tag, zh, en] of cases) {
+      const chinese = registry.listPublished('zh-CN').find(preset => preset.id === id);
+      const english = registry.listPublished('en-US').find(preset => preset.id === id);
+      expect(chinese?.tagIds).toContain(tag);
+      expect(english?.tagIds).toContain(tag);
+      expect(chinese?.tags).toContain(zh);
+      expect(english?.tags).toContain(en);
+    }
+  });
+
   it('returns localized latest published presets and keeps hidden presets addressable', async () => {
     const fixture = setup();
     copyOfficialPreset({

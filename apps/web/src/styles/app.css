@@ -3404,7 +3404,7 @@ html.is-pane-resizing * {
   width: min(760px, 100%);
   min-height: 42px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 4px;
   margin: 0 auto;
   padding: 4px;
@@ -3446,10 +3446,86 @@ html.is-pane-resizing * {
 }
 
 .creator-template-tabs button:focus-visible,
+.creator-template-tags-filter button:focus-visible,
 .creator-template-search-trigger:focus-visible,
 .creator-template-search button:focus-visible {
   outline: 2px solid var(--state-focus-ring);
   outline-offset: -2px;
+}
+
+.creator-template-tags-filter {
+  position: relative;
+  min-width: 0;
+  margin: 0 0 22px;
+  padding: 2px 0 0;
+}
+
+.creator-template-tags-line,
+.creator-template-tags-measure {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.creator-template-tags-line {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.creator-template-tags-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.creator-template-tags-filter button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.creator-template-tags-filter button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-2) 65%, transparent);
+}
+
+.creator-template-tags-filter button[aria-pressed="true"] {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.creator-template-tags-filter .creator-template-tags-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.creator-template-tags-more[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.creator-template-tags-overflow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 5px;
+  margin-top: 4px;
 }
 
 .creator-template-search-trigger {
@@ -7472,9 +7548,15 @@ button.creator-template-outcome-expand:hover {
   }
 
   .creator-template-tabs {
-    grid-template-columns: repeat(4, minmax(84px, 1fr));
+    grid-template-columns: repeat(5, minmax(84px, 1fr));
     justify-content: stretch;
     overflow-x: auto;
+  }
+
+  .creator-template-tags-filter button {
+    padding-right: 10px;
+    padding-left: 10px;
+    font-size: 12px;
   }
 
   .creator-tool-button {

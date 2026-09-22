@@ -164,6 +164,7 @@ export type CreatorPresetSummary = CreatorPresetRef & {
   author?: CreatorPresetAuthor;
   prompt: string | null;
   tags: string[];
+  tagIds?: string[];
   featured: boolean;
   sortOrder: number;
   requirements: CreatorPresetRequirements | null;
