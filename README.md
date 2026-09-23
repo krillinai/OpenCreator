@@ -115,7 +115,7 @@ Open a template to preview its example result and inspect its prompt, settings, 
 
 Creator tools provide visual controls; Skills give the Agent reusable instructions and tool workflows. OpenCreator includes video-production Skills in the repository, alongside support for managing local Codex Skills.
 
-The repository's [`skills/`](./skills/) directory contains reusable instructions for Agents operating the embedded KrillinAI CLI.
+The repository's [`skills/`](./skills/) directory contains reusable instructions for Agents operating the embedded KrillinAI CLI and the external Channel pipeline.
 
 | Skill | Capabilities |
 | --- | --- |
@@ -126,6 +126,7 @@ The repository's [`skills/`](./skills/) directory contains reusable instructions
 | [Portrait Render](./skills/krillinai-render-vertical/SKILL.md) | Compose portrait videos with titles, bilingual subtitles, or dubbing |
 | [Cover](./skills/krillinai-cover/SKILL.md) | Generate a cover image from a complete text prompt and save the image and final prompt |
 | [Pipeline Plan](./skills/krillinai-pipeline/SKILL.md) | Validate a multi-stage output plan in dry-run mode; execute actual work through the individual stage Skills |
+| [Channel Pipeline](./skills/channel-pipeline/SKILL.md) | Drive a configured Channel checkout for search, ingest, processing, multi-platform publishing, and Baidu sync |
 
 ### Extend with Your Own Skills
 
