@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成等轴测视角的完整微缩厨房空间。",
-    "en-US": "Create an image with the Isometric Miniature Kitchen reference template."
+    "en-US": "Render a detailed miniature kitchen from an isometric viewpoint."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
@@ -26,9 +26,9 @@
     "avatar": "author-avatar.webp"
   },
   "tags": [
-    "设计参考",
     "建筑空间",
     "等轴测",
+    "微缩场景",
     "reference-template"
   ],
   "defaults": {

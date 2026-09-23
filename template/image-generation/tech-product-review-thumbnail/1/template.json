@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成科技产品评测视频使用的高点击率横版缩略图。",
-    "en-US": "Create an image with the Tech Product Review Thumbnail reference template."
+    "en-US": "Create a high-contrast tech-review thumbnail with a portrait and featured product."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

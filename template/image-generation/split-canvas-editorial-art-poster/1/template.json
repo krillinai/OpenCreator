@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成具有分割画布、人物与编辑排版关系的艺术海报。",
-    "en-US": "Create an image with the Split-Canvas Editorial Art Poster reference template."
+    "en-US": "Turn each uploaded photograph into an independent split-canvas editorial poster."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "把食物的不同组成部分按垂直顺序悬浮排列，生成写实爆炸拆解信息图。",
-    "en-US": "Create an image with the Exploded Food Infographic reference template."
+    "en-US": "Stack the ingredients of a dish in a photorealistic exploded-view infographic."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

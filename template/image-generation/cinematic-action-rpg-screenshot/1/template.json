@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成一张包含玩家角色、巨型首领、战斗瞬间、环境叙事和完整 HUD 的电影级第三人称动作角色扮演游戏截图。",
-    "en-US": "Create an image with the Cinematic Action RPG Screenshot reference template."
+    "en-US": "Stage a third-person boss battle with environmental storytelling and a complete game HUD."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
@@ -27,7 +27,7 @@
   "tags": [
     "游戏视觉",
     "角色场景",
-    "未来科技",
+    "电影感",
     "reference-template"
   ],
   "defaults": {

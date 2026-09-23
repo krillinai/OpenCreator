@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "保持参考人物身份、服装和光线一致，仅更换十二种发型并生成对照图鉴。",
-    "en-US": "Create an image with the Same Face, Twelve Hairstyles reference template."
+    "en-US": "Compare twelve hairstyles on the same face in a numbered lookbook grid."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

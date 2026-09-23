@@ -11,12 +11,12 @@
   "featured": false,
   "sortOrder": 80,
   "title": {
-    "zh-CN": "界面交互设计图",
+    "zh-CN": "VR 头显爆炸拆解技术图",
     "en-US": "VR Headset Exploded Interface Diagram"
   },
   "description": {
     "zh-CN": "生成带产品部件分层、功能标注和科技视觉效果的 VR 头显爆炸拆解展示图。",
-    "en-US": "Create an image with the VR Headset Exploded Interface Diagram reference template."
+    "en-US": "Show the layered components of a VR headset in a labeled technical poster."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
@@ -29,6 +29,7 @@
     "信息图表",
     "产品视觉",
     "工业设计",
+    "未来科技",
     "reference-template"
   ],
   "defaults": {

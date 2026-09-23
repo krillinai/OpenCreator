@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "把一道菜的食材、15 个连续制作步骤和成品主视觉整理成竖版写实食谱信息图，也可作为后续图生视频的视觉分镜参考。",
-    "en-US": "Create an image with the Fifteen-Step Photorealistic Recipe reference template."
+    "en-US": "Explain a complete recipe in fifteen photorealistic illustrated steps."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
@@ -28,7 +28,6 @@
   "tags": [
     "信息图表",
     "食品饮料",
-    "影视叙事",
     "reference-template"
   ],
   "defaults": {

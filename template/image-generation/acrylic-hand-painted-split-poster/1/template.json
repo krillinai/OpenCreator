@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "将上传照片制作成上半部真实摄影、下半部极简丙烯手绘插画的 3:4 高级设计海报。",
-    "en-US": "Create an image with the Acrylic Hand-Painted Split Poster reference template."
+    "en-US": "Split an uploaded photo into a photographic upper half and a minimal acrylic-painted lower half."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

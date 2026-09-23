@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成多组统一纸雕浮雕风格的街区或社区场景。",
-    "en-US": "Create an image with the Paper Relief Neighborhood Grid reference template."
+    "en-US": "Render four neighborhoods as layered paper-relief miniatures."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
@@ -26,9 +26,9 @@
     "avatar": "author-avatar.webp"
   },
   "tags": [
-    "设计参考",
     "建筑空间",
     "手工材质",
+    "微缩场景",
     "city-street",
     "reference-template"
   ],

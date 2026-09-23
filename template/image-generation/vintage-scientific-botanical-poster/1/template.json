@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成带解剖编号、手写注记和科学图版排版的植物学海报。",
-    "en-US": "Create an image with the Vintage Scientific Botanical Poster reference template."
+    "en-US": "Illustrate a labeled botanical specimen on aged paper in a scientific vintage style."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成具有撕纸、复印颗粒、网点和手工拼贴质感的法国新浪潮电影海报。",
-    "en-US": "Create an image with the French New Wave Torn-Paper Poster reference template."
+    "en-US": "Layer torn paper, halftone texture, and typography into a French New Wave film poster."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

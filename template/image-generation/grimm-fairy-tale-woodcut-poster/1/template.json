@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "将人物、动物、建筑或场景照片转化为具有童话叙事、木刻版画和手工印刷质感的海报。",
-    "en-US": "Create an image with the Grimm Fairy Tale Woodcut Poster reference template."
+    "en-US": "Illustrate a Grimm fairy tale as a textured woodcut-style poster."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
@@ -26,7 +26,7 @@
     "avatar": "author-avatar.webp"
   },
   "tags": [
-    "影视叙事",
+    "海报设计",
     "角色场景",
     "手工材质",
     "reference-template"

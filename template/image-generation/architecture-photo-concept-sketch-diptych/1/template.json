@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "把上传照片转化为上方实景、下方建筑概念草图的双联海报。",
-    "en-US": "Create an image with the Architecture Photo and Concept Sketch Diptych reference template."
+    "en-US": "Pair an uploaded building photograph with a matching architectural concept sketch."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

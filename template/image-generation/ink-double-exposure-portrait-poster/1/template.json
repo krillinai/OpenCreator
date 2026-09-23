@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成融合人物轮廓、东方水墨、叙事场景和留白的双重曝光竖版海报。",
-    "en-US": "Create an image with the Ink Double-Exposure Portrait Poster reference template."
+    "en-US": "Merge a portrait with ink-wash textures in a double-exposure poster."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

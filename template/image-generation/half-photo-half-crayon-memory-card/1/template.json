@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "将原始照片与蜡笔速写严格上下五五分割，生成克制怀旧的混合媒介回忆卡。",
-    "en-US": "Create an image with the Half Photo Half Crayon Memory Card reference template."
+    "en-US": "Blend an original photograph with crayon drawing in a split-media memory card."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

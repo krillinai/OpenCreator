@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成蓝调时刻城市街头摄影，核心是一块包裹建筑转角、具有裸眼三维错觉的巨型户外广告屏。",
-    "en-US": "Create an image with the City Corner 3D Billboard Photography reference template."
+    "en-US": "Photograph a blue-hour street corner with a wraparound anamorphic 3D billboard."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
@@ -26,7 +26,6 @@
   },
   "tags": [
     "商业广告",
-    "旅行城市",
     "未来科技",
     "3d-render",
     "city-street",

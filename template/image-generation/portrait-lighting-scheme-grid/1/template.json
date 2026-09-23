@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成同一人物在多种专业摄影灯光方案下的对比网格。",
-    "en-US": "Create an image with the Portrait Lighting Scheme Grid reference template."
+    "en-US": "Compare four studio lighting schemes while preserving the same portrait identity."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

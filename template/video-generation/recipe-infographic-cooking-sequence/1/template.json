@@ -11,18 +11,17 @@
   "featured": true,
   "sortOrder": 64,
   "title": {
-    "zh-CN": "食谱信息图转连续烹饪短片",
-    "en-US": "Recipe Infographic to Cooking Sequence"
+    "zh-CN": "食谱信息图转烹饪短片（前半段）",
+    "en-US": "Recipe Infographic to Cooking Sequence (Part One)"
   },
   "description": {
-    "zh-CN": "以一张多步骤食谱信息图为视觉分镜，先生成前半段，再续写后半段，得到保持食材状态、厨房环境、声效和烹饪顺序连续的竖屏美食短片。",
+    "zh-CN": "参考多步骤食谱信息图，生成前 10 秒的竖屏烹饪短片；当前模板不支持自动续写后半段。",
     "en-US": "Draft adaptation of the first 10-second stage of a two-stage vertical cooking workflow; continuation is not supported by the current runtime."
   },
   "cover": "cover.jpg",
   "tags": [
     "cooking",
     "vertical",
-    "multi-stage",
     "reference-image"
   ],
   "defaults": {

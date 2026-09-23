@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成同一室内空间的多角度一致性设计网格。",
-    "en-US": "Create an image with the Consistent Interior Multiview Grid reference template."
+    "en-US": "Show four consistent views of the same room based on a reference photograph."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "根据指定主题、CEFR（欧洲语言共同参考框架）英语等级和正文词数，生成一张高级黑白报刊社论风英文杂志阅读页。适合作为不同英语水平的分级阅读材料。",
-    "en-US": "Create an image with the Graded English Magazine Reading Page reference template."
+    "en-US": "Design an English reading page with graded text and magazine-style editorial hierarchy."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

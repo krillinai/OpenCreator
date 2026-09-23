@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成用四个连续画面展示食材、处理、混合和成品的写实食谱过程拼图。",
-    "en-US": "Create an image with the Four-Panel Milkshake Recipe reference template."
+    "en-US": "Show ingredients, preparation, blending, and the finished milkshake in four photo panels."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
@@ -26,7 +26,6 @@
     "avatar": "author-avatar.webp"
   },
   "tags": [
-    "信息图表",
     "食品饮料",
     "影视叙事",
     "reference-template"

@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "生成按星期排列的七日穿搭图鉴，集中展示人物造型、服装细节、颜色和适用场景。",
-    "en-US": "Create an image with the Weekly Outfit Infographic reference template."
+    "en-US": "Lay out a week of coordinated outfits in a clear fashion infographic."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
@@ -28,7 +28,7 @@
   "tags": [
     "信息图表",
     "时尚美妆",
-    "多视角一致性",
+    "系列视觉",
     "reference-template"
   ],
   "defaults": {

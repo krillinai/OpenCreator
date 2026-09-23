@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "把照片中的结构、色彩和记忆点解构为极简几何形体，并结合艺术出版物式微排版生成海报。",
-    "en-US": "Create an image with the Minimal Abstract Geometric Deconstruction Poster reference template."
+    "en-US": "Transform a photograph into a restrained geometric deconstruction poster."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",

@@ -16,7 +16,7 @@
   },
   "description": {
     "zh-CN": "使用严格六宫格与微缩人物，生成围绕同一饮料品牌展开的完整商业广告系列。 当前草稿使用适配运行时长度限制的压缩版提示词。",
-    "en-US": "Create an image with the Six-Panel Miniature Beverage Ad reference template."
+    "en-US": "Tell a miniature summer beverage campaign across six coordinated panels."
   },
   "cover": "cover.jpg",
   "preview": "preview.webp",
