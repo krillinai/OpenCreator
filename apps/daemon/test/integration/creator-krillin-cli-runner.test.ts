@@ -90,6 +90,18 @@ describe('KrillinAI CLI runner', () => {
       .toBe('fixture-model');
   });
 
+  it('passes the configured OSS region and endpoint through to the runtime TOML', () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.transcription.aliyun.oss.region = 'ap-southeast-1';
+    config.transcription.aliyun.oss.endpoint = 'https://oss-ap-southeast-1.aliyuncs.com';
+    const value = parse(createKrillinConfigToml(config)) as {
+      transcribe: { aliyun: { oss: { region: string; endpoint: string } } };
+    };
+    expect(value.transcribe.aliyun.oss).toMatchObject({
+      region: 'ap-southeast-1', endpoint: 'https://oss-ap-southeast-1.aliyuncs.com'
+    });
+  });
+
   it('bridges the selected Whisper.cpp weights to the KrillinAI 2.1 model label', () => {
     const config = createDefaultCreatorServicesConfig();
     config.transcription.provider = 'whisper.cpp';

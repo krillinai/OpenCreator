@@ -1,5 +1,5 @@
 import { stringify } from '@iarna/toml';
-import type { CreatorServicesConfig } from '@opencreator/protocol';
+import type { AliyunOssConfig, CreatorServicesConfig } from '@opencreator/protocol';
 
 export function createKrillinConfigToml(
   config: CreatorServicesConfig,
@@ -72,8 +72,11 @@ function ttsProvider(value: { baseUrl: string; apiKey: string; model: string; de
   };
 }
 
-function snakeAliyunOss(value: { accessKeyId: string; accessKeySecret: string; bucket: string }) {
-  return { access_key_id: value.accessKeyId, access_key_secret: value.accessKeySecret, bucket: value.bucket };
+function snakeAliyunOss(value: AliyunOssConfig) {
+  return {
+    access_key_id: value.accessKeyId, access_key_secret: value.accessKeySecret,
+    bucket: value.bucket, region: value.region, endpoint: value.endpoint
+  };
 }
 
 function snakeAliyunSpeech(value: { accessKeyId: string; accessKeySecret: string; appKey: string }) {

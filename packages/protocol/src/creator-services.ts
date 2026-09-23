@@ -75,6 +75,8 @@ export type AliyunOssConfig = {
   accessKeyId: string;
   accessKeySecret: string;
   bucket: string;
+  region: string;
+  endpoint: string;
 };
 
 export type AliyunSpeechConfig = {
@@ -244,7 +246,7 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
       whisperKit: { model: 'large-v2' },
       whisperCpp: { model: 'tiny' },
       aliyun: {
-        oss: { accessKeyId: '', accessKeySecret: '', bucket: '' },
+        oss: { accessKeyId: '', accessKeySecret: '', bucket: '', region: 'cn-shanghai', endpoint: '' },
         speech: { accessKeyId: '', accessKeySecret: '', appKey: '' }
       },
       volcengine: {

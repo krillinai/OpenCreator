@@ -16,6 +16,34 @@ import {
 } from '../../src/creator-services/config-store.js';
 
 describe('CreatorServicesConfigStore', () => {
+  it('migrates legacy OSS settings and retains a custom region and endpoint across reloads', async () => {
+    const legacy = createDefaultCreatorServicesConfig();
+    const { region: _region, endpoint: _endpoint, ...oldOss } = legacy.transcription.aliyun.oss;
+    let saved: string | null = JSON.stringify({ ...legacy, transcription: {
+      ...legacy.transcription, aliyun: { ...legacy.transcription.aliyun, oss: oldOss }
+    } });
+    const store = createCreatorServicesConfigStore({
+      getPassword: vi.fn(async () => saved),
+      setPassword: vi.fn(async value => { saved = value; }),
+      deletePassword: vi.fn(async () => { saved = null; })
+    });
+    const config = await store.read();
+    expect(config.transcription.aliyun.oss).toMatchObject({ region: 'cn-shanghai', endpoint: '' });
+    config.transcription.aliyun.oss.region = 'ap-southeast-1';
+    config.transcription.aliyun.oss.endpoint = 'https://oss-ap-southeast-1.aliyuncs.com';
+    await store.write(config);
+    expect((await store.read()).transcription.aliyun.oss).toEqual(config.transcription.aliyun.oss);
+    config.transcription.aliyun.oss.region = '  ';
+    config.transcription.aliyun.oss.endpoint = '';
+    expect(parseCreatorServicesConfig(config).transcription.aliyun.oss.region).toBe('cn-shanghai');
+  });
+
+  it.each(['file:///tmp/audio', 'https://user:secret@oss.example.com', 'https://oss.example.com/bucket', 'https://oss.example.com/?token=secret', 'https://oss.example.com/#audio'])('rejects an invalid OSS service endpoint: %s', endpoint => {
+    const config = createDefaultCreatorServicesConfig();
+    config.transcription.aliyun.oss.endpoint = endpoint;
+    expect(() => parseCreatorServicesConfig(config)).toThrow();
+  });
+
   let root: string | undefined;
 
   afterEach(() => {

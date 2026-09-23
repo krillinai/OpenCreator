@@ -359,7 +359,7 @@ function createVideoConfig() {
       whisperKit: { model: 'large-v2' as const },
       whisperCpp: { model: 'tiny' as const },
       aliyun: {
-        oss: { accessKeyId: '', accessKeySecret: '', bucket: '' },
+        oss: { accessKeyId: '', accessKeySecret: '', bucket: '', region: 'cn-shanghai', endpoint: '' },
         speech: { accessKeyId: '', accessKeySecret: '', appKey: '' }
       },
       volcengine: {

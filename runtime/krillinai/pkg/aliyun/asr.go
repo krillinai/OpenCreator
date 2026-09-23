@@ -58,7 +58,7 @@ func NewAsrClient(accessKeyID, accessKeySecret, appKey string, enableWords bool)
 		enableWords:  enableWords,
 		pollInterval: pollInterval,
 		maxPollTime:  maxPollTime,
-		ossClient:    NewOssClient(config.Conf.Transcribe.Aliyun.Oss.AccessKeyId, config.Conf.Transcribe.Aliyun.Oss.AccessKeySecret, config.Conf.Transcribe.Aliyun.Oss.Bucket),
+		ossClient:    NewOssClient(config.Conf.Transcribe.Aliyun.Oss),
 	}, nil
 }
 
@@ -116,7 +116,10 @@ func (c *AsrClient) Transcription(audioFile, language, workDir string) (*types.T
 		log.GetLogger().Error("StartVideoSubtitleTask UploadFile err", zap.Any("audio file", audioFile), zap.Error(err))
 		return nil, errors.New("上传声音克隆源失败")
 	}
-	audioUrl := fmt.Sprintf("https://%s.oss-cn-shanghai.aliyuncs.com/%s", c.ossClient.Bucket, fileKey)
+	audioUrl, err := c.ossClient.ObjectURL(fileKey)
+	if err != nil {
+		return nil, err
+	}
 	log.GetLogger().Info("上传待转录音频到阿里云oss成功", zap.String("local file name", audioFile), zap.String("oss url", audioUrl))
 
 	// 提交识别任务

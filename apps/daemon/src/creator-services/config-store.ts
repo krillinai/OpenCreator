@@ -35,7 +35,19 @@ const klingAiSchema = z.object({
 const aliyunOssSchema = z.object({
   accessKeyId: boundedString(256),
   accessKeySecret: boundedString(4096),
-  bucket: boundedString(255)
+  bucket: boundedString(255),
+  region: z.string().trim().max(64).regex(/^$|^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .default('cn-shanghai').transform(value => value || 'cn-shanghai'),
+  endpoint: z.string().trim().max(2048).default('').refine(value => {
+    if (!value) return true;
+    if (/[?#\\]/.test(value)) return false;
+    try {
+      const url = new URL(value.includes('://') ? value : `https://${value}`);
+      return ['http:', 'https:'].includes(url.protocol) && !!url.hostname
+        && !url.username && !url.password && !url.search && !url.hash
+        && (url.pathname === '' || url.pathname === '/');
+    } catch { return false; }
+  }, 'OSS endpoint must be an HTTP(S) service endpoint without a path, credentials, query or fragment')
 }).strict();
 const aliyunSpeechSchema = z.object({
   accessKeyId: boundedString(256),

@@ -1219,6 +1219,24 @@ function AliyunFields(props: {
         value={props.oss.bucket}
         onChange={bucket => props.onOssChange({ ...props.oss, bucket })}
       />
+      <TextField
+        id={`${props.id}-oss-region`}
+        label={l('OSS 地域', 'OSS region')}
+        value={props.oss.region}
+        placeholder="cn-shanghai"
+        onChange={region => props.onOssChange({ ...props.oss, region })}
+      />
+      <TextField
+        id={`${props.id}-oss-endpoint`}
+        label={l('OSS Endpoint（可选）', 'OSS endpoint (optional)')}
+        value={props.oss.endpoint}
+        placeholder={`https://oss-${props.oss.region || 'cn-shanghai'}.aliyuncs.com`}
+        onChange={endpoint => props.onOssChange({ ...props.oss, endpoint })}
+      />
+      <p className="creator-services-inline-note">{l(
+        '地域需与 Bucket 一致；Endpoint 留空时使用该地域的公网地址。填写时请使用不含 Bucket 的公网服务地址，供语音服务读取音频。',
+        'Use the bucket region. Leave endpoint blank for its public endpoint, or enter a public service endpoint without the bucket name so the speech service can read the audio.'
+      )}</p>
       <h3 className="creator-services-subheading">{l('语音服务', 'Speech service')}</h3>
       <PasswordField
         id={`${props.id}-speech-access-key-id`}

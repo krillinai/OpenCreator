@@ -14,6 +14,26 @@ import type { CreatorServicesSettingsService } from '../../services/creator-serv
 import { CreatorServicesSettingsView } from './CreatorServicesSettingsView.js';
 
 describe('CreatorServicesSettingsView', () => {
+  it('saves an OSS region and optional endpoint in the shared settings form', async () => {
+    const user = userEvent.setup();
+    const service = createService();
+    render(<CreatorServicesSettingsView connected service={service} modelService={createModelService()} />);
+    await user.click(await screen.findByRole('tab', { name: '语音识别' }));
+    await user.click(screen.getByRole('combobox', { name: '语音识别服务' }));
+    await user.click(screen.getByRole('option', { name: '阿里云百炼' }));
+    expect(screen.getByLabelText('OSS 地域')).toHaveValue('cn-shanghai');
+    expect(screen.getByLabelText('OSS Endpoint（可选）')).toHaveValue('');
+    await user.clear(screen.getByLabelText('OSS 地域'));
+    await user.type(screen.getByLabelText('OSS 地域'), 'ap-southeast-1');
+    expect(screen.getByLabelText('OSS Endpoint（可选）')).toHaveAttribute('placeholder', 'https://oss-ap-southeast-1.aliyuncs.com');
+    await user.type(screen.getByLabelText('OSS Endpoint（可选）'), 'https://oss-ap-southeast-1.aliyuncs.com');
+    await user.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => expect(service.saveConfig).toHaveBeenCalled());
+    expect(vi.mocked(service.saveConfig).mock.calls[0]?.[0].transcription.aliyun.oss).toMatchObject({
+      region: 'ap-southeast-1', endpoint: 'https://oss-ap-southeast-1.aliyuncs.com'
+    });
+  });
+
   it('uses the local Codex runtime without exposing custom provider fields', async () => {
     const user = userEvent.setup();
     const service = createService([], runtimeCapabilities('darwin', 'arm64'), 'codex');

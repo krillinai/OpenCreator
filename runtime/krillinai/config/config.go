@@ -55,6 +55,8 @@ type AliyunOssConfig struct {
 	AccessKeyId     string `toml:"access_key_id"`
 	AccessKeySecret string `toml:"access_key_secret"`
 	Bucket          string `toml:"bucket"`
+	Region          string `toml:"region"`
+	Endpoint        string `toml:"endpoint"`
 }
 
 type AliyunTranscribeConfig struct {

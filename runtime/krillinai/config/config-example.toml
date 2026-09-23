@@ -41,6 +41,8 @@
             access_key_id = ""
             access_key_secret = ""
             bucket = ""
+            region = "cn-shanghai" # Bucket 所在地域；旧配置或留空时默认上海，例如 ap-southeast-1
+            endpoint = "" # 可选，不含 Bucket 的公网 OSS Endpoint；留空时由 region 生成
         [transcribe.aliyun.speech]
             access_key_id = ""
             access_key_secret = ""

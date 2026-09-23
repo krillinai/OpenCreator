@@ -96,7 +96,10 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			log.GetLogger().Error("StartVideoSubtitleTask UploadFile err", zap.Any("req", req), zap.Error(err))
 			return nil, errors.New("上传声音克隆源失败")
 		}
-		voiceCloneAudioUrl = fmt.Sprintf("https://%s.oss-cn-shanghai.aliyuncs.com/%s", s.OssClient.Bucket, fileKey)
+		voiceCloneAudioUrl, err = s.OssClient.ObjectURL(fileKey)
+		if err != nil {
+			return nil, err
+		}
 		log.GetLogger().Info("StartVideoSubtitleTask 上传声音克隆源成功", zap.Any("oss url", voiceCloneAudioUrl))
 	}
 

@@ -1,6 +1,42 @@
 import type { CreatorServicesCapabilitiesResponse, CreatorYtDlpStatusResponse } from '@opencreator/protocol';
 import { test, expect } from './fixtures/runtime.js';
 
+test('OSS 地域配置在 Browser/Desktop 下保存并重新加载一致', async ({ browser, runtime }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop');
+  const results: unknown[] = [];
+  try {
+    for (const platform of ['browser', 'desktop']) {
+      await runtime.api('DELETE', '/creator-services/config');
+      const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+      const page = await context.newPage();
+      if (platform === 'desktop') await installDesktopBridge(page);
+      try {
+        await runtime.openApp(page);
+        await page.goto(`${runtime.origin}/#/settings?tab=ai-services&section=transcription`);
+        await page.getByRole('combobox', { name: '语音识别服务' }).click();
+        await page.getByRole('option', { name: '阿里云百炼' }).click();
+        await expect(page.getByLabel('OSS 地域')).toHaveValue('cn-shanghai');
+        await page.getByLabel('OSS 地域').fill('ap-southeast-1');
+        await page.getByLabel('OSS Endpoint（可选）').fill('https://oss-ap-southeast-1.aliyuncs.com');
+        const request = page.waitForRequest(req => req.method() === 'PATCH' && req.url().endsWith('/creator-services/config'));
+        await page.getByRole('button', { name: '保存配置' }).click();
+        const payload = (await request).postDataJSON();
+        await expect(page.getByText('配置已安全保存')).toBeVisible();
+        await page.reload();
+        await expect(page.getByLabel('OSS 地域')).toHaveValue('ap-southeast-1');
+        await expect(page.getByLabel('OSS Endpoint（可选）')).toHaveValue('https://oss-ap-southeast-1.aliyuncs.com');
+        results.push({
+          payload, stored: await runtime.api('GET', '/creator-services/config'),
+          text: await page.getByRole('tabpanel').innerText(),
+          regionBox: await page.getByLabel('OSS 地域').boundingBox(),
+          endpointBox: await page.getByLabel('OSS Endpoint（可选）').boundingBox()
+        });
+      } finally { await context.close(); }
+    }
+    expect(results[1]).toEqual(results[0]);
+  } finally { await runtime.api('DELETE', '/creator-services/config'); }
+});
+
 test('Agent 面板在 Browser/Desktop Bridge 下均不显示产物版本详情', async ({ browser, runtime }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-desktop', '内部使用相同内容视口');
   const created = await runtime.api<{ job: { id: string } }>('POST', '/creator/jobs', {
