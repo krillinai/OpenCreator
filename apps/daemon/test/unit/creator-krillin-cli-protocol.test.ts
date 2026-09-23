@@ -9,8 +9,27 @@ import {
   resolveKrillinCliSource
 } from '../../src/creator/krillin/cli-runner.js';
 import { createKrillinConfigToml } from '../../src/creator/krillin/config-bridge.js';
+import { buildKrillinStageOptions } from '../../src/creator/krillin/adapter.js';
 
 describe('KrillinAI CLI protocol', () => {
+  it.each([true, false])('preserves French-to-Chinese settings through the adapter and CLI with platform captions=%s', preferPlatformCaptions => {
+    const stage = {
+      job: { templateId: 'video-translation', state: {
+        sourceUrl: 'https://youtu.be/french', sourceLanguage: 'fr', targetLanguage: 'zh_cn',
+        bilingual: true, subtitlePosition: 'top', preferPlatformCaptions
+      } },
+      stageRun: { stageId: 'subtitle', id: 'stage' }, workdir: '/job/stage'
+    };
+    const options = buildKrillinStageOptions(stage as never);
+    expect(options).toMatchObject({ originLanguage: 'fr', targetLanguage: 'zh_cn', bilingual: true });
+    const args = buildKrillinCliCommandArguments(stage as never, [], options, undefined);
+    expect(args.slice(args.indexOf('--origin-lang'), args.indexOf('--origin-lang') + 4))
+      .toEqual(['--origin-lang', 'fr', '--target-lang', 'zh_cn']);
+    expect(args[args.indexOf('--caption-source') + 1]).toBe(preferPlatformCaptions ? 'any' : 'whisper');
+    expect(args).toContain('--bilingual-top=true');
+    expect(args).not.toContain('--source-only');
+  });
+
   it.each(['source_subtitle', 'target_subtitle'])('passes %s as an explicit CLI input', kind => {
     const args = buildKrillinCliCommandArguments({ stageRun: { stageId: 'subtitle', id: 'stage' }, workdir: '/job/stage' } as never,
       [{ id: 'srt', kind, path: '/job/local.srt' }], { sourceUrl: 'https://youtu.be/test', originLanguage: 'en', targetLanguage: 'zh_cn' }, undefined);

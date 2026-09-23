@@ -1,6 +1,43 @@
 import type { CreatorServicesCapabilitiesResponse, CreatorYtDlpStatusResponse } from '@opencreator/protocol';
 import { test, expect } from './fixtures/runtime.js';
 
+test('法语源语言与中法双语设置在 Browser/Desktop 下保存并重载一致', async ({ browser, runtime }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop');
+  const results: unknown[] = [];
+  for (const platform of ['browser', 'desktop']) {
+    const created = await runtime.api<{ job: { id: string } }>('POST', '/creator/jobs', {
+      projectId: runtime.projectId, templateId: 'video-translation',
+      state: { sourceUrl: 'https://www.youtube.com/watch?v=french', sourceLanguage: 'en',
+        targetLanguage: 'zh_cn', bilingual: true, currentStep: 1, furthestStep: 1 }
+    });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+    const page = await context.newPage();
+    if (platform === 'desktop') await installDesktopBridge(page);
+    try {
+      await runtime.openApp(page);
+      await page.goto(`${runtime.origin}/#/workbench?tool=video-translation&jobId=${created.job.id}`);
+      const request = page.waitForRequest(req => req.url().endsWith('/actions')
+        && req.postDataJSON()?.input?.patch?.sourceLanguage === 'fr');
+      await page.getByRole('combobox', { name: '源语言', exact: true }).selectOption('fr');
+      const action = (await request).postDataJSON();
+      const readSettings = async () => {
+        const { job } = await runtime.api<{ job: { state: { sourceLanguage: string; targetLanguage: string; bilingual: boolean } } }>('GET', `/creator/jobs/${created.job.id}`);
+        return { sourceLanguage: job.state.sourceLanguage, targetLanguage: job.state.targetLanguage, bilingual: job.state.bilingual };
+      };
+      await expect.poll(readSettings).toEqual({ sourceLanguage: 'fr', targetLanguage: 'zh_cn', bilingual: true });
+      await page.reload();
+      const source = page.getByRole('combobox', { name: '源语言', exact: true });
+      await expect(source).toHaveValue('fr');
+      await expect(page.getByRole('combobox', { name: '翻译为' })).toHaveValue('zh_cn');
+      await expect(page.getByRole('switch', { name: '双语字幕' })).toBeChecked();
+      results.push({ action: action.action, settings: await readSettings(),
+        requested: { sourceLanguage: action.input.patch.sourceLanguage, targetLanguage: action.input.patch.targetLanguage, bilingual: action.input.patch.bilingual },
+        options: await source.innerText(), sourceBox: await source.boundingBox() });
+    } finally { await context.close(); }
+  }
+  expect(results[1]).toEqual(results[0]);
+});
+
 test('Agent 面板在 Browser/Desktop Bridge 下均不显示产物版本详情', async ({ browser, runtime }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-desktop', '内部使用相同内容视口');
   const created = await runtime.api<{ job: { id: string } }>('POST', '/creator/jobs', {
