@@ -80,6 +80,12 @@ const whisperCppRelease = {
       sha256: '9a423fe4d40c82774b6af34115b8b935f34152246eb19e80e376071d3f999487',
       size: 3_094_623_691,
       environment: 'OPENCREATOR_WHISPERCPP_LARGE_V2_MODEL'
+    },
+    'large-v3-turbo': {
+      url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo.bin',
+      sha256: '1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69',
+      size: 1_624_555_275,
+      environment: 'OPENCREATOR_WHISPERCPP_LARGE_V3_TURBO_MODEL'
     }
   }
 } as const;
@@ -361,14 +367,28 @@ async function installWhisperCppModel(
   await mkdir(modelRoot, { recursive: true });
   const model = join(modelRoot, `ggml-${input.model}.bin`);
   const marker = join(modelRoot, `.opencreator-${input.model}.json`);
-  await rm(model, { force: true });
-  await promoteDependencyPath(source, model);
-  await writeFile(marker, `${JSON.stringify({
-    version: 1,
-    model: input.model,
-    sha256: release.sha256,
-    size: release.size
-  }, null, 2)}\n`, { mode: 0o600 });
+  const backupModel = join(staging, `previous-${input.model}.bin`);
+  const backupMarker = join(staging, `previous-${input.model}.json`);
+  let movedModel = false;
+  let movedMarker = false;
+  let wroteMarker = false;
+  try {
+    movedMarker = await moveIfExists(marker, backupMarker);
+    movedModel = await moveIfExists(model, backupModel);
+    await promoteDependencyPath(source, model);
+    wroteMarker = true;
+    await writeFile(marker, `${JSON.stringify({
+      version: 1,
+      model: input.model,
+      sha256: release.sha256,
+      size: release.size
+    }, null, 2)}\n`, { mode: 0o600 });
+  } catch (cause) {
+    if (wroteMarker) await rm(marker, { force: true });
+    if (movedModel) await promoteDependencyPath(backupModel, model);
+    if (movedMarker) await promoteDependencyPath(backupMarker, marker);
+    throw cause;
+  }
 }
 
 async function isWhisperCppInstalled(root: string, model: WhisperCppModel): Promise<boolean> {
@@ -768,6 +788,18 @@ export async function promoteDependencyPath(
       if (retryDelay === undefined || !isTransientRenameError(error)) throw error;
       await wait(retryDelay);
     }
+  }
+}
+
+async function moveIfExists(source: string, destination: string): Promise<boolean> {
+  try {
+    await promoteDependencyPath(source, destination);
+    return true;
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
   }
 }
 

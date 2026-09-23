@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CreatorArtifact, CreatorServicesConfig } from '@opencreator/protocol';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
@@ -12,8 +13,25 @@ import {
   stickmanAudioTimingSchema,
   stickmanScriptManifestSchema
 } from './contracts.js';
+import { stickmanEdgeTtsVoiceForLanguage } from './tts.js';
 
 type Synthesize = Pick<KrillinTtsService, 'synthesize'>['synthesize'];
+type EdgeTtsSynthesisResult = {
+  content: Buffer;
+  mime: 'audio/mpeg';
+  provider: 'edge-tts';
+  model: '';
+  voiceId: string;
+  format: 'mp3';
+};
+type EdgeTtsSynthesize = (input: {
+  text: string;
+  voiceId: string;
+  workdir: string;
+  scopeKey: string;
+  command?: string;
+  signal: AbortSignal;
+}) => Promise<EdgeTtsSynthesisResult>;
 
 export function createStickmanAudioExecutor(input: {
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
@@ -21,6 +39,8 @@ export function createStickmanAudioExecutor(input: {
   ledger: CreatorProviderRequestLedger;
   ffprobePath: string;
   synthesize?: Synthesize;
+  synthesizeEdgeTts?: EdgeTtsSynthesize;
+  edgeTtsCommand?: string;
   probe?: (path: string, ffprobe: string) => Promise<MediaProbe>;
 }): CreatorExecutor {
   const synthesize = input.synthesize ?? (request => input.ttsService.synthesize(request));
@@ -48,6 +68,8 @@ async function synthesizeSegment(
     configStore: Pick<CreatorServicesConfigStore, 'read'>;
     ledger: CreatorProviderRequestLedger;
     ffprobePath: string;
+    synthesizeEdgeTts?: EdgeTtsSynthesize;
+    edgeTtsCommand?: string;
   },
   synthesize: Synthesize,
   probe: (path: string, ffprobe: string) => Promise<MediaProbe>
@@ -97,7 +119,7 @@ async function synthesizeSegment(
       provider: selection.provider,
       model: selection.model,
       voiceId: selection.voiceId,
-      format: 'wav'
+      format: selection.provider === 'edge-tts' ? 'mp3' : 'wav'
     }
   });
   input.ledger.markSubmitting(ledger.id);
@@ -110,15 +132,24 @@ async function synthesizeSegment(
     ledgerId: ledger.id
   });
   try {
-    const result = await synthesize({
-      text: segment.narration,
-      provider: selection.provider,
-      model: selection.model,
-      voiceId: selection.voiceId,
-      format: 'wav',
-      signal: stage.signal
-    });
-    const path = join(stage.workdir, `${scopeKey}.wav`);
+    const result = selection.provider === 'edge-tts'
+      ? await (input.synthesizeEdgeTts ?? synthesizeWithEdgeTts)({
+          text: segment.narration,
+          voiceId: selection.voiceId,
+          workdir: stage.workdir,
+          scopeKey,
+          ...(input.edgeTtsCommand === undefined ? {} : { command: input.edgeTtsCommand }),
+          signal: stage.signal
+        })
+      : await synthesize({
+          text: segment.narration,
+          provider: selection.provider,
+          model: selection.model,
+          voiceId: selection.voiceId,
+          format: 'wav',
+          signal: stage.signal
+        });
+    const path = join(stage.workdir, `${scopeKey}.${result.format}`);
     await writeFile(path, result.content);
     const media = await probe(path, input.ffprobePath);
     if (!media.hasAudio || media.duration <= 0) {
@@ -249,17 +280,25 @@ async function buildAudioTiming(
 function resolveTtsSelection(stage: CreatorExecutorInput, config: CreatorServicesConfig) {
   const provider = stage.job.state.ttsProvider === 'openai'
     || stage.job.state.ttsProvider === 'aliyun'
+    || stage.job.state.ttsProvider === 'edge-tts'
     || stage.job.state.ttsProvider === 'minimax'
     || stage.job.state.ttsProvider === 'volcengine'
     ? stage.job.state.ttsProvider
-    : config.tts.provider === 'edge-tts'
-      ? undefined
-      : config.tts.provider;
+    : config.tts.provider;
   if (provider === undefined) {
     throw new CreatorExecutorError(
       'creator_tts_config_missing',
       '请先在 AI 服务的配音服务中配置可用的配音 Provider'
     );
+  }
+  if (provider === 'edge-tts') {
+    return {
+      provider,
+      model: '',
+      voiceId: typeof stage.job.state.voiceCode === 'string' && stage.job.state.voiceCode.trim()
+        ? stage.job.state.voiceCode.trim()
+        : stickmanEdgeTtsVoiceForLanguage(stage.job.state.targetLanguage)
+    };
   }
   const providerConfig = config.tts[provider];
   const model = typeof stage.job.state.ttsModel === 'string' && stage.job.state.ttsModel.trim()
@@ -275,6 +314,55 @@ function resolveTtsSelection(stage: CreatorExecutorInput, config: CreatorService
     );
   }
   return { provider, model, voiceId };
+}
+
+async function synthesizeWithEdgeTts(input: {
+  text: string;
+  voiceId: string;
+  workdir: string;
+  scopeKey: string;
+  command?: string;
+  signal: AbortSignal;
+}): Promise<EdgeTtsSynthesisResult> {
+  const outputPath = join(input.workdir, `${input.scopeKey}.edge-tts.mp3`);
+  const command = input.command ?? process.env.OPENCREATOR_EDGE_TTS_COMMAND ?? 'edge-tts';
+  try {
+    await execFileAsync(command, [
+      '--voice', input.voiceId,
+      '--text', input.text,
+      '--write-media', outputPath
+    ], input.signal);
+    const content = await readFile(outputPath);
+    if (content.length === 0) throw new Error('Edge TTS returned an empty audio file');
+    return {
+      content,
+      mime: 'audio/mpeg',
+      provider: 'edge-tts',
+      model: '',
+      voiceId: input.voiceId,
+      format: 'mp3'
+    };
+  } catch (error) {
+    throw new CreatorExecutorError(
+      'creator_tts_runtime_unavailable',
+      `Edge TTS command failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  } finally {
+    await rm(outputPath, { force: true });
+  }
+}
+
+function execFileAsync(command: string, args: string[], signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, {
+      signal,
+      timeout: 120_000,
+      windowsHide: true
+    }, error => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
 }
 
 function requireArtifact(artifacts: CreatorArtifact[], kind: string): CreatorArtifact {

@@ -189,6 +189,47 @@ describe('KrillinAI on-demand dependency loader', () => {
     expect(phases).toContain('model');
   });
 
+  it('passes large-v3-turbo through the dependency loader', async () => {
+    let installed = false;
+    let selectedModel = '';
+    const loader = createKrillinDependencyLoader({
+      root: 'C:\\opencreator-test-dependencies', platform: 'win32', arch: 'x64',
+      whisperCppInstaller: {
+        async isInstalled() { return installed; },
+        async install(input) {
+          selectedModel = input.model;
+          installed = true;
+        }
+      }
+    });
+    const config = createDefaultCreatorServicesConfig();
+    config.transcription.provider = 'whisper.cpp';
+    config.transcription.whisperCpp.model = 'large-v3-turbo';
+
+    await loader.ensure({ config, signal: new AbortController().signal, reportProgress() {} });
+
+    expect(selectedModel).toBe('large-v3-turbo');
+  });
+
+  it('does not accept a large-v3-turbo install that fails post-install verification', async () => {
+    const loader = createKrillinDependencyLoader({
+      root: 'C:\\opencreator-test-dependencies', platform: 'win32', arch: 'x64',
+      whisperCppInstaller: {
+        async isInstalled() { return false; },
+        async install() {}
+      }
+    });
+    const config = createDefaultCreatorServicesConfig();
+    config.transcription.provider = 'whisper.cpp';
+    config.transcription.whisperCpp.model = 'large-v3-turbo';
+
+    await expect(loader.ensure({
+      config,
+      signal: new AbortController().signal,
+      reportProgress() {}
+    })).rejects.toThrow('dependency verification failed after installation');
+  });
+
   it('rejects Whisper.cpp outside Windows x64 without installing anything', async () => {
     let installs = 0;
     const loader = createKrillinDependencyLoader({

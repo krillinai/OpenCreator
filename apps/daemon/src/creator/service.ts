@@ -192,10 +192,7 @@ export function createCreatorService(input: {
           ? {}
           : {
               requirementService: preset.requirements.service,
-              requirementProvider: preset.requirements.provider,
-              ...(preset.requirements.model === undefined
-                ? {}
-                : { requirementModel: preset.requirements.model })
+              requirementCapabilities: preset.requirements.capabilities
             })
       }
     });

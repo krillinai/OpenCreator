@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import sharp from 'sharp';
 import type { CreatorArtifact } from '@opencreator/protocol';
 import { createStickmanDeliveryExecutor } from '../../src/creator/stickman/delivery-executor.js';
 
@@ -20,6 +21,8 @@ describe('stickman delivery executor', () => {
     expect(result.outputs.map(output => output.kind)).toEqual([
       'clean_video',
       'narration_subtitle',
+      'thumbnail',
+      'publish_copy',
       'delivery_manifest'
     ]);
     const manifest = JSON.parse(readFileSync(result.outputs.at(-1)!.path!, 'utf8'));
@@ -34,8 +37,10 @@ describe('stickman delivery executor', () => {
       ])
     });
     expect(manifest.files.map((file: { name: string }) => file.name)).toEqual([
-      'stickman-video.mp4',
-      'narration.srt'
+      'short.mp4',
+      'subtitles.srt',
+      'thumbnail.png',
+      'publish-copy.md'
     ]);
   });
 
@@ -55,6 +60,38 @@ describe('stickman delivery executor', () => {
     const delivery = result.outputs.at(-1);
     if (delivery === undefined) throw new Error('delivery manifest output is missing');
     expect(delivery.metadata?.packageStatus).toBe('publishable');
+  });
+
+  it('does not read blocking evidence from outside the job root', async () => {
+    const fixture = await createFixture();
+    const outsidePath = join(tempRoot, 'outside-visual-validation.json');
+    writeFileSync(outsidePath, JSON.stringify({ publishable: true, ocrStatus: 'passed' }));
+    fixture.artifacts.push(artifact('artifact-visual-outside', 'visual_validation', outsidePath));
+
+    const result = await run(fixture.artifacts, fixture.workdir, {
+      sampleVideoFrames: async () => ({ sampleCount: 3 })
+    });
+    const manifest = JSON.parse(readFileSync(result.outputs.at(-1)!.path!, 'utf8'));
+
+    expect(manifest.blockingChecks).toContain('visual_validation_invalid');
+  });
+
+  it('rejects tampered blocking evidence even when the JSON remains valid', async () => {
+    const fixture = await createFixture();
+    addPublishableEvidence(fixture.artifacts, join(tempRoot, 'job-1', 'source'));
+    const visual = fixture.artifacts.find(artifact => artifact.kind === 'visual_validation');
+    if (visual?.path === null || visual?.path === undefined) throw new Error('visual evidence is missing');
+    writeFileSync(visual.path, JSON.stringify({
+      ...JSON.parse(readFileSync(visual.path, 'utf8')),
+      warnings: ['tampered-after-validation']
+    }));
+
+    const result = await run(fixture.artifacts, fixture.workdir, {
+      sampleVideoFrames: async () => ({ sampleCount: 3 })
+    });
+    const manifest = JSON.parse(readFileSync(result.outputs.at(-1)!.path!, 'utf8'));
+
+    expect(manifest.blockingChecks).toContain('visual_validation_invalid');
   });
 
   it('rejects extra, stale, hash-mismatched, and invalid subtitle inputs', async () => {
@@ -95,10 +132,53 @@ async function createFixture(): Promise<{ artifacts: CreatorArtifact[]; workdir:
   mkdirSync(workdir, { recursive: true });
   const files = {
     clean_video: join(sourceRoot, 'clean.mp4'),
-    narration_subtitle: join(sourceRoot, 'narration.srt')
+    narration_subtitle: join(sourceRoot, 'narration.srt'),
+    script_manifest: join(sourceRoot, 'script.json'),
+    timeline_manifest: join(sourceRoot, 'timeline.json')
   };
   writeFileSync(files.clean_video, 'clean-video');
   writeFileSync(files.narration_subtitle, '1\n00:00:00,000 --> 00:00:01,000\n第一段旁白\n');
+  writeFileSync(files.script_manifest, JSON.stringify({
+    contract: 'stickman-narration-script-v2',
+    reviewStatus: 'approved',
+    contentLocked: true,
+    title: 'A deterministic stickman Short',
+    language: 'en-US',
+    targetDurationSeconds: 1,
+    narrationBudget: { unit: 'characters', unitsPerMinute: 60, minUnits: 1, maxUnits: 100 },
+    segmentCount: 1,
+    totalNarrationUnits: 4,
+    estimatedTotalDurationSeconds: 4,
+    segments: [{
+      id: 'segment-01',
+      order: 1,
+      narration: 'A clear first idea.',
+      claimIds: ['claim-001'],
+      sourceSpanIds: ['source-001'],
+      narrationUnits: 4,
+      estimatedDurationSeconds: 4
+    }]
+  }));
+  writeFileSync(files.timeline_manifest, JSON.stringify({
+    ratio: '16:9',
+    fps: 30,
+    width: 1280,
+    height: 720,
+    totalFrames: 30,
+    shots: [{
+      shotId: 'shot-01',
+      startFrame: 0,
+      endFrame: 30,
+      imageArtifactId: 'image-1',
+      audioArtifactId: 'audio-1',
+      motion: 'static',
+      imageSha256: 'a'.repeat(64),
+      audioSha256: 'b'.repeat(64),
+      imagePath: 'image.png',
+      audioPath: 'audio.wav'
+    }],
+    captions: [{ segmentId: 'segment-01', startFrame: 0, endFrame: 30, text: 'A clear first idea.' }]
+  }));
   return {
     workdir,
     artifacts: Object.entries(files).map(([kind, path], index): CreatorArtifact => ({
@@ -114,7 +194,9 @@ async function createFixture(): Promise<{ artifacts: CreatorArtifact[]; workdir:
       sourceArtifactIds: [],
       metadata: kind === 'clean_video'
         ? { renderEngine: 'remotion', renderKind: 'final' }
-        : {},
+        : kind === 'timeline_manifest'
+          ? { timingSource: 'ffprobe_cumulative_tts_duration' }
+          : {},
       createdAt: '2026-08-31T00:00:00.000Z'
     }))
   };
@@ -138,7 +220,12 @@ function run(
     }),
     ...(options.sampleVideoFrames === undefined
       ? {}
-      : { sampleVideoFrames: options.sampleVideoFrames })
+      : { sampleVideoFrames: options.sampleVideoFrames }),
+    createThumbnail: async ({ targetPath, width, height }) => {
+      await sharp({ create: { width, height, channels: 3, background: '#202020' } })
+        .png()
+        .toFile(targetPath);
+    }
   }).run({
     stageRun: { id: 'stage-delivery', stageId: 'package-validation' },
     job: { id: 'job-1' },
@@ -171,27 +258,14 @@ function addPublishableEvidence(artifacts: CreatorArtifact[], sourceRoot: string
     }],
     totalDurationSeconds: 1
   }));
-  const timelinePath = join(sourceRoot, 'timeline.json');
-  writeFileSync(timelinePath, JSON.stringify({
-    fps: 30,
-    width: 1280,
-    height: 720,
-    totalFrames: 30,
-    shots: [{
-      shotId: 'shot-01',
-      startFrame: 0,
-      endFrame: 30,
-      imageArtifactId: 'image-1',
-      audioArtifactId: narration.id,
-      motion: 'static',
-      imageSha256: 'a'.repeat(64),
-      audioSha256: narration.sha256
-    }]
-  }));
+  const timelineArtifact = artifacts.find(candidate => candidate.kind === 'timeline_manifest')!;
   const visualPath = join(sourceRoot, 'visual-validation.json');
   writeFileSync(visualPath, JSON.stringify({
     ok: true,
     validation: 'automated_decode_aspect_nonblank_hash_and_ocr',
+    ratio: '16:9',
+    width: 1280,
+    height: 720,
     approvedShotSpecArtifactId: 'shot-spec-1',
     shotCount: 1,
     ocrStatus: 'passed',
@@ -209,9 +283,6 @@ function addPublishableEvidence(artifacts: CreatorArtifact[], sourceRoot: string
       detectedText: []
     }]
   }));
-  const timelineArtifact = artifact('artifact-timeline', 'timeline_manifest', timelinePath, {
-    timingSource: 'ffprobe_cumulative_tts_duration'
-  });
   const cleanVideo = artifacts.find(candidate => candidate.kind === 'clean_video')!;
   const mediaValidationPath = join(sourceRoot, 'media-validation.json');
   writeFileSync(mediaValidationPath, JSON.stringify({
@@ -223,6 +294,7 @@ function addPublishableEvidence(artifacts: CreatorArtifact[], sourceRoot: string
     duration: 1,
     expectedDuration: 1,
     durationTolerance: 0.15,
+    ratio: '16:9',
     width: 1280,
     height: 720,
     hasVideo: true,
@@ -240,7 +312,6 @@ function addPublishableEvidence(artifacts: CreatorArtifact[], sourceRoot: string
   artifacts.push(
     narration,
     artifact('artifact-timing', 'audio_timing', timingPath),
-    timelineArtifact,
     artifact('artifact-visual', 'visual_validation', visualPath),
     artifact('artifact-media-validation', 'media_validation', mediaValidationPath)
   );

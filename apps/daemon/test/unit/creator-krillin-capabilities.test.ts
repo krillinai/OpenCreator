@@ -55,7 +55,10 @@ describe('KrillinAI transcription capabilities', () => {
         provider: 'whisper.cpp',
         available: true,
         gpuAcceleration: false,
-        models: ['tiny', 'medium', 'large-v2']
+        models: ['tiny', 'medium', 'large-v2', 'large-v3-turbo'],
+        modelDetails: expect.objectContaining({
+          'large-v3-turbo': { diskBytes: 1624555275 }
+        })
       }),
       expect.objectContaining({
         provider: 'whisperkit',

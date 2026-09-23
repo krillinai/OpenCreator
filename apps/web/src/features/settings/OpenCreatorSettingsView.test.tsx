@@ -68,6 +68,35 @@ describe('OpenCreatorSettingsView', () => {
     window.localStorage.removeItem(languagePreferenceStorageKey);
   });
 
+  it('opens AI services on demand and can return to general settings', async () => {
+    render(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
+
+    expect(screen.queryByRole('heading', { name: 'AI 服务' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'AI 服务 必需' }));
+    expect(await screen.findByRole('heading', { name: 'AI 服务' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '模型服务' })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: '常规' }));
+    expect(screen.getByRole('combobox', { name: '默认权限' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'AI 服务' })).not.toBeInTheDocument();
+  });
+
+  it('preserves the requested AI service section when opened directly', async () => {
+    render(
+      <OpenCreatorSettingsView
+        runtimeStatus={runtimeStatus}
+        initialTab="ai-services"
+        initialSection="transcription"
+        onBack={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByRole('tab', { name: '语音识别' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'AI 服务 必需' }))
+      .toHaveAttribute('aria-current', 'page');
+  });
+
   it('notifies when the global default permission changes', async () => {
     const user = userEvent.setup();
     const onDefaultPermissionChange = vi.fn();

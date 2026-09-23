@@ -7,7 +7,7 @@ import {
   interpolate,
   useCurrentFrame
 } from 'remotion';
-import { assertTimeline, buildNarrationTrack, type StickmanTimelineProps } from './timeline.js';
+import { assertTimeline, buildNarrationTrack, motionTransform, type StickmanTimelineProps } from './timeline.js';
 import notoSansBold from '../assets/fonts/NotoSans-Bold.woff2';
 import notoSansScBold from '../assets/fonts/NotoSansSC-Bold.woff2';
 
@@ -28,7 +28,15 @@ const localFontFaces = `
 }
 `;
 
-export const StickmanLandscape: React.FC<StickmanTimelineProps> = props => {
+export const StickmanLandscape: React.FC<StickmanTimelineProps> = props => (
+  <StickmanVideo {...props} />
+);
+
+export const StickmanPortrait: React.FC<StickmanTimelineProps> = props => (
+  <StickmanVideo {...props} />
+);
+
+const StickmanVideo: React.FC<StickmanTimelineProps> = props => {
   const timeline = assertTimeline(props);
   const narrationTrack = buildNarrationTrack(timeline);
   return (
@@ -55,6 +63,15 @@ export const StickmanLandscape: React.FC<StickmanTimelineProps> = props => {
           <Shot shot={shot} />
         </Sequence>
       ))}
+      {timeline.captions.map(caption => (
+        <Sequence
+          key={`caption-${caption.segmentId}`}
+          from={caption.startFrame}
+          durationInFrames={caption.endFrame - caption.startFrame}
+        >
+          <Caption ratio={timeline.ratio} text={caption.text} />
+        </Sequence>
+      ))}
     </AbsoluteFill>
   );
 };
@@ -66,25 +83,42 @@ const Shot: React.FC<{ shot: StickmanTimelineProps['shots'][number] }> = ({ shot
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp'
   });
-  const transform = motionTransform(shot.motion, progress);
   return (
     <AbsoluteFill style={{ overflow: 'hidden', backgroundColor: '#ffffff' }}>
       <Img
         src={fileUrl(shot.imagePath)}
-        style={{ width: '100%', height: '100%', objectFit: 'cover', transform }}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          transform: motionTransform(shot.motion, progress)
+        }}
       />
       <div style={{ position: 'absolute', inset: 24, border: '3px solid rgba(15,23,42,0.12)' }} />
     </AbsoluteFill>
   );
 };
 
-function motionTransform(motion: StickmanTimelineProps['shots'][number]['motion'], progress: number): string {
-  if (motion === 'push-in') return `scale(${1 + progress * 0.08})`;
-  if (motion === 'zoom-out') return `scale(${1.08 - progress * 0.08})`;
-  if (motion === 'pan-left') return `scale(1.06) translateX(${3 - progress * 6}%)`;
-  if (motion === 'pan-right') return `scale(1.06) translateX(${-3 + progress * 6}%)`;
-  return 'scale(1)';
-}
+const Caption: React.FC<{ ratio: StickmanTimelineProps['ratio']; text: string }> = ({ ratio, text }) => (
+  <div style={{
+    position: 'absolute',
+    left: ratio === '9:16' ? 32 : 48,
+    right: ratio === '9:16' ? 32 : 48,
+    bottom: ratio === '9:16' ? 112 : 48,
+    padding: ratio === '9:16' ? '18px 22px' : '14px 20px',
+    borderRadius: ratio === '9:16' ? 18 : 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    color: '#ffffff',
+    fontSize: ratio === '9:16' ? 46 : 32,
+    fontWeight: 700,
+    lineHeight: 1.12,
+    textAlign: 'center',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere'
+  }}>
+    {text}
+  </div>
+);
 
 function fileUrl(path: string): string {
   if (/^(?:https?:|data:|blob:)/i.test(path)) return path;

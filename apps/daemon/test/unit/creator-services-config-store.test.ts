@@ -75,6 +75,33 @@ describe('CreatorServicesConfigStore', () => {
     });
   });
 
+  it('persists Codex native image selection without an image API credential', async () => {
+    let saved: string | null = null;
+    const store = createCreatorServicesConfigStore({
+      getPassword: vi.fn(async () => saved),
+      setPassword: vi.fn(async value => { saved = value; }),
+      deletePassword: vi.fn(async () => { saved = null; })
+    });
+    const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'codex-native';
+
+    await expect(store.write(config)).resolves.toEqual(config);
+    await expect(store.read()).resolves.toEqual(config);
+
+    const presented = presentCreatorServicesConfig(config);
+    expect(presented.config.image.provider).toBe('codex-native');
+    expect(presented.config.image.codexNative).toEqual({});
+    expect(presented.configuredCredentials).not.toEqual(
+      expect.arrayContaining([
+        'image.openai.apiKey',
+        'image.jimeng.apiKey',
+        'image.kling.accessKey',
+        'image.kling.secretKey',
+        'image.gemini.apiKey'
+      ])
+    );
+  });
+
   it('stores public settings in config.toml and credentials in credentials.json', async () => {
     vi.stubEnv('VOLCENGINE_APP_ID', '');
     vi.stubEnv('VOLCENGINE_ACCESS_TOKEN', '');
@@ -304,6 +331,22 @@ describe('CreatorServicesConfigStore', () => {
 
     await expect(store.read()).resolves.toMatchObject({
       video: createDefaultCreatorServicesConfig().video
+    });
+  });
+
+  it('adds the credential-free Codex image defaults when reading an older saved configuration', async () => {
+    const legacy = structuredClone(createDefaultCreatorServicesConfig()) as unknown as {
+      image: Record<string, unknown>;
+    };
+    delete legacy.image.codexNative;
+    const store = createCreatorServicesConfigStore({
+      getPassword: vi.fn(async () => JSON.stringify(legacy)),
+      setPassword: vi.fn(async () => undefined),
+      deletePassword: vi.fn(async () => undefined)
+    });
+
+    await expect(store.read()).resolves.toMatchObject({
+      image: { codexNative: {} }
     });
   });
 

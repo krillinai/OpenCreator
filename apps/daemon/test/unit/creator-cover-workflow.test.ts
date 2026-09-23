@@ -245,6 +245,8 @@ function setup(state: Record<string, CreatorJson>) {
     receipts: createCreatorAgentRepository(db)
   });
   const config = createDefaultCreatorServicesConfig();
+  config.image.provider = 'openai';
+  config.image.openai.baseUrl = 'https://api.openai.com/v1';
   const readConfig = vi.fn(async (): Promise<CreatorServicesConfig> => config);
   const workflow = createCoverWorkflow({
     creator: service,

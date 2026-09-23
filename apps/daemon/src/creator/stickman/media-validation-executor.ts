@@ -4,7 +4,10 @@ import { createReadStream } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import sharp from 'sharp';
-import type { CreatorArtifact } from '@opencreator/protocol';
+import {
+  stickmanCanvasForRatio,
+  type CreatorArtifact
+} from '@opencreator/protocol';
 import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { validateMediaFile } from '../validators/media.js';
@@ -15,8 +18,8 @@ type FrameSample = {
   index: number;
   timestampSeconds: number;
   sha256: string;
-  width: 1280;
-  height: 720;
+  width: number;
+  height: number;
   brightnessMean: number;
   contrastStddev: number;
 };
@@ -28,8 +31,6 @@ export function createStickmanMediaValidationExecutor(input: {
   sampleFrames?: (path: string, duration: number, workdir: string) => Promise<FrameSample[]>;
 }): CreatorExecutor {
   const validateVideo = input.validateVideo ?? validateMediaFile;
-  const sampleFrames = input.sampleFrames
-    ?? ((path, duration, workdir) => sampleVideoFrames(input.ffmpegPath, path, duration, workdir));
   return {
     id: 'stickman-media-validation',
     async run(stage) {
@@ -64,26 +65,35 @@ export function createStickmanMediaValidationExecutor(input: {
       const timeline = stickmanTimelineSchema.parse(JSON.parse(
         await readFile(timelineArtifact.path, 'utf8')
       ));
+      const canvas = stickmanCanvasForRatio(timeline.ratio);
       const expectedDuration = timeline.totalFrames / timeline.fps;
       const durationTolerance = Math.max(0.15, 2 / timeline.fps);
       const media = await validateVideo(cleanVideo.path, input.ffprobePath);
       if (
-        media.width !== 1280
-        || media.height !== 720
+        media.width !== canvas.width
+        || media.height !== canvas.height
         || !media.hasVideo
         || !media.hasAudio
         || Math.abs(media.duration - expectedDuration) > durationTolerance
       ) {
         throw new CreatorExecutorError(
           'creator_media_validation_failed',
-          'Clean video must be decodable 1280x720 audio/video media with Timeline-matched duration'
+          `Clean video must be decodable ${canvas.width}x${canvas.height} audio/video media with Timeline-matched duration`
         );
       }
-      const sampledFrames = await sampleFrames(
-        cleanVideo.path,
-        media.duration,
-        join(stage.workdir, 'frame-samples')
-      );
+      const sampledFrames = input.sampleFrames === undefined
+        ? await sampleVideoFrames(
+            input.ffmpegPath,
+            cleanVideo.path,
+            media.duration,
+            join(stage.workdir, 'frame-samples'),
+            canvas
+          )
+        : await input.sampleFrames(
+            cleanVideo.path,
+            media.duration,
+            join(stage.workdir, 'frame-samples')
+          );
       if (sampledFrames.length !== 3) {
         throw new CreatorExecutorError(
           'creator_media_validation_frame_count',
@@ -99,8 +109,9 @@ export function createStickmanMediaValidationExecutor(input: {
         duration: media.duration,
         expectedDuration,
         durationTolerance,
-        width: 1280,
-        height: 720,
+        ratio: timeline.ratio,
+        width: canvas.width,
+        height: canvas.height,
         hasVideo: true,
         hasAudio: true,
         sampledFrames
@@ -117,6 +128,7 @@ export function createStickmanMediaValidationExecutor(input: {
             validation: report.validation,
             sampleCount: report.sampledFrames.length,
             duration: report.duration,
+            ratio: report.ratio,
             width: report.width,
             height: report.height
           }
@@ -131,7 +143,8 @@ async function sampleVideoFrames(
   ffmpegPath: string,
   videoPath: string,
   duration: number,
-  workdir: string
+  workdir: string,
+  canvas: { width: number; height: number }
 ): Promise<FrameSample[]> {
   await mkdir(workdir, { recursive: true });
   const timestamps = [
@@ -154,8 +167,8 @@ async function sampleVideoFrames(
     const brightnessMean = stats.channels[0]?.mean ?? 0;
     const contrastStddev = stats.channels[0]?.stdev ?? 0;
     if (
-      metadata.width !== 1280
-      || metadata.height !== 720
+      metadata.width !== canvas.width
+      || metadata.height !== canvas.height
       || brightnessMean < 3
       || brightnessMean > 252
       || contrastStddev < 2
@@ -169,8 +182,8 @@ async function sampleVideoFrames(
       index: position + 1,
       timestampSeconds,
       sha256,
-      width: 1280,
-      height: 720,
+      width: canvas.width,
+      height: canvas.height,
       brightnessMean: roundMetric(brightnessMean),
       contrastStddev: roundMetric(contrastStddev)
     });

@@ -144,13 +144,18 @@ function presentProviderConfig(
   state: Awaited<ReturnType<typeof readProviderState>>,
   storedApiKeyConfigured: boolean
 ): CodexProviderConfig {
+  const apiKeyConfigured = state.providerCredentialConfigured || (
+    state.baseUrl.length > 0
+      ? storedApiKeyConfigured
+      : state.authentication === 'api_key' || storedApiKeyConfigured
+  );
   return {
     baseUrl: state.baseUrl,
     model: state.model,
-    apiKeyConfigured: state.baseUrl.length > 0
-      ? storedApiKeyConfigured
-      : state.authentication === 'api_key' || storedApiKeyConfigured,
-    authentication: state.authentication,
+    apiKeyConfigured,
+    authentication: state.authentication === 'none' && state.providerCredentialConfigured
+      ? 'api_key'
+      : state.authentication,
     ...(state.configVersion === undefined ? {} : { configVersion: state.configVersion })
   };
 }
@@ -175,6 +180,7 @@ async function readProviderState(client: RestartableCodexAppServerRequestClient)
   model: string;
   modelProvider: string;
   authentication: CodexProviderAuthentication;
+  providerCredentialConfigured: boolean;
   configVersion?: string;
 }> {
   const [configResponse, accountResponse] = await Promise.all([
@@ -194,8 +200,15 @@ async function readProviderState(client: RestartableCodexAppServerRequestClient)
     model: readString(config, 'model'),
     modelProvider,
     authentication: authenticationOf(accountResponse),
+    providerCredentialConfigured: providerCredentialConfigured(configuredProvider),
     ...(configVersion === undefined ? {} : { configVersion })
   };
+}
+
+function providerCredentialConfigured(provider: Record<string, unknown> | undefined): boolean {
+  if (readString(provider, 'experimental_bearer_token').length > 0) return true;
+  const envKey = readString(provider, 'env_key');
+  return envKey.length > 0 && (process.env[envKey]?.trim().length ?? 0) > 0;
 }
 
 function normalizeUpdateRequest(request: CodexProviderConfigUpdateRequest): {

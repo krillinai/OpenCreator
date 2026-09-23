@@ -1629,6 +1629,9 @@ test('图像生成在桌面和移动视口创建、持久化并从项目中心�
   await page.getByRole('textbox', { name: '提示词' }).fill(prompt);
   await expect(page).toHaveURL(/#\/workbench\?tool=image-generation&jobId=creator_job_/);
   await page.getByRole('button', { name: '继续', exact: true }).click();
+  await expect(page.getByRole('radio', { name: '本机 Codex 生图', exact: true })).toBeChecked();
+  await expect(page.getByRole('radio', { name: '4 张', exact: true })).toHaveCount(0);
+  await page.getByRole('radio', { name: 'GPT Image', exact: true }).click();
   await page.getByRole('radio', { name: /横向/ }).click();
   await page.getByRole('radio', { name: '高清', exact: true }).click();
   await page.getByRole('radio', { name: '4 张', exact: true }).click();

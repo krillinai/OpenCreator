@@ -12,12 +12,13 @@ import type { CreatorServicesConfigStore } from '../creator-services/config-stor
 import { isRecord } from '../creator-services/upstream-fetch.js';
 import {
   generateImageContents,
-  ImageGenerationProviderError
+  ImageGenerationProviderError,
+  type CodexNativeImageRuntime
 } from './provider.js';
 
 const MAX_PROMPT_LENGTH = 4_000;
 const SAFE_RESULT_ID = /^[A-Za-z0-9_-]{12,64}$/;
-const imageProviders = ['openai', 'jimeng', 'kling', 'gemini'] as const;
+const imageProviders = ['openai', 'jimeng', 'kling', 'gemini', 'codex-native'] as const;
 
 export type ImageGenerationService = {
   generate(request: CreateImageGenerationRequest): Promise<ImageGenerationResult>;
@@ -49,6 +50,7 @@ export function createImageGenerationService(input: {
   dataDir: string;
   configStore: CreatorServicesConfigStore;
   fetchImpl?: typeof fetch;
+  codexNative?: CodexNativeImageRuntime;
   now?: () => Date;
   createId?: () => string;
 }): ImageGenerationService {
@@ -77,7 +79,10 @@ export function createImageGenerationService(input: {
       const config = await input.configStore.read();
       let generated: Awaited<ReturnType<typeof generateImageContents>>;
       try {
-        generated = await generateImageContents(request, config, { fetchImpl: input.fetchImpl });
+        generated = await generateImageContents(request, config, {
+          fetchImpl: input.fetchImpl,
+          ...(input.codexNative === undefined ? {} : { codexNative: input.codexNative })
+        });
       } catch (error) {
         throw mapProviderError(error);
       }

@@ -67,7 +67,7 @@ export function createWechatArticleExecutor(input: {
     }): Promise<WechatArticleImagePlanItem[]>;
   };
   imageGenerator?: {
-    generate(request: { prompt: string; signal: AbortSignal }): Promise<ArticleImageGenerationResult>;
+    generate(request: { prompt: string; signal: AbortSignal; cwd?: string }): Promise<ArticleImageGenerationResult>;
   };
 }): CreatorExecutor {
   return {
@@ -296,7 +296,8 @@ export function createWechatArticleExecutor(input: {
                 'Landscape editorial illustration for a WeChat article, 3:2 composition.',
                 'Do not render titles, paragraphs, logos, watermarks, UI, or illegible decorative text.'
               ].join('\n\n'),
-              signal: stage.signal
+              signal: stage.signal,
+              cwd: stage.workdir
             });
             const extension = extensionForMime(generated.mime);
             const fileName = `article-image-${String(index + 1).padStart(2, '0')}.${extension}`;

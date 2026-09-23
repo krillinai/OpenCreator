@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Check, Moon, Sun } from 'lucide-react';
 import type {
   CodexProfileListResponse,
@@ -7,6 +7,7 @@ import type {
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import type { ColorMode } from '../../styles/color-mode.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
+import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { AppLanguagePreference } from '../../i18n/language.js';
 import {
   defaultAccentColor,
@@ -18,10 +19,7 @@ import type { ProjectPermission } from '../projects/project-model.js';
 import { ProfileSettingsView, type ProfileSettingsService } from './ProfileSettingsView.js';
 import { CleanupSettingsView, type CleanupSettingsService } from './CleanupSettingsView.js';
 import { DiagnosticsSettingsView } from './DiagnosticsSettingsView.js';
-import {
-  CreatorServicesSettingsView,
-  type CreatorServicesSection
-} from './CreatorServicesSettingsView.js';
+import type { CreatorServicesSection } from './CreatorServicesSettingsView.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { CodexRuntimeSettingsService } from './CodexRuntimeSettingsView.js';
 import {
@@ -32,6 +30,11 @@ import {
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
 import { RuntimeComponentsSettingsView } from './RuntimeComponentsSettingsView.js';
 import './settings-management.css';
+
+const CreatorServicesSettingsView = lazy(async () => {
+  const module = await import('./CreatorServicesSettingsView.js');
+  return { default: module.CreatorServicesSettingsView };
+});
 
 export type RuntimeStatus = {
   connected: boolean;
@@ -90,6 +93,7 @@ type SettingsTab =
 export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => props.initialTab ?? 'general');
   const { t } = useAppLanguage();
+  const l = useLocalizedCopy();
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: 'general', label: t('settings.tab.general') },
     { id: 'ai-services', label: t('settings.tab.aiServices') },
@@ -156,12 +160,16 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
           />
         ) : null}
         {activeTab === 'ai-services' ? (
-          <CreatorServicesSettingsView
-            connected={props.runtimeStatus.connected}
-            service={props.creatorServicesService ?? null}
-            modelService={props.codexRuntimeService ?? null}
-            initialSection={props.initialSection}
-          />
+          <Suspense fallback={
+            <p role="status">{l('正在加载 AI 服务设置…', 'Loading AI service settings…')}</p>
+          }>
+            <CreatorServicesSettingsView
+              connected={props.runtimeStatus.connected}
+              service={props.creatorServicesService ?? null}
+              modelService={props.codexRuntimeService ?? null}
+              initialSection={props.initialSection}
+            />
+          </Suspense>
         ) : null}
         {activeTab === 'local-components' && props.runtimeDependencies !== undefined ? (
           <RuntimeComponentsSettingsView

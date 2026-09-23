@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
+import { readStickmanRatio, stickmanCanvasForRatio } from '@opencreator/protocol';
 import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { stickmanShotSpecSchema, stickmanVisualValidationSchema } from './contracts.js';
@@ -26,6 +27,8 @@ export function createStickmanValidationExecutor(input: {
       if (shotSpec?.path === null || shotSpec?.path === undefined) {
         throw new CreatorExecutorError('creator_stage_input_missing', 'Shot spec is required');
       }
+      const ratio = readStickmanRatio(stage.job.state?.ratio);
+      const canvas = stickmanCanvasForRatio(ratio);
       const value = stickmanShotSpecSchema.parse(JSON.parse(
         await readFile(shotSpec.path, 'utf8')
       ));
@@ -69,10 +72,14 @@ export function createStickmanValidationExecutor(input: {
         ]);
         const width = metadata.width ?? 0;
         const height = metadata.height ?? 0;
-        if (width <= 0 || height <= 0 || Math.abs(width / height - 16 / 9) > 0.03) {
+        if (
+          width <= 0
+          || height <= 0
+          || Math.abs(width / height - canvas.width / canvas.height) > 0.03
+        ) {
           throw new CreatorExecutorError(
             'creator_shot_image_invalid',
-            `Shot ${shot.id} image must be decodable 16:9 media`
+            `Shot ${shot.id} image must be decodable ${ratio} media`
           );
         }
         const brightnessMean = stats.channels[0]?.mean ?? 0;
@@ -122,6 +129,9 @@ export function createStickmanValidationExecutor(input: {
       const result = stickmanVisualValidationSchema.parse({
         ok: true,
         validation: 'automated_decode_aspect_nonblank_hash_and_ocr',
+        ratio,
+        width: canvas.width,
+        height: canvas.height,
         approvedShotSpecArtifactId: shotSpec.id,
         shotCount: value.shots.length,
         ocrStatus,
@@ -138,6 +148,9 @@ export function createStickmanValidationExecutor(input: {
           path,
           sourceArtifactIds: [shotSpec.id, ...images.map(image => image.id)],
           metadata: {
+            ratio,
+            width: canvas.width,
+            height: canvas.height,
             shotCount: value.shots.length,
             warningCount: warnings.length,
             ocrStatus,

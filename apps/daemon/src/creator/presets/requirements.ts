@@ -5,6 +5,8 @@ import type {
   CreatorRuntimeWorkspace,
   CreatorServicesConfig
 } from '@opencreator/protocol';
+import { creatorProviderOfKind } from '@opencreator/protocol';
+import { imageProviderConfigured } from '../image-settings.js';
 import { videoGenerationModelIds } from '@opencreator/protocol';
 import { CreatorExecutorError } from '../executor.js';
 import type { CreatorPresetModuleDefinition, CreatorPresetLocale } from './types.js';
@@ -35,13 +37,11 @@ export function resolveCreatorPresetRequirement(input: {
   requirement?: CreatorPresetRequirements;
   services: CreatorServicesConfig;
 }): Record<string, CreatorJson> {
-  const requirement = input.requirement;
   if (input.module === 'image-generation' || input.module === 'cover-generator') {
-    const provider = requirement?.provider ?? input.services.image.provider;
-    return { provider };
+    return { provider: input.services.image.provider };
   }
   if (input.module === 'video-generation') {
-    const provider = requirement?.provider ?? input.services.video.provider;
+    const provider = input.services.video.provider;
     const providerConfig = input.services.video[
       provider as keyof CreatorServicesConfig['video']
     ];
@@ -53,11 +53,11 @@ export function resolveCreatorPresetRequirement(input: {
     ) ? providerConfig.model : '';
     return {
       provider,
-      model: requirement?.model ?? configuredModel
+      model: configuredModel
     };
   }
   if (input.module === 'smart-dubbing' || input.module === 'video-translation') {
-    const provider = requirement?.provider ?? input.services.tts.provider;
+    const provider = input.services.tts.provider;
     const providerConfig = input.services.tts[
       provider as keyof CreatorServicesConfig['tts']
     ];
@@ -66,7 +66,7 @@ export function resolveCreatorPresetRequirement(input: {
     }
     return {
       ttsProvider: provider,
-      ttsModel: requirement?.model ?? providerConfig.model,
+      ttsModel: providerConfig.model,
       voiceCode: providerConfig.defaultVoiceId,
       voiceName: providerConfig.defaultVoiceId
     };
@@ -89,25 +89,18 @@ export function assertCreatorPresetStageRequirement(input: {
   if (input.job.presetOrigin == null) return;
   const service = requiredServiceForStage(input.job, input.stageId);
   if (service === undefined) return;
-  const snapshot = readRequirementSnapshot(input.job, service);
+  const capabilities = readRequirementCapabilities(input.job, service);
   if (service === 'image') {
-    const provider = requiredProvider(
-      service,
-      input.job.state.provider,
-      snapshot?.provider
-    );
+    const provider = requiredProvider(service, input.job.state.provider);
     if (!hasImageCredentials(input.services, provider)) {
       missingRequirement(service, provider);
     }
+    assertProviderCapabilities(service, provider, capabilities);
     return;
   }
   if (service === 'video') {
-    const provider = requiredProvider(
-      service,
-      input.job.state.provider,
-      snapshot?.provider
-    );
-    const model = readString(input.job.state.model) ?? snapshot?.model;
+    const provider = requiredProvider(service, input.job.state.provider);
+    const model = readString(input.job.state.model);
     const allowedModels = videoGenerationModelIds[
       provider as keyof typeof videoGenerationModelIds
     ] as readonly string[] | undefined;
@@ -116,25 +109,21 @@ export function assertCreatorPresetStageRequirement(input: {
       || model === undefined
       || allowedModels === undefined
       || !allowedModels.includes(model)
-      || (snapshot?.model !== undefined && snapshot.model !== model)
     ) {
       missingRequirement(service, provider, model);
     }
+    assertProviderCapabilities(service, provider, capabilities);
     return;
   }
-  const provider = requiredProvider(
-    service,
-    input.job.state.ttsProvider,
-    snapshot?.provider
-  );
-  const model = readString(input.job.state.ttsModel) ?? snapshot?.model;
+  const provider = requiredProvider(service, input.job.state.ttsProvider);
+  const model = readString(input.job.state.ttsModel);
   if (
     !hasTtsCredentials(input.services, provider)
     || model === undefined
-    || (snapshot?.model !== undefined && snapshot.model !== model)
   ) {
     missingRequirement(service, provider, model);
   }
+  assertProviderCapabilities(service, provider, capabilities);
 }
 
 function deepMerge(
@@ -182,36 +171,44 @@ function requiredServiceForStage(
   return undefined;
 }
 
-function readRequirementSnapshot(
+function readRequirementCapabilities(
   job: CreatorJob,
   service: CreatorPresetRequirements['service']
-): CreatorPresetRequirements | undefined {
+): string[] {
   const details = job.activities.find(activity => activity.action === 'create-job')?.details;
-  if (
-    details?.requirementService !== service
-    || typeof details.requirementProvider !== 'string'
-  ) {
-    return undefined;
+  if (details?.requirementService !== service || !Array.isArray(details.requirementCapabilities)) {
+    return [];
   }
-  return {
-    service,
-    provider: details.requirementProvider,
-    ...(typeof details.requirementModel === 'string'
-      ? { model: details.requirementModel }
-      : {})
-  };
+  return details.requirementCapabilities.filter(value => typeof value === 'string');
 }
 
 function requiredProvider(
   service: CreatorPresetRequirements['service'],
-  value: CreatorJson | undefined,
-  required?: string
+  value: CreatorJson | undefined
 ): string {
-  const provider = readString(value) ?? required;
-  if (provider === undefined || (required !== undefined && provider !== required)) {
-    missingRequirement(service, required ?? 'unknown');
-  }
+  const provider = readString(value);
+  if (provider === undefined) missingRequirement(service, 'unknown');
   return provider;
+}
+
+function assertProviderCapabilities(
+  service: CreatorPresetRequirements['service'],
+  provider: string,
+  required: readonly string[]
+): void {
+  const catalogId = service === 'video' && provider === 'kling'
+    ? 'kling-video'
+    : service === 'tts' ? `${provider}-tts` : provider;
+  const entry = creatorProviderOfKind(service, catalogId);
+  const supported = new Set(entry?.capabilities ?? []);
+  const missing = required.find(capability => !supported.has(capability));
+  if (missing !== undefined) {
+    throw new CreatorExecutorError(
+      'creator_preset_requirement_missing',
+      `The selected ${service} provider does not support the required capability: ${missing}`,
+      { service, provider, capability: missing }
+    );
+  }
 }
 
 function readString(value: CreatorJson | undefined): string | undefined {
@@ -222,14 +219,14 @@ function hasImageCredentials(
   services: CreatorServicesConfig,
   provider: string
 ): boolean {
-  if (provider === 'kling') {
-    return services.image.kling.accessKey.trim() !== ''
-      && services.image.kling.secretKey.trim() !== '';
-  }
-  if (provider === 'openai' || provider === 'jimeng' || provider === 'gemini') {
-    return services.image[provider].apiKey.trim() !== '';
-  }
-  return false;
+  if (
+    provider !== 'openai'
+    && provider !== 'jimeng'
+    && provider !== 'kling'
+    && provider !== 'gemini'
+    && provider !== 'codex-native'
+  ) return false;
+  return imageProviderConfigured(services, provider);
 }
 
 function hasVideoCredentials(

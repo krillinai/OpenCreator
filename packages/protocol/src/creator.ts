@@ -138,10 +138,21 @@ export type CreatorPresetRef = {
   version: number;
 };
 
+export const creatorPresetCapabilities = [
+  'text-to-image',
+  'reference-image',
+  'image-edit',
+  'text-to-video',
+  'image-to-video',
+  'speech-generation',
+  'voice-preview'
+] as const;
+
+export type CreatorPresetCapability = typeof creatorPresetCapabilities[number];
+
 export type CreatorPresetRequirements = {
   service: 'tts' | 'image' | 'video';
-  provider: string;
-  model?: string;
+  capabilities: CreatorPresetCapability[];
 };
 
 export type CreatorPresetHighlight = {

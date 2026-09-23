@@ -37,3 +37,19 @@ func TestValidateTranscriptionConfigAcceptsTinyWhisperCpp(t *testing.T) {
 		t.Fatalf("ValidateTranscriptionConfig() error = %v, want platform error", err)
 	}
 }
+
+func TestValidateTranscriptionConfigAcceptsLargeV3TurboWhisperCpp(t *testing.T) {
+	previous := Conf
+	t.Cleanup(func() { Conf = previous })
+
+	Conf.Transcribe.Provider = "whispercpp"
+	Conf.Transcribe.Whispercpp.Model = "large-v3-turbo"
+
+	err := ValidateTranscriptionConfig()
+	if runtime.GOOS == "windows" && err != nil {
+		t.Fatalf("ValidateTranscriptionConfig() error = %v", err)
+	}
+	if runtime.GOOS != "windows" && (err == nil || !strings.Contains(err.Error(), "only support windows")) {
+		t.Fatalf("ValidateTranscriptionConfig() error = %v, want platform error", err)
+	}
+}

@@ -48,6 +48,7 @@ type ModelSettingsService = Pick<ConnectionService, 'getCodexProvider' | 'update
   getCodexModels?: ConnectionService['getCodexModels'];
 };
 type ModelFieldErrors = Partial<Record<'baseUrl' | 'apiKey' | 'model' | 'proxy', string>>;
+type TextModelMode = 'codex' | 'custom';
 
 export function CreatorServicesSettingsView(props: {
   connected: boolean;
@@ -63,6 +64,7 @@ export function CreatorServicesSettingsView(props: {
   const [config, setConfig] = useState<CreatorServicesConfig>();
   const [capabilities, setCapabilities] = useState<CreatorServicesCapabilitiesResponse>();
   const [modelProvider, setModelProvider] = useState<CodexProviderConfig>();
+  const [textModelMode, setTextModelMode] = useState<TextModelMode>('codex');
   const [modelProviderId, setModelProviderId] = useState('custom');
   const [runtimeModelIds, setRuntimeModelIds] = useState<string[]>([]);
   const [modelBaseUrl, setModelBaseUrl] = useState('');
@@ -117,6 +119,7 @@ export function CreatorServicesSettingsView(props: {
           ? modelsResult.value.models.map(model => model.model)
           : []);
         setConfig(response.config);
+        setTextModelMode(response.config.llm.source);
         setCapabilities(capabilitiesResult.value);
         setConfiguredCredentials(new Set(response.configuredCredentials));
         setSavedTranscriptionSelection(transcriptionSelection(response.config));
@@ -198,7 +201,9 @@ export function CreatorServicesSettingsView(props: {
       if (!confirmed) return;
     }
     if (activeSection === 'text') {
-      const fieldErrors = validateModelFields(modelBaseUrl, modelName, modelApiKey, config.proxy, l);
+      const fieldErrors = textModelMode === 'custom'
+        ? validateModelFields(modelBaseUrl, modelName, modelApiKey, config.proxy, l)
+        : validateModelFields('', 'codex', '', config.proxy, l);
       setModelFieldErrors(fieldErrors);
       if (Object.keys(fieldErrors).length > 0) {
         setError(l(
@@ -211,32 +216,21 @@ export function CreatorServicesSettingsView(props: {
     setSaving(true);
     setError(undefined);
     setNotice(undefined);
-    let savingStage: 'model' | 'services' = 'services';
     try {
       let nextConfig = structuredClone(config);
       if (activeSection === 'text') {
-        savingStage = 'model';
-        if (props.modelService === null || props.modelService === undefined || modelProvider === undefined) {
-          throw new Error('Model provider configuration is unavailable');
+        if (textModelMode === 'codex') {
+          nextConfig.llm = { ...nextConfig.llm, apiKey: '', source: 'codex' };
+        } else {
+          nextConfig.llm = {
+            ...nextConfig.llm,
+            baseUrl: modelBaseUrl,
+            apiKey: modelApiKey,
+            model: modelName,
+            source: 'custom'
+          };
         }
-        const provider = await props.modelService.updateCodexProvider({
-          baseUrl: modelBaseUrl,
-          model: modelName,
-          ...(modelApiKey.trim().length === 0 ? {} : { apiKey: modelApiKey })
-        });
-        setModelProvider(provider);
-        setModelBaseUrl(provider.baseUrl);
-        setModelName(provider.model);
-        setModelApiKey('');
-        nextConfig.llm = {
-          ...nextConfig.llm,
-          baseUrl: provider.baseUrl,
-          apiKey: '',
-          model: provider.model,
-          source: 'codex'
-        };
       }
-      savingStage = 'services';
       const response = await props.service.saveConfig(nextConfig);
       setConfig(response.config);
       setConfiguredCredentials(new Set(response.configuredCredentials));
@@ -244,13 +238,7 @@ export function CreatorServicesSettingsView(props: {
       setNotice(l('配置已安全保存', 'Settings saved securely'));
     } catch (cause) {
       const message = readableSaveError(cause, l);
-      const field = modelFieldFromError(message);
-      if (activeSection === 'text' && savingStage === 'model' && field !== undefined) {
-        setModelFieldErrors({ [field]: message });
-      }
-      setError(savingStage === 'model'
-        ? l(`模型服务保存失败：${message}`, `Could not save model provider: ${message}`)
-        : l(`创作服务保存失败：${message}`, `Could not save creator services: ${message}`));
+      setError(l(`创作服务保存失败：${message}`, `Could not save creator services: ${message}`));
     } finally {
       setSaving(false);
     }
@@ -348,6 +336,8 @@ export function CreatorServicesSettingsView(props: {
               update={updateConfig}
               configuredCredentials={configuredCredentials}
               provider={modelProvider}
+              mode={textModelMode}
+              onModeChange={setTextModelMode}
               baseUrl={modelBaseUrl}
               model={modelName}
               apiKey={modelApiKey}
@@ -420,6 +410,7 @@ export function CreatorServicesSettingsView(props: {
                 saving
                 || (
                   activeSection === 'text'
+                  && textModelMode === 'codex'
                   && modelProvider === undefined
                 )
               }
@@ -440,6 +431,8 @@ export function CreatorServicesSettingsView(props: {
 
 function TextModelSettings(props: SettingsGroupProps & {
   provider?: CodexProviderConfig;
+  mode: TextModelMode;
+  onModeChange(value: TextModelMode): void;
   baseUrl: string;
   model: string;
   apiKey: string;
@@ -454,14 +447,14 @@ function TextModelSettings(props: SettingsGroupProps & {
   const legacyApiKeyConfigured = props.config.llm.source === 'custom'
     && props.configuredCredentials.has('llm.apiKey');
   const providerApiKeyConfigured = props.provider?.apiKeyConfigured === true;
-  const apiKeyConfigured = providerApiKeyConfigured || legacyApiKeyConfigured;
-  const agentAvailable = props.provider?.baseUrl
-    ? providerApiKeyConfigured
-    : props.provider?.authentication !== 'none' || providerApiKeyConfigured;
-  const textTasksAvailable = apiKeyConfigured;
-  const AgentStatusIcon = agentAvailable ? Check : CircleAlert;
+  const codexAvailable = props.provider !== undefined
+    && (props.provider.authentication === 'chatgpt' || providerApiKeyConfigured);
+  const textTasksAvailable = props.mode === 'codex'
+    ? codexAvailable
+    : legacyApiKeyConfigured || props.apiKey.trim().length > 0;
+  const selectedModeAvailable = props.mode === 'codex' ? codexAvailable : textTasksAvailable;
   const TextTaskStatusIcon = textTasksAvailable ? Check : CircleAlert;
-  const modelCredentials = apiKeyConfigured
+  const modelCredentials = legacyApiKeyConfigured
     ? new Set<CreatorServicesCredentialField>(['llm.apiKey'])
     : new Set<CreatorServicesCredentialField>();
   return (
@@ -469,19 +462,35 @@ function TextModelSettings(props: SettingsGroupProps & {
       <SettingsFieldset
         title={l('模型服务', 'Model provider')}
         description={l(
-          'OpenCreator Agent 与翻译、脚本处理等文本任务共用这一套 OpenAI 兼容配置。',
-          'OpenCreator Agent and text tasks such as translation and script processing share this OpenAI-compatible configuration.'
+          '选择使用本机 Codex，或继续配置独立的 OpenAI 兼容模型服务。',
+          'Use the local Codex runtime or configure a separate OpenAI-compatible model service.'
         )}
       >
-        <label className="creator-services-field">
+        <div className="creator-services-segmented is-wide" role="group" aria-label={l('文本任务运行方式', 'Text task execution mode')}>
+          <button
+            type="button"
+            aria-pressed={props.mode === 'codex'}
+            onClick={() => props.onModeChange('codex')}
+          >
+            {l('Codex 本机运行时', 'Local Codex runtime')}
+          </button>
+          <button
+            type="button"
+            aria-pressed={props.mode === 'custom'}
+            onClick={() => props.onModeChange('custom')}
+          >
+            {l('自定义模型服务', 'Custom model service')}
+          </button>
+        </div>
+        {props.mode === 'custom' ? <label className="creator-services-field is-wide">
           <span>{l('供应商', 'Provider')}</span>
           <select value={props.providerId} onChange={event => props.onProviderIdChange(event.target.value)}>
             {Object.values(creatorProviderCatalogById.llm).map(provider => (
               <option key={provider.id} value={provider.id}>{provider.label}</option>
             ))}
           </select>
-        </label>
-        <OpenAiFields
+        </label> : null}
+        {props.mode === 'custom' ? <OpenAiFields
           id="llm"
           credential="llm.apiKey"
           configuredCredentials={modelCredentials}
@@ -496,29 +505,25 @@ function TextModelSettings(props: SettingsGroupProps & {
             : creatorProviderCatalogById.llm[props.providerId]?.models.map(model => model.id)}
           errors={props.fieldErrors}
           onChange={props.onProviderChange}
-        />
+        /> : (
+          <p className="creator-services-runtime-note">
+            {props.provider === undefined
+              ? l('未检测到可用的本机 Codex Runtime', 'No local Codex runtime was detected')
+              : props.provider.authentication === 'chatgpt'
+              ? l('已连接本机 Codex · ChatGPT 登录', 'Local Codex connected · ChatGPT sign-in')
+              : l(`已连接本机 Codex · ${props.provider.model || 'Runtime'}`, `Local Codex connected · ${props.provider.model || 'Runtime'}`)}
+          </p>
+        )}
         <div className="creator-services-model-status is-wide" role="status">
-          <span className={agentAvailable ? '' : 'is-warning'}>
-            <AgentStatusIcon size={15} aria-hidden="true" />
-            {agentAvailable
-              ? l('Agent 可用', 'Agent ready')
-              : l('Agent 尚未配置', 'Agent not configured')}
-          </span>
-          <span className={textTasksAvailable ? '' : 'is-warning'}>
+          <span className={selectedModeAvailable ? '' : 'is-warning'}>
             <TextTaskStatusIcon size={15} aria-hidden="true" />
             {textTasksAvailable
               ? l('文本任务可用', 'Text tasks ready')
-              : l('文本任务需要 API Key', 'Text tasks require an API key')}
+              : props.mode === 'codex'
+                ? l('本机 Codex 尚未配置', 'Local Codex is not configured')
+                : l('文本任务需要 API Key', 'Text tasks require an API key')}
           </span>
         </div>
-        {props.provider?.authentication === 'chatgpt' && !textTasksAvailable ? (
-          <p className="creator-services-inline-note is-warning">
-            {l(
-              'ChatGPT 登录可用于 Agent，但视频翻译等文本任务通过兼容 API 调用，仍需填写 API Key。',
-              'ChatGPT sign-in can power the Agent, but text tasks such as video translation use the compatible API and still require an API key.'
-            )}
-          </p>
-        ) : null}
         {props.error === undefined ? null : (
           <p className="creator-services-inline-note is-warning" role="alert">
             {props.error}
@@ -598,15 +603,6 @@ function readableSaveError(
 ): string {
   if (cause instanceof Error && cause.message.trim().length > 0) return cause.message;
   return l('本地 Runtime 未返回具体原因', 'The local Runtime did not return a reason');
-}
-
-function modelFieldFromError(message: string): keyof ModelFieldErrors | undefined {
-  const normalized = message.toLowerCase();
-  if (normalized.includes('base url') || normalized.includes('baseurl')) return 'baseUrl';
-  if (normalized.includes('api key') || normalized.includes('apikey')) return 'apiKey';
-  if (normalized.includes('proxy') || normalized.includes('代理')) return 'proxy';
-  if (normalized.includes('model') || normalized.includes('模型')) return 'model';
-  return undefined;
 }
 
 function TranscriptionSettings(props: SettingsGroupProps & {
@@ -741,7 +737,7 @@ function TranscriptionSettings(props: SettingsGroupProps & {
           value={props.config.transcription.whisperCpp.model}
           options={(selectedCapability?.models ?? []).map(model => [model, model])}
           onChange={value => props.update(config => {
-            config.transcription.whisperCpp.model = value as 'tiny' | 'medium' | 'large-v2';
+            config.transcription.whisperCpp.model = value as 'tiny' | 'medium' | 'large-v2' | 'large-v3-turbo';
           })}
         />
       ) : null}
@@ -785,6 +781,9 @@ function TranscriptionSettings(props: SettingsGroupProps & {
           )}
         </p>
       ) : null}
+      {selectedCapability?.kind === 'local' && selectedCapability.available
+        ? <TranscriptionModelDetails capability={selectedCapability} model={selectedTranscriptionModel(props.config)} />
+        : null}
     </SettingsFieldset>
   );
 }
@@ -949,13 +948,14 @@ function ImageSettings(props: SettingsGroupProps) {
   return (
     <SettingsFieldset
       title={l('图像生成', 'Image generation')}
-      description={l('配置 GPT Image、即梦、可灵或 Gemini 图像服务。', 'Configure GPT Image, Jimeng, Kling, or Gemini image generation.')}
+      description={l('选择本机 Codex 生图，或配置其他图像生成服务。', 'Use local Codex image generation or configure another image provider.')}
     >
       <SelectField
         id="image-provider"
         label={l('服务商', 'Provider')}
         value={provider}
         options={[
+          ['codex-native', l('本机 Codex 生图', 'Local Codex image generation')],
           ['openai', 'GPT Image'],
           ['jimeng', l('即梦', 'Jimeng')],
           ['kling', l('可灵', 'Kling')],
@@ -964,6 +964,7 @@ function ImageSettings(props: SettingsGroupProps) {
         onChange={value => props.update(config => {
           const nextProvider = value as CreatorServicesConfig['image']['provider'];
           config.image.provider = nextProvider;
+          if (nextProvider === 'codex-native') return;
           const preset = creatorProviderOfKind('image', nextProvider);
           const target = config.image[nextProvider];
           if (preset?.defaultBaseUrl !== undefined && !target.baseUrl) target.baseUrl = preset.defaultBaseUrl;
@@ -1509,6 +1510,25 @@ function ReadonlyModelField(props: { label: string; value: string }) {
       <output>{props.value}</output>
     </div>
   );
+}
+
+function TranscriptionModelDetails(props: {
+  capability: CreatorTranscriptionProviderCapability;
+  model: string;
+}) {
+  const l = useLocalizedCopy();
+  const diskBytes = props.capability.modelDetails?.[props.model]?.diskBytes;
+  if (diskBytes === undefined) return null;
+  return (
+    <p className="creator-services-inline-note">
+      {l(`本地执行 · 预计占用磁盘 ${formatDiskSize(diskBytes)}`, `Local execution · estimated disk usage ${formatDiskSize(diskBytes)}`)}
+    </p>
+  );
+}
+
+function formatDiskSize(bytes: number): string {
+  const gibibytes = bytes / (1024 ** 3);
+  return gibibytes >= 1 ? `${gibibytes.toFixed(2)} GiB` : `${(bytes / (1024 ** 2)).toFixed(0)} MiB`;
 }
 
 function ToggleField(props: {

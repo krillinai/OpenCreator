@@ -10,6 +10,7 @@ describe('stickman image prompt compiler', () => {
     const prompt = buildStickmanImagePrompt({
       visualProfile: visualProfile(),
       shot: shot(),
+      ratio: '16:9',
       hasStyleReference: true,
       hasPreviousShotReference: true
     });
@@ -31,6 +32,7 @@ describe('stickman image prompt compiler', () => {
     const prompt = buildStickmanImagePrompt({
       visualProfile: visualProfile(),
       shot: shot(),
+      ratio: '16:9',
       hasStyleReference: false,
       hasPreviousShotReference: false
     });

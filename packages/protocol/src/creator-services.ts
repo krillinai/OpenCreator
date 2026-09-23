@@ -111,7 +111,7 @@ export type CreatorServicesConfig = {
     openai: OpenAiCompatibleConfig;
     fasterWhisper: { model: 'tiny' | 'medium' | 'large-v2' };
     whisperKit: { model: 'large-v2' };
-    whisperCpp: { model: 'tiny' | 'medium' | 'large-v2' };
+    whisperCpp: { model: 'tiny' | 'medium' | 'large-v2' | 'large-v3-turbo' };
     aliyun: {
       oss: AliyunOssConfig;
       speech: AliyunSpeechConfig;
@@ -126,11 +126,12 @@ export type CreatorServicesConfig = {
     volcengine: VolcengineTtsConfig;
   };
   image: {
-    provider: 'openai' | 'jimeng' | 'kling' | 'gemini';
+    provider: 'openai' | 'jimeng' | 'kling' | 'gemini' | 'codex-native';
     openai: OpenAiCompatibleConfig;
     jimeng: OpenAiCompatibleConfig;
     kling: KlingAiConfig;
     gemini: OpenAiCompatibleConfig;
+    codexNative: Record<never, never>;
   };
   video: {
     provider: 'seedance' | 'kling' | 'veo';
@@ -150,6 +151,7 @@ export type CreatorTranscriptionProviderCapability = {
   kind: 'cloud' | 'local';
   available: boolean;
   models: string[];
+  modelDetails?: Record<string, { diskBytes: number }>;
   gpuAcceleration: boolean;
   unavailableReason?: 'unsupported_platform' | 'installer_unavailable';
 };
@@ -281,7 +283,7 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
       }
     },
     image: {
-      provider: 'openai',
+      provider: 'codex-native',
       openai: {
         baseUrl: '',
         apiKey: '',
@@ -302,7 +304,8 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
         baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: '',
         model: 'gemini-2.5-flash-image'
-      }
+      },
+      codexNative: {}
     },
     video: {
       provider: 'seedance',

@@ -8,12 +8,13 @@ import {
   readFile,
   readdir,
   realpath,
+  rm,
   stat,
   writeFile
 } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import sharp from 'sharp';
-import type { CreatorArtifact } from '@opencreator/protocol';
+import { stickmanCanvasForRatio, type CreatorArtifact } from '@opencreator/protocol';
 import type { CreatorExecutor, CreatorExecutorOutput } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { validateMediaFile } from '../validators/media.js';
@@ -22,13 +23,15 @@ import {
   stickmanAudioTimingSchema,
   stickmanDeliveryManifestSchema,
   stickmanMediaValidationSchema,
+  stickmanScriptManifestSchema,
   stickmanTimelineSchema,
   stickmanVisualValidationSchema
 } from './contracts.js';
+import { renderStickmanPublishCopy } from './publish-copy.js';
 
 const deliveryFiles = [
-  { kind: 'clean_video', name: 'stickman-video.mp4', mime: 'video/mp4' },
-  { kind: 'narration_subtitle', name: 'narration.srt', mime: 'application/x-subrip' }
+  { kind: 'clean_video', name: 'short.mp4', mime: 'video/mp4' },
+  { kind: 'narration_subtitle', name: 'subtitles.srt', mime: 'application/x-subrip' }
 ] as const;
 
 type VideoValidator = typeof validateMediaFile;
@@ -40,11 +43,21 @@ type VideoFrameSampler = (input: {
   ffmpegPath?: string;
 }) => Promise<{ sampleCount: number }>;
 
+type ThumbnailGenerator = (input: {
+  path: string;
+  duration: number;
+  targetPath: string;
+  width: number;
+  height: number;
+  ffmpegPath?: string;
+}) => Promise<void>;
+
 export function createStickmanDeliveryExecutor(input: {
   ffprobePath: string;
   ffmpegPath?: string;
   validateVideo?: VideoValidator;
   sampleVideoFrames?: VideoFrameSampler;
+  createThumbnail?: ThumbnailGenerator;
 }): CreatorExecutor {
   const validateVideo = input.validateVideo ?? validateMediaFile;
   const sampleVideoFrames = input.sampleVideoFrames
@@ -62,42 +75,49 @@ export function createStickmanDeliveryExecutor(input: {
           `Delivery directory is not empty: ${existing[0]}`
         );
       }
+      const timelineArtifact = requireSingleArtifact(stage.inputArtifacts, 'timeline_manifest');
+      const timelinePath = await validateSourcePath(jobRoot, timelineArtifact);
+      const timeline = stickmanTimelineSchema.parse(JSON.parse(await readFile(timelinePath, 'utf8')));
+      const canvas = stickmanCanvasForRatio(timeline.ratio);
+      const scriptArtifact = requireSingleArtifact(stage.inputArtifacts, 'script_manifest');
+      const scriptPath = await validateSourcePath(jobRoot, scriptArtifact);
+      const script = stickmanScriptManifestSchema.parse(JSON.parse(await readFile(scriptPath, 'utf8')));
       const manifestFiles = [];
       const outputs: CreatorExecutorOutput[] = [];
       const sampledVideos = new Set<string>();
+      let cleanVideoMedia: Awaited<ReturnType<VideoValidator>> | undefined;
       for (const definition of deliveryFiles) {
         const artifact = requireSingleArtifact(stage.inputArtifacts, definition.kind);
         const sourcePath = await validateSourcePath(jobRoot, artifact);
-        const actualSha256 = await sha256File(sourcePath);
-        if (artifact.sha256 === null || artifact.sha256.toLowerCase() !== actualSha256) {
-          throw new CreatorExecutorError(
-            'creator_delivery_hash_mismatch',
-            `Artifact hash mismatch: ${definition.kind}`
-          );
-        }
+        const actualSha256 = await assertArtifactHash(artifact, sourcePath);
         const targetPath = join(deliveryRoot, definition.name);
         await copyFile(sourcePath, targetPath, constants.COPYFILE_EXCL);
         const info = await stat(targetPath);
-        const media = await validateDeliveryFile(definition.kind, targetPath, input.ffprobePath, validateVideo);
-        if (
-          media !== undefined
-          && sampleVideoFrames !== undefined
-          && definition.kind === 'clean_video'
-        ) {
-          const samples = await sampleVideoFrames({
-            path: targetPath,
-            kind: definition.kind,
-            duration: media.duration,
-            workdir: join(stage.workdir, `frame-samples-${definition.kind}`),
-            ...(input.ffmpegPath === undefined ? {} : { ffmpegPath: input.ffmpegPath })
-          });
-          if (samples.sampleCount < 3) {
-            throw new CreatorExecutorError(
-              'creator_delivery_frame_sampling_failed',
-              `${definition.kind} requires at least three decoded frame samples`
-            );
+        const media = await validateDeliveryFile(
+          definition.kind,
+          targetPath,
+          input.ffprobePath,
+          validateVideo,
+          canvas
+        );
+        if (definition.kind === 'clean_video' && media !== undefined) {
+          cleanVideoMedia = media;
+          if (sampleVideoFrames !== undefined) {
+            const samples = await sampleVideoFrames({
+              path: targetPath,
+              kind: definition.kind,
+              duration: media.duration,
+              workdir: join(stage.workdir, `frame-samples-${definition.kind}`),
+              ...(input.ffmpegPath === undefined ? {} : { ffmpegPath: input.ffmpegPath })
+            });
+            if (samples.sampleCount < 3) {
+              throw new CreatorExecutorError(
+                'creator_delivery_frame_sampling_failed',
+                `${definition.kind} requires at least three decoded frame samples`
+              );
+            }
+            sampledVideos.add(definition.kind);
           }
-          sampledVideos.add(definition.kind);
         }
         manifestFiles.push({
           name: definition.name,
@@ -116,12 +136,99 @@ export function createStickmanDeliveryExecutor(input: {
             fileName: definition.name,
             mimeType: definition.mime,
             bytes: info.size,
-            delivery: true
+            delivery: true,
+            ratio: timeline.ratio,
+            width: canvas.width,
+            height: canvas.height
           }
         });
       }
+      if (cleanVideoMedia === undefined) {
+        throw new CreatorExecutorError('creator_delivery_video_invalid', 'Clean video media was not validated');
+      }
+      const cleanVideoArtifact = requireSingleArtifact(stage.inputArtifacts, 'clean_video');
+      const thumbnailPath = join(deliveryRoot, 'thumbnail.png');
+      const thumbnailGenerator = input.createThumbnail
+        ?? (input.ffmpegPath === undefined ? undefined : renderThumbnailWithFfmpeg);
+      if (thumbnailGenerator === undefined) {
+        throw new CreatorExecutorError(
+          'creator_delivery_thumbnail_failed',
+          'FFmpeg is required to generate the delivery thumbnail'
+        );
+      }
+      await thumbnailGenerator({
+        path: join(deliveryRoot, 'short.mp4'),
+        duration: cleanVideoMedia.duration,
+        targetPath: thumbnailPath,
+        width: canvas.width,
+        height: canvas.height,
+        ...(input.ffmpegPath === undefined ? {} : { ffmpegPath: input.ffmpegPath })
+      });
+      const thumbnailInfo = await stat(thumbnailPath);
+      const thumbnailMetadata = await sharp(thumbnailPath).metadata();
+      if (thumbnailMetadata.width !== canvas.width || thumbnailMetadata.height !== canvas.height) {
+        throw new CreatorExecutorError(
+          'creator_delivery_thumbnail_failed',
+          `Thumbnail must be ${canvas.width}x${canvas.height} media`
+        );
+      }
+      const thumbnailSha256 = await sha256File(thumbnailPath);
+      manifestFiles.push({
+        name: 'thumbnail.png',
+        relativePath: 'delivery/thumbnail.png',
+        sha256: thumbnailSha256,
+        bytes: thumbnailInfo.size,
+        mime: 'image/png',
+        sourceArtifactId: cleanVideoArtifact.id
+      });
+      outputs.push({
+        kind: 'thumbnail',
+        status: 'completed',
+        path: thumbnailPath,
+        sourceArtifactIds: [cleanVideoArtifact.id],
+        metadata: {
+          fileName: 'thumbnail.png',
+          mimeType: 'image/png',
+          bytes: thumbnailInfo.size,
+          delivery: true,
+          ratio: timeline.ratio,
+          width: canvas.width,
+          height: canvas.height
+        }
+      });
+      const publishCopyPath = join(deliveryRoot, 'publish-copy.md');
+      await writeFile(publishCopyPath, renderStickmanPublishCopy({
+        title: script.title,
+        language: script.language,
+        durationSeconds: cleanVideoMedia.duration,
+        ratio: timeline.ratio,
+        narration: script.segments.map(segment => segment.narration)
+      }), 'utf8');
+      const publishCopyInfo = await stat(publishCopyPath);
+      const publishCopySha256 = await sha256File(publishCopyPath);
+      manifestFiles.push({
+        name: 'publish-copy.md',
+        relativePath: 'delivery/publish-copy.md',
+        sha256: publishCopySha256,
+        bytes: publishCopyInfo.size,
+        mime: 'text/markdown',
+        sourceArtifactId: scriptArtifact.id
+      });
+      outputs.push({
+        kind: 'publish_copy',
+        status: 'completed',
+        path: publishCopyPath,
+        sourceArtifactIds: [scriptArtifact.id],
+        metadata: {
+          fileName: 'publish-copy.md',
+          mimeType: 'text/markdown',
+          bytes: publishCopyInfo.size,
+          delivery: true,
+          ratio: timeline.ratio
+        }
+      });
       const actualFiles = await readdir(deliveryRoot);
-      const expectedFiles = deliveryFiles.map(file => file.name).sort();
+      const expectedFiles = ['short.mp4', 'subtitles.srt', 'thumbnail.png', 'publish-copy.md'].sort();
       if (JSON.stringify([...actualFiles].sort()) !== JSON.stringify(expectedFiles)) {
         throw new CreatorExecutorError(
           'creator_delivery_file_set_mismatch',
@@ -130,6 +237,7 @@ export function createStickmanDeliveryExecutor(input: {
       }
       const placeholderAssets = findPlaceholderAssets(stage.inputArtifacts);
       const blockingChecks = await collectBlockingChecks({
+        jobRoot,
         artifacts: stage.inputArtifacts,
         sampledVideos
       });
@@ -138,6 +246,15 @@ export function createStickmanDeliveryExecutor(input: {
         : 'technical-draft' as const;
       const manifest = stickmanDeliveryManifestSchema.parse({
         packageStatus,
+        ratio: timeline.ratio,
+        width: canvas.width,
+        height: canvas.height,
+        duration: cleanVideoMedia.duration,
+        providers: {
+          image: readProvider(stage.inputArtifacts, 'shot_image'),
+          video: readVideoProvider(cleanVideoArtifact),
+          voice: readProvider(stage.inputArtifacts, 'narration_audio')
+        },
         placeholderAssets,
         blockingChecks,
         files: manifestFiles
@@ -209,14 +326,15 @@ async function validateDeliveryFile(
   kind: string,
   path: string,
   ffprobePath: string,
-  validateVideo: VideoValidator
+  validateVideo: VideoValidator,
+  canvas: { width: number; height: number }
 ): Promise<Awaited<ReturnType<VideoValidator>> | undefined> {
   if (kind === 'clean_video') {
     const media = await validateVideo(path, ffprobePath);
-    if (!media.hasVideo || !media.hasAudio || media.width !== 1280 || media.height !== 720) {
+    if (!media.hasVideo || !media.hasAudio || media.width !== canvas.width || media.height !== canvas.height) {
       throw new CreatorExecutorError(
         'creator_delivery_video_invalid',
-        `${kind} must be 1280x720 audio/video media`
+        `${kind} must be ${canvas.width}x${canvas.height} audio/video media`
       );
     }
     return media;
@@ -225,7 +343,66 @@ async function validateDeliveryFile(
   return undefined;
 }
 
+async function assertArtifactHash(artifact: CreatorArtifact, path: string): Promise<string> {
+  const actualSha256 = await sha256File(path);
+  if (artifact.sha256 === null || artifact.sha256.toLowerCase() !== actualSha256) {
+    throw new CreatorExecutorError(
+      'creator_delivery_hash_mismatch',
+      `Artifact hash mismatch: ${artifact.kind}`
+    );
+  }
+  return actualSha256;
+}
+
+function readProvider(artifacts: CreatorArtifact[], kind: string): string {
+  const providers = artifacts
+    .filter(artifact => artifact.kind === kind && artifact.status === 'completed')
+    .map(artifact => artifact.metadata.provider)
+    .filter((provider): provider is string => typeof provider === 'string' && provider.trim().length > 0);
+  return providers[0] ?? 'unknown';
+}
+
+function readVideoProvider(artifact: CreatorArtifact): string {
+  const provider = artifact.metadata.provider;
+  if (typeof provider === 'string' && provider.trim().length > 0) return provider;
+  const renderEngine = artifact.metadata.renderEngine;
+  return typeof renderEngine === 'string' && renderEngine.trim().length > 0
+    ? renderEngine
+    : 'unknown';
+}
+
+async function renderThumbnailWithFfmpeg(input: {
+  path: string;
+  duration: number;
+  targetPath: string;
+  width: number;
+  height: number;
+  ffmpegPath?: string;
+}): Promise<void> {
+  if (input.ffmpegPath === undefined) {
+    throw new CreatorExecutorError(
+      'creator_delivery_thumbnail_failed',
+      'FFmpeg is required to generate the delivery thumbnail'
+    );
+  }
+  const sourcePath = `${input.targetPath}.source.png`;
+  const timestamp = Math.max(0, Math.min(input.duration / 2, Math.max(0, input.duration - 0.1)));
+  try {
+    await execFileAsync(input.ffmpegPath, [
+      '-y', '-ss', timestamp.toFixed(3), '-i', input.path,
+      '-frames:v', '1', '-f', 'image2', sourcePath
+    ]);
+    await sharp(sourcePath)
+      .resize(input.width, input.height, { fit: 'cover', position: 'centre' })
+      .png()
+      .toFile(input.targetPath);
+  } finally {
+    await rm(sourcePath, { force: true });
+  }
+}
+
 async function collectBlockingChecks(input: {
+  jobRoot: string;
   artifacts: CreatorArtifact[];
   sampledVideos: Set<string>;
 }): Promise<string[]> {
@@ -235,7 +412,11 @@ async function collectBlockingChecks(input: {
     blocking.add('visual_validation_missing');
   } else {
     try {
-      const report = stickmanVisualValidationSchema.parse(JSON.parse(await readFile(visual.path, 'utf8')));
+      const visualPath = await validateSourcePath(input.jobRoot, visual);
+      await assertArtifactHash(visual, visualPath);
+      const report = stickmanVisualValidationSchema.parse(
+        JSON.parse(await readFile(visualPath, 'utf8'))
+      );
       if (!report.publishable || report.ocrStatus !== 'passed') blocking.add('visual_ocr_unverified');
     } catch {
       blocking.add('visual_validation_invalid');
@@ -247,7 +428,7 @@ async function collectBlockingChecks(input: {
   ));
   if (
     narration.length === 0
-    || !(await everyArtifactHashMatches(narration))
+    || !(await everyArtifactHashMatches(input.jobRoot, narration))
     || narration.some(artifact => (
       artifact.scopeKey === null
       || artifact.metadata.timingSource !== 'ffprobe'
@@ -262,7 +443,11 @@ async function collectBlockingChecks(input: {
     blocking.add('audio_timing_missing');
   } else {
     try {
-      const timing = stickmanAudioTimingSchema.parse(JSON.parse(await readFile(timingArtifact.path, 'utf8')));
+      const timingPath = await validateSourcePath(input.jobRoot, timingArtifact);
+      await assertArtifactHash(timingArtifact, timingPath);
+      const timing = stickmanAudioTimingSchema.parse(
+        JSON.parse(await readFile(timingPath, 'utf8'))
+      );
       const narrationById = new Map(narration.map(artifact => [artifact.id, artifact]));
       if (timing.segments.some(segment => {
         const artifact = narrationById.get(segment.audioArtifactId);
@@ -278,7 +463,11 @@ async function collectBlockingChecks(input: {
     blocking.add('timeline_missing');
   } else {
     try {
-      stickmanTimelineSchema.parse(JSON.parse(await readFile(timelineArtifact.path, 'utf8')));
+      const timelinePath = await validateSourcePath(input.jobRoot, timelineArtifact);
+      await assertArtifactHash(timelineArtifact, timelinePath);
+      stickmanTimelineSchema.parse(
+        JSON.parse(await readFile(timelinePath, 'utf8'))
+      );
       if (timelineArtifact.metadata.timingSource !== 'ffprobe_cumulative_tts_duration') {
         blocking.add('timeline_unverified');
       }
@@ -297,8 +486,10 @@ async function collectBlockingChecks(input: {
     blocking.add('media_validation_missing');
   } else {
     try {
+      const mediaValidationPath = await validateSourcePath(input.jobRoot, mediaValidation);
+      await assertArtifactHash(mediaValidation, mediaValidationPath);
       const report = stickmanMediaValidationSchema.parse(JSON.parse(
-        await readFile(mediaValidation.path, 'utf8')
+        await readFile(mediaValidationPath, 'utf8')
       ));
       if (
         report.cleanVideoArtifactId !== cleanVideo.id
@@ -332,11 +523,15 @@ function singleCompleted(artifacts: CreatorArtifact[], kind: string): CreatorArt
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-async function everyArtifactHashMatches(artifacts: CreatorArtifact[]): Promise<boolean> {
+async function everyArtifactHashMatches(
+  jobRoot: string,
+  artifacts: CreatorArtifact[]
+): Promise<boolean> {
   for (const artifact of artifacts) {
     if (artifact.path === null || artifact.sha256 === null) return false;
     try {
-      if ((await sha256File(artifact.path)) !== artifact.sha256.toLowerCase()) return false;
+      const path = await validateSourcePath(jobRoot, artifact);
+      if ((await sha256File(path)) !== artifact.sha256.toLowerCase()) return false;
     } catch {
       return false;
     }

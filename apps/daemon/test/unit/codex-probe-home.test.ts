@@ -23,6 +23,41 @@ afterEach(() => {
 });
 
 describe('Codex Probe 临时 Home', () => {
+  it('refreshes the isolated provider from the local Codex home', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-isolated-provider-test-'));
+    const sourceHome = join(tempDir, 'source');
+    const isolatedPath = join(tempDir, 'isolated');
+    mkdirSync(sourceHome, { recursive: true });
+    mkdirSync(isolatedPath, { recursive: true });
+    writeFileSync(join(sourceHome, 'config.toml'), [
+      'model = "gpt-5.6-sol"',
+      'model_provider = "gateway"',
+      '',
+      '[model_providers.gateway]',
+      'base_url = "https://forward.example.test/v1"',
+      'experimental_bearer_token = "provider-secret"',
+      ''
+    ].join('\n'));
+    writeFileSync(join(isolatedPath, 'config.toml'), [
+      'model = "stale-model"',
+      'openai_base_url = "https://stale.example.test/v1"',
+      ''
+    ].join('\n'));
+
+    createCodexIsolatedHome(sourceHome, isolatedPath);
+
+    expect(parse(readFileSync(join(isolatedPath, 'config.toml'), 'utf8'))).toMatchObject({
+      model: 'gpt-5.6-sol',
+      model_provider: 'gateway',
+      model_providers: {
+        gateway: {
+          base_url: 'https://forward.example.test/v1',
+          experimental_bearer_token: 'provider-secret'
+        }
+      }
+    });
+  });
+
   it('为知识会话保留隔离 Home 中的 Codex rollout', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'opencreator-isolated-home-test-'));
     const sourceHome = join(tempDir, 'source');

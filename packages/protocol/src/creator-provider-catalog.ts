@@ -1,6 +1,6 @@
 export type CreatorProviderKind = 'llm' | 'image' | 'video' | 'tts' | 'transcription';
-export type CreatorProviderProtocol = 'openai-compatible' | 'gemini' | 'kling' | 'custom';
-export type CreatorProviderStatus = 'supported' | 'planned';
+export type CreatorProviderProtocol = 'openai-compatible' | 'gemini' | 'kling' | 'custom' | 'local';
+export type CreatorProviderStatus = 'supported' | 'experimental' | 'planned';
 export type CreatorProviderCredential = 'apiKey' | 'accessKey' | 'secretKey' | 'region';
 
 export type CreatorProviderModel = {
@@ -33,6 +33,7 @@ export const creatorProviderCatalog = [
   entry({ id: 'jimeng', kind: 'image', label: '即梦 / Seedream', protocol: 'openai-compatible', defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', models: [{ id: 'doubao-seedream-4-0-250828', label: 'Seedream 4.0', recommended: true }], credentials: ['apiKey'], capabilities: ['text-to-image'], status: 'supported' }),
   entry({ id: 'kling', kind: 'image', label: '可灵 / Kling', protocol: 'kling', defaultBaseUrl: 'https://api-beijing.klingai.com', models: [{ id: 'kling-v2-1', label: 'Kling v2.1', recommended: true }], credentials: ['accessKey', 'secretKey'], capabilities: ['text-to-image'], status: 'supported' }),
   entry({ id: 'gemini', kind: 'image', label: 'Nano Banana / Gemini', protocol: 'gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta', models: [{ id: 'gemini-2.5-flash-image', label: 'Nano Banana', recommended: true }], credentials: ['apiKey'], capabilities: ['text-to-image', 'reference-image'], status: 'supported' }),
+  entry({ id: 'codex-native', kind: 'image', label: 'Local Codex image generation', protocol: 'local', models: [], credentials: [], capabilities: ['text-to-image', 'image-edit', 'reference-image'], status: 'experimental' }),
   entry({ id: 'seedance', kind: 'video', label: 'Seedance', protocol: 'openai-compatible', defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', models: [{ id: 'doubao-seedance-2-5-260628', label: 'Seedance 2.5', recommended: true }], credentials: ['apiKey'], capabilities: ['text-to-video', 'image-to-video'], status: 'supported' }),
   entry({ id: 'kling-video', kind: 'video', label: '可灵 / Kling', protocol: 'kling', defaultBaseUrl: 'https://api-beijing.klingai.com', models: [{ id: 'kling-v2-1-master', label: 'Kling v2.1 Master', recommended: true }], credentials: ['accessKey', 'secretKey'], capabilities: ['text-to-video', 'image-to-video'], status: 'supported' }),
   entry({ id: 'veo', kind: 'video', label: 'Veo', protocol: 'gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta', models: [{ id: 'veo-3.1-generate-preview', label: 'Veo 3.1', recommended: true }], credentials: ['apiKey'], capabilities: ['text-to-video', 'image-to-video'], status: 'supported' }),

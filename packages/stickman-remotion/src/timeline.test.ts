@@ -4,6 +4,7 @@ import { assertTimeline, buildNarrationTrack } from './timeline.js';
 describe('stickman remotion timeline', () => {
   it('rejects gaps and accepts contiguous shots', () => {
     const base = {
+      ratio: '16:9' as const,
       fps: 30,
       width: 1280 as const,
       height: 720 as const,
@@ -11,6 +12,10 @@ describe('stickman remotion timeline', () => {
       shots: [
         { shotId: 'shot-1', startFrame: 0, endFrame: 30, imageArtifactId: 'i1', audioArtifactId: 'a1', motion: 'static' as const, imageSha256: 'a'.repeat(64), audioSha256: 'b'.repeat(64), imagePath: 'a.png', audioPath: 'a.mp3' },
         { shotId: 'shot-2', startFrame: 30, endFrame: 60, imageArtifactId: 'i2', audioArtifactId: 'a1', motion: 'push-in' as const, imageSha256: 'c'.repeat(64), audioSha256: 'b'.repeat(64), imagePath: 'b.png', audioPath: 'a.mp3' }
+      ],
+      captions: [
+        { segmentId: 'segment-01', startFrame: 0, endFrame: 30, text: 'First caption' },
+        { segmentId: 'segment-02', startFrame: 30, endFrame: 60, text: 'Second caption' }
       ]
     };
     expect(assertTimeline(base)).toBe(base);
@@ -22,5 +27,29 @@ describe('stickman remotion timeline', () => {
       { shotId: 'shot-1', from: 0, durationInFrames: 30, audioPath: 'a.mp3' },
       { shotId: 'shot-2', from: 30, durationInFrames: 30, audioPath: 'a.mp3' }
     ]);
+  });
+
+  it('accepts the portrait Shorts canvas and contiguous caption coverage', () => {
+    const base = {
+      ratio: '9:16' as const,
+      fps: 30,
+      width: 720,
+      height: 1280,
+      totalFrames: 30,
+      shots: [{
+        shotId: 'shot-1',
+        startFrame: 0,
+        endFrame: 30,
+        imageArtifactId: 'i1',
+        audioArtifactId: 'a1',
+        motion: 'static' as const,
+        imageSha256: 'a'.repeat(64),
+        audioSha256: 'b'.repeat(64),
+        imagePath: 'a.png',
+        audioPath: 'a.mp3'
+      }],
+      captions: [{ segmentId: 'segment-01', startFrame: 0, endFrame: 30, text: 'A vertical hook' }]
+    };
+    expect(assertTimeline(base)).toBe(base);
   });
 });

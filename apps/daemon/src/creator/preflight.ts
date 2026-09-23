@@ -13,7 +13,10 @@ import type { CreatorTemplateStage } from './templates/types.js';
 import type { CreatorServicesConfigStore } from '../creator-services/config-store.js';
 import { preflightKrillinDependencies } from './krillin/dependency-preflight.js';
 import type { YtDlpRuntime } from './yt-dlp/runtime.js';
-import { supportsReferenceImage } from './templates/cover-actions.js';
+import {
+  imageProviderConfigured,
+  resolveCreatorImageSettings
+} from './image-settings.js';
 import { creatorResultSnapshotForVersion } from './result-snapshots.js';
 import { resolveCreatorStageInputs } from './stage-runner.js';
 import { readStickmanRemotionRuntime } from './stickman/remotion-runtime.js';
@@ -257,24 +260,50 @@ function checkProviderConfig(
   if (stage.executor === 'stickman-audio' && stage.id === 'narration') needs.add('tts');
   if (stage.executor === 'stickman-image') needs.add('image');
 
-  if (needs.has('llm')) checkOpenAi(config.llm, 'llm', '文本模型', '#/settings?tab=ai-services&section=text', add);
+  if (needs.has('llm')) {
+    if (config.llm.source === 'codex' && stage.executor === 'krillinai') {
+      add('ready', {
+        id: 'llm',
+        title: '文本模型',
+        message: `本机 Codex / ${config.llm.model || 'Runtime'} 已启用。`,
+        executionMode: 'local'
+      });
+    } else {
+      checkOpenAi(config.llm, 'llm', '文本模型', '#/settings?tab=ai-services&section=text', add);
+    }
+  }
   if (needs.has('tts')) {
     const provider = readTtsProvider(job, config);
     if (provider === 'edge-tts') add('ready', { id: 'tts', title: '配音服务', message: 'Edge TTS 不需要 API Key。', executionMode: 'remote' });
     else checkTts(config, provider, add);
   }
   if (needs.has('image')) {
-    const provider = readImageProvider(job, config);
-    const settings = config.image[provider];
-    const hasKey = providerCredentials(settings, provider);
-    if (!hasKey || !settings.model.trim() || !settings.baseUrl.trim()) add('blocked', {
-      id: 'image-provider', title: '图像服务配置不完整', message: `请配置 ${provider} 的 Base URL、模型和凭据。`, executionMode: 'remote'
-    }, { label: '打开 AI 服务设置', deepLink: '#/settings?tab=ai-services&section=image' });
-    else add('ready', { id: 'image-provider', title: '图像服务', message: `${provider} / ${settings.model} 已配置。`, executionMode: 'remote' });
+    const settings = resolveCreatorImageSettings({
+      config,
+      provider: job.state.provider,
+      candidateCount: job.state.candidateCount,
+      fallbackCandidateCount: job.templateId === 'image-generation' ? 2 : 1,
+      maxCandidateCount: job.templateId === 'image-generation' ? 4 : 8
+    });
+    const { provider } = settings;
+    if (imageProviderConfigured(config, provider)) {
+      add('ready', {
+        id: 'image-provider',
+        title: '图像服务',
+        message: provider === 'codex-native'
+          ? '本机 Codex 生图已启用。'
+          : `${provider} / ${settings.model} 已配置。`,
+        executionMode: settings.executionMode
+      });
+    } else {
+      add('blocked', {
+        id: 'image-provider', title: '图像服务配置不完整', message: `请配置 ${provider} 的 Base URL、模型和凭据。`, executionMode: settings.executionMode
+      }, { label: '打开 AI 服务设置', deepLink: '#/settings?tab=ai-services&section=image' });
+    }
     const hasReference = stage.executor === 'stickman-image'
       || (stage.inputArtifacts.some(item => item.kind === 'reference_image')
         && typeof job.state.referenceImageArtifactId === 'string');
-    if (hasReference && !supportsReferenceImage(provider)) add('blocked', {
+    if (hasReference && !settings.supportsReferenceImage) add('blocked', {
       id: 'reference-image-capability', title: '参考图能力不匹配', message: `${provider} 不支持当前阶段的参考图编辑。`, executionMode: 'remote'
     }, { label: '选择支持参考图的服务', deepLink: '#/settings?tab=ai-services&section=image' });
   }
@@ -346,10 +375,6 @@ async function checkInputs(
 function readTtsProvider(job: CreatorJob, config: CreatorServicesConfig): CreatorServicesConfig['tts']['provider'] {
   const value = job.state.ttsProvider;
   return value === 'openai' || value === 'aliyun' || value === 'edge-tts' || value === 'minimax' || value === 'volcengine' ? value : config.tts.provider;
-}
-function readImageProvider(job: CreatorJob, config: CreatorServicesConfig): CreatorServicesConfig['image']['provider'] {
-  const value = job.state.provider;
-  return value === 'openai' || value === 'jimeng' || value === 'kling' || value === 'gemini' ? value : config.image.provider;
 }
 function readVideoProvider(job: CreatorJob, config: CreatorServicesConfig): CreatorServicesConfig['video']['provider'] {
   const value = job.state.provider;

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Fastify from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
+import sharp from 'sharp';
 import { readCreatorResultSnapshots } from '@opencreator/protocol';
 import { registerCreatorRoutes } from '../../src/api/routes.creator.js';
 import { createCreatorAgentRepository } from '../../src/creator/agent/repository.js';
@@ -45,7 +46,9 @@ describe('stickman result snapshots', () => {
     expect(Object.keys(firstSnapshots[0]!.artifactRefs).sort()).toEqual([
       'clean_video',
       'delivery_manifest',
-      'narration_subtitle'
+      'narration_subtitle',
+      'publish_copy',
+      'thumbnail'
     ]);
     const firstCleanId = firstSnapshots[0]!.artifactRefs.clean_video![0]!;
 
@@ -109,7 +112,12 @@ function setup() {
         height: 720,
         hasVideo: true,
         hasAudio: true
-      })
+      }),
+      createThumbnail: async ({ targetPath, width, height }) => {
+        await sharp({ create: { width, height, channels: 3, background: '#202020' } })
+          .png()
+          .toFile(targetPath);
+      }
     })],
     workRoot: join(tempRoot, 'jobs')
   });
@@ -126,6 +134,7 @@ async function insertInputs(
   const files = {
     clean_video: join(sourceRoot, 'clean.mp4'),
     narration_subtitle: join(sourceRoot, 'narration.srt'),
+    script_manifest: join(sourceRoot, 'script.json'),
     narration_audio: join(sourceRoot, 'segment-01.wav'),
     audio_timing: join(sourceRoot, 'audio-timing.json'),
     timeline_manifest: join(sourceRoot, 'timeline.json'),
@@ -134,6 +143,27 @@ async function insertInputs(
   };
   writeFileSync(files.clean_video, `clean-${label}`);
   writeFileSync(files.narration_subtitle, `1\n00:00:00,000 --> 00:00:01,000\n${label}\n`);
+  writeFileSync(files.script_manifest, JSON.stringify({
+    contract: 'stickman-narration-script-v2',
+    reviewStatus: 'approved',
+    contentLocked: true,
+    title: `Snapshot ${label}`,
+    language: 'en-US',
+    targetDurationSeconds: 1,
+    narrationBudget: { unit: 'characters', unitsPerMinute: 60, minUnits: 1, maxUnits: 100 },
+    segmentCount: 1,
+    totalNarrationUnits: 4,
+    estimatedTotalDurationSeconds: 4,
+    segments: [{
+      id: 'segment-01',
+      order: 1,
+      narration: 'A clear first idea.',
+      claimIds: ['claim-001'],
+      sourceSpanIds: ['source-001'],
+      narrationUnits: 4,
+      estimatedDurationSeconds: 4
+    }]
+  }));
   writeFileSync(files.narration_audio, `narration-${label}`);
 
   const insert = (
@@ -156,13 +186,14 @@ async function insertInputs(
 
   const cleanVideo = insert('clean_video', { renderEngine: 'remotion', renderKind: 'final' });
   const narrationSubtitle = insert('narration_subtitle');
+  const script = insert('script_manifest');
   const narrationAudio = insert('narration_audio', {
     duration: 1,
     provider: 'openai',
     timingSource: 'ffprobe'
   }, 'segment-01');
   writeFileSync(files.audio_timing, JSON.stringify({
-    scriptArtifactId: `script-${label}`,
+    scriptArtifactId: script.id,
     timingSource: 'ffprobe_cumulative_tts_duration',
     segments: [{
       segmentId: 'segment-01',
@@ -176,6 +207,7 @@ async function insertInputs(
   }));
   const audioTiming = insert('audio_timing');
   writeFileSync(files.timeline_manifest, JSON.stringify({
+    ratio: '16:9',
     fps: 30,
     width: 1280,
     height: 720,
@@ -188,8 +220,11 @@ async function insertInputs(
       audioArtifactId: narrationAudio.id,
       motion: 'static',
       imageSha256: 'a'.repeat(64),
-      audioSha256: narrationAudio.sha256
-    }]
+      audioSha256: narrationAudio.sha256,
+      imagePath: 'image.png',
+      audioPath: 'audio.wav'
+    }],
+    captions: [{ segmentId: 'segment-01', startFrame: 0, endFrame: 30, text: 'A clear first idea.' }]
   }));
   const timeline = insert('timeline_manifest', {
     timingSource: 'ffprobe_cumulative_tts_duration'
@@ -197,6 +232,9 @@ async function insertInputs(
   writeFileSync(files.visual_validation, JSON.stringify({
     ok: true,
     validation: 'automated_decode_aspect_nonblank_hash_and_ocr',
+    ratio: '16:9',
+    width: 1280,
+    height: 720,
     approvedShotSpecArtifactId: `shot-spec-${label}`,
     shotCount: 1,
     ocrStatus: 'passed',
@@ -224,6 +262,7 @@ async function insertInputs(
     duration: 1,
     expectedDuration: 1,
     durationTolerance: 0.15,
+    ratio: '16:9',
     width: 1280,
     height: 720,
     hasVideo: true,
@@ -242,6 +281,7 @@ async function insertInputs(
   return {
     clean_video: cleanVideo,
     narration_subtitle: narrationSubtitle,
+    script_manifest: script,
     narration_audio: narrationAudio,
     audio_timing: audioTiming,
     timeline_manifest: timeline,

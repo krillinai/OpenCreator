@@ -239,11 +239,11 @@ func ValidateTranscriptionConfig() error {
 			return errors.New("检测到开启了whisperkit，但模型选型配置不正确，请检查配置")
 		}
 	case "whispercpp":
-		if runtime.GOOS != "windows" { // 当前先仅支持win，模型仅支持large-v2，最小化产品
+		if runtime.GOOS != "windows" { // 当前先仅支持Windows，模型由受控 capability catalog 提供
 			log.GetLogger().Error("whispercpp only support windows", zap.String("current os", runtime.GOOS))
 			return fmt.Errorf("whispercpp only support windows")
 		}
-		if Conf.Transcribe.Whispercpp.Model != "tiny" && Conf.Transcribe.Whispercpp.Model != "medium" && Conf.Transcribe.Whispercpp.Model != "large-v2" {
+		if Conf.Transcribe.Whispercpp.Model != "tiny" && Conf.Transcribe.Whispercpp.Model != "medium" && Conf.Transcribe.Whispercpp.Model != "large-v2" && Conf.Transcribe.Whispercpp.Model != "large-v3-turbo" {
 			return errors.New("检测到开启了whisper.cpp，但模型选型配置不正确，请检查配置")
 		}
 	case "aliyun":

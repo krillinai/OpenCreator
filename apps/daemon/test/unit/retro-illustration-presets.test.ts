@@ -119,7 +119,7 @@ describe('retro illustration tutorial presets', () => {
     const imageSource = registry.get({
       module: 'image-generation', id: 'retro-halftone-illustration', version: 1
     });
-    expect(imageSource.requirements).toEqual({ service: 'image', provider: 'openai' });
+    expect(imageSource.requirements).toBeUndefined();
     expect(imageSource.defaults.candidateCount).toBe(1);
     const videoSource = registry.get({
       module: 'video-generation', id: 'retro-illustration-micro-motion', version: 1

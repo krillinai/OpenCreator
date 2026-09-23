@@ -6,6 +6,46 @@ import {
 } from '../../src/codex/provider-config.js';
 
 describe('Codex provider configuration', () => {
+  it('recognizes a selected provider bearer token without Codex account login', async () => {
+    const client: RestartableCodexAppServerRequestClient = {
+      async request<Result>(method: string): Promise<Result> {
+        if (method === 'config/read') {
+          return {
+            config: {
+              model: 'gpt-5.6-sol',
+              model_provider: 'gateway',
+              model_providers: {
+                gateway: {
+                  base_url: 'https://forward.example.test/v1',
+                  experimental_bearer_token: 'provider-secret'
+                }
+              }
+            },
+            layers: [{ name: { type: 'user', profile: null }, version: 'v1' }]
+          } as Result;
+        }
+        if (method === 'account/read') {
+          return { account: null, requiresOpenaiAuth: false } as Result;
+        }
+        throw new Error(`Unexpected method: ${method}`);
+      },
+      restart: vi.fn(async () => undefined),
+      close: async () => undefined
+    };
+    const service = createCodexProviderConfigService({
+      client,
+      readiness: { refresh: vi.fn() } as never
+    });
+
+    await expect(service.read()).resolves.toEqual({
+      baseUrl: 'https://forward.example.test/v1',
+      model: 'gpt-5.6-sol',
+      apiKeyConfigured: true,
+      authentication: 'api_key',
+      configVersion: 'v1'
+    });
+  });
+
   it('writes provider settings, stores the API key through account login and restarts consumers', async () => {
     const calls: Array<{ method: string; params: unknown }> = [];
     let config: Record<string, unknown> = {

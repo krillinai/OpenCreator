@@ -13,6 +13,7 @@ import {
 } from '../provider-requests.js';
 import type { CreatorRepository } from '../repository.js';
 import { CreatorServiceError, type CreatorService } from '../service.js';
+import { resolveCreatorImageSettings } from '../image-settings.js';
 import {
   stickmanScriptManifestSchema,
   stickmanShotSpecSchema
@@ -32,6 +33,7 @@ import {
   DEFAULT_STICKMAN_STYLE_ASSET,
   readVisualAssetRef
 } from '../stickman/visual-assets.js';
+import { stickmanEdgeTtsVoiceForLanguage } from '../stickman/tts.js';
 
 export type StickmanVideoWorkflow = ReturnType<typeof createStickmanVideoWorkflow>;
 
@@ -424,10 +426,15 @@ export function createStickmanVideoWorkflow(input: {
       };
     }
     const config = await input.configStore.read();
-    const provider = config.image.provider;
+    const settings = resolveCreatorImageSettings({
+      config,
+      provider: job.state.provider,
+      fallbackCandidateCount: 1,
+      maxCandidateCount: 1
+    });
     return {
-      provider,
-      model: config.image[provider].model,
+      provider: settings.provider,
+      model: settings.model,
       quality: typeof job.state.quality === 'string' ? job.state.quality : 'medium'
     };
   }
@@ -443,12 +450,19 @@ export function createStickmanVideoWorkflow(input: {
     const config = await input.configStore.read();
     const provider = job.state.ttsProvider === 'openai'
       || job.state.ttsProvider === 'aliyun'
+      || job.state.ttsProvider === 'edge-tts'
       || job.state.ttsProvider === 'minimax'
       || job.state.ttsProvider === 'volcengine'
       ? job.state.ttsProvider
       : config.tts.provider;
     if (provider === 'edge-tts') {
-      return { provider, model: '', voiceId: '' };
+      return {
+        provider,
+        model: '',
+        voiceId: typeof job.state.voiceCode === 'string' && job.state.voiceCode.trim()
+          ? job.state.voiceCode.trim()
+          : stickmanEdgeTtsVoiceForLanguage(job.state.targetLanguage)
+      };
     }
     const providerConfig = config.tts[provider];
     return {

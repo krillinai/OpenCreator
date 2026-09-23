@@ -3,6 +3,11 @@ import type {
   CreatorServicesConfig,
   ImageGenerationAsset
 } from '@opencreator/protocol';
+import {
+  LocalCodexProviderError,
+  readLocalCodexProvider,
+  type LocalCodexProvider
+} from '../codex/local-provider.js';
 import { createKlingAuthorization } from '../creator-services/kling-auth.js';
 import {
   appendEndpointPath,
@@ -22,6 +27,11 @@ export type GeneratedImageContent = {
   mime: ImageGenerationAsset['mime'];
 };
 
+export type CodexNativeImageRuntime = {
+  codexHome: string;
+  readProvider?: () => Promise<LocalCodexProvider>;
+};
+
 export type ImageGenerationCapabilities = {
   supportsReferenceImage: boolean;
   maxReferenceImages: number;
@@ -31,8 +41,8 @@ export function imageGenerationCapabilities(
   provider: CreateImageGenerationRequest['provider']
 ): ImageGenerationCapabilities {
   return {
-    supportsReferenceImage: provider === 'openai' || provider === 'gemini',
-    maxReferenceImages: provider === 'openai' || provider === 'gemini' ? 8 : 0
+    supportsReferenceImage: provider === 'openai' || provider === 'gemini' || provider === 'codex-native',
+    maxReferenceImages: provider === 'openai' || provider === 'gemini' || provider === 'codex-native' ? 8 : 0
   };
 }
 
@@ -54,6 +64,7 @@ export async function generateImageContents(
     signal?: AbortSignal;
     referenceImage?: GeneratedImageContent;
     referenceImages?: GeneratedImageContent[];
+    codexNative?: CodexNativeImageRuntime;
   } = {}
 ): Promise<{ model: string; contents: GeneratedImageContent[] }> {
   const referenceImages = options.referenceImages
@@ -75,6 +86,39 @@ export async function generateImageContents(
           ? `The ${request.provider} image provider supports at most ${capabilities.maxReferenceImages} reference images`
           : `The ${request.provider} image provider does not support reference images`
       );
+    }
+    if (request.provider === 'codex-native') {
+      if (request.count !== 1) {
+        throw new ImageGenerationProviderError(
+          'unsupported_capability',
+          'The codex-native image provider supports exactly one image per request'
+        );
+      }
+      if (options.codexNative === undefined) {
+        throw new ImageGenerationProviderError(
+          'config_missing',
+          'Configure the local Codex executable and CODEX_HOME before generating images'
+        );
+      }
+      try {
+        const provider = await (
+          options.codexNative.readProvider?.()
+          ?? readLocalCodexProvider({ codexHome: options.codexNative.codexHome })
+        );
+        return await generateOpenAiImages(
+          request,
+          config,
+          controller.signal,
+          referenceImages,
+          options.fetchImpl,
+          provider
+        );
+      } catch (error) {
+        if (error instanceof LocalCodexProviderError) {
+          throw new ImageGenerationProviderError('config_missing', error.message);
+        }
+        throw error;
+      }
     }
     if (request.provider === 'gemini') {
       return await generateGeminiImages(
@@ -113,9 +157,11 @@ async function generateOpenAiImages(
   config: CreatorServicesConfig,
   signal: AbortSignal,
   referenceImages: GeneratedImageContent[],
-  fetchImpl?: typeof fetch
+  fetchImpl?: typeof fetch,
+  providerOverride?: LocalCodexProvider
 ) {
-  const provider = request.provider === 'jimeng' ? config.image.jimeng : config.image.openai;
+  const provider = providerOverride
+    ?? (request.provider === 'jimeng' ? config.image.jimeng : config.image.openai);
   if (!provider.apiKey.trim()) missingConfig(request.provider);
   const model = provider.model.trim()
     || (request.provider === 'jimeng' ? 'doubao-seedream-4-0-250828' : 'gpt-image-1');
@@ -144,7 +190,7 @@ async function generateOpenAiImages(
         model,
         prompt: request.prompt.trim(),
         size: request.size,
-        ...(request.provider === 'openai' ? { quality: request.quality } : {}),
+        ...(request.provider === 'jimeng' ? {} : { quality: request.quality }),
         n: request.count
       }),
     proxy: config.proxy.trim(),

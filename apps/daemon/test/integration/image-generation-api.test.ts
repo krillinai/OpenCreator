@@ -1,6 +1,6 @@
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -75,6 +75,53 @@ describe('image generation API', () => {
     expect(content.rawPayload).toEqual(image);
     expect(await readdir(join(dataDir, 'image-generation', 'image_result_1234')))
       .toEqual(['0.png', 'result.json']);
+  });
+
+  it('generates and stores an image through the local Codex provider', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'codex-native';
+    const image = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('codex-native-image')
+    ]);
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      data: [{ b64_json: image.toString('base64') }]
+    }), { status: 200 }));
+    await registerImageGenerationRoutes(server, createImageGenerationService({
+      dataDir,
+      configStore: createConfigStore(config),
+      fetchImpl: fetchMock as typeof fetch,
+      codexNative: {
+        codexHome: join(dataDir, 'codex-home'),
+        readProvider: async () => ({
+          baseUrl: 'https://forward.example.test/v1',
+          apiKey: 'local-codex-secret',
+          model: 'gpt-image-1'
+        })
+      },
+      createId: () => 'codex_native_1234'
+    }));
+
+    const generated = await server.inject({
+      method: 'POST',
+      url: '/image-generation/results',
+      payload: { prompt: 'An original orange cat', provider: 'codex-native', size: '1024x1024', quality: 'medium', count: 1 }
+    });
+
+    expect(generated.statusCode).toBe(201);
+    expect(generated.json().result).toMatchObject({
+      provider: 'codex-native',
+      model: 'gpt-image-1',
+      images: [{ mime: 'image/png', size: image.length }]
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0]))
+      .toBe('https://forward.example.test/v1/images/generations');
+    const content = await server.inject({
+      method: 'GET',
+      url: '/image-generation/results/codex_native_1234/content/0'
+    });
+    expect(content.statusCode).toBe(200);
+    expect(content.rawPayload).toEqual(image);
   });
 
   it('adds v1 to an OpenAI-compatible image provider path without a version', async () => {

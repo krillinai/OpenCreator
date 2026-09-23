@@ -107,7 +107,7 @@ describe('real-person sticker tutorial presets', () => {
     expect(en.find(preset => preset.id === image?.id)?.prompt).toContain('photorealistic');
     expect(en.find(preset => preset.id === video?.id)?.prompt).toContain('freeze');
     const imageSource = registry.get({ ...presets[0], version: 1 });
-    expect(imageSource.requirements).toEqual({ service: 'image', provider: 'openai' });
+    expect(imageSource.requirements).toBeUndefined();
     expect(imageSource.defaults).toMatchObject({
       size: '1024x1536', quality: 'high', candidateCount: 1
     });

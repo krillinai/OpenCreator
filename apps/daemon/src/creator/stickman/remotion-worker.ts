@@ -35,6 +35,7 @@ async function main(): Promise<void> {
       throw new Error('stickman_worker_browser_missing');
     }
     const timeline = JSON.parse(await readFile(resolve(request.timelinePath), 'utf8')) as {
+      ratio?: '16:9' | '9:16';
       totalFrames: number;
       fps: number;
       shots?: Array<{ imagePath?: string; audioPath?: string }>;
@@ -60,7 +61,7 @@ async function main(): Promise<void> {
       const renderer = await import('@remotion/renderer');
       const composition = await renderer.selectComposition({
         serveUrl: assetServer.url,
-        id: 'StickmanLandscape',
+        id: timeline.ratio === '9:16' ? 'StickmanPortrait' : 'StickmanLandscape',
         inputProps: renderTimeline,
         browserExecutable: resolve(request.browserExecutable)
       });

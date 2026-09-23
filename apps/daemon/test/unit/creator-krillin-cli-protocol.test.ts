@@ -1,4 +1,5 @@
 import { dirname } from 'node:path';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   buildKrillinCliCommandArguments,
@@ -7,6 +8,7 @@ import {
   parseKrillinCliProgressFrame,
   resolveKrillinCliSource
 } from '../../src/creator/krillin/cli-runner.js';
+import { createKrillinConfigToml } from '../../src/creator/krillin/config-bridge.js';
 
 describe('KrillinAI CLI protocol', () => {
   it.each(['source_subtitle', 'target_subtitle'])('passes %s as an explicit CLI input', kind => {
@@ -97,5 +99,13 @@ describe('KrillinAI CLI protocol', () => {
       'short_origin_mixed_srt',
       'vertical_subtitle'
     ]);
+  });
+
+  it('passes large-v3-turbo to the Whisper.cpp runtime without remapping', () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.transcription.provider = 'whisper.cpp';
+    config.transcription.whisperCpp.model = 'large-v3-turbo';
+
+    expect(createKrillinConfigToml(config)).toContain('model = "large-v3-turbo"');
   });
 });

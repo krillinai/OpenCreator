@@ -80,11 +80,12 @@ function insertImageContracts(input: {
   character: { id: string; sha256: string | null };
   characterAssetId: string;
   prompts: Array<{ shotId: string; visualDescription: string; prompt: string }>;
+  ratio?: '16:9' | '9:16';
 }): void {
   const stylePath = join(tempDir, `style-contract-${input.shotSpecId}.json`);
   writeFileSync(stylePath, JSON.stringify({
     contract: 'stickman-visual-profile-v2',
-    ratio: '16:9',
+    ratio: input.ratio ?? '16:9',
     character: {
       assetId: input.characterAssetId,
       revision: 1,
@@ -283,7 +284,11 @@ describe('stickman scoped images', () => {
       templates,
       workRoot: join(tempDir, 'jobs'),
       executors: [createStickmanImageExecutor({
-        configStore: { read: async () => createDefaultCreatorServicesConfig() },
+        configStore: { read: async () => {
+          const config = createDefaultCreatorServicesConfig();
+          config.image.provider = 'openai';
+          return config;
+        } },
         ledger: new CreatorProviderRequestLedger(repository),
         async validateCandidate() {
           candidateValidations += 1;
@@ -460,6 +465,102 @@ describe('stickman scoped images', () => {
     expect(await sharp(generated!.path!).metadata()).toMatchObject({ width: 1280, height: 720 });
     expect(attempts).toBe(1);
     expect(service.getJob(job.id)!.providerRequests).toHaveLength(1);
+    await runner.close();
+    db.close();
+  });
+
+  it('uses the portrait canvas and submits Codex-native reference bytes for Shorts', async () => {
+    const { db, repository, templates, service } = setup();
+    const job = service.createJob({
+      projectId: 'p1',
+      templateId: 'stickman-video',
+      state: {
+        ratio: '9:16',
+        characterAsset: { assetId: 'stickman.character.default', revision: 1 },
+        styleAsset: { assetId: 'stickman.style.minimal-ink', revision: 1 }
+      }
+    });
+    const shotSpecPath = join(tempDir, 'portrait-shot.json');
+    writeFileSync(shotSpecPath, JSON.stringify({
+      scriptArtifactId: 'script-1',
+      audioTimingArtifactId: 'audio-timing-1',
+      timingSource: 'ffprobe_cumulative_tts_duration',
+      shots: [shot('shot-01', 'segment-01', 'portrait scene', 'static', 0)]
+    }));
+    const shotSpecArtifact = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'shot_spec',
+      status: 'completed',
+      path: shotSpecPath,
+      sha256: 'a'.repeat(64),
+      sourceArtifactIds: [],
+      metadata: {}
+    });
+    const reference = await sharp({
+      create: { width: 100, height: 100, channels: 4, background: '#333333' }
+    }).png().toBuffer();
+    const referencePath = join(tempDir, 'portrait-character.png');
+    writeFileSync(referencePath, reference);
+    const characterArtifact = repository.insertArtifact({
+      jobId: job.id,
+      kind: 'character_reference',
+      status: 'completed',
+      path: referencePath,
+      sha256: createHash('sha256').update(reference).digest('hex'),
+      sourceArtifactIds: [],
+      metadata: { assetId: 'stickman.character.default', revision: 1, mimeType: 'image/png' }
+    });
+    insertImageContracts({
+      repository,
+      jobId: job.id,
+      shotSpecId: shotSpecArtifact.id,
+      character: characterArtifact,
+      characterAssetId: 'stickman.character.default',
+      ratio: '9:16',
+      prompts: [{ shotId: 'shot-01', visualDescription: 'portrait scene', prompt: 'portrait scene' }]
+    });
+    const stage = repository.createStageRun({
+      jobId: job.id,
+      stageId: 'images',
+      executor: 'stickman-image',
+      status: 'queued',
+      scopeKey: 'shot-01',
+      inputFingerprint: '1'.repeat(64)
+    });
+    const generatedImage = await sharp({
+      create: { width: 300, height: 200, channels: 4, background: '#ffffff' }
+    }).png().toBuffer();
+    const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'codex-native';
+    let submittedSize = '';
+    let submittedReferences: Buffer[] = [];
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      workRoot: join(tempDir, 'jobs'),
+      executors: [createStickmanImageExecutor({
+        configStore: { read: async () => config },
+        ledger: new CreatorProviderRequestLedger(repository),
+        validateCandidate: acceptCandidate,
+        async generate(request, _config, options) {
+          submittedSize = request.size;
+          submittedReferences = options?.referenceImages?.map(item => item.content) ?? [];
+          return {
+            model: 'codex-native',
+            contents: [{ mime: 'image/png' as const, content: generatedImage }]
+          };
+        }
+      })]
+    });
+
+    const completed = await runner.runStageRun(stage.id);
+
+    expect(completed.status).toBe('succeeded');
+    expect(submittedSize).toBe('1024x1536');
+    expect(submittedReferences).toHaveLength(1);
+    expect(submittedReferences[0]).toEqual(reference);
+    const generated = service.getJob(job.id)!.artifacts.find(artifact => artifact.kind === 'shot_image');
+    expect(await sharp(generated!.path!).metadata()).toMatchObject({ width: 720, height: 1280 });
     await runner.close();
     db.close();
   });
@@ -770,6 +871,97 @@ describe('stickman scoped images', () => {
       previousShotImage: { ...image, sha256: '8'.repeat(64) },
       settings: { provider: 'openai', model: 'gpt-image-1', quality: 'medium' }
     })).not.toBe(fingerprint);
+    db.close();
+  });
+
+  it('invalidates content and all downstream artifacts when switching to Shorts', () => {
+    const { db, repository, service } = setup();
+    const created = service.createJob({
+      projectId: 'p1',
+      templateId: 'stickman-video',
+      state: {
+        outputPreset: 'landscape',
+        ratio: '16:9',
+        targetDurationSeconds: 60,
+        targetLanguage: 'zh-CN',
+        ttsProvider: 'openai'
+      }
+    });
+    const contentPlan = repository.insertArtifact({
+      jobId: created.id,
+      kind: 'content_plan',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [],
+      metadata: {}
+    });
+    const script = repository.insertArtifact({
+      jobId: created.id,
+      kind: 'script_manifest',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [contentPlan.id],
+      metadata: {}
+    });
+    const narration = repository.insertArtifact({
+      jobId: created.id,
+      kind: 'narration_audio',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [script.id],
+      metadata: {}
+    });
+    const timing = repository.insertArtifact({
+      jobId: created.id,
+      kind: 'audio_timing',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [script.id, narration.id],
+      metadata: {}
+    });
+    const shotSpec = repository.insertArtifact({
+      jobId: created.id,
+      kind: 'shot_spec',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [timing.id],
+      metadata: {}
+    });
+    const image = repository.insertArtifact({
+      jobId: created.id,
+      kind: 'shot_image',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [shotSpec.id],
+      metadata: {}
+    });
+    const timeline = repository.insertArtifact({
+      jobId: created.id,
+      kind: 'timeline_manifest',
+      status: 'completed',
+      path: null,
+      sourceArtifactIds: [image.id, timing.id],
+      metadata: {}
+    });
+
+    const response = service.applyAction(created.id, {
+      actor: 'user',
+      action: 'update-settings',
+      expectedRevision: created.revision,
+      input: { patch: { outputPreset: 'youtube-shorts' } }
+    });
+
+    expect(response.job.state).toMatchObject({
+      outputPreset: 'youtube-shorts',
+      ratio: '9:16',
+      targetDurationSeconds: 30,
+      targetLanguage: 'en-US',
+      ttsProvider: 'edge-tts'
+    });
+    for (const artifact of [contentPlan, script, narration, timing, shotSpec, image, timeline]) {
+      expect(response.job.artifacts.find(candidate => candidate.id === artifact.id)?.status)
+        .toBe('stale');
+    }
     db.close();
   });
 });

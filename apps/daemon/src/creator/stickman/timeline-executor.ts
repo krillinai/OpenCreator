@@ -1,6 +1,10 @@
 import { realpath, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { CreatorArtifact } from '@opencreator/protocol';
+import {
+  readStickmanRatio,
+  stickmanCanvasForRatio
+} from '@opencreator/protocol';
 import type { CreatorExecutor, CreatorExecutorOutput } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import {
@@ -47,6 +51,8 @@ export function createStickmanTimelineExecutor(): CreatorExecutor {
       const timingBySegment = new Map(timing.segments.map(segment => [segment.segmentId, segment]));
       const fps = 30;
       const totalFrames = Math.round(timing.totalDurationSeconds * fps);
+      const ratio = readStickmanRatio(stage.job.state?.ratio);
+      const canvas = stickmanCanvasForRatio(ratio);
       if (totalFrames < shotSpec.shots.length) {
         throw new CreatorExecutorError(
           'creator_audio_too_short',
@@ -111,15 +117,40 @@ export function createStickmanTimelineExecutor(): CreatorExecutor {
           audioPath: audio.path
         });
       }
+      const captions = script.segments.map(segment => {
+        const measured = timingBySegment.get(segment.id);
+        if (measured === undefined) {
+          throw new CreatorExecutorError(
+            'creator_audio_timing_incomplete',
+            `Audio timing is missing ${segment.id}`
+          );
+        }
+        const startFrame = Math.round(measured.startSeconds * fps);
+        const endFrame = Math.round(measured.endSeconds * fps);
+        if (endFrame <= startFrame) {
+          throw new CreatorExecutorError(
+            'creator_audio_too_short',
+            `Narration segment ${segment.id} is shorter than one render frame`
+          );
+        }
+        return {
+          segmentId: segment.id,
+          startFrame,
+          endFrame,
+          text: segment.narration
+        };
+      });
       const timeline = stickmanTimelineSchema.parse({
+        ratio,
         fps,
-        width: 1280,
-        height: 720,
+        width: canvas.width,
+        height: canvas.height,
         totalFrames,
-        shots
+        shots,
+        captions
       });
       const path = join(stage.workdir, 'timeline-manifest.json');
-      await writeFile(path, `${JSON.stringify({ ...timeline, shots }, null, 2)}\n`, 'utf8');
+      await writeFile(path, `${JSON.stringify(timeline, null, 2)}\n`, 'utf8');
       const subtitlePath = join(stage.workdir, 'narration.srt');
       await writeFile(subtitlePath, renderStickmanTimedNarrationSrt(script, timing), 'utf8');
       const outputs: CreatorExecutorOutput[] = [
@@ -135,9 +166,10 @@ export function createStickmanTimelineExecutor(): CreatorExecutor {
               ...images.map(image => image.id)
             ],
             metadata: {
+              ratio,
               fps,
-              width: 1280,
-              height: 720,
+              width: canvas.width,
+              height: canvas.height,
               totalFrames,
               duration: timing.totalDurationSeconds,
               shotCount: shots.length,

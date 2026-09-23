@@ -68,7 +68,7 @@ export function createCoverTemplate(): CreatorTemplateDefinition {
       ratio: z.enum(['16:9', '1:1', '9:16']).default('16:9'),
       candidateCount: z.number().int().min(1).max(4).default(2),
       quality: z.enum(['low', 'medium', 'high']).default('medium'),
-      provider: z.enum(['openai', 'jimeng', 'kling', 'gemini']).optional(),
+      provider: z.enum(['openai', 'jimeng', 'kling', 'gemini', 'codex-native']).optional(),
       referenceImageArtifactId: z.string().nullable().default(null),
       currentStep: z.union([z.literal(0), z.literal(1), z.literal(2)]).default(0),
       furthestStep: z.union([z.literal(0), z.literal(1), z.literal(2)]).default(0),

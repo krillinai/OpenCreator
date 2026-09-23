@@ -387,7 +387,8 @@ function createVideoConfig() {
       openai: { baseUrl: '', apiKey: '', model: '' },
       jimeng: { baseUrl: '', apiKey: '', model: '' },
       kling: { baseUrl: '', accessKey: '', secretKey: '', model: '' },
-      gemini: { baseUrl: '', apiKey: '', model: '' }
+      gemini: { baseUrl: '', apiKey: '', model: '' },
+      codexNative: {}
     },
     video: {
       provider: 'seedance' as const,

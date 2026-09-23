@@ -8,6 +8,11 @@ import type {
   CreatorJobStatus,
   CreatorJson
 } from '@opencreator/protocol';
+import {
+  stickmanOutputPresetDefaults,
+  stickmanOutputPresets,
+  stickmanRatios
+} from '@opencreator/protocol';
 import type { CreatorRepository } from '../repository.js';
 import { CreatorServiceError } from '../service.js';
 import {
@@ -23,6 +28,18 @@ import {
   DEFAULT_STICKMAN_STYLE_ASSET,
   readVisualAssetRef
 } from './visual-assets.js';
+
+const stickmanFormatStateKeys = [
+  'outputPreset',
+  'ratio',
+  'targetDurationSeconds',
+  'sourceLanguage',
+  'targetLanguage',
+  'ttsProvider',
+  'ttsModel',
+  'voiceCode',
+  'voiceName'
+] as const;
 
 export type StickmanActionResult = {
   handled: boolean;
@@ -51,13 +68,26 @@ export function handleStickmanAction(input: {
 
   if (input.action === 'update-settings') {
     const patch = readRecord(parsedInput.patch, 'patch');
-    if (patch.characterAsset === undefined && patch.styleAsset === undefined) {
+    const hasFormatPatch = stickmanFormatStateKeys.some(key => patch[key] !== undefined);
+    if (patch.characterAsset === undefined && patch.styleAsset === undefined && !hasFormatPatch) {
       return {
         handled: false,
         state: current.state,
         status: current.status,
         affectedArtifactIds: []
       };
+    }
+    if (
+      patch.ratio !== undefined
+      && !stickmanRatios.includes(patch.ratio as (typeof stickmanRatios)[number])
+    ) {
+      throw new CreatorServiceError('creator_action_input_invalid', 'ratio must be 16:9 or 9:16');
+    }
+    if (
+      patch.outputPreset !== undefined
+      && !stickmanOutputPresets.includes(patch.outputPreset as (typeof stickmanOutputPresets)[number])
+    ) {
+      throw new CreatorServiceError('creator_action_input_invalid', 'outputPreset is invalid');
     }
     const nextCharacter = patch.characterAsset === undefined
       ? readVisualAssetRef(current.state.characterAsset, DEFAULT_STICKMAN_CHARACTER_ASSET)
@@ -73,21 +103,44 @@ export function handleStickmanAction(input: {
       current.state.styleAsset,
       DEFAULT_STICKMAN_STYLE_ASSET
     );
-    const visualProfileChanged = !sameAssetRef(previousCharacter, nextCharacter)
+    const outputPreset = patch.outputPreset === 'youtube-shorts' || patch.outputPreset === 'landscape'
+      ? patch.outputPreset
+      : current.state.outputPreset;
+    const normalizedFormat = outputPreset === 'youtube-shorts'
+      ? stickmanOutputPresetDefaults('youtube-shorts')
+      : outputPreset === 'landscape'
+        ? stickmanOutputPresetDefaults('landscape')
+        : {};
+    const nextState: Record<string, CreatorJson> = {
+      ...current.state,
+      ...patch,
+      ...normalizedFormat,
+      characterAsset: nextCharacter,
+      styleAsset: nextStyle
+    };
+    if (patch.outputPreset === 'landscape' && patch.ttsProvider === undefined) {
+      delete nextState.ttsProvider;
+      delete nextState.ttsModel;
+      delete nextState.voiceCode;
+      delete nextState.voiceName;
+    }
+    const formatChanged = stickmanFormatStateKeys.some(key => (
+      current.state[key] !== nextState[key]
+    ));
+    const visualAssetsChanged = !sameAssetRef(previousCharacter, nextCharacter)
       || !sameAssetRef(previousStyle, nextStyle);
-    const affectedArtifactIds = visualProfileChanged
-      ? staleVisualPipeline(repository, current)
-      : [];
+    const affected = new Set<string>();
+    if (visualAssetsChanged) {
+      for (const artifactId of staleVisualPipeline(repository, current)) affected.add(artifactId);
+    }
+    if (formatChanged) {
+      for (const artifactId of staleContentPipeline(repository, current)) affected.add(artifactId);
+    }
     return {
       handled: true,
-      state: {
-        ...current.state,
-        ...patch,
-        characterAsset: nextCharacter,
-        styleAsset: nextStyle
-      },
+      state: nextState,
       status: current.status,
-      affectedArtifactIds
+      affectedArtifactIds: [...affected]
     };
   }
 
@@ -474,6 +527,37 @@ function staleVisualPipeline(repository: CreatorRepository, job: CreatorJob): st
     for (const artifactId of staleFrom(repository, job, root, true)) {
       affected.add(artifactId);
     }
+  }
+  return [...affected];
+}
+
+function staleContentPipeline(repository: CreatorRepository, job: CreatorJob): string[] {
+  const rootKinds = new Set([
+    'content_plan',
+    'script_manifest',
+    'narration_audio',
+    'audio_timing',
+    'shot_spec',
+    'character_reference',
+    'style_reference',
+    'style_contract',
+    'image_prompt_pack',
+    'shot_image',
+    'visual_validation',
+    'timeline_manifest',
+    'narration_subtitle',
+    'clean_video',
+    'media_validation',
+    'thumbnail',
+    'publish_copy',
+    'delivery_manifest'
+  ]);
+  const roots = job.artifacts.filter(artifact => (
+    artifact.status !== 'stale' && rootKinds.has(artifact.kind)
+  ));
+  const affected = new Set<string>();
+  for (const root of roots) {
+    for (const artifactId of staleFrom(repository, job, root, true)) affected.add(artifactId);
   }
   return [...affected];
 }

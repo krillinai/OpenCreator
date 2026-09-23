@@ -105,6 +105,22 @@ describe('KrillinAI CLI runner', () => {
     });
   });
 
+  it('can route Krillin LLM calls through the local Codex gateway', () => {
+    const config = createDefaultCreatorServicesConfig();
+    const value = parse(createKrillinConfigToml(config, {
+      baseUrl: 'http://127.0.0.1:4321/internal/krillin-llm/v1',
+      apiKey: 'task-token',
+      model: 'codex'
+    })) as { llm: Record<string, unknown> };
+
+    expect(value.llm).toEqual({
+      base_url: 'http://127.0.0.1:4321/internal/krillin-llm/v1',
+      api_key: 'task-token',
+      model: 'codex',
+      json: false
+    });
+  });
+
   it('bridges Volcengine ASR and TTS credentials into KrillinAI config', () => {
     const config = createDefaultCreatorServicesConfig();
     config.transcription.provider = 'volcengine';

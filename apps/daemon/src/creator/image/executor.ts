@@ -2,8 +2,6 @@ import type {
   CoverStyleId,
   CoverTextLanguage,
   CreateImageGenerationRequest,
-  CreatorServicesConfig,
-  ImageGenerationProvider,
   ImageGenerationQuality,
   ImageGenerationSize
 } from '@opencreator/protocol';
@@ -12,12 +10,14 @@ import { join } from 'node:path';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import {
   generateImageContents,
-  ImageGenerationProviderError
+  ImageGenerationProviderError,
+  type CodexNativeImageRuntime
 } from '../../image-generation/provider.js';
 import type { CreatorExecutor, CreatorExecutorInput, CreatorExecutorOutput } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { spawnCreatorProcess } from '../process-tree.js';
 import { validateImageFile } from '../validators/image.js';
+import { resolveCreatorImageSettings } from '../image-settings.js';
 import {
   coverLanguageLabel,
   coverStyleInstructions,
@@ -55,6 +55,7 @@ type CoverImageNormalizer = (input: {
 export function createImageExecutor(input: {
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
   generate?: GenerateImageContents;
+  codexNative?: CodexNativeImageRuntime;
   normalizeCoverImage?: CoverImageNormalizer;
 }): CreatorExecutor {
   const generate = input.generate ?? generateImageContents;
@@ -82,6 +83,12 @@ export function createImageExecutor(input: {
       const { request } = requestContext;
       if (!request.prompt) {
         throw new CreatorExecutorError('creator_stage_input_missing', 'Image prompt is required');
+      }
+      if (request.provider === 'codex-native' && request.count !== 1) {
+        throw new CreatorExecutorError(
+          'unsupported_capability',
+          'Codex subscription image generation supports exactly one candidate per task'
+        );
       }
 
       const outputKind = stage.job.templateId === 'image-generation'
@@ -111,7 +118,10 @@ export function createImageExecutor(input: {
                       content: referenceImage.content,
                       mime: referenceImage.mime
                     }
-                  })
+                  }),
+              ...(input.codexNative === undefined
+                ? {}
+                : { codexNative: input.codexNative })
             }
           )
             .then(async result => {
@@ -273,29 +283,32 @@ export function createFfmpegCoverImageNormalizer(
 
 function imageRequest(
   stage: CreatorExecutorInput,
-  config: CreatorServicesConfig,
+  config: Awaited<ReturnType<CreatorServicesConfigStore['read']>>,
   referenceKind?: GenerationReferenceKind
 ): ImageRequestContext {
-  const provider = readProvider(stage.job.state.provider, config.image.provider);
+  const maxCount = stage.job.templateId === 'image-generation' ? 4 : 8;
+  const fallbackCount = stage.job.templateId === 'image-generation' ? 2 : 3;
+  const settings = resolveCreatorImageSettings({
+    config,
+    provider: stage.job.state.provider,
+    candidateCount: stage.job.state.candidateCount,
+    fallbackCandidateCount: fallbackCount,
+    maxCandidateCount: maxCount
+  });
   const size = stage.job.templateId === 'image-generation'
     ? readImageSize(stage.job.state.size)
     : sizeForCoverRatio(readCoverRatio(stage));
   const quality = readQuality(stage.job.state.quality);
-  const maxCount = stage.job.templateId === 'image-generation' ? 4 : 8;
-  const fallbackCount = stage.job.templateId === 'image-generation' ? 2 : 3;
-  const candidateCount = typeof stage.job.state.candidateCount === 'number'
-    ? Math.min(maxCount, Math.max(1, Math.floor(stage.job.state.candidateCount)))
-    : fallbackCount;
   const cover = stage.job.templateId === 'cover'
     ? coverGenerationPrompt(stage, referenceKind)
     : undefined;
   return {
     request: {
       prompt: cover?.prompt ?? readString(stage.job.state.prompt),
-      provider,
+      provider: settings.provider,
       size,
       quality,
-      count: candidateCount
+      count: settings.candidateCount
     },
     ...(cover === undefined ? {} : { cover: cover.details })
   };
@@ -417,15 +430,6 @@ async function readReferenceImage(
         ? 'image/webp'
         : 'image/png'
   };
-}
-
-function readProvider(
-  value: unknown,
-  fallback: CreatorServicesConfig['image']['provider']
-): ImageGenerationProvider {
-  return value === 'openai' || value === 'jimeng' || value === 'kling' || value === 'gemini'
-    ? value
-    : fallback;
 }
 
 function readString(value: unknown): string {

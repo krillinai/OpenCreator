@@ -20,6 +20,38 @@ afterEach(() => {
 });
 
 describe('video translation workflow', () => {
+  it('accepts Codex runtime translation without a creator API key', async () => {
+    const fixture = setup({});
+    const config = createDefaultCreatorServicesConfig();
+    config.llm.source = 'codex';
+    config.llm.apiKey = '';
+    const workflow = createVideoTranslationWorkflow({
+      creator: fixture.service,
+      dispatcher: fixture.dispatcher,
+      configStore: { read: vi.fn(async () => config) }
+    });
+
+    await expect(workflow.validateStage(fixture.service.getJob(fixture.jobId)!, 'subtitle'))
+      .resolves.toBeUndefined();
+    fixture.db.close();
+  });
+
+  it('still requires complete credentials for a custom translation model', async () => {
+    const fixture = setup({});
+    const config = createDefaultCreatorServicesConfig();
+    config.llm.source = 'custom';
+    config.llm.apiKey = '';
+    const workflow = createVideoTranslationWorkflow({
+      creator: fixture.service,
+      dispatcher: fixture.dispatcher,
+      configStore: { read: vi.fn(async () => config) }
+    });
+
+    await expect(workflow.validateStage(fixture.service.getJob(fixture.jobId)!, 'subtitle'))
+      .rejects.toMatchObject({ code: 'creator_llm_config_missing' });
+    fixture.db.close();
+  });
+
   it.each([
     'https://www.youtube.com/watch?v=xVWS7yHdzCU',
     'https://youtu.be/tAkC-ZdaqWs?si=6LcL-jgzdBaZ1IFD'

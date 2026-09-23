@@ -25,7 +25,11 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
-import { useOptionalCreatorSession } from './creator-session-store.js';
+import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
+import {
+  CreatorPreflightBlockedError,
+  useOptionalCreatorSession
+} from './creator-session-store.js';
 
 type ImageStep = 0 | 1 | 2;
 type ImageResultVersion = {
@@ -48,6 +52,7 @@ const qualities: Array<{ value: ImageGenerationQuality; zh: string; en: string }
 ];
 
 const providers: Array<{ value: ImageGenerationProvider; zh: string; en: string }> = [
+  { value: 'codex-native', zh: '本机 Codex 生图', en: 'Local Codex image generation' },
   { value: 'openai', zh: 'GPT Image', en: 'GPT Image' },
   { value: 'jimeng', zh: '即梦', en: 'Jimeng' },
   { value: 'kling', zh: '可灵', en: 'Kling' },
@@ -60,6 +65,7 @@ const samplePromptEn = 'A bright modern creative studio at sunrise, natural ligh
 export default function ImageGenerationWorkspace(props: {
   onBack(): void;
   promptHint?: string;
+  creatorServicesService?: CreatorServicesSettingsService | null;
 }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
@@ -123,6 +129,37 @@ export default function ImageGenerationWorkspace(props: {
   );
   const currentReferenceName = referenceFile?.name
     ?? readArtifactString(activeReferenceArtifact, 'fileName');
+  const shouldLoadDefaultProvider = session !== null
+    && (
+      session.state.provider === undefined
+      || (
+        session.state.providerSource === undefined
+        && session.job.presetOrigin === null
+        && session.job.stages.length === 0
+        && session.job.artifacts.length === 0
+      )
+    );
+
+  useEffect(() => {
+    if (session === null || !shouldLoadDefaultProvider) return;
+    let active = true;
+    void props.creatorServicesService?.getConfig().then(response => {
+      if (!active) return;
+      const nextProvider = response.config.image.provider;
+      const nextCount = nextProvider === 'codex-native' ? 1 : count;
+      setProvider(nextProvider);
+      setCount(nextCount);
+      session.updateDraft(
+        {
+          provider: nextProvider,
+          providerSource: 'default',
+          candidateCount: nextCount
+        },
+        { persist: false }
+      );
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [count, props.creatorServicesService, session, shouldLoadDefaultProvider]);
 
   useEffect(() => {
     if (referenceFile === null) {
@@ -217,7 +254,13 @@ export default function ImageGenerationWorkspace(props: {
 
   function updateProvider(value: ImageGenerationProvider) {
     setProvider(value);
-    session?.updateDraft({ provider: value });
+    const nextCount = value === 'codex-native' ? 1 : count;
+    if (nextCount !== count) setCount(nextCount);
+    session?.updateDraft({
+      provider: value,
+      providerSource: 'user',
+      candidateCount: nextCount
+    });
     setError('');
   }
 
@@ -234,6 +277,7 @@ export default function ImageGenerationWorkspace(props: {
   }
 
   function updateCount(value: number) {
+    if (provider === 'codex-native' && value !== 1) return;
     setCount(value);
     session?.updateDraft({ candidateCount: value });
     setError('');
@@ -487,6 +531,14 @@ export default function ImageGenerationWorkspace(props: {
                     </button>
                   ))}
                 </div>
+                {provider === 'codex-native' ? (
+                  <p className="creator-services-inline-note">
+                    {l(
+                      '使用本机 Codex 生成图像，无需额外配置；每次任务生成 1 张。',
+                      'Use local Codex to generate images with no additional configuration; each task generates 1 image.'
+                    )}
+                  </p>
+                ) : null}
               </div>
               <div className="media-generation-control">
                 <span>{l('画幅', 'Format')}</span>
@@ -513,7 +565,7 @@ export default function ImageGenerationWorkspace(props: {
               <div className="media-generation-control">
                 <span>{l('生成数量', 'Number of images')}</span>
                 <div className="creator-tool-segmented" role="radiogroup" aria-label={l('生成数量', 'Number of images')}>
-                  {[1, 2, 4].map(value => (
+                  {(provider === 'codex-native' ? [1] : [1, 2, 4]).map(value => (
                     <button type="button" role="radio" aria-checked={count === value} aria-selected={count === value} key={value} onClick={() => updateCount(value)}>
                       {value} {l('张', value === 1 ? 'image' : 'images')}
                     </button>
@@ -707,7 +759,7 @@ function readArtifactString(
 }
 
 function readProvider(value: CreatorJson | undefined): ImageGenerationProvider {
-  return value === 'jimeng' || value === 'kling' || value === 'gemini'
+  return value === 'jimeng' || value === 'kling' || value === 'gemini' || value === 'codex-native'
     ? value
     : 'openai';
 }
@@ -755,6 +807,10 @@ function formatBytes(size: number) {
 }
 
 function formatImageError(error: unknown, l: (zh: string, en: string) => string) {
+  if (error instanceof CreatorPreflightBlockedError) {
+    const message = error.result.blocked.map(item => item.message).filter(Boolean).join('；');
+    return message || l('启动前检查未通过，请检查任务配置', 'Preflight checks failed. Review the task settings.');
+  }
   const candidate = error as { code?: unknown; message?: unknown };
   const code = typeof candidate?.code === 'string' ? candidate.code : '';
   if (code === 'creator_image_config_missing') {

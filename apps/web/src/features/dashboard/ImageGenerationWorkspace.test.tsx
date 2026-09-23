@@ -5,6 +5,7 @@ import type {
   CreatorJob,
   CreatorJson
 } from '@opencreator/protocol';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import ImageGenerationWorkspace from './ImageGenerationWorkspace.js';
@@ -48,6 +49,26 @@ describe('ImageGenerationWorkspace', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('inherits Codex and its single-candidate limit from AI service settings', async () => {
+    const fixture = createFixture({ pending: true });
+    const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'codex-native';
+    renderWorkspace(fixture, fixture.currentJob(), {
+      getConfig: vi.fn(async () => ({ config, configuredCredentials: [] }))
+    });
+
+    fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
+      target: { value: '使用默认 Codex 生成一张图片' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    expect(await screen.findByRole('radio', { name: '本机 Codex 生图' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    expect(screen.getByRole('radio', { name: '1 张' })).toHaveAttribute('aria-checked', 'true');
+    expect(fixture.ensureJob).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -176,7 +197,8 @@ describe('ImageGenerationWorkspace', () => {
 
 function renderWorkspace(
   fixture: ReturnType<typeof createFixture>,
-  initialJob = fixture.currentJob()
+  initialJob = fixture.currentJob(),
+  creatorServicesService?: { getConfig(): Promise<unknown> }
 ) {
   return render(
     <LanguageProvider initialPreference="zh-CN">
@@ -190,7 +212,10 @@ function renderWorkspace(
           runAgentTurn: vi.fn()
         } as never}
       >
-        <ImageGenerationWorkspace onBack={vi.fn()} />
+        <ImageGenerationWorkspace
+          onBack={vi.fn()}
+          creatorServicesService={creatorServicesService as never}
+        />
       </CreatorSessionProvider>
     </LanguageProvider>
   );

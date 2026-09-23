@@ -1,4 +1,5 @@
 import {
+  creatorPresetCapabilities,
   creatorRuntimeWorkspaces,
   type CreatorJson,
   type CreatorPresetRequirements
@@ -12,8 +13,7 @@ const localeTextSchema = z.object({
 
 const requirementSchema = z.object({
   service: z.enum(['tts', 'image', 'video']),
-  provider: z.string().trim().min(1).max(64),
-  model: z.string().trim().min(1).max(128).optional()
+  capabilities: z.array(z.enum(creatorPresetCapabilities)).min(1).max(8)
 }).strict();
 
 const authorSchema = z.object({

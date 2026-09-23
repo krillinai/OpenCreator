@@ -138,6 +138,7 @@
 }
 
 .creator-services-field.is-wide,
+.creator-services-segmented.is-wide,
 .creator-services-subheading,
 .creator-services-tts-voice,
 .creator-services-toggle,
@@ -509,6 +510,7 @@
   .creator-services-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .creator-services-grid { grid-template-columns: minmax(0, 1fr); }
   .creator-services-field.is-wide,
+  .creator-services-segmented.is-wide,
   .creator-services-subheading,
   .creator-services-tts-voice,
   .creator-services-toggle,

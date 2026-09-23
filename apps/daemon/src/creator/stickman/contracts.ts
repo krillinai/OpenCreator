@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  stickmanCanvasForRatio,
+  stickmanRatios
+} from '@opencreator/protocol';
+
+export const stickmanRatioSchema = z.enum(stickmanRatios);
 
 export const stickmanSourceSpanSchema = z.object({
   id: z.string().regex(/^source-\d{3}$/),
@@ -233,7 +239,7 @@ const stickmanRenderingContractSchema = z.object({
 
 export const stickmanStyleContractSchema = z.object({
   contract: z.literal('stickman-visual-profile-v2'),
-  ratio: z.literal('16:9'),
+  ratio: stickmanRatioSchema,
   character: z.object({
     assetId: z.string().min(1),
     revision: z.number().int().positive(),
@@ -260,6 +266,9 @@ export const stickmanStyleContractSchema = z.object({
 export const stickmanVisualValidationSchema = z.object({
   ok: z.literal(true),
   validation: z.literal('automated_decode_aspect_nonblank_hash_and_ocr'),
+  ratio: stickmanRatioSchema,
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
   approvedShotSpecArtifactId: z.string().min(1),
   shotCount: z.number().int().positive(),
   ocrStatus: z.enum(['passed', 'unavailable']),
@@ -277,6 +286,10 @@ export const stickmanVisualValidationSchema = z.object({
     detectedText: z.array(z.string())
   }).strict()).min(1).max(200)
 }).strict().superRefine((value, context) => {
+  const canvas = stickmanCanvasForRatio(value.ratio);
+  if (value.width !== canvas.width || value.height !== canvas.height) {
+    context.addIssue({ code: 'custom', message: 'Visual validation dimensions do not match ratio' });
+  }
   uniqueIds(value.shots.map(shot => shot.shotId), 'validated shot', context);
   if (value.shotCount !== value.shots.length) {
     context.addIssue({ code: 'custom', message: 'Visual validation shot count does not match' });
@@ -287,9 +300,10 @@ export const stickmanVisualValidationSchema = z.object({
 });
 
 export const stickmanTimelineSchema = z.object({
+  ratio: stickmanRatioSchema,
   fps: z.number().int().positive(),
-  width: z.literal(1280),
-  height: z.literal(720),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
   totalFrames: z.number().int().positive(),
   shots: z.array(z.object({
     shotId: z.string().min(1),
@@ -302,49 +316,105 @@ export const stickmanTimelineSchema = z.object({
     audioSha256: z.string().regex(/^[a-f0-9]{64}$/i),
     imagePath: z.string().min(1).optional(),
     audioPath: z.string().min(1).optional()
+  }).strict()).min(1),
+  captions: z.array(z.object({
+    segmentId: z.string().regex(/^segment-[a-z0-9-]+$/),
+    startFrame: z.number().int().nonnegative(),
+    endFrame: z.number().int().positive(),
+    text: z.string().trim().min(1)
   }).strict()).min(1)
-}).strict();
+}).strict().superRefine((value, context) => {
+  const canvas = stickmanCanvasForRatio(value.ratio);
+  if (value.width !== canvas.width || value.height !== canvas.height) {
+    context.addIssue({ code: 'custom', message: 'Timeline dimensions do not match ratio' });
+  }
+  let cursor = 0;
+  for (const shot of value.shots) {
+    if (shot.startFrame !== cursor || shot.endFrame <= shot.startFrame) {
+      context.addIssue({ code: 'custom', message: `Invalid timeline shot range: ${shot.shotId}` });
+    }
+    cursor = shot.endFrame;
+  }
+  if (cursor !== value.totalFrames) {
+    context.addIssue({ code: 'custom', message: 'Timeline shots do not cover total frames' });
+  }
+  cursor = 0;
+  for (const caption of value.captions) {
+    if (caption.startFrame !== cursor || caption.endFrame <= caption.startFrame) {
+      context.addIssue({ code: 'custom', message: `Invalid timeline caption range: ${caption.segmentId}` });
+    }
+    cursor = caption.endFrame;
+  }
+  if (cursor !== value.totalFrames) {
+    context.addIssue({ code: 'custom', message: 'Timeline captions do not cover total frames' });
+  }
+});
 
 export const stickmanMediaValidationSchema = z.object({
   ok: z.literal(true),
   validation: z.literal('ffprobe_and_three_frame_sampling'),
+  ratio: stickmanRatioSchema,
   cleanVideoArtifactId: z.string().min(1),
   cleanVideoSha256: z.string().regex(/^[a-f0-9]{64}$/i),
   timelineArtifactId: z.string().min(1),
   duration: z.number().positive(),
   expectedDuration: z.number().positive(),
   durationTolerance: z.number().positive(),
-  width: z.literal(1280),
-  height: z.literal(720),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
   hasVideo: z.literal(true),
   hasAudio: z.literal(true),
   sampledFrames: z.array(z.object({
     index: z.number().int().min(1).max(3),
     timestampSeconds: z.number().nonnegative(),
     sha256: z.string().regex(/^[a-f0-9]{64}$/i),
-    width: z.literal(1280),
-    height: z.literal(720),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
     brightnessMean: z.number().nonnegative().max(255),
     contrastStddev: z.number().nonnegative()
   }).strict()).length(3)
-}).strict();
+}).strict().superRefine((value, context) => {
+  const canvas = stickmanCanvasForRatio(value.ratio);
+  if (value.width !== canvas.width || value.height !== canvas.height) {
+    context.addIssue({ code: 'custom', message: 'Media validation dimensions do not match ratio' });
+  }
+  if (value.sampledFrames.some(frame => frame.width !== canvas.width || frame.height !== canvas.height)) {
+    context.addIssue({ code: 'custom', message: 'Sampled frame dimensions do not match ratio' });
+  }
+});
 
 export const stickmanDeliveryManifestSchema = z.object({
   packageStatus: z.enum(['technical-draft', 'publishable']),
+  ratio: stickmanRatioSchema,
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  duration: z.number().positive(),
+  providers: z.object({
+    image: z.string().min(1),
+    video: z.string().min(1),
+    voice: z.string().min(1)
+  }).strict(),
   placeholderAssets: z.array(z.string().min(1)),
   blockingChecks: z.array(z.string().min(1)),
   files: z.array(z.object({
     name: z.enum([
-      'stickman-video.mp4',
-      'narration.srt'
+      'short.mp4',
+      'subtitles.srt',
+      'thumbnail.png',
+      'publish-copy.md'
     ]),
     relativePath: z.string().min(1),
     sha256: z.string().regex(/^[a-f0-9]{64}$/i),
     bytes: z.number().int().nonnegative(),
     mime: z.string().min(1),
     sourceArtifactId: z.string().min(1)
-  }).strict()).length(2)
-}).strict();
+  }).strict()).length(4)
+}).strict().superRefine((value, context) => {
+  const canvas = stickmanCanvasForRatio(value.ratio);
+  if (value.width !== canvas.width || value.height !== canvas.height) {
+    context.addIssue({ code: 'custom', message: 'Delivery dimensions do not match ratio' });
+  }
+});
 
 export type StickmanSourceBrief = z.infer<typeof stickmanSourceBriefSchema>;
 export type StickmanContentPlan = z.infer<typeof stickmanContentPlanSchema>;

@@ -35,7 +35,7 @@
     [transcribe.whisperkit]
         model = "large-v2" # whisperkit的本地模型可选值：large-v2
     [transcribe.whispercpp]
-        model = "tiny" # whispercpp的本地模型可选值：tiny,medium,large-v2
+        model = "tiny" # whispercpp的本地模型可选值：tiny,medium,large-v2,large-v3-turbo
     [transcribe.aliyun] # provider选aliyun这块就都要填
         [transcribe.aliyun.oss]
             access_key_id = ""

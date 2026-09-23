@@ -515,10 +515,7 @@ export function CreatorDashboard(props: {
             {selectedPreset.requirements !== null ? (
               <p className="creator-template-runtime-requirement">
                 {language === 'en-US' ? 'Requires' : '运行需要'}: {' '}
-                {selectedPreset.requirements.provider}
-                {selectedPreset.requirements.model === undefined
-                  ? ''
-                  : ` / ${selectedPreset.requirements.model}`}
+                {selectedPreset.requirements.capabilities.join(', ')}
               </p>
             ) : null}
 

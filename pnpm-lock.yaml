@@ -296,6 +296,9 @@ importers:
 
   packages/stickman-remotion:
     dependencies:
+      '@opencreator/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       react:
         specifier: 18.3.1
         version: 18.3.1

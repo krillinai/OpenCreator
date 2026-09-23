@@ -81,6 +81,7 @@ describe('stickman timeline executor', () => {
 
     const timeline = JSON.parse(readFileSync(result.outputs[0]!.path!, 'utf8'));
     expect(timeline).toMatchObject({
+      ratio: '16:9',
       fps: 30,
       width: 1280,
       height: 720,
@@ -88,6 +89,10 @@ describe('stickman timeline executor', () => {
       shots: [
         { shotId: 'shot-01', startFrame: 0, endFrame: 60, imageArtifactId: 'shot-01-image' },
         { shotId: 'shot-02', startFrame: 60, endFrame: 150, imageArtifactId: 'shot-02-image' }
+      ],
+      captions: [
+        { segmentId: 'segment-01', startFrame: 0, endFrame: 60, text: '第一段' },
+        { segmentId: 'segment-02', startFrame: 60, endFrame: 150, text: '第二段' }
       ]
     });
     expect(readFileSync(result.outputs[1]!.path!, 'utf8')).toBe(

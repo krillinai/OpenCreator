@@ -94,6 +94,62 @@ describe('stickman audio executor', () => {
     db.close();
   });
 
+  it('uses the local Edge TTS command path without requiring a paid provider', async () => {
+    const { db, repository, service, templates, script } = setupConfiguredJob({ configured: false });
+    const config = createDefaultCreatorServicesConfig();
+    config.tts.provider = 'edge-tts';
+    const current = service.getJob(script.jobId)!;
+    repository.updateJob({
+      id: current.id,
+      status: current.status,
+      revision: current.revision,
+      state: { ...current.state, targetLanguage: 'en-US', ttsProvider: 'edge-tts' }
+    });
+    const synthesizeEdgeTts = vi.fn(async (request: { voiceId: string }) => ({
+      content: Buffer.from('edge-audio'),
+      mime: 'audio/mpeg' as const,
+      provider: 'edge-tts' as const,
+      model: '' as const,
+      voiceId: request.voiceId,
+      format: 'mp3' as const
+    }));
+    const run = repository.createStageRun({
+      jobId: script.jobId,
+      stageId: 'narration',
+      executor: 'stickman-audio',
+      status: 'queued',
+      scopeKey: 'segment-01',
+      inputFingerprint: '1'.repeat(64)
+    });
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      workRoot: join(tempDir, 'jobs'),
+      executors: [createStickmanAudioExecutor({
+        configStore: { read: async () => config },
+        ttsService: { synthesize: vi.fn() as never },
+        synthesizeEdgeTts,
+        ledger: new CreatorProviderRequestLedger(repository),
+        ffprobePath: 'ffprobe-test',
+        probe: async () => ({ duration: 1, hasVideo: false, hasAudio: true })
+      })]
+    });
+
+    expect(await runner.runStageRun(run.id)).toMatchObject({ status: 'succeeded' });
+    expect(synthesizeEdgeTts).toHaveBeenCalledWith(expect.objectContaining({
+      voiceId: 'en-US-AriaNeural'
+    }));
+    expect(service.getJob(script.jobId)!.artifacts).toEqual(
+      expect.arrayContaining([expect.objectContaining({
+        kind: 'narration_audio',
+        path: expect.stringMatching(/segment-01\.mp3$/),
+        metadata: expect.objectContaining({ provider: 'edge-tts', mimeType: 'audio/mpeg' })
+      })])
+    );
+    await runner.close();
+    db.close();
+  });
+
   it('changes the narration fingerprint when the selected voice changes', () => {
     const script = {
       sha256: 'a'.repeat(64)
@@ -172,7 +228,7 @@ describe('stickman audio executor', () => {
     db.close();
   });
 
-  it('fails before synthesis when no supported TTS provider is configured', async () => {
+  it('fails clearly when the local Edge TTS command is unavailable', async () => {
     const { db, repository, templates, script } = setupConfiguredJob({ configured: false });
     const synthesize = vi.fn();
     const config = createDefaultCreatorServicesConfig();
@@ -194,6 +250,7 @@ describe('stickman audio executor', () => {
         ttsService: { synthesize: synthesize as never },
         ledger: new CreatorProviderRequestLedger(repository),
         ffprobePath: 'ffprobe-test',
+        edgeTtsCommand: 'missing-opencreator-edge-tts-command',
         synthesize: synthesize as never,
         probe: async () => ({ duration: 1, hasVideo: false, hasAudio: true })
       })]
@@ -201,7 +258,7 @@ describe('stickman audio executor', () => {
 
     expect(await runner.runStageRun(run.id)).toMatchObject({
       status: 'failed',
-      errorCode: 'creator_tts_config_missing'
+      errorCode: 'creator_tts_runtime_unavailable'
     });
     expect(synthesize).not.toHaveBeenCalled();
     await runner.close();

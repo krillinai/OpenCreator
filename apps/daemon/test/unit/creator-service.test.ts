@@ -170,7 +170,7 @@ describe('creator service', () => {
         defaultsByLocale: {
           'en-US': { prompt: 'English product image' }
         },
-        requirements: { service: 'image', provider: 'openai' }
+        requirements: { service: 'image', capabilities: ['text-to-image'] }
       })
     ], config);
 
@@ -191,7 +191,7 @@ describe('creator service', () => {
       status: 'draft',
       state: {
         prompt: 'English product image',
-        provider: 'openai',
+        provider: 'codex-native',
         size: '1536x1024',
         quality: 'medium',
         candidateCount: 2
@@ -208,9 +208,45 @@ describe('creator service', () => {
     });
     expect(job.activities[0]?.details).toMatchObject({
       requirementService: 'image',
-      requirementProvider: 'openai'
+      requirementCapabilities: ['text-to-image']
     });
     expect(JSON.stringify(job)).not.toContain('apiKey');
+    db.close();
+  });
+
+  it('inherits the configured image provider for provider-agnostic image presets', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'codex-native';
+    const { db, service } = setupPresetService([
+      preset({
+        module: 'image-generation',
+        id: 'reference-image-preset',
+        runtimeTemplate: { id: 'image-generation', version: 2 },
+        defaults: {
+          prompt: 'Transform the uploaded portrait',
+          size: '1024x1536',
+          quality: 'high',
+          candidateCount: 1
+        }
+      })
+    ], config);
+
+    const job = await service.createJob({
+      projectId: 'project_preset',
+      preset: {
+        module: 'image-generation',
+        id: 'reference-image-preset',
+        version: 1
+      },
+      locale: 'zh-CN',
+      creationKey: 'preset-create-codex-default'
+    });
+
+    expect(job.state).toMatchObject({
+      provider: 'codex-native',
+      candidateCount: 1
+    });
+    expect(job.presetOrigin?.id).toBe('reference-image-preset');
     db.close();
   });
 
@@ -262,6 +298,8 @@ describe('creator service', () => {
 
   it('keeps edited preset state and avoids the executor when requirements are missing', async () => {
     const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'jimeng';
+    config.image.jimeng.apiKey = 'configured-jimeng-key';
     const { db, repository, service, templates } = setupPresetService([
       preset({
         module: 'image-generation',
@@ -273,7 +311,7 @@ describe('creator service', () => {
           quality: 'medium',
           candidateCount: 2
         },
-        requirements: { service: 'image', provider: 'openai' }
+        requirements: { service: 'image', capabilities: ['reference-image'] }
       })
     ], config);
     const created = await service.createJob({
@@ -327,8 +365,9 @@ describe('creator service', () => {
     db.close();
   });
 
-  it('blocks execution when a preset-required TTS model is changed', async () => {
+  it('does not let a preset pin the configured TTS model', async () => {
     const config = createDefaultCreatorServicesConfig();
+    config.tts.provider = 'aliyun';
     config.tts.aliyun.apiKey = 'configured-aliyun-key';
     config.tts.aliyun.model = 'configured-default-model';
     const { db, repository, service, templates } = setupPresetService([
@@ -344,8 +383,7 @@ describe('creator service', () => {
         },
         requirements: {
           service: 'tts',
-          provider: 'aliyun',
-          model: 'required-tts-model'
+          capabilities: ['speech-generation']
         }
       })
     ], config);
@@ -361,7 +399,7 @@ describe('creator service', () => {
     });
     expect(created.state).toMatchObject({
       ttsProvider: 'aliyun',
-      ttsModel: 'required-tts-model'
+      ttsModel: 'configured-default-model'
     });
 
     const edited = service.applyAction(created.id, {
@@ -384,22 +422,10 @@ describe('creator service', () => {
     });
 
     const stage = await runner.run(edited.id, 'tts');
-    const waiting = service.getJob(edited.id)!;
     expect(stage).toMatchObject({
-      status: 'failed',
-      errorCode: 'creator_preset_requirement_missing'
+      status: 'succeeded'
     });
-    expect(waiting).toMatchObject({
-      status: 'needs_input',
-      state: {
-        ttsModel: 'tampered-tts-model',
-        needsInput: {
-          code: 'creator_preset_requirement_missing',
-          deepLink: '#/settings?tab=ai-services&section=tts'
-        }
-      }
-    });
-    expect(run).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledOnce();
     await runner.close();
     db.close();
   });

@@ -14,7 +14,48 @@ import type { CreatorServicesSettingsService } from '../../services/creator-serv
 import { CreatorServicesSettingsView } from './CreatorServicesSettingsView.js';
 
 describe('CreatorServicesSettingsView', () => {
-  it('edits the shared model provider used by Agent and text tasks', async () => {
+  it('uses the local Codex runtime without exposing custom provider fields', async () => {
+    const user = userEvent.setup();
+    const service = createService([], runtimeCapabilities('darwin', 'arm64'), 'codex');
+    const modelService = createModelService({ authentication: 'chatgpt', apiKeyConfigured: false });
+    render(
+      <CreatorServicesSettingsView connected service={service} modelService={modelService} />
+    );
+
+    expect(await screen.findByRole('button', { name: 'Codex 本机运行时' }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('已连接本机 Codex · ChatGPT 登录')).toBeInTheDocument();
+    expect(screen.getByText('文本任务可用')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Base URL')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '保存配置' }));
+
+    await waitFor(() => expect(service.saveConfig).toHaveBeenCalled());
+    expect(modelService.updateCodexProvider).not.toHaveBeenCalled();
+    expect(vi.mocked(service.saveConfig).mock.calls[0]?.[0].llm.source).toBe('codex');
+  });
+
+  it('keeps custom model configuration available when local Codex is unavailable', async () => {
+    const user = userEvent.setup();
+    const service = createService([], runtimeCapabilities('darwin', 'arm64'), 'codex');
+    const modelService = createModelService();
+    vi.mocked(modelService.getCodexProvider).mockRejectedValue(new Error('Codex unavailable'));
+    render(
+      <CreatorServicesSettingsView connected service={service} modelService={modelService} />
+    );
+
+    expect(await screen.findByText('未检测到可用的本机 Codex Runtime')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保存配置' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: '自定义模型服务' }));
+
+    expect(screen.getByLabelText('Base URL')).toBeInTheDocument();
+    expect(screen.getByLabelText('API Key')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保存配置' })).toBeEnabled();
+  });
+
+  it('edits the custom model service used by text tasks', async () => {
     const user = userEvent.setup();
     const service = createService(['llm.apiKey']);
     const modelService = createModelService();
@@ -32,7 +73,6 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.getByLabelText('模型')).toHaveValue('gpt-shared');
     expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'password');
     expect(screen.getByLabelText('API Key')).toHaveAttribute('placeholder', '已配置，留空则保持');
-    expect(screen.getByText('Agent 可用')).toBeInTheDocument();
     expect(screen.getByText('文本任务可用')).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('模型'));
@@ -40,17 +80,13 @@ describe('CreatorServicesSettingsView', () => {
     await user.type(screen.getByLabelText('API Key'), 'sk-unified');
     await user.click(screen.getByRole('button', { name: '保存配置' }));
 
-    await waitFor(() => expect(modelService.updateCodexProvider).toHaveBeenCalledWith({
-      baseUrl: 'https://gateway.example.test/v1',
-      model: 'gpt-unified',
-      apiKey: 'sk-unified'
-    }));
     await waitFor(() => expect(service.saveConfig).toHaveBeenCalled());
+    expect(modelService.updateCodexProvider).not.toHaveBeenCalled();
     expect(vi.mocked(service.saveConfig).mock.calls[0]?.[0].llm).toMatchObject({
       baseUrl: 'https://gateway.example.test/v1',
-      apiKey: '',
+      apiKey: 'sk-unified',
       model: 'gpt-unified',
-      source: 'codex'
+      source: 'custom'
     });
     expect(screen.getByText('配置已安全保存')).toBeInTheDocument();
   });
@@ -84,15 +120,15 @@ describe('CreatorServicesSettingsView', () => {
 
   it('shows the failing save stage and Runtime error message', async () => {
     const user = userEvent.setup();
-    const modelService = createModelService();
-    vi.mocked(modelService.updateCodexProvider).mockRejectedValue(
+    const service = createService();
+    vi.mocked(service.saveConfig).mockRejectedValue(
       new Error('Base URL 必须是有效的 HTTP 或 HTTPS 地址')
     );
     render(
       <CreatorServicesSettingsView
         connected
-        service={createService()}
-        modelService={modelService}
+        service={service}
+        modelService={createModelService()}
       />
     );
 
@@ -100,9 +136,8 @@ describe('CreatorServicesSettingsView', () => {
     await user.click(screen.getByRole('button', { name: '保存配置' }));
 
     expect(await screen.findByText(
-      '模型服务保存失败：Base URL 必须是有效的 HTTP 或 HTTPS 地址'
+      '创作服务保存失败：Base URL 必须是有效的 HTTP 或 HTTPS 地址'
     )).toBeInTheDocument();
-    expect(screen.getByLabelText('Base URL')).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('shows configured credentials without loading their secret values', async () => {
@@ -122,11 +157,12 @@ describe('CreatorServicesSettingsView', () => {
 
   it('applies an LLM provider preset and model suggestions', async () => {
     const user = userEvent.setup();
+    const service = createService();
     const modelService = createModelService();
     render(
       <CreatorServicesSettingsView
         connected
-        service={createService()}
+        service={service}
         modelService={modelService}
       />
     );
@@ -139,10 +175,8 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.queryByRole('option', { name: 'MiniMax-M2.7' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '保存配置' }));
-    await waitFor(() => expect(modelService.updateCodexProvider).toHaveBeenCalledWith({
-      baseUrl: 'https://api.deepseek.com',
-      model: 'deepseek-v4-pro'
-    }));
+    await waitFor(() => expect(service.saveConfig).toHaveBeenCalled());
+    expect(modelService.updateCodexProvider).not.toHaveBeenCalled();
   });
 
   it('does not report a custom provider ready from an unrelated API key login', async () => {
@@ -154,8 +188,7 @@ describe('CreatorServicesSettingsView', () => {
       />
     );
 
-    expect(await screen.findByText('Agent 尚未配置')).toBeInTheDocument();
-    expect(screen.getByText('文本任务需要 API Key')).toBeInTheDocument();
+    expect(await screen.findByText('文本任务需要 API Key')).toBeInTheDocument();
   });
 
   it('defaults OpenAI to GPT-5.6 and keeps it in the Runtime model list', async () => {
@@ -314,6 +347,7 @@ describe('CreatorServicesSettingsView', () => {
     await user.click(screen.getByRole('button', { name: '本地 Whisper' }));
     expect(screen.getByRole('combobox', { name: '语音识别服务' })).toHaveTextContent('Whisper.cpp');
     expect(screen.getByText('tiny')).toBeInTheDocument();
+    expect(screen.getByText(/预计占用磁盘 74 MiB/)).toBeInTheDocument();
     expect(screen.queryByText('WhisperKit')).not.toBeInTheDocument();
     expect(screen.queryByText('FasterWhisper')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '保存配置' }));
@@ -384,7 +418,10 @@ describe('CreatorServicesSettingsView', () => {
     await screen.findByRole('tabpanel');
 
     await user.click(screen.getByRole('tab', { name: '图像生成' }));
-    expect(screen.getByRole('combobox', { name: '服务商' })).toHaveTextContent('GPT Image');
+    expect(screen.getByRole('combobox', { name: '服务商' })).toHaveTextContent('本机 Codex 生图');
+    expect(screen.queryByLabelText('模型')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: '服务商' }));
+    await user.click(screen.getByRole('option', { name: 'GPT Image' }));
     expect(screen.getByLabelText('模型')).toHaveValue('gpt-image-1');
     await user.click(screen.getByRole('combobox', { name: '服务商' }));
     await user.click(screen.getByRole('option', { name: '可灵' }));
@@ -399,6 +436,25 @@ describe('CreatorServicesSettingsView', () => {
     await user.click(screen.getByRole('combobox', { name: '服务商' }));
     await user.click(screen.getByRole('option', { name: 'Veo' }));
     expect(screen.getByLabelText('默认模型')).toHaveValue('veo-3.1-generate-preview');
+  });
+
+  it('uses local Codex image generation by default without configuration fields', async () => {
+    const user = userEvent.setup();
+    render(
+      <CreatorServicesSettingsView
+        connected
+        service={createService()}
+        modelService={createModelService()}
+      />
+    );
+    await screen.findByRole('tabpanel');
+
+    await user.click(screen.getByRole('tab', { name: '图像生成' }));
+    expect(screen.getByRole('combobox', { name: '服务商' }))
+      .toHaveTextContent('本机 Codex 生图');
+    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Base URL')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('模型')).not.toBeInTheDocument();
   });
 
   it('keeps non-model services available when the model provider cannot be read', async () => {
@@ -431,11 +487,13 @@ describe('CreatorServicesSettingsView', () => {
 
 function createService(
   configuredCredentials: CreatorServicesCredentialField[] = [],
-  capabilities: CreatorServicesCapabilitiesResponse = runtimeCapabilities('darwin', 'arm64')
+  capabilities: CreatorServicesCapabilitiesResponse = runtimeCapabilities('darwin', 'arm64'),
+  source: 'codex' | 'custom' = 'custom'
 ): CreatorServicesSettingsService {
   const config = createDefaultCreatorServicesConfig();
   config.llm.baseUrl = 'https://gateway.example.test/v1';
   config.llm.model = 'gpt-shared';
+  config.llm.source = source;
   return {
     getCapabilities: vi.fn(async () => structuredClone(capabilities)),
     getConfig: vi.fn(async () => ({ config: structuredClone(config), configuredCredentials })),
@@ -538,7 +596,13 @@ function runtimeCapabilities(
           provider: 'whisper.cpp',
           kind: 'local',
           available: whisperCppAvailable,
-          models: ['tiny', 'medium', 'large-v2'],
+          models: ['tiny', 'medium', 'large-v2', 'large-v3-turbo'],
+          modelDetails: {
+            tiny: { diskBytes: 77691713 },
+            medium: { diskBytes: 1533763059 },
+            'large-v2': { diskBytes: 3094623691 },
+            'large-v3-turbo': { diskBytes: 1624555275 }
+          },
           gpuAcceleration: false,
           ...(whisperCppAvailable ? {} : { unavailableReason: 'unsupported_platform' as const })
         },

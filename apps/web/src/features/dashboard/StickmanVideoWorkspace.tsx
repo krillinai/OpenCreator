@@ -110,6 +110,11 @@ type AudioTiming = {
 
 type DeliveryManifest = {
   packageStatus: 'technical-draft' | 'publishable';
+  ratio?: '16:9' | '9:16';
+  width?: number;
+  height?: number;
+  duration?: number;
+  providers?: { image: string; video: string; voice: string };
   blockingChecks?: string[];
   files?: Array<{
     name: string;
@@ -135,9 +140,13 @@ const defaultStyleAsset: CreatorVisualAssetRef = {
 
 const targetDurationPresets = [30, 60, 300, 600] as const;
 
+type StickmanOutputPreset = 'landscape' | 'youtube-shorts';
+
 const deliveryKinds = [
   'clean_video',
-  'narration_subtitle'
+  'narration_subtitle',
+  'thumbnail',
+  'publish_copy'
 ] as const;
 
 export default function StickmanVideoWorkspace(props: {
@@ -208,6 +217,10 @@ export default function StickmanVideoWorkspace(props: {
   const voiceCode = typeof state.voiceCode === 'string' ? state.voiceCode : '';
   const voiceName = typeof state.voiceName === 'string' ? state.voiceName : voiceCode;
   const targetLanguage = typeof state.targetLanguage === 'string' ? state.targetLanguage : 'zh-CN';
+  const outputPreset: StickmanOutputPreset = state.outputPreset === 'youtube-shorts'
+    ? 'youtube-shorts'
+    : 'landscape';
+  const ratio = state.ratio === '9:16' ? '9:16' : '16:9';
   const scriptDraft = scriptArtifact !== undefined && scriptDraftState?.artifactId === scriptArtifact.id
     ? scriptDraftState.value
     : script;
@@ -282,7 +295,9 @@ export default function StickmanVideoWorkspace(props: {
         const configured = ttsCredentialsConfigured(provider, response);
         setTtsConfigurationStatus(configured ? 'configured' : 'missing');
         const imageProvider = response.config.image.provider;
-        if (imageProvider !== 'openai' && imageProvider !== 'gemini') {
+        if (imageProvider === 'codex-native') {
+          setImageConfigurationStatus('configured');
+        } else if (imageProvider !== 'openai' && imageProvider !== 'gemini') {
           setImageConfigurationStatus('unsupported');
         } else {
           const credential = imageProvider === 'openai'
@@ -415,7 +430,7 @@ export default function StickmanVideoWorkspace(props: {
     }
     if (imageConfigurationStatus !== 'configured') {
       setNotice(imageConfigurationStatus === 'unsupported'
-        ? l('当前生图服务不支持角色参考图，请在 AI 服务中切换到 OpenAI 或 Gemini', 'The current image provider does not support character references. Switch to OpenAI or Gemini in AI Services.')
+        ? l('当前生图服务不支持角色参考图，请切换到本机 Codex 生图、OpenAI 或 Gemini', 'The current image provider does not support character references. Switch to local Codex image generation, OpenAI, or Gemini in AI Services.')
         : imageConfigurationStatus === 'unavailable'
           ? l('暂时无法读取生图服务配置，请检查 Runtime 后重试', 'Could not read image settings. Check the Runtime and retry.')
           : l('请先前往 AI 服务配置生图服务', 'Configure an image provider in AI Services first.'));
@@ -752,6 +767,8 @@ export default function StickmanVideoWorkspace(props: {
                 styleAssets={styleAssets}
                 previewUrls={visualAssetPreviewUrls}
                 visualAssetCatalogStatus={visualAssetCatalogStatus}
+                outputPreset={outputPreset}
+                ratio={ratio}
                 targetDurationSeconds={targetDurationSeconds}
                 ttsProvider={ttsProvider}
                 ttsModel={ttsModel}
@@ -762,7 +779,19 @@ export default function StickmanVideoWorkspace(props: {
                 busy={isBusy}
                 canContinue={workbenchStep > 0}
                 l={l}
-                onPatch={patch => session.updateDraft({ ratio: '16:9', ...patch }, { semantic: true })}
+                onPatch={patch => session.updateDraft(patch, { semantic: true })}
+                onFormatChange={preset => session.updateDraft(
+                  preset === 'youtube-shorts'
+                    ? {
+                        outputPreset: preset,
+                        ratio: '9:16',
+                        targetDurationSeconds: 30,
+                        targetLanguage: 'en-US',
+                        ttsProvider: 'edge-tts'
+                      }
+                    : { outputPreset: preset, ratio: '16:9' },
+                  { semantic: true }
+                )}
                 onStart={startWorkflow}
                 onContinue={() => setActiveStep(1)}
               />
@@ -865,6 +894,8 @@ function SourceAndCharacterStep(props: {
   styleAssets: CreatorVisualAssetSummary[];
   previewUrls: Record<string, string>;
   visualAssetCatalogStatus: VisualAssetCatalogStatus;
+  outputPreset: StickmanOutputPreset;
+  ratio: '16:9' | '9:16';
   targetDurationSeconds: number;
   ttsProvider: CreatorTtsProvider;
   ttsModel: string;
@@ -876,6 +907,7 @@ function SourceAndCharacterStep(props: {
   canContinue: boolean;
   l: ReturnType<typeof useLocalizedCopy>;
   onPatch(patch: Record<string, CreatorJson>): void;
+  onFormatChange(preset: StickmanOutputPreset): void;
   onStart(): void;
   onContinue(): void;
 }) {
@@ -953,6 +985,24 @@ function SourceAndCharacterStep(props: {
           </div>
         </div>
       </div>
+      <div className="creator-tool-form-row">
+        <label className="creator-tool-field">
+          <span>{props.l('Formato de saída', 'Output format')}</span>
+          <select
+            value={props.outputPreset}
+            aria-label={props.l('Formato de saída', 'Output format')}
+            onChange={event => props.onFormatChange(
+              event.target.value === 'youtube-shorts' ? 'youtube-shorts' : 'landscape'
+            )}
+          >
+            <option value="youtube-shorts">{props.l('YouTube Short · 9:16 · 30 s', 'YouTube Short · 9:16 · 30 s')}</option>
+            <option value="landscape">{props.l('Vídeo horizontal · 16:9', 'Landscape video · 16:9')}</option>
+          </select>
+          <small>{props.ratio === '9:16'
+            ? props.l('Imagens pelo Codex e legendas serão compostas no formato vertical.', 'Codex images and burned-in captions will use the vertical canvas.')
+            : props.l('Mantém o fluxo horizontal existente.', 'Keeps the existing landscape workflow.')}</small>
+        </label>
+      </div>
       <div className="stickman-voice-settings">
         {props.ttsConfigurationStatus === 'configured' && props.ttsProvider !== 'edge-tts' ? (
           <TtsVoicePicker
@@ -1010,7 +1060,7 @@ function SourceAndCharacterStep(props: {
                 ? props.l('当前生图服务不支持角色参考图', 'The image provider does not support character references')
                 : props.l('尚未配置生图服务', 'Image service is not configured')}</strong>
             <small>{props.imageConfigurationStatus === 'unsupported'
-              ? props.l('火柴人必须把所选角色图片随每个镜头提交，请切换到 OpenAI 或 Gemini。', 'Stickman generation must attach the selected character to every shot. Switch to OpenAI or Gemini.')
+              ? props.l('火柴人必须把所选角色图片随每个镜头提交，请切换到本机 Codex 生图、OpenAI 或 Gemini。', 'Stickman generation must attach the selected character to every shot. Switch to local Codex image generation, OpenAI, or Gemini.')
               : props.l('配置支持参考图的服务后，才能保证镜头使用所选角色。', 'Configure a reference-capable provider so every shot uses the selected character.')}</small>
           </div>
           {props.imageConfigurationStatus !== 'loading' ? (
@@ -2272,13 +2322,21 @@ function currentIssue(job: { status: string; stages: CreatorStageRun[] }, step: 
 }
 
 function deliveryLabel(kind: typeof deliveryKinds[number], l: ReturnType<typeof useLocalizedCopy>): string {
-  const labels = { clean_video: ['火柴人动画', 'Stickman video'], narration_subtitle: ['旁白字幕', 'Narration subtitles'] } as const;
+  const labels = {
+    clean_video: ['火柴人动画', 'Stickman video'],
+    narration_subtitle: ['旁白字幕', 'Narration subtitles'],
+    thumbnail: ['缩略图', 'Thumbnail'],
+    publish_copy: ['发布文案', 'Publish copy']
+  } as const;
   const [zh, en] = labels[kind];
   return l(zh, en);
 }
 
 function deliveryIcon(kind: typeof deliveryKinds[number]) {
-  return kind === 'narration_subtitle' ? <Captions size={17} /> : <FileVideo size={17} />;
+  if (kind === 'narration_subtitle') return <Captions size={17} />;
+  if (kind === 'thumbnail') return <ImageIcon size={17} />;
+  if (kind === 'publish_copy') return <FileText size={17} />;
+  return <FileVideo size={17} />;
 }
 
 type CompositionStatus = 'waiting' | 'running' | 'completed' | 'failed';

@@ -103,13 +103,16 @@ describe('creator template registry', () => {
       }],
       outputs: [{ kind: 'generated_image', required: true }]
     });
-    expect(template.inputSchema.parse({})).toMatchObject({
-      provider: 'openai',
+    const defaultState = template.inputSchema.parse({});
+    expect(defaultState).toMatchObject({
       size: '1024x1024',
       quality: 'medium',
-      candidateCount: 2,
       referenceImageArtifactId: null
     });
+    expect(defaultState).not.toHaveProperty('provider');
+    expect(defaultState).not.toHaveProperty('candidateCount');
+    expect(template.inputSchema.parse({ provider: 'openai', candidateCount: 4 }))
+      .toMatchObject({ provider: 'openai', candidateCount: 4 });
   });
 
   it('registers smart dubbing as a persisted TTS workflow', () => {

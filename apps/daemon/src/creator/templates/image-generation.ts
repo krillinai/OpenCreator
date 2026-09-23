@@ -22,10 +22,10 @@ function createImageGenerationTemplateDefinition(
     renderer: 'image-generation',
     inputSchema: z.object({
       prompt: z.string().max(creatorPromptMaxLength).default(''),
-      provider: z.enum(['openai', 'jimeng', 'kling', 'gemini']).default('openai'),
+      provider: z.enum(['openai', 'jimeng', 'kling', 'gemini', 'codex-native']).optional(),
       size: z.enum(['1024x1024', '1536x1024', '1024x1536']).default('1024x1024'),
       quality: z.enum(['low', 'medium', 'high']).default('medium'),
-      candidateCount: z.number().int().min(1).max(4).default(2),
+      candidateCount: z.number().int().min(1).max(4).optional(),
       ...(supportsReferenceImage
         ? { referenceImageArtifactId: z.string().nullable().default(null) }
         : {}),

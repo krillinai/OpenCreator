@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  stickmanOutputPresetDefaults,
+  stickmanOutputPresets,
+  stickmanRatios
+} from '@opencreator/protocol';
 import type { CreatorTemplateAction, CreatorTemplateDefinition, CreatorTemplateStage } from './types.js';
 
 const jsonRecord = z.record(z.string(), z.unknown());
@@ -24,6 +29,40 @@ const action = (
   schema: z.ZodTypeAny,
   allowedStages: string[]
 ): CreatorTemplateAction => ({ id, inputSchema: schema as never, allowedStages });
+
+const stickmanInputSchema = z.preprocess(value => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (record.outputPreset !== 'youtube-shorts') return value;
+  return {
+    ...record,
+    ...stickmanOutputPresetDefaults('youtube-shorts')
+  };
+}, z.object({
+  sourceType: z.enum(['url', 'text']).default('url'),
+  sourceUrl: z.string().default(''),
+  sourceText: z.string().max(50_000).default(''),
+  topic: z.string().default(''),
+  characterAsset: visualAssetRef.default({
+    assetId: 'stickman.character.default',
+    revision: 1
+  }),
+  styleAsset: visualAssetRef.default({
+    assetId: 'stickman.style.paper-pencil',
+    revision: 1
+  }),
+  outputPreset: z.enum(stickmanOutputPresets).default('landscape'),
+  ratio: z.enum(stickmanRatios).default('16:9'),
+  targetDurationSeconds: z.number().positive().max(600).default(30),
+  sourceLanguage: z.string().default('auto'),
+  targetLanguage: z.string().default('zh-CN'),
+  ttsProvider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax', 'volcengine']).optional(),
+  ttsModel: z.string().optional(),
+  voiceCode: z.string().optional(),
+  voiceName: z.string().optional(),
+  workflowTarget: workflowTarget.default('script_ready'),
+  currentStage: z.string().nullable().default(null)
+}).passthrough());
 
 const stage = (
   definition: Omit<CreatorTemplateStage, 'allowedJobStatuses' | 'jobCompletionPolicy'>
@@ -63,30 +102,7 @@ export function createStickmanVideoTemplate(): CreatorTemplateDefinition {
     id: 'stickman-video',
     version: 2,
     renderer: 'stickman-video',
-    inputSchema: z.object({
-      sourceType: z.enum(['url', 'text']).default('url'),
-      sourceUrl: z.string().default(''),
-      sourceText: z.string().max(50_000).default(''),
-      topic: z.string().default(''),
-      characterAsset: visualAssetRef.default({
-        assetId: 'stickman.character.default',
-        revision: 1
-      }),
-      styleAsset: visualAssetRef.default({
-        assetId: 'stickman.style.paper-pencil',
-        revision: 1
-      }),
-      ratio: z.literal('16:9').default('16:9'),
-      targetDurationSeconds: z.number().positive().max(600).default(30),
-      sourceLanguage: z.string().default('auto'),
-      targetLanguage: z.string().default('zh-CN'),
-      ttsProvider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax', 'volcengine']).optional(),
-      ttsModel: z.string().optional(),
-      voiceCode: z.string().optional(),
-      voiceName: z.string().optional(),
-      workflowTarget: workflowTarget.default('script_ready'),
-      currentStage: z.string().nullable().default(null)
-    }).passthrough() as never,
+    inputSchema: stickmanInputSchema as never,
     stages: [
       stage({ id: 'ingest-text', executor: 'stickman-content', inputArtifacts: [], outputArtifacts: [{ kind: 'source_text', status: 'completed' }] }),
       stage({ id: 'source-transcript', executor: 'krillinai', inputArtifacts: [], outputArtifacts: [{ kind: 'source_subtitle', status: 'completed' }] }),
@@ -106,6 +122,7 @@ export function createStickmanVideoTemplate(): CreatorTemplateDefinition {
       stage({ id: 'package-validation', executor: 'stickman-delivery', dependsOn: ['media-validation'], final: true, invalidateDependentArtifacts: false, inputArtifacts: [
         { kind: 'clean_video', selector: 'latest-completed' },
         { kind: 'narration_subtitle', selector: 'latest-completed' },
+        { kind: 'script_manifest', selector: 'latest-completed' },
         { kind: 'visual_validation', selector: 'latest-completed' },
         { kind: 'audio_timing', selector: 'latest-completed' },
         { kind: 'timeline_manifest', selector: 'latest-completed' },
@@ -114,6 +131,8 @@ export function createStickmanVideoTemplate(): CreatorTemplateDefinition {
       ], outputArtifacts: [
         { kind: 'clean_video', status: 'completed' },
         { kind: 'narration_subtitle', status: 'completed' },
+        { kind: 'thumbnail', status: 'completed' },
+        { kind: 'publish_copy', status: 'completed' },
         { kind: 'delivery_manifest', status: 'completed' }
       ] })
     ],
@@ -139,6 +158,8 @@ export function createStickmanVideoTemplate(): CreatorTemplateDefinition {
     outputs: [
       { kind: 'clean_video', required: true },
       { kind: 'narration_subtitle', required: true },
+      { kind: 'thumbnail', required: true },
+      { kind: 'publish_copy', required: true },
       { kind: 'delivery_manifest', required: true }
     ],
     agentGuidance: '按脚本、配音、分镜画面、动画合成和成片交付的阶段边界推进；计费请求未知时只能建议用户显式处置。'

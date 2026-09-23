@@ -1,3 +1,4 @@
+import type { StickmanRatio } from '@opencreator/protocol';
 import type { StickmanShot, StickmanStyleContract } from './contracts.js';
 
 export const STICKMAN_CHARACTER_REFERENCE_PREPARATION = 'original-bytes-v2';
@@ -10,6 +11,7 @@ export function shouldUsePreviousShotReference(shot: StickmanShot, shotIndex: nu
 export function buildStickmanImagePrompt(input: {
   visualProfile: StickmanStyleContract;
   shot: StickmanShot;
+  ratio: StickmanRatio;
   hasStyleReference: boolean;
   hasPreviousShotReference: boolean;
 }): string {
@@ -32,7 +34,13 @@ export function buildStickmanImagePrompt(input: {
   }
 
   return [
-    'Create exactly one full-frame 16:9 narrative image for a recurring stick-figure video.',
+    `Create exactly one full-frame ${input.ratio} narrative image for a recurring stick-figure video.`,
+    ...(input.ratio === '9:16'
+      ? [
+          'This is a vertical 9:16 YouTube Short. Keep the protagonist and action inside the central safe area so captions can occupy the lower third.',
+          'Use a clear vertical composition with readable foreground, middle ground, and background; do not letterbox, pillarbox, or split the frame.'
+        ]
+      : []),
     '',
     '[REFERENCE RESPONSIBILITIES]',
     ...referenceInstructions,

@@ -20,7 +20,14 @@ export function createVideoTranslationWorkflow(input: {
       validateSource(job);
       if (job.artifacts.some(artifact => artifact.id === job.state.importedTargetSubtitleId && artifact.kind === 'target_subtitle' && artifact.status === 'completed')) return;
       const config = await input.configStore.read();
-      if (!config.llm.apiKey) {
+      if (
+        config.llm.source === 'custom'
+        && (
+          !config.llm.baseUrl.trim()
+          || !config.llm.model.trim()
+          || !config.llm.apiKey.trim()
+        )
+      ) {
         setConfigurationNeeded(input.creator, job.id, {
           code: 'creator_llm_config_missing',
           message: '请先完成文本翻译模型配置',

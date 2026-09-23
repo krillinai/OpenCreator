@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
+import { readStickmanRatio, stickmanCanvasForRatio } from '@opencreator/protocol';
 import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { validateMediaFile } from '../validators/media.js';
@@ -31,8 +32,18 @@ export function createStickmanRemotionExecutor(input: {
       if (timeline?.path === null || timeline?.path === undefined) {
         throw new CreatorExecutorError('creator_stage_input_missing', 'Timeline manifest is required');
       }
+      const timelineValue = JSON.parse(await readFile(timeline.path, 'utf8')) as {
+        ratio?: unknown;
+        totalFrames?: number;
+        fps?: number;
+      };
+      const ratio = readStickmanRatio(timelineValue.ratio);
+      const canvas = stickmanCanvasForRatio(ratio);
       const runtime = input.runtime ?? readStickmanRemotionRuntime(input.runtimeRoot);
-      const outputPath = join(stage.workdir, 'landscape-clean.mp4');
+      const outputPath = join(
+        stage.workdir,
+        ratio === '9:16' ? 'portrait-clean.mp4' : 'landscape-clean.mp4'
+      );
       const requestPath = join(stage.workdir, 'remotion-request.json');
       const resultPath = join(stage.workdir, 'remotion-result.json');
       await writeFile(requestPath, `${JSON.stringify({
@@ -59,15 +70,11 @@ export function createStickmanRemotionExecutor(input: {
           );
         }
         const media = await validateVideo(outputPath, input.ffprobePath);
-        const timelineValue = JSON.parse(await readFile(timeline.path, 'utf8')) as {
-          totalFrames?: number;
-          fps?: number;
-        };
         const expectedDuration = Number(timelineValue.totalFrames) / Number(timelineValue.fps);
         const durationTolerance = Math.max(0.15, 2 / Number(timelineValue.fps));
         if (
-          media.width !== 1280
-          || media.height !== 720
+          media.width !== canvas.width
+          || media.height !== canvas.height
           || !media.hasVideo
           || !media.hasAudio
           || !Number.isFinite(expectedDuration)
@@ -75,7 +82,7 @@ export function createStickmanRemotionExecutor(input: {
         ) {
           throw new CreatorExecutorError(
             'stickman_render_invalid',
-            'Rendered video must be decodable 1280x720 media with matching audio duration'
+            `Rendered video must be decodable ${canvas.width}x${canvas.height} media with matching audio duration`
           );
         }
         return {
@@ -86,7 +93,8 @@ export function createStickmanRemotionExecutor(input: {
             sourceArtifactIds: [timeline.id],
             metadata: {
               ...media,
-              fileName: 'landscape-clean.mp4',
+              ratio,
+              fileName: ratio === '9:16' ? 'portrait-clean.mp4' : 'landscape-clean.mp4',
               renderEngine: 'remotion',
               renderKind: 'final',
               mediaValidation: 'ffprobe'

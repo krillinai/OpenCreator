@@ -417,6 +417,7 @@ describe('stickman real provider pipeline', () => {
         }>;
       };
       expect(timeline).toMatchObject({
+        ratio: '16:9',
         width: 1280,
         height: 720
       });
@@ -449,7 +450,10 @@ describe('stickman real provider pipeline', () => {
       };
       expect(mediaValidation).toMatchObject({
         ok: true,
-        validation: 'ffprobe_and_three_frame_sampling'
+        validation: 'ffprobe_and_three_frame_sampling',
+        ratio: '16:9',
+        width: 1280,
+        height: 720
       });
       expect(mediaValidation.sampledFrames).toHaveLength(3);
       expect(mediaValidation.sampledFrames.every(frame => (
@@ -458,7 +462,9 @@ describe('stickman real provider pipeline', () => {
 
       const deliveryKinds = [
         'clean_video',
-        'narration_subtitle'
+        'narration_subtitle',
+        'thumbnail',
+        'publish_copy'
       ] as const;
       const deliveries = deliveryKinds.map(kind => requireDelivery(completed, kind));
       for (const artifact of deliveries) {
@@ -499,14 +505,14 @@ describe('stickman real provider pipeline', () => {
         placeholderAssets: [],
         blockingChecks: []
       });
-      expect(manifest.files).toHaveLength(2);
+      expect(manifest.files).toHaveLength(4);
       for (const file of manifest.files) {
         const source = completed.artifacts.find(item => item.id === file.sourceArtifactId);
-        const delivery = deliveries.find(item => item.sha256 === file.sha256);
+        const delivery = deliveries.find(item => item.metadata.fileName === file.name);
         expect(source, `Manifest 来源 ${file.sourceArtifactId}`).toBeDefined();
         expect(delivery, `Manifest 交付 ${file.name}`).toBeDefined();
-        expect(file.sha256).toBe(source!.sha256);
-        expect(file.bytes).toBe(statSync(source!.path!).size);
+        expect(file.sha256).toBe(hashFile(delivery!.path!));
+        expect(file.bytes).toBe(statSync(delivery!.path!).size);
       }
 
       const summary = {
@@ -553,12 +559,15 @@ function readPrivateConfig(path: string): CreatorServicesConfig {
 }
 
 function configuredImage(config: CreatorServicesConfig): {
-  provider: 'openai' | 'gemini';
+  provider: 'openai' | 'gemini' | 'codex-native';
   model: string;
 } {
   const provider = config.image.provider;
+  if (provider === 'codex-native') {
+    return { provider, model: 'codex-native' };
+  }
   if (provider !== 'openai' && provider !== 'gemini') {
-    throw new Error('真实火柴人 E2E 的生图服务必须支持角色参考图（OpenAI 或 Gemini）');
+    throw new Error('真实火柴人 E2E 的生图服务必须支持角色参考图（Codex、OpenAI 或 Gemini）');
   }
   const providerConfig = config.image[provider];
   if (!providerConfig.apiKey.trim() || !providerConfig.model.trim()) {

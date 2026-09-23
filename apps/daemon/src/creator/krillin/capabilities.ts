@@ -33,10 +33,16 @@ export function createKrillinCreatorServicesCapabilities(
         ),
         localProvider(
           'whisper.cpp',
-          ['tiny', 'medium', 'large-v2'],
+          ['tiny', 'medium', 'large-v2', 'large-v3-turbo'],
           whisperCppAvailable,
           false,
-          whisperCppAvailable ? undefined : 'unsupported_platform'
+          whisperCppAvailable ? undefined : 'unsupported_platform',
+          {
+            tiny: { diskBytes: 77691713 },
+            medium: { diskBytes: 1533763059 },
+            'large-v2': { diskBytes: 3094623691 },
+            'large-v3-turbo': { diskBytes: 1624555275 }
+          }
         ),
         cloudProvider('aliyun', []),
         cloudProvider('volcengine', [])
@@ -63,7 +69,8 @@ function localProvider(
   models: string[],
   available: boolean,
   gpuAcceleration: boolean,
-  unavailableReason: CreatorTranscriptionProviderCapability['unavailableReason']
+  unavailableReason: CreatorTranscriptionProviderCapability['unavailableReason'],
+  modelDetails?: CreatorTranscriptionProviderCapability['modelDetails']
 ): CreatorTranscriptionProviderCapability {
   return {
     provider,
@@ -71,6 +78,7 @@ function localProvider(
     available,
     models,
     gpuAcceleration,
+    ...(modelDetails === undefined ? {} : { modelDetails }),
     ...(unavailableReason === undefined ? {} : { unavailableReason })
   };
 }

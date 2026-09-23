@@ -46,6 +46,7 @@ describe('stickman media validation executor', () => {
     });
     expect(JSON.parse(readFileSync(result.outputs[0]!.path!, 'utf8'))).toMatchObject({
       ok: true,
+      ratio: '16:9',
       cleanVideoArtifactId: 'clean-1',
       timelineArtifactId: 'timeline-1',
       sampledFrames: [{ index: 1 }, { index: 2 }, { index: 3 }]
@@ -76,6 +77,7 @@ function setup() {
   mkdirSync(workdir, { recursive: true });
   const timelinePath = join(sourceRoot, 'timeline.json');
   writeFileSync(timelinePath, JSON.stringify({
+    ratio: '16:9',
     fps: 30,
     width: 1280,
     height: 720,
@@ -89,7 +91,8 @@ function setup() {
       motion: 'static',
       imageSha256: 'c'.repeat(64),
       audioSha256: 'd'.repeat(64)
-    }]
+    }],
+    captions: [{ segmentId: 'segment-01', startFrame: 0, endFrame: 60, text: 'Caption' }]
   }));
   const cleanPath = join(sourceRoot, 'clean.mp4');
   writeFileSync(cleanPath, 'validated remotion video');

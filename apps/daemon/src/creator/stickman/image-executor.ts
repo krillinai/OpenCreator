@@ -1,14 +1,23 @@
-import type { ImageGenerationProvider, ImageGenerationQuality } from '@opencreator/protocol';
+import {
+  readStickmanRatio,
+  stickmanCanvasForRatio,
+  stickmanImageSizeForRatio,
+  type ImageGenerationProvider,
+  type ImageGenerationQuality,
+  type StickmanCanvas
+} from '@opencreator/protocol';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFile, readFile } from 'node:fs/promises';
+import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import {
   generateImageContents,
-  imageGenerationCapabilities
+  imageGenerationCapabilities,
+  type CodexNativeImageRuntime
 } from '../../image-generation/provider.js';
+import { resolveCreatorImageSettings } from '../image-settings.js';
 import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { CreatorProviderRequestLedger } from '../provider-requests.js';
@@ -34,12 +43,14 @@ export function createStickmanImageExecutor(input: {
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
   ledger: CreatorProviderRequestLedger;
   generate?: typeof generateImageContents;
+  codexNative?: CodexNativeImageRuntime;
   tesseractPath?: string;
-  validateCandidate?: (path: string) => Promise<StickmanImageCandidateQuality>;
+  validateCandidate?: (
+    path: string,
+    expectedCanvas?: StickmanCanvas
+  ) => Promise<StickmanImageCandidateQuality>;
 }): CreatorExecutor {
   const generate = input.generate ?? generateImageContents;
-  const validateCandidate = input.validateCandidate
-    ?? (path => inspectStickmanImageCandidate(path, input.tesseractPath));
   return {
     id: 'stickman-image',
     async run(stage) {
@@ -48,6 +59,15 @@ export function createStickmanImageExecutor(input: {
       }
       const scopeKey = stage.stageRun.scopeKey;
       const inputFingerprint = stage.stageRun.inputFingerprint;
+      const ratio = readStickmanRatio(stage.job.state.ratio);
+      const canvas = stickmanCanvasForRatio(ratio);
+      const imageSize = stickmanImageSizeForRatio(ratio);
+      const validateCandidate = input.validateCandidate
+        ?? ((path, expectedCanvas) => inspectStickmanImageCandidate(
+          path,
+          input.tesseractPath,
+          expectedCanvas ?? canvas
+        ));
       if (scopeKey === null || inputFingerprint === null) {
         throw new CreatorExecutorError('creator_stage_scope_missing', 'Shot scope and fingerprint are required');
       }
@@ -225,10 +245,17 @@ export function createStickmanImageExecutor(input: {
         ...(previousShotImage === undefined ? [] : [previousShotImage.id])
       ])];
       const config = await input.configStore.read();
-      const provider = config.image.provider;
+      const imageSettings = resolveCreatorImageSettings({
+        config,
+        provider: stage.job.state.provider,
+        candidateCount: 1,
+        fallbackCandidateCount: 1,
+        maxCandidateCount: 1
+      });
+      const { provider } = imageSettings;
       const quality = readQuality(stage.job.state.quality);
       assertReferenceImageSupport(provider, referenceImages.length);
-      const model = config.image[provider].model;
+      const model = imageSettings.model;
       if (
         promptPackArtifact.metadata.contract !== STICKMAN_IMAGE_PROMPT_CONTRACT
         || promptPack.characterReferenceArtifactId !== characterReference.id
@@ -244,7 +271,7 @@ export function createStickmanImageExecutor(input: {
       const request = {
         prompt: generationPrompt,
         provider,
-        size: '1536x1024' as const,
+        size: imageSize,
         quality,
         count: 1
       };
@@ -273,6 +300,9 @@ export function createStickmanImageExecutor(input: {
             characterReferenceSha256,
             requestReferenceSha256,
             characterReferenceMime,
+            ratio,
+            width: canvas.width,
+            height: canvas.height,
             referenceImages: referenceImages.map(reference => ({
               role: reference.role,
               sha256: reference.sha256,
@@ -303,7 +333,10 @@ export function createStickmanImageExecutor(input: {
             referenceImages: referenceImages.map(reference => ({
               content: reference.content,
               mime: reference.mime
-            }))
+            })),
+            ...(input.codexNative === undefined
+              ? {}
+              : { codexNative: input.codexNative })
           });
           input.ledger.markSucceeded(ledger.id);
         } catch (error) {
@@ -319,11 +352,11 @@ export function createStickmanImageExecutor(input: {
         const extension = image.mime === 'image/jpeg' ? 'jpg' : image.mime === 'image/webp' ? 'webp' : 'png';
         const candidatePath = join(stage.workdir, `${scopeKey}-candidate-${candidateAttempt}.${extension}`);
         await sharp(image.content)
-          .resize(1280, 720, { fit: 'cover', position: 'centre' })
+          .resize(canvas.width, canvas.height, { fit: 'cover', position: 'centre' })
           .toFile(candidatePath);
         let candidateQuality: StickmanImageCandidateQuality;
         try {
-          candidateQuality = await validateCandidate(candidatePath);
+          candidateQuality = await validateCandidate(candidatePath, canvas);
         } catch (error) {
           candidateFailures.push(
             error instanceof Error ? error.message : `Candidate ${candidateAttempt} failed quality checks`
@@ -343,6 +376,7 @@ export function createStickmanImageExecutor(input: {
             metadata: {
               ...metadata,
               shotId: scopeKey,
+              ratio,
               prompt: candidateRequest.prompt,
               provider,
               model: result.model,
@@ -408,7 +442,8 @@ type StickmanImageCandidateQuality = {
 
 async function inspectStickmanImageCandidate(
   path: string,
-  tesseractPath?: string
+  tesseractPath?: string,
+  expectedCanvas: StickmanCanvas = stickmanCanvasForRatio('16:9')
 ): Promise<StickmanImageCandidateQuality> {
   let metadata: Awaited<ReturnType<typeof sharp.prototype.metadata>>;
   let stats: Awaited<ReturnType<typeof sharp.prototype.stats>>;
@@ -422,8 +457,11 @@ async function inspectStickmanImageCandidate(
   }
   const width = metadata.width ?? 0;
   const height = metadata.height ?? 0;
-  if (width <= 0 || height <= 0 || Math.abs(width / height - 16 / 9) > 0.03) {
-    throw new CreatorExecutorError('creator_shot_image_invalid', 'Generated image is not 16:9');
+  if (width !== expectedCanvas.width || height !== expectedCanvas.height) {
+    throw new CreatorExecutorError(
+      'creator_shot_image_invalid',
+      `Generated image is not ${expectedCanvas.width}x${expectedCanvas.height} ${expectedCanvas.ratio} media`
+    );
   }
   const brightnessMean = stats.channels[0]?.mean ?? 0;
   const contrastStddev = stats.channels[0]?.stdev ?? 0;
@@ -487,7 +525,7 @@ function assertReferenceImageSupport(provider: ImageGenerationProvider, count: n
   if (capabilities.supportsReferenceImage && capabilities.maxReferenceImages >= count) return;
   throw new CreatorExecutorError(
     'creator_stickman_image_provider_unsupported',
-    `当前生图服务 ${provider} 不支持任务需要的 ${count} 张参考图。请在 AI 服务 -> 生图服务中切换到支持多参考图的 OpenAI 或 Gemini 服务`
+    `The ${provider} image provider does not support the ${count} reference images required by this job. Use local Codex image generation, OpenAI, or Gemini with multi-reference support`
   );
 }
 

@@ -6,6 +6,11 @@ import type {
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import type { CreatorCommandDispatcher } from '../command-dispatcher.js';
 import type { CreatorService } from '../service.js';
+import {
+  imageProviderConfigured,
+  readImageProvider
+} from '../image-settings.js';
+import { imageGenerationCapabilities } from '../../image-generation/provider.js';
 
 export type CoverWorkflow = ReturnType<typeof createCoverWorkflow>;
 
@@ -48,7 +53,7 @@ export function createCoverWorkflow(input: {
       throw error;
     }
     const config = await input.configStore.read();
-    const provider = readProvider(job.state.provider, config.image.provider);
+    const provider = readImageProvider(job.state.provider, config.image.provider);
     if (!hasImageCredentials(config, provider)) {
       setConfigurationNeeded(input.creator, job.id, {
         code: 'creator_image_config_missing',
@@ -168,7 +173,7 @@ export class CoverWorkflowError extends Error {
 }
 
 export function supportsReferenceImage(provider: ImageGenerationProvider): boolean {
-  return provider === 'openai' || provider === 'gemini';
+  return imageGenerationCapabilities(provider).supportsReferenceImage;
 }
 
 function validateYoutubeSource(job: CreatorJob): void {
@@ -247,20 +252,7 @@ function hasImageCredentials(
   config: Awaited<ReturnType<CreatorServicesConfigStore['read']>>,
   provider: ImageGenerationProvider
 ): boolean {
-  if (provider === 'kling') {
-    return config.image.kling.accessKey.trim().length > 0
-      && config.image.kling.secretKey.trim().length > 0;
-  }
-  return config.image[provider].apiKey.trim().length > 0;
-}
-
-function readProvider(
-  value: unknown,
-  fallback: ImageGenerationProvider
-): ImageGenerationProvider {
-  return value === 'openai' || value === 'jimeng' || value === 'kling' || value === 'gemini'
-    ? value
-    : fallback;
+  return imageProviderConfigured(config, provider);
 }
 
 function setConfigurationNeeded(

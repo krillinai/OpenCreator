@@ -32,10 +32,6 @@
     "真人贴纸",
     "reference-template"
   ],
-  "requirements": {
-    "service": "image",
-    "provider": "openai"
-  },
   "defaults": {
     "prompt": "",
     "size": "1024x1536",

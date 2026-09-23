@@ -28,6 +28,7 @@ describe('creator cover generation', () => {
   it('generates, previews, uploads a reference and uses the latest first candidate as project cover', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'creator-cover-api-'));
     const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'openai';
     config.image.openai.apiKey = 'image-key';
     config.image.openai.baseUrl = 'https://images.example.test/v1/images/generations';
     let requestIndex = 0;

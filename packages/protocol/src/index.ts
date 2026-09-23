@@ -13,3 +13,4 @@ export * from './settings.js';
 export * from './smart-dubbing.js';
 export * from './video-metadata.js';
 export * from './wechat-article.js';
+export * from './stickman.js';

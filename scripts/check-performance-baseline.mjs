@@ -58,6 +58,12 @@ function measureAssets() {
       maxGzipBytes: 27_000
     },
     {
+      label: 'AI services settings JavaScript',
+      pattern: /^CreatorServicesSettingsView-[^.]+\.js$/,
+      maxBytes: 45_000,
+      maxGzipBytes: 14_000
+    },
+    {
       label: 'Web 主样式',
       pattern: /^index-[^.]+\.css$/,
       maxBytes: 150_000,

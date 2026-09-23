@@ -32,7 +32,19 @@ describe('creator provider catalog', () => {
   });
 
   it('marks only implemented providers as supported', () => {
-    expect(creatorProviderCatalog.every(entry => entry.status === 'supported')).toBe(true);
+    expect(creatorProviderCatalog
+      .filter(entry => entry.id !== 'codex-native')
+      .every(entry => entry.status === 'supported')).toBe(true);
     expect(creatorProviderCatalogById.image.gemini?.status).toBe('supported');
+  });
+
+  it('describes Codex native image generation as credential-free and experimental', () => {
+    expect(creatorProviderCatalogById.image['codex-native']).toMatchObject({
+      label: 'Local Codex image generation',
+      protocol: 'local',
+      credentials: [],
+      capabilities: ['text-to-image', 'image-edit', 'reference-image'],
+      status: 'experimental'
+    });
   });
 });

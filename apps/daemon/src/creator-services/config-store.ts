@@ -63,11 +63,12 @@ const llmConfigSchema = openAiCompatibleSchema.extend({
   source: value.source ?? inferLegacyTextModelSource(value)
 }));
 const imageConfigSchema = z.object({
-  provider: z.enum(['openai', 'jimeng', 'kling', 'gemini']),
+  provider: z.enum(['openai', 'jimeng', 'kling', 'gemini', 'codex-native']),
   openai: openAiCompatibleSchema,
   jimeng: openAiCompatibleSchema,
   kling: klingAiSchema,
-  gemini: openAiCompatibleSchema
+  gemini: openAiCompatibleSchema,
+  codexNative: z.object({}).strict().default({})
 }).strict();
 const legacyImageConfigSchema = z.object({
   provider: z.literal('openai-compatible'),
@@ -127,7 +128,7 @@ export const creatorServicesConfigSchema = z.object({
     openai: openAiCompatibleSchema,
     fasterWhisper: z.object({ model: z.enum(['tiny', 'medium', 'large-v2']) }).strict(),
     whisperKit: z.object({ model: z.literal('large-v2') }).strict(),
-    whisperCpp: z.object({ model: z.enum(['tiny', 'medium', 'large-v2']) }).strict(),
+    whisperCpp: z.object({ model: z.enum(['tiny', 'medium', 'large-v2', 'large-v3-turbo']) }).strict(),
     aliyun: aliyunSchema,
     volcengine: volcengineAsrSchema.default(creatorServicesDefaults.transcription.volcengine)
   }).strict(),

@@ -161,14 +161,13 @@ describe('creator preset module schemas', () => {
       locale: 'zh-CN',
       requirement: {
         service: 'tts',
-        provider: 'minimax',
-        model: 'required-tts-model'
+        capabilities: ['speech-generation']
       },
       services
     });
     expect(required).toMatchObject({
-      ttsProvider: 'minimax',
-      ttsModel: 'required-tts-model'
+      ttsProvider: 'aliyun',
+      ttsModel: 'configured-tts-model'
     });
   });
 
@@ -228,7 +227,7 @@ describe('creator preset module schemas', () => {
       });
   });
 
-  it('binds every public module and validates provider requirements', () => {
+  it('binds every public module and validates capability requirements', () => {
     expect(creatorPresetModuleDefinitions.map(definition => ({
       module: definition.module,
       runtime: `${definition.runtimeTemplate.id}@${definition.runtimeTemplate.version}`
@@ -244,20 +243,44 @@ describe('creator preset module schemas', () => {
     expect(() => getCreatorPresetModuleDefinition('video-generation')
       .validateRequirement({
         service: 'video',
-        provider: 'seedance',
-        model: videoGenerationModelIds.seedance[0]
+        capabilities: ['text-to-video']
       })).not.toThrow();
     expect(() => getCreatorPresetModuleDefinition('video-generation')
       .validateRequirement({
         service: 'video',
-        provider: 'seedance',
-        model: 'unavailable-model'
-      })).toThrow('unsupported video provider or model');
+        capabilities: ['text-to-image']
+      })).toThrow('unsupported video capability');
     expect(() => getCreatorPresetModuleDefinition('image-generation')
       .validateRequirement({
         service: 'image',
-        provider: 'openai',
-        model: 'gpt-image-1'
-      })).toThrow('cannot select a model');
+        capabilities: ['text-to-image']
+      })).not.toThrow();
+
+    expect(creatorPresetSourceManifestSchema.safeParse({
+      schemaVersion: 1,
+      id: 'invalid-provider-binding',
+      version: 1,
+      module: 'image-generation',
+      runtimeTemplate: { id: 'image-generation', version: 2 },
+      status: 'published',
+      title: { 'zh-CN': '测试', 'en-US': 'Test' },
+      description: { 'zh-CN': '测试', 'en-US': 'Test' },
+      cover: 'cover.jpg',
+      requirements: { service: 'image', capabilities: ['text-to-image'], provider: 'openai' },
+      defaults: {}
+    }).success).toBe(false);
+    expect(creatorPresetSourceManifestSchema.safeParse({
+      schemaVersion: 1,
+      id: 'invalid-model-binding',
+      version: 1,
+      module: 'image-generation',
+      runtimeTemplate: { id: 'image-generation', version: 2 },
+      status: 'published',
+      title: { 'zh-CN': '测试', 'en-US': 'Test' },
+      description: { 'zh-CN': '测试', 'en-US': 'Test' },
+      cover: 'cover.jpg',
+      requirements: { service: 'image', capabilities: ['text-to-image'], model: 'gpt-image-1' },
+      defaults: {}
+    }).success).toBe(false);
   });
 });

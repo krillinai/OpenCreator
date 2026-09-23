@@ -5,7 +5,6 @@ import {
   creatorRuntimeWorkspaces,
   imageGenerationSizes,
   videoGenerationDurations,
-  videoGenerationModelIds,
   videoGenerationSizes,
   type CreatorJson,
   type CreatorPresetRequirements,
@@ -179,40 +178,26 @@ function validateModuleRequirement(
   requirement: CreatorPresetRequirements | undefined
 ): void {
   if (requirement === undefined) return;
-  if (module === 'image-generation' || module === 'cover-generator') {
-    if (requirement.service !== 'image') {
-      throw new Error(`${module}: requirement service must be image`);
-    }
-    if (!['openai', 'jimeng', 'kling', 'gemini'].includes(requirement.provider)) {
-      throw new Error(`${module}: unsupported image provider ${requirement.provider}`);
-    }
-    if (requirement.model !== undefined) {
-      throw new Error(`${module}: image requirements cannot select a model`);
-    }
-    return;
+  const expected = module === 'image-generation' || module === 'cover-generator'
+    ? 'image'
+    : module === 'video-generation'
+      ? 'video'
+      : module === 'smart-dubbing' || module === 'video-translation'
+        ? 'tts'
+        : undefined;
+  if (expected === undefined) throw new Error(`${module}: requirements are not supported`);
+  if (requirement.service !== expected) {
+    throw new Error(`${module}: requirement service must be ${expected}`);
   }
-  if (module === 'video-generation') {
-    if (requirement.service !== 'video') {
-      throw new Error(`${module}: requirement service must be video`);
-    }
-    const models = videoGenerationModelIds[
-      requirement.provider as keyof typeof videoGenerationModelIds
-    ] as readonly string[] | undefined;
-    if (models === undefined || requirement.model === undefined || !models.includes(requirement.model)) {
-      throw new Error(`${module}: unsupported video provider or model`);
-    }
-    return;
+  const allowed = {
+    image: ['text-to-image', 'reference-image', 'image-edit'],
+    video: ['text-to-video', 'image-to-video'],
+    tts: ['speech-generation', 'voice-preview']
+  }[expected] as readonly string[];
+  const unsupported = requirement.capabilities.find(capability => !allowed.includes(capability));
+  if (unsupported !== undefined) {
+    throw new Error(`${module}: unsupported ${expected} capability ${unsupported}`);
   }
-  if (module === 'smart-dubbing' || module === 'video-translation') {
-    if (requirement.service !== 'tts') {
-      throw new Error(`${module}: requirement service must be tts`);
-    }
-    if (!['openai', 'aliyun', 'minimax'].includes(requirement.provider)) {
-      throw new Error(`${module}: unsupported tts provider ${requirement.provider}`);
-    }
-    return;
-  }
-  throw new Error(`${module}: requirements are not supported`);
 }
 
 export function isCreatorPresetModule(value: string): value is CreatorRuntimeWorkspace {
