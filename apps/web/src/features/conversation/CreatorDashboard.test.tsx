@@ -167,19 +167,21 @@ describe('CreatorDashboard', () => {
 
     expect(onSelectPreset).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'B站双语精翻' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '成果预览' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '成果预览' })).not.toBeInTheDocument();
     const previewTrigger = screen.getByRole('button', { name: '全屏查看B站双语精翻完整作品' });
     expect(previewTrigger.querySelector('img'))
       .toHaveAttribute('src', `/creator-presets/${'d'.repeat(64)}.webp`);
     expect(screen.getByText('英文视频翻译为简体中文。')).toBeInTheDocument();
     expect(screen.getByText('英语 → 简体中文')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '提示词' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'PROMPT 正文' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '复制 Prompt' })).toBeDisabled();
     expect(screen.getByText('此模板使用固定配置，无需预设提示词。')).toBeInTheDocument();
     const detailPage = document.querySelector<HTMLElement>('.creator-template-detail-page');
     const detailLayout = document.querySelector<HTMLElement>('.creator-template-detail-layout');
     const promptSection = document.querySelector<HTMLElement>('.creator-template-prompt-section');
-    expect(detailLayout).not.toContainElement(promptSection);
-    expect(detailPage?.lastElementChild).toBe(promptSection);
+    expect(screen.getByRole('dialog', { name: 'B站双语精翻' })).toBe(detailPage);
+    expect(detailLayout?.querySelector('.creator-template-detail-info')).toContainElement(promptSection);
+    expect(screen.getByRole('button', { name: '查看B站双语精翻模板详情' })).toBeInTheDocument();
     expect(screen.getByRole('list', { name: '模板标签' })).toHaveTextContent('B站双语字幕翻译');
     expect(screen.getByRole('button', { name: '使用此模板' })).toBeInTheDocument();
 
@@ -221,6 +223,16 @@ describe('CreatorDashboard', () => {
     expect(screen.queryByRole('dialog', { name: '电商商品主图增强版完整作品' }))
       .not.toBeInTheDocument();
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('copies the raw prompt from the detail card', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    render(<CreatorDashboard presets={presets} />);
+    fireEvent.click(screen.getByRole('button', { name: '查看电商商品主图增强版模板详情' }));
+    fireEvent.click(screen.getByRole('button', { name: '复制 Prompt' }));
+    expect(writeText).toHaveBeenCalledWith(presets[1]!.prompt);
+    expect(await screen.findByRole('button', { name: '已复制' })).toBeInTheDocument();
   });
 
   it('renders video examples with controls and a full preview', async () => {

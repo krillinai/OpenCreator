@@ -38,6 +38,12 @@ function hexChannels(value: string): number[] {
 }
 
 describe('app CSS visual contracts', () => {
+  it('keeps template preview media elevated above the global flat-surface reset', () => {
+    const previewMedia = cssBlock('.creator-template-outcome-media img,\n.creator-template-outcome-media video');
+    expect(previewMedia).toContain('box-shadow:');
+    expect(previewMedia).toContain('!important;');
+  });
+
   it('keeps the video template marker centered, subdued and non-interactive', () => {
     const marker = cssBlock('.creator-template-play-marker');
     expect(marker).toContain('--creator-template-play-size: 40px;');

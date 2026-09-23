@@ -3,8 +3,8 @@ import type {
   CreatorRuntimeWorkspace
 } from '@opencreator/protocol';
 import {
-  ArrowLeft,
   ChevronDown,
+  Copy,
   ExternalLink,
   Maximize2,
   Play,
@@ -150,6 +150,7 @@ export function CreatorDashboard(props: {
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedPresetIdentity, setSelectedPresetIdentity] = useState<string>();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);
   const [promptHasOverflow, setPromptHasOverflow] = useState(false);
   const [promptAtEnd, setPromptAtEnd] = useState(true);
   const [recentPresetIds, setRecentPresetIds] = useState<string[]>(readRecentPresetIds);
@@ -214,6 +215,7 @@ export function CreatorDashboard(props: {
   const selectedPreset = selectedPresetIdentity === undefined
     ? undefined
     : presets.find(preset => presetIdentity(preset) === selectedPresetIdentity);
+  useEffect(() => { setPromptCopied(false); }, [selectedPresetIdentity]);
   useLayoutEffect(() => {
     const filter = tagsFilterRef.current;
     const measure = tagsMeasureRef.current;
@@ -288,11 +290,19 @@ export function CreatorDashboard(props: {
 
   useLayoutEffect(() => {
     if (selectedPresetIdentity === undefined) return;
-    const scrollContainer = detailPageRef.current?.closest<HTMLElement>('.creator-home-wrap');
-    if (scrollContainer !== null && scrollContainer !== undefined) {
-      scrollContainer.scrollTop = 0;
-    }
+    const info = detailPageRef.current?.querySelector<HTMLElement>('.creator-template-detail-info');
+    if (info) info.scrollTop = 0;
   }, [selectedPresetIdentity]);
+
+  useEffect(() => {
+    if (selectedPreset === undefined) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || previewOpen) return;
+      setSelectedPresetIdentity(undefined);
+    };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [selectedPreset, previewOpen]);
 
   useLayoutEffect(() => {
     const prompt = promptRef.current;
@@ -341,37 +351,37 @@ export function CreatorDashboard(props: {
     }
   }
 
-  if (selectedPreset !== undefined) {
+  const detail = selectedPreset === undefined ? null : (() => {
     const identity = presetIdentity(selectedPreset);
     const busy = busyIdentities.has(identity);
     const previewUrl = selectedPreset.previewUrl ?? selectedPreset.coverUrl;
     return (
       <>
-        <div ref={detailPageRef} className="creator-dashboard creator-template-detail-page">
+        <div className="creator-template-detail-backdrop" onMouseDown={event => {
+          if (event.target === event.currentTarget) setSelectedPresetIdentity(undefined);
+        }}>
+        <div ref={detailPageRef} className="creator-dashboard creator-template-detail-page" role="dialog" aria-modal="true" aria-label={selectedPreset.title}>
         <header className="creator-template-detail-toolbar">
-          <button
-            type="button"
-            className="creator-template-back"
-            onClick={() => {
-              setPreviewOpen(false);
-              setSelectedPresetIdentity(undefined);
-              setActionError(undefined);
-            }}
-          >
-            <ArrowLeft size={16} aria-hidden="true" />
-            {language === 'en-US' ? 'Back to templates' : '返回模板列表'}
-          </button>
-          <span>{moduleLabel(selectedPreset.module, language === 'zh-CN' ? 'zh-CN' : 'en-US')}</span>
+          <div className="creator-template-detail-heading">
+            <h1>{selectedPreset.title}</h1>
+            <p>{selectedPreset.description}</p>
+          </div>
+          <div className="creator-template-detail-actions">
+            <button className="creator-template-use-button" type="button" disabled={busy} aria-busy={busy} onClick={() => void selectPreset(selectedPreset)}>
+              <WandSparkles size={17} aria-hidden="true" />
+              {busy ? (language === 'en-US' ? 'Creating...' : '正在创建...') : (language === 'en-US' ? 'Use this template' : '使用此模板')}
+            </button>
+            <button type="button" className="creator-template-back" aria-label={language === 'en-US' ? 'Back to templates' : '返回模板列表'} title={language === 'en-US' ? 'Back to templates' : '返回模板列表'} onClick={() => { setSelectedPresetIdentity(undefined); setActionError(undefined); }}>
+              <X size={18} aria-hidden="true" />
+            </button>
+          </div>
         </header>
 
         <div className="creator-template-detail-layout">
           <section
             className="creator-template-outcome"
-            aria-labelledby="creator-template-outcome-title"
+            aria-label={language === 'en-US' ? 'Example result' : '示例图片'}
           >
-            <h2 id="creator-template-outcome-title">
-              {language === 'en-US' ? 'Example result' : '成果预览'}
-            </h2>
             {selectedPreset.previewVideoUrl === undefined ? (
               <button
                 ref={previewTriggerRef}
@@ -417,10 +427,26 @@ export function CreatorDashboard(props: {
           </section>
 
           <aside className="creator-template-detail-info">
-            <div className="creator-template-detail-intro">
-              <h1>{selectedPreset.title}</h1>
-              <p>{selectedPreset.description}</p>
-            </div>
+            <section className="creator-template-detail-section creator-template-prompt-section">
+              <div className={`creator-template-prompt-card${promptHasOverflow ? ' is-scrollable' : ''}${promptAtEnd ? ' is-at-end' : ''}`}>
+                <div className="creator-template-prompt-heading">
+                  <h2>{language === 'en-US' ? 'PROMPT' : 'PROMPT 正文'}</h2>
+                  <button type="button" disabled={selectedPreset.prompt === null} onClick={() => {
+                    if (selectedPreset.prompt === null) return;
+                    void navigator.clipboard.writeText(selectedPreset.prompt).then(() => setPromptCopied(true)).catch(() => setPromptCopied(false));
+                  }}>
+                    <Copy size={16} aria-hidden="true" />
+                    {promptCopied ? (language === 'en-US' ? 'Copied' : '已复制') : (language === 'en-US' ? 'Copy prompt' : '复制 Prompt')}
+                  </button>
+                </div>
+                <p ref={promptRef} onScroll={updatePromptOverflow} className={selectedPreset.prompt === null ? 'creator-template-detail-empty' : 'creator-template-prompt'}>
+                  {selectedPreset.prompt === null
+                    ? (language === 'en-US' ? 'This template uses fixed settings and does not require a preset prompt.' : '此模板使用固定配置，无需预设提示词。')
+                    : renderPromptVariables(selectedPreset.prompt, language === 'zh-CN' ? 'zh-CN' : 'en-US')}
+                </p>
+                <span className="creator-template-prompt-scroll-cue" aria-hidden="true"><ChevronDown size={17} /></span>
+              </div>
+            </section>
 
             {selectedPreset.author === undefined ? null : (
               <section
@@ -500,44 +526,9 @@ export function CreatorDashboard(props: {
               <p className="creator-template-action-error" role="alert">{actionError}</p>
             ) : null}
 
-            <button
-              className="creator-template-use-button"
-              type="button"
-              disabled={busy}
-              aria-busy={busy}
-              onClick={() => void selectPreset(selectedPreset)}
-            >
-              <WandSparkles size={17} aria-hidden="true" />
-              {busy
-                ? (language === 'en-US' ? 'Creating...' : '正在创建...')
-                : (language === 'en-US' ? 'Use this template' : '使用此模板')}
-            </button>
           </aside>
         </div>
-
-        <section className="creator-template-detail-section creator-template-prompt-section">
-          <h2>{language === 'en-US' ? 'Prompt' : '提示词'}</h2>
-          <div className={`creator-template-prompt-card${promptHasOverflow
-            ? ' is-scrollable'
-            : ''}${promptAtEnd ? ' is-at-end' : ''}`}>
-            <p
-              ref={promptRef}
-              onScroll={updatePromptOverflow}
-              className={selectedPreset.prompt === null
-                ? 'creator-template-detail-empty'
-                : 'creator-template-prompt'}
-            >
-              {selectedPreset.prompt === null
-                ? (language === 'en-US'
-                    ? 'This template uses fixed settings and does not require a preset prompt.'
-                    : '此模板使用固定配置，无需预设提示词。')
-                : renderPromptVariables(selectedPreset.prompt, language === 'zh-CN' ? 'zh-CN' : 'en-US')}
-            </p>
-            <span className="creator-template-prompt-scroll-cue" aria-hidden="true">
-              <ChevronDown size={17} />
-            </span>
-          </div>
-        </section>
+        </div>
         </div>
         {!previewOpen ? null : createPortal(
           <div
@@ -584,9 +575,10 @@ export function CreatorDashboard(props: {
         )}
       </>
     );
-  }
+  })();
 
   return (
+    <>
     <div className="creator-dashboard">
       <div
         className="creator-template-tabs"
@@ -762,7 +754,7 @@ export function CreatorDashboard(props: {
             </button>
           </div>
         ) : null}
-        {actionError ? (
+        {actionError && selectedPreset === undefined ? (
           <p className="creator-template-action-error" role="alert">{actionError}</p>
         ) : null}
 
@@ -818,6 +810,8 @@ export function CreatorDashboard(props: {
         ) : null}
       </section>
     </div>
+    {detail === null ? null : createPortal(detail, document.body)}
+    </>
   );
 }
 
