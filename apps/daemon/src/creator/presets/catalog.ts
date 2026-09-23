@@ -300,6 +300,7 @@ function localizePreset(
     }),
     prompt: createCreatorPresetPrompt(preset, locale),
     tags: createCreatorPresetTags(preset, locale),
+    tagIds: [...preset.tags],
     featured: preset.featured,
     sortOrder: preset.sortOrder,
     requirements: preset.requirements ?? null,
