@@ -802,7 +802,7 @@ describe('app CSS visual contracts', () => {
     expect(cssBlock('.conversation-page.is-empty .composer-stack')).toContain('width: min(760px, 100%);');
     expect(cssBlock('.creator-home-wrap')).toContain('overflow-y: auto;');
     expect(cssBlock('.creator-home-wrap .creator-dashboard')).toContain('margin: 0 auto;');
-    expect(cssBlock('.creator-template-tabs')).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
+    expect(cssBlock('.creator-template-tabs')).toContain('grid-template-columns: repeat(5, minmax(0, 1fr));');
     expect(cssBlock('.creator-template-tabs')).toContain('width: min(760px, 100%);');
     expect(cssBlock('.creator-template-grid')).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
     expect(cssBlock('.creator-template-grid')).toContain('gap: 10px;');

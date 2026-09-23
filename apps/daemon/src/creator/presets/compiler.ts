@@ -687,6 +687,7 @@ function comparePresets(left: CompiledCreatorPreset, right: CompiledCreatorPrese
 
 async function sortedDirectoryEntries(directory: string) {
   return (await readdir(directory, { withFileTypes: true }))
+    .filter(entry => entry.name !== '.DS_Store')
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
