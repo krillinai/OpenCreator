@@ -220,6 +220,8 @@ import { registerCleanupRoutes } from './routes.cleanup.js';
 import { registerCreatorServicesRoutes } from './routes.creator-services.js';
 import { registerCreatorRoutes } from './routes.creator.js';
 import { registerCreatorRuntimeRoutes } from './routes.creator-runtime.js';
+import { createChannelPipelineService } from '../channel/service.js';
+import { registerChannelRoutes } from './routes.channel.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerMcpRoutes } from './routes.mcp.js';
 import { registerMemoryRoutes } from './routes.memory.js';
@@ -289,6 +291,7 @@ export type BuildServerInput = {
   creatorYtDlpUpdateManager?: YtDlpUpdateManager;
   creatorRuntimePlatform?: NodeJS.Platform;
   creatorRuntimeArch?: string;
+  channelRepoPath?: string;
   creatorExecutors?: CreatorExecutor[];
   creatorAgentRuntime?: AgentRuntimeAdapter;
   allowedWebOrigins?: string[];
@@ -1259,6 +1262,9 @@ export async function buildServer(input: BuildServerInput) {
     }
   );
   await registerSmartDubbingRoutes(server, smartDubbingService);
+  await registerChannelRoutes(server, createChannelPipelineService({
+    repoPath: input.channelRepoPath
+  }));
   await registerCreatorRuntimeRoutes(server, creatorYtDlpUpdateManager);
   await registerCreatorRoutes(server, creatorService, creatorEvents, {
     sseHeartbeatMs: input.sseHeartbeatMs,

@@ -128,6 +128,70 @@ The repository's [`skills/`](./skills/) directory contains reusable instructions
 | [Pipeline Plan](./skills/krillinai-pipeline/SKILL.md) | Validate a multi-stage output plan in dry-run mode; execute actual work through the individual stage Skills |
 | [Channel Pipeline](./skills/channel-pipeline/SKILL.md) | Drive a configured Channel checkout for search, ingest, processing, multi-platform publishing, and Baidu sync |
 
+## Channel Pipeline integration
+
+OpenCreator and Channel use a two-repo split:
+
+- **OpenCreator** is the product shell: web/desktop UI, Agent, Runtime API, approvals, and task orchestration.
+- **Channel** is the external short-video engine: ingest, media processing, platform publishing, compliance, and state.
+
+Current integration status:
+
+| Layer | Status | Scope |
+| --- | --- | --- |
+| Skill | Available | Agent can drive a configured Channel checkout through the pipeline CLI |
+| Daemon adapter | Available | Local Runtime exposes allowlisted Channel status/ingest/process/publish commands |
+| Creator Tool UI | Planned | Visual workspace, human review, and publish gates are not implemented yet |
+| Full artifact/job mapping | Planned | Channel output is not yet mapped into OpenCreator Creator artifacts |
+
+### Setup
+
+1. Install Python 3.12 and uv.
+2. Clone the Channel repository locally and run `uv sync` once in that checkout.
+3. Point OpenCreator to the Channel checkout:
+
+```bash
+export OPENCREATOR_CHANNEL_REPO=/absolute/path/to/Channel
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:OPENCREATOR_CHANNEL_REPO = "E:\path\to\Channel"
+```
+
+`OPENCREATOR_CHANNEL_REPO` takes precedence over `CHANNEL_REPO`. The repo must contain `pyproject.toml`.
+
+### Runtime API
+
+All Channel Runtime endpoints require the normal local daemon bearer token.
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/channel/health` | GET | Check repo configuration, pyproject, uv availability, and uv version |
+| `/channel/status` | GET | Run `pipeline status` and return CLI output |
+| `/channel/ingest` | POST | Ingest one URL or an inbox batch with a `content_source` |
+| `/channel/process` | POST | Process one job or all pending jobs |
+| `/channel/publish` | POST | Publish one job to selected platforms |
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:<port>/channel/publish \
+  -H "Authorization: Bearer <runtime-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jobId": "0123456789abcdef0123456789abcdef",
+    "targets": ["manual"]
+  }'
+```
+
+The adapter only runs allowlisted CLI commands. It returns `command`, `cwd`, `exitCode`, `stdout`, `stderr`, and `timedOut`; it does not execute arbitrary shell commands.
+
+### Agent usage
+
+The Channel Skill remains available for conversational work. Set `CHANNEL_REPO` in the Agent environment, then ask for tasks such as “show Channel status”, “process the pending jobs”, or “publish this job to manual only”. Compliance blocking and TikTok draft behavior are inherited from Channel.
+
 ### Extend with Your Own Skills
 
 OpenCreator supports local Codex Skills defined by `SKILL.md`, so you can add your own methods and workflows rather than relying only on fixed creator tools. Skill availability depends on the active Codex home and installed Skills; video workflow Skills require the CLI and relevant services to be configured. Inclusion in the repository does not mean every Skill is automatically installed or every external service is bundled.
