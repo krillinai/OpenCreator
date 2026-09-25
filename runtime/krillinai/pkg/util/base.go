@@ -22,6 +22,9 @@ import (
 
 var strWithUpperLowerNum = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ123456789")
 
+// 围栏代码块开栏行 ``` 之后的语言标记，如 json、JSON、python3
+var fenceLangPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_+.-]*\b`)
+
 func GenerateRandStringWithUpperLowerNum(n int) string {
 	b := make([]rune, n)
 	for i := range b {
@@ -307,8 +310,105 @@ func LoadFromDisk(filename string) (any, error) {
 }
 
 // 清理 Markdown 的 ```json 标记
+// 若回复中存在围栏代码块，则只取第一个围栏代码块的内容，
+// 避免把大模型在代码块前后的说明性文字（如"以下是分割后的结果："）一起交给 JSON 解析器
 func CleanMarkdownCodeBlock(response string) string {
+	if block, ok := extractFencedBlock(response); ok {
+		return block
+	}
 	re := regexp.MustCompile("(?m)^```(json|[a-zA-Z]*)?\n?|```$")
 	cleaned := re.ReplaceAllString(response, "")
 	return strings.TrimSpace(cleaned)
+}
+
+// 提取回复中第一个围栏代码块的内容，回复中没有围栏代码块时返回 false
+func extractFencedBlock(response string) (string, bool) {
+	lines := strings.Split(response, "\n")
+	open := -1
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			open = i
+			break
+		}
+	}
+	if open < 0 {
+		return "", false
+	}
+
+	// 开栏行 ```lang 之后的内容：只有语言标记时不算正文，其余情况视为正文首行
+	body := []string{unwrapFenceInfo(strings.TrimSpace(lines[open]))}
+	for _, line := range lines[open+1:] {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			return strings.TrimSpace(strings.Join(body, "\n")), true
+		}
+		body = append(body, line)
+	}
+	// 没有闭合的围栏，取剩余全部内容
+	return strings.TrimSpace(strings.Join(body, "\n")), true
+}
+
+// 取掉围栏开栏行的 ``` 前缀，语言标记返回空字符串，其余内容视为正文首行
+func unwrapFenceInfo(line string) string {
+	info := strings.TrimSpace(strings.TrimPrefix(line, "```"))
+	if m := fenceLangPattern.FindStringSubmatch(info); m != nil {
+		return strings.TrimSpace(info[len(m[0]):])
+	}
+	return info
+}
+
+// CleanLLMJSON 清理大模型返回的 JSON 文本：取围栏代码块的内容，并移除结尾多余逗号
+func CleanLLMJSON(response string) string {
+	return StripJSONTrailingCommas(CleanMarkdownCodeBlock(response))
+}
+
+// StripJSONTrailingCommas 移除 JSON 中对象或数组结尾的多余逗号，如 {"a": 1,} -> {"a": 1}
+// 字符串字面量内部的逗号会被保留
+func StripJSONTrailingCommas(jsonText string) string {
+	if !strings.Contains(jsonText, ",") {
+		return jsonText
+	}
+	var out strings.Builder
+	out.Grow(len(jsonText))
+	inString := false
+	escaped := false
+	for i := 0; i < len(jsonText); i++ {
+		c := jsonText[i]
+		if inString {
+			out.WriteByte(c)
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		if c == '"' {
+			inString = true
+			out.WriteByte(c)
+			continue
+		}
+		if c == ',' && closesAfterWhitespace(jsonText, i+1) {
+			continue
+		}
+		out.WriteByte(c)
+	}
+	return out.String()
+}
+
+// 判断 from 处开始跳过空白后是否遇到 } 或 ]，即当前位置的逗号是否多余
+func closesAfterWhitespace(jsonText string, from int) bool {
+	for i := from; i < len(jsonText); i++ {
+		switch jsonText[i] {
+		case ' ', '\t', '\n', '\r':
+			continue
+		case '}', ']':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
 }
