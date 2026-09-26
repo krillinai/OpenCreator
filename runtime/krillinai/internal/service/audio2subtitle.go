@@ -1872,7 +1872,7 @@ func (s Service) splitLongSentence(item *TranslatedItem) ([]*TranslatedItem, err
 			TranslatedPart string `json:"translated_part"`
 		} `json:"align"`
 	}
-	if err := json.Unmarshal([]byte(util.CleanMarkdownCodeBlock(response)), &splitResult); err != nil {
+	if err := json.Unmarshal([]byte(util.CleanLLMJSON(response)), &splitResult); err != nil {
 		log.GetLogger().Error("splitLongSentence parse split result error", zap.Error(err), zap.Any("response", response))
 		return nil, fmt.Errorf("parse split result error: %w", err)
 	}
@@ -1911,7 +1911,7 @@ func (s Service) splitOriginLongSentence(sentence string) ([]string, error) {
 			} `json:"short_sentences"`
 		}
 
-		cleanResponse := util.CleanMarkdownCodeBlock(response)
+		cleanResponse := util.CleanLLMJSON(response)
 		if err = json.Unmarshal([]byte(cleanResponse), &splitResult); err != nil {
 			log.GetLogger().Error("splitOriginLongSentence parse split result error", zap.Error(err), zap.Any("response", response))
 			continue

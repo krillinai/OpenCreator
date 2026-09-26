@@ -139,7 +139,7 @@ func (t *Translator) splitOriginLongSentence(sentence string) ([]string, error) 
 			} `json:"short_sentences"`
 		}
 
-		cleanResponse := util.CleanMarkdownCodeBlock(response)
+		cleanResponse := util.CleanLLMJSON(response)
 		if err = json.Unmarshal([]byte(cleanResponse), &splitResult); err != nil {
 			log.GetLogger().Error("splitOriginLongSentence parse split result error", zap.Error(err), zap.Any("response", response))
 			continue
@@ -724,7 +724,7 @@ Required JSON format (output ONLY this structure):
 			zap.Int("响应长度", len(response)))
 
 		// 解析JSON响应
-		cleanResponse := util.CleanMarkdownCodeBlock(response)
+		cleanResponse := util.CleanLLMJSON(response)
 
 		var result struct {
 			Translations []struct {
