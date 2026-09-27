@@ -32,7 +32,7 @@ const api: DesktopApi = {
   },
   retryBootstrap: () => ipcRenderer.invoke(desktopIpc.bootstrapRetry),
   selectCodexPath: () => ipcRenderer.invoke(desktopIpc.selectCodex),
-  selectProjectDirectory: () => ipcRenderer.invoke(desktopIpc.selectProjectDirectory),
+  selectProjectDirectory: purpose => ipcRenderer.invoke(desktopIpc.selectProjectDirectory, purpose),
   resolveDroppedFilePath: file => {
     const path = webUtils.getPathForFile(file);
     return path.length > 0 ? path : null;

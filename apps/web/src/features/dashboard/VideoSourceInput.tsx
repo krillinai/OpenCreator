@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { Link2, UploadCloud } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import type { VideoMetadataResponse } from '@opencreator/protocol';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import VideoSourcePreview from './VideoSourcePreview.js';
 
@@ -16,6 +17,7 @@ export default function VideoSourceInput(props: {
   onUrlChange(url: string): void;
   onClear(): void;
   onDimensions?(width: number, height: number): void;
+  onMetadata?(url: string, metadata: VideoMetadataResponse): void;
 }) {
   const l = useLocalizedCopy();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,6 +68,7 @@ export default function VideoSourceInput(props: {
             onChooseFile={openFilePicker}
             onClear={props.onClear}
             onDimensions={props.onDimensions}
+            onMetadata={props.onMetadata}
           />
         ) : (
           <>

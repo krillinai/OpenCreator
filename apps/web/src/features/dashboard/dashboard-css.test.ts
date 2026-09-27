@@ -30,6 +30,43 @@ describe('dashboard CSS contracts', () => {
     }
   });
 
+  it('uses the available article brief height for long writing instructions', () => {
+    const scroll = cssBlocks('.wechat-article-scroll[data-step="1"]')[0];
+    const grid = cssBlocks('.wechat-brief-grid')[0];
+    const field = cssBlocks(
+      '.wechat-writing-brief-panel > .creator-tool-field:first-of-type'
+    )[0];
+    const textarea = cssBlocks(
+      '.wechat-writing-brief-panel > .creator-tool-field:first-of-type textarea'
+    )[0];
+
+    expect(scroll).toContain('grid-template-rows: minmax(0, 1fr);');
+    expect(scroll).toContain('overflow: hidden;');
+    expect(grid).toContain('height: 100%;');
+    expect(field).toContain('grid-template-rows: auto minmax(0, 1fr);');
+    expect(textarea).toContain('height: 100%;');
+    expect(textarea).toContain('min-height: 0;');
+  });
+
+  it('uses the available outline step height for long article outlines', () => {
+    const scroll = cssBlocks('.wechat-article-scroll[data-step="3"]')[0];
+    const panel = cssBlocks(
+      '.wechat-article-scroll[data-step="3"] > .wechat-outline-panel'
+    )[0];
+    const field = cssBlocks('.wechat-outline-panel > .creator-tool-field')[0];
+    const textarea = cssBlocks(
+      '.wechat-outline-panel .creator-tool-field > .wechat-outline-editor'
+    )[0];
+
+    expect(scroll).toContain('grid-template-rows: minmax(0, 1fr);');
+    expect(scroll).toContain('overflow: hidden;');
+    expect(panel).toContain('height: 100%;');
+    expect(panel).toContain('grid-template-rows: auto minmax(0, 1fr);');
+    expect(field).toContain('grid-template-rows: minmax(0, 1fr);');
+    expect(textarea).toContain('height: 100%;');
+    expect(textarea).toContain('min-height: 0;');
+  });
+
   it('separates Creator form groups and top-aligns fields beside taller previews', () => {
     const formRow = cssBlocks('.creator-tool-form-row');
     const characterPicker = cssBlocks('.stickman-character-picker');
@@ -54,11 +91,13 @@ describe('dashboard CSS contracts', () => {
     expect(sharedPanel).toHaveLength(1);
     expect(sharedPanel[0]).toContain('height: 100%;');
     expect(sharedPanel[0]).toContain('min-height: 0;');
-    expect(sharedPanel[0]).toContain('grid-template-rows: auto auto minmax(0, 1fr) auto auto;');
-    expect(workspaceLayout[0]).toContain('min-width: 680px;');
-    expect(workspaceLayout[0]).toContain('grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr);');
-    expect(translationLayout[0]).toContain('min-width: 680px;');
-    expect(translationLayout[0]).toContain('minmax(280px, 1fr);');
+    expect(sharedPanel[0]).toContain('display: flex;');
+    expect(sharedPanel[0]).toContain('flex-direction: column;');
+    const resizableLayout = cssBlocks('.creator-resizable-layout');
+    expect(resizableLayout[0]).toContain('min-width: 680px;');
+    expect(resizableLayout[0]).toContain('minmax(280px, 1fr);');
+    expect(workspaceLayout[0]).toContain('height: 100%;');
+    expect(translationLayout[0]).toContain('height: 100%;');
     expect(dashboardCss).not.toMatch(/\.creator-collaboration-panel\s*\{[^}]*height: auto;/);
   });
 
@@ -78,11 +117,78 @@ describe('dashboard CSS contracts', () => {
     expect(disabledFormat[0]).toContain('opacity: 0.45;');
   });
 
-  it('renders the subtitle preview in the selected vertical output ratio', () => {
-    const verticalPreview = cssBlocks('.video-translation-subtitle-preview[data-ratio="9:16"] > div');
+  it('keeps subtitle style previews at their output aspect ratio instead of stretching with the form', () => {
+    const layout = cssBlocks('.video-translation-subtitle-style-layout');
+    const outlineFields = cssBlocks('.video-translation-outline-fields');
+    const colorOptions = cssBlocks('.video-translation-color-options');
+    const preview = cssBlocks('.video-translation-subtitle-preview');
+    const player = cssBlocks('.video-translation-subtitle-preview > div');
+    const overlay = cssBlocks('.video-translation-subtitle-preview > div::after');
+    const media = cssBlocks('.video-translation-subtitle-preview-media');
+    const cues = cssBlocks('.video-translation-subtitle-preview-cues');
+    const verticalPreview = cssBlocks('.video-translation-subtitle-preview[data-orientation="portrait"] > div');
 
+    expect(layout[0]).toContain('align-items: start;');
+    expect(layout[0]).toContain('minmax(350px, 1.2fr) minmax(260px, 1fr)');
+    expect(outlineFields[0]).toContain('grid-template-columns: minmax(0, 1fr) 88px;');
+    expect(colorOptions[0]).toContain('flex-wrap: wrap;');
+    expect(dashboardCss).toMatch(/@container video-translation-workspace \(max-width: 760px\) \{\s*\.video-translation-subtitle-style-layout/);
+    expect(preview[0]).toContain('grid-template-rows: auto auto;');
+    expect(preview[0]).toContain('align-content: start;');
+    expect(player[0]).toContain('aspect-ratio: var(--subtitle-preview-aspect-ratio, 16 / 9);');
+    expect(overlay[0]).toContain('background: rgb(0 0 0 / 55%);');
+    expect(overlay[0]).toContain('z-index: 1;');
+    expect(media[0]).toContain('object-fit: cover;');
+    expect(cues[0]).toContain('position: absolute;');
+    expect(cues[0]).toContain('z-index: 2;');
     expect(verticalPreview).toHaveLength(1);
-    expect(verticalPreview[0]).toContain('aspect-ratio: 9 / 16;');
+    expect(verticalPreview[0]).toContain('width: min(236px, 100%);');
+  });
+
+  it('widens the translation settings consistently and keeps smaller color swatches', () => {
+    for (const selector of [
+      '.video-translation-source-step',
+      '.video-translation-configure-top',
+      '.video-translation-wizard-main .video-translation-wizard-body',
+      '.video-translation-wizard-main .video-translation-wizard-actions',
+      '.video-translation-run-notice'
+    ]) {
+      expect(cssBlocks(selector)[0]).toContain('width: min(960px, 100%);');
+    }
+    expect(cssBlocks('.video-translation-color-options > button')[0]).toContain('width: 26px;');
+    expect(cssBlocks('.video-translation-custom-color input')[0]).toContain('width: 26px;');
+  });
+
+  it('matches video download settings width to translation and centers labeled platforms', () => {
+    expect(cssBlocks('.video-download-workspace-page .creator-tool-stack')[0]).toContain('width: min(960px, 100%);');
+    expect(cssBlocks('.video-download-platforms')[0]).toContain('justify-content: center;');
+    expect(cssBlocks('.video-download-platforms')[0]).toContain('flex-wrap: wrap;');
+    expect(cssBlocks('.video-download-platforms img')[0]).toContain('width: 32px;');
+    expect(cssBlocks('.video-download-platforms li')[0]).toContain('text-align: center;');
+  });
+
+  it('fits subtitle previews to the available pane while keeping cues in one scrollable list', () => {
+    const layout = cssBlocks('.video-result-subtitle-preview-layout');
+    const pane = cssBlocks('.video-result-subtitle-pane');
+    const video = cssBlocks('.video-result-subtitle-video');
+    const list = cssBlocks('.video-result-subtitle-preview-layout .video-subtitle-editor');
+    const portrait = cssBlocks('.video-result-subtitle-video .video-result-player-frame[data-ratio="9:16"]');
+    const cue = cssBlocks('.video-result-subtitle-preview-layout .video-subtitle-cue');
+    const editor = cssBlocks('.video-result-subtitle-preview-layout .video-subtitle-editor textarea');
+
+    expect(layout[0]).toContain('grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);');
+    expect(pane[0]).toContain('grid-template-rows: auto minmax(0, 1fr);');
+    expect(pane[0]).toContain('container-name: video-result-subtitles;');
+    expect(video[0]).toContain('container-type: size;');
+    expect(video[0]).toContain('align-content: start;');
+    expect(list[0]).toContain('min-height: 0;');
+    expect(list[0]).toContain('overflow-y: auto;');
+    expect(list[0]).not.toContain('max-height:');
+    expect(portrait[0]).toContain('width: min(100%, calc((100cqh - 28px) * 0.5625));');
+    expect(portrait[1]).toContain('width: min(100%, 440px);');
+    expect(cue[0]).toContain('grid-template-columns: 100px minmax(0, 1fr);');
+    expect(editor[0]).toContain('field-sizing: content;');
+    expect(dashboardCss).toMatch(/@container video-result-subtitles \(max-width: 600px\) \{\s*\.video-result-subtitle-preview-layout/);
   });
 
   it('keeps video result controls separate from the Agent panel layout', () => {

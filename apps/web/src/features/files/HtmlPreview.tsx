@@ -51,6 +51,8 @@ export function HtmlPreview(props: {
   content: string;
   resources?: HtmlPreviewResources;
   onOpenExternal?(url: string): void;
+  onError?(error: unknown): void;
+  onReady?(): void;
 }) {
   const [preview, setPreview] = useState<PreviewState>({ status: 'loading' });
 
@@ -60,16 +62,22 @@ export function HtmlPreview(props: {
 
     void buildSafePreviewDocument(props.content, props.path, props.resources)
       .then(nextDocument => {
-        if (!canceled) setPreview({ status: 'ready', document: nextDocument });
+        if (!canceled) {
+          setPreview({ status: 'ready', document: nextDocument });
+          props.onReady?.();
+        }
       })
-      .catch(() => {
-        if (!canceled) setPreview({ status: 'error' });
+      .catch(error => {
+        if (!canceled) {
+          setPreview({ status: 'error' });
+          props.onError?.(error);
+        }
       });
 
     return () => {
       canceled = true;
     };
-  }, [props.content, props.path, props.resources]);
+  }, [props.content, props.onError, props.onReady, props.path, props.resources]);
 
   if (preview.status === 'loading') {
     return (
@@ -81,8 +89,8 @@ export function HtmlPreview(props: {
 
   if (preview.status === 'error') {
     return (
-      <div className="file-preview file-preview-html file-preview-html-status" role="alert">
-        HTML 预览加载失败，请切换到编辑模式查看源码。
+      <div className="file-preview file-preview-html file-preview-html-status" role="status">
+        预览暂不可用，可切换至编辑查看源码。
       </div>
     );
   }

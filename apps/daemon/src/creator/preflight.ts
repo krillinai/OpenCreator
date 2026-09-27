@@ -59,6 +59,8 @@ export function createCreatorPreflight(input: {
   ffprobePath?: string;
   stickmanRuntimeRoot?: string;
   getYtDlpRuntime?(): YtDlpRuntime | undefined;
+  runtimeVerificationCachePath?: string;
+  ensureRuntimeReady?(): Promise<void>;
   executorIds?: Iterable<string>;
   validateRuntimeAssets?: boolean;
 }) {
@@ -161,6 +163,23 @@ export function createCreatorPreflight(input: {
     config: CreatorServicesConfig,
     add: (status: 'ready' | 'warning' | 'blocked', item: Omit<CreatorPreflightCheck, 'executionMode'> & { executionMode?: CreatorPreflightExecutionMode }, repair?: CreatorPreflightCheck['repair']) => void
   ) {
+    if (
+      input.validateRuntimeAssets !== false
+      && runtimeBackedExecutor(stage.executor)
+      && input.ensureRuntimeReady !== undefined
+    ) {
+      try {
+        await input.ensureRuntimeReady();
+      } catch (error) {
+        add('blocked', {
+          id: 'krillin-runtime',
+          title: 'KrillinAI Runtime 不可用',
+          message: error instanceof Error ? error.message : 'KrillinAI Runtime 校验失败。',
+          executionMode: 'local'
+        }, { label: '打开运行组件设置', deepLink: '#/settings?tab=local-components' });
+        return;
+      }
+    }
     if (input.validateRuntimeAssets !== false) {
       const requiredTools = new Map<string, string | undefined>();
       if (['download', 'clip', 'krillinai', 'stickman-media-validation'].includes(stage.executor)) requiredTools.set('ffmpeg', input.ffmpegPath);
@@ -206,7 +225,9 @@ export function createCreatorPreflight(input: {
     }
     if (input.validateRuntimeAssets !== false && stage.executor === 'krillinai') {
       try {
-        preflightKrillinDependencies(input.resourceRoot, config);
+        preflightKrillinDependencies(input.resourceRoot, config, {
+          cachePath: input.runtimeVerificationCachePath
+        });
         add('ready', { id: 'krillin-runtime', title: 'KrillinAI Runtime', message: '运行资源校验通过。', executionMode: 'local' });
       } catch (error) {
         add('blocked', {
@@ -227,6 +248,19 @@ export function createCreatorPreflight(input: {
       }, { label: '打开 AI 服务设置', deepLink: '#/settings?tab=ai-services&section=transcription' });
     }
   }
+}
+
+function runtimeBackedExecutor(executorId: string): boolean {
+  return [
+    'krillinai',
+    'download',
+    'cover-analysis',
+    'clip',
+    'stickman-audio',
+    'stickman-remotion',
+    'stickman-media-validation',
+    'stickman-delivery'
+  ].includes(executorId);
 }
 
 function checkProviderConfig(

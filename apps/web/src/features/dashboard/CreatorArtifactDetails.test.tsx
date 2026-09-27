@@ -4,6 +4,8 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { CreatorSessionProvider } from './creator-session-store.js';
 import CreatorArtifactDetails from './CreatorArtifactDetails.js';
+import CreatorCollaborationPanel from './CreatorCollaborationPanel.js';
+import { creatorPanelAdapterFor } from './creator-panel-adapters.js';
 
 beforeEach(() => {
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:artifact') });
@@ -73,11 +75,13 @@ it('does not claim provenance or allow adoption for artifacts without a snapshot
 it('keeps the adopted version unchanged when the command fails', async () => {
   const f = fixture();
   f.applyAction.mockRejectedValueOnce(new Error('Revision conflict'));
-  mount(f);
+  mount(f, <><CreatorArtifactDetails /><CreatorCollaborationPanel adapter={creatorPanelAdapterFor(f.job.templateId)} stepLabel="产物" contextSummary="产物详情" /></>);
   const details = within(await openDetails());
   fireEvent.change(details.getByLabelText('浏览产物（不改变项目选择）'), { target: { value: 'artifact-1' } });
   fireEvent.click(details.getByRole('button', { name: '采用项目版本' }));
-  await waitFor(() => expect(details.getByRole('alert')).toHaveTextContent('Revision conflict'));
+  await waitFor(() => expect(screen.getByRole('complementary', { name: 'OpenCreator' }).querySelector('.creator-collaboration-issue')).toBeInTheDocument());
+  expect(details.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.queryByText('Revision conflict')).not.toBeInTheDocument();
   expect(f.job.state.resultVersion).toBe(2);
   expect(details.getByRole('button', { name: '采用项目版本' })).toBeEnabled();
 });

@@ -82,7 +82,7 @@ Web — единственная реализация фронтенда. Deskto
 </thead>
 <tbody>
 <tr><td valign="top">Перевод видео</td><td valign="top">✅ Доступно</td><td>Импортируйте локальные или общедоступные видео; расшифровывайте их с помощью облачных или локальных сервисов Whisper; используйте контекст LLM для сегментации и выравнивания субтитров, работы с терминологией и перевода; настраивайте двуязычные субтитры, озвучивание или собственный образец голоса, стили субтитров, горизонтальную или вертикальную компоновку и экспортируйте SRT, аудио или видео</td></tr>
-<tr><td valign="top">Загрузка видео</td><td valign="top">✅ Доступно</td><td>Анализируйте поддерживаемые общедоступные ссылки YouTube, Bilibili и других сервисов, просматривайте доступные варианты качества и формата и загружайте видео или аудио для последующей работы</td></tr>
+<tr><td valign="top">Загрузка видео</td><td valign="top">✅ Доступно</td><td>Анализируйте отдельные общедоступные видео YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu и Pinterest, сравнивайте форматы и скачивайте видео или аудио. Для некоторых платформ могут потребоваться cookie</td></tr>
 <tr><td valign="top">Генерация обложек</td><td valign="top">✅ Доступно</td><td>Объедините тему, ссылку на видео и необязательное референсное изображение, чтобы создать и сравнить несколько вариантов обложек для контента</td></tr>
 <tr><td valign="top">Генерация изображений</td><td valign="top">✅ Доступно</td><td>Создавайте изображения с помощью GPT Image по промпту и необязательному референсному изображению, настраивайте соотношение сторон и количество результатов, затем просматривайте и загружайте отдельные изображения</td></tr>
 <tr><td valign="top">Анимация стикменов</td><td valign="top">Скоро</td><td>Создавайте персонажей, раскадровки, озвучивание и анимацию в пошаговом рабочем процессе</td></tr>
@@ -254,6 +254,28 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 ### Скачивание видео
 
 Проанализируйте общедоступную ссылку на видео, сравните доступные форматы и скачайте видео или аудио прямо в проект.
+
+Поддерживаемые видеоисточники:
+
+<table align="center">
+  <tr>
+    <td align="center" width="96"><img src="../images/platforms/youtube.png" alt="YouTube" width="32" height="32" /><br /><strong>YouTube</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/bilibili.png" alt="Bilibili" width="32" height="32" /><br /><strong>Bilibili</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/x.png" alt="X" width="32" height="32" /><br /><strong>X</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/tiktok.png" alt="TikTok" width="32" height="32" /><br /><strong>TikTok</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/instagram.png" alt="Instagram" width="32" height="32" /><br /><strong>Instagram</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/douyin.png" alt="Douyin" width="32" height="32" /><br /><strong>Douyin</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/facebook.png" alt="Facebook" width="32" height="32" /><br /><strong>Facebook</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/xiaohongshu.png" alt="Xiaohongshu" width="32" height="32" /><br /><strong>Xiaohongshu</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/pinterest.png" alt="Pinterest" width="32" height="32" /><br /><strong>Pinterest</strong></td>
+  </tr>
+</table>
+
+Доступность зависит от видео и региона; некоторым источникам могут потребоваться cookie платформы. OpenCreator не импортирует cookie браузера автоматически.
+
+**Видеопубликации Xiaohongshu:** Вставьте полный общедоступный URL `https://www.xiaohongshu.com/explore/<24-символьный шестнадцатеричный ID публикации>`, сохранив параметры вроде `xsec_token`. Публикации только с изображениями не содержат видеоформатов; профили и короткие ссылки `xhslink.com` не поддерживаются. Просроченные токены или ограничения доступа могут помешать скачиванию.
+
+**Видеопины Pinterest:** Вставьте общедоступную ссылку `https://www.pinterest.com/pin/<числовой ID>/`. Пины только с изображениями, доски и профили не поддерживаются.
 
 ![Выбор формата в загрузчике видео OpenCreator](../images/examples/video-downloader-formats-en.png)
 

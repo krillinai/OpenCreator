@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
-import { installGracefulShutdown } from '../../src/shutdown.js';
+import {
+  installGracefulShutdown,
+  installParentPortShutdown
+} from '../../src/shutdown.js';
 
 describe('graceful shutdown', () => {
   it('shares one server close across repeated shutdown signals', async () => {
@@ -44,5 +47,49 @@ describe('graceful shutdown', () => {
 
     signals.emit('SIGTERM');
     await expect.poll(() => onError).toHaveBeenCalledWith(error);
+  });
+});
+
+describe('parent port shutdown', () => {
+  it('closes once and exits only after cleanup completes', async () => {
+    const parentPort = new EventEmitter();
+    let releaseClose!: () => void;
+    const closeBlocked = new Promise<void>(resolve => {
+      releaseClose = resolve;
+    });
+    const close = vi.fn(() => closeBlocked);
+    const exit = vi.fn();
+
+    installParentPortShutdown({ close, exit, onError: vi.fn(), parentPort });
+
+    parentPort.emit('message', { data: { type: 'ignored' } });
+    parentPort.emit('message', { data: { type: 'shutdown' } });
+    parentPort.emit('message', { type: 'shutdown' });
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+
+    releaseClose();
+    await expect.poll(() => exit).toHaveBeenCalledWith(0);
+  });
+
+  it('reports cleanup failures and exits with a failure code', async () => {
+    const parentPort = new EventEmitter();
+    const error = new Error('close failed');
+    const onError = vi.fn();
+    const exit = vi.fn();
+
+    installParentPortShutdown({
+      close: async () => {
+        throw error;
+      },
+      exit,
+      onError,
+      parentPort
+    });
+    parentPort.emit('message', { type: 'shutdown' });
+
+    await expect.poll(() => onError).toHaveBeenCalledWith(error);
+    expect(exit).toHaveBeenCalledWith(1);
   });
 });

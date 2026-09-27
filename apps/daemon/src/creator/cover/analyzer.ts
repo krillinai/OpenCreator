@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { CoverTextLanguage } from '@opencreator/protocol';
 import {
-  creatorServiceErrorMessage,
+  creatorServiceErrorInfo,
   fetchCreatorService,
   openAiCompatibleEndpoint
 } from '../../creator-services/upstream-fetch.js';
@@ -95,7 +95,8 @@ export async function generateCoverBrief(input: {
     fetchImpl: input.fetchImpl
   });
   if (!response.ok) {
-    throw new Error(await creatorServiceErrorMessage(response, 'Cover analysis'));
+    const failure = await creatorServiceErrorInfo(response, 'Cover analysis', 'llm');
+    throw Object.assign(new Error(failure.message), { publicFacts: failure.publicFacts });
   }
   const payload = await response.json() as {
     choices?: Array<{ message?: { content?: string } }>;

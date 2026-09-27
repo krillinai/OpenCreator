@@ -48,7 +48,7 @@ export async function registerImageGenerationRoutes(
 
 function sendError(reply: FastifyReply, error: unknown) {
   if (error instanceof ImageGenerationError) {
-    return reply.code(error.statusCode).send(apiError(error.code, error.message));
+    return reply.code(error.statusCode).send(apiError(error.code, error.message, undefined, undefined, error.publicFacts));
   }
   throw error;
 }

@@ -14,6 +14,9 @@ import type {
   CreatorEventEnvelope,
   CreatorJob,
   CreatorJobListResponse,
+  CreatorClientIssueReportRequest,
+  CreatorIssueListResponse,
+  OpenCreatorIssue,
   CreatorPresetListResponse,
   CreatorPreflightResponse,
   CreatorStageRun,
@@ -96,6 +99,8 @@ export function createCreatorService(client: ClientLike) {
     uploadSourceVideo(jobId: string, input: {
       file: File;
       expectedRevision: number;
+      repairIssueId?: string;
+      resolutionAttemptId?: string;
     }): Promise<CreatorSourceUploadResponse> {
       if (client.postBinary === undefined) {
         return Promise.reject(new Error('Creator source upload transport is unavailable'));
@@ -106,6 +111,8 @@ export function createCreatorService(client: ClientLike) {
         mime: input.file.type || 'application/octet-stream',
         lastModified: String(input.file.lastModified)
       });
+      if (input.repairIssueId !== undefined) query.set('repairIssueId', input.repairIssueId);
+      if (input.resolutionAttemptId !== undefined) query.set('resolutionAttemptId', input.resolutionAttemptId);
       return client.postBinary(
         `/creator/jobs/${encodeURIComponent(jobId)}/source-video?${query.toString()}`,
         input.file,
@@ -190,6 +197,21 @@ export function createCreatorService(client: ClientLike) {
     },
     applyAction(jobId: string, request: CreatorActionRequest): Promise<CreatorActionResponse> {
       return client.post(`/creator/jobs/${encodeURIComponent(jobId)}/actions`, request) as Promise<CreatorActionResponse>;
+    },
+    listIssues(jobId: string, cursor?: string): Promise<CreatorIssueListResponse> {
+      const query = cursor === undefined ? '' : `?cursor=${encodeURIComponent(cursor)}`;
+      return client.get(
+        `/creator/jobs/${encodeURIComponent(jobId)}/issues${query}`
+      ) as Promise<CreatorIssueListResponse>;
+    },
+    reportClientIssue(
+      jobId: string,
+      request: CreatorClientIssueReportRequest
+    ): Promise<{ clientIssueId: string; issue: OpenCreatorIssue }> {
+      return client.post(
+        `/creator/jobs/${encodeURIComponent(jobId)}/issues/report`,
+        request
+      ) as Promise<{ clientIssueId: string; issue: OpenCreatorIssue }>;
     },
     cancelJob(jobId: string): Promise<CreatorJobControlResponse> {
       return client.post(

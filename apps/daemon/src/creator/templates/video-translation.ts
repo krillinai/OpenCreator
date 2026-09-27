@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { CreatorTemplateDefinition } from './types.js';
 import { creatorSubtitleStyleSchema } from '../presets/module-schemas.js';
+import { validateTranslationOutputLanguage } from '../output-validation.js';
 
 const jsonRecord = z.record(z.string(), z.unknown()) as never;
 
@@ -66,7 +67,8 @@ function createVideoTranslationTemplateDefinition(version: 1 | 2): CreatorTempla
           { kind: 'target_subtitle', status: 'completed' },
           { kind: 'bilingual_subtitle', status: 'completed' },
           { kind: 'vertical_subtitle', status: 'completed' }
-        ]
+        ],
+        outputValidators: [validateTranslationOutputLanguage]
       },
       {
         id: 'tts',

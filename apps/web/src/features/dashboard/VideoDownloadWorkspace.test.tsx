@@ -7,7 +7,7 @@ import type {
   CreatorStageRun,
   CreatorYtDlpStatus
 } from '@opencreator/protocol';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { CreatorSessionProvider } from './creator-session-store.js';
@@ -45,6 +45,66 @@ afterEach(() => {
 });
 
 describe('VideoDownloadWorkspace', () => {
+  it('shows labeled icons for every supported platform', () => {
+    renderWorkspace(job(), { applyAction: vi.fn() });
+    expect(screen.getByText('支持的视频来源（支持单个公开视频链接）')).toBeInTheDocument();
+    expect(screen.getAllByText(/支持单个公开视频链接/)).toHaveLength(1);
+    const platforms = screen.getByRole('list', { name: '支持的平台' });
+    const items = within(platforms).getAllByRole('listitem');
+    expect(items).toHaveLength(9);
+    for (const [index, name] of ['YouTube', 'Bilibili', 'X', 'TikTok', 'Instagram', '抖音', 'Facebook', '小红书', 'Pinterest'].entries()) {
+      const item = items[index]!;
+      expect(item).toHaveTextContent(name);
+      expect(item.querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^\/platforms\//));
+    }
+  });
+
+  it('pastes a Douyin share message as its short video URL', () => {
+    const shortUrl = 'https://v.douyin.com/aN88tM5tjyE/';
+    renderWorkspace(job(), { applyAction: vi.fn() });
+    fireEvent.change(screen.getByRole('textbox', { name: '待下载视频链接' }), {
+      target: { value: `2.53 jCu:/ AI复刻爆款短视频全流程！ ${shortUrl} 复制此链接，打开Dou音搜索，直接观看视频！` }
+    });
+    expect(screen.getByRole('textbox', { name: '待下载视频链接' })).toHaveValue(shortUrl);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows both videos in a multi-video X post as separate downloads', async () => {
+    const url = 'https://x.com/creator/status/123';
+    const artifact = probeArtifact();
+    const current = job({
+      state: { sourceUrl: url },
+      artifacts: [{
+        ...artifact,
+        metadata: {
+          ...artifact.metadata,
+          id: 'post-123', requestedUrl: url, url, platform: 'x',
+          options: [
+            {
+              id: 'item-1-video-720-1', mediaType: 'video', container: 'mp4',
+              height: 720, videoFormatId: 'first-video', playlistIndex: 1
+            },
+            {
+              id: 'item-2-video-1080-1', mediaType: 'video', container: 'mp4',
+              height: 1080, videoFormatId: 'second-video', playlistIndex: 2
+            }
+          ]
+        }
+      }]
+    });
+    const applyAction = vi.fn();
+    renderWorkspace(current, { applyAction });
+    expect(await screen.findByRole('button', { name: '下载 视频 1 · 720p' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '下载 视频 2 · 1080p' }));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith(
+      current.id,
+      expect.objectContaining({
+        action: 'run-stage',
+        input: expect.objectContaining({ optionId: 'item-2-video-1080-1' })
+      })
+    ));
+  });
+
   it('submits a real probe stage and does not announce success before an artifact exists', async () => {
     let current = job();
     const applyAction = vi.fn(async (
@@ -269,9 +329,11 @@ describe('VideoDownloadWorkspace', () => {
       name: '预览视频 Creator Download.mp4'
     }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      '预览加载失败，可重试或直接保存到本机'
-    );
+    expect(await screen.findByText('可重新加载预览或保存到本机'))
+      .toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' }).querySelector('.creator-collaboration-issue')).toBeInTheDocument();
+    expect(screen.queryByText(/诊断编号：OC-/)).not.toBeInTheDocument();
+    expect(screen.queryByText('preview unavailable')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
 
     expect(await screen.findByLabelText('视频预览 Creator Download.mp4'))
@@ -280,9 +342,8 @@ describe('VideoDownloadWorkspace', () => {
     await waitFor(() => expect(mediaPlay).toHaveBeenCalledOnce());
 
     fireEvent.error(screen.getByLabelText('视频预览 Creator Download.mp4'));
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      '预览加载失败，可重试或直接保存到本机'
-    );
+    expect(await screen.findByText('可重新加载预览或保存到本机'))
+      .toBeInTheDocument();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:video-preview');
   });
 
@@ -391,6 +452,56 @@ describe('VideoDownloadWorkspace', () => {
       .not.toHaveAttribute('aria-valuenow');
   });
 
+  it('accepts X, Twitter, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, and Pinterest video URLs for analysis', async () => {
+    for (const url of [
+      'https://x.com/creator/status/123',
+      'https://twitter.com/creator/status/123',
+      'https://www.tiktok.com/@creator/video/123',
+      'https://vm.tiktok.com/abc123/',
+      'https://www.instagram.com/reel/abc123/',
+      'https://instagram.com/p/abc123/',
+      'https://www.douyin.com/video/123',
+      'https://v.douyin.com/abc123/',
+      'https://www.douyin.com/jingxuan?modal_id=7687030616353823355',
+      'https://www.facebook.com/watch/?v=123',
+      'https://www.facebook.com/reel/123',
+      'https://fb.watch/abc123/',
+      'https://www.xiaohongshu.com/explore/6a9149f3000000001f01d20a?xsec_token=sample%3D&xsec_source=pc_feed',
+      'https://www.pinterest.com/pin/6544361954284154/'
+    ]) {
+      let current = job();
+      const applyAction = vi.fn(async (
+        _jobId: string,
+        request: CreatorActionRequest
+      ): Promise<CreatorActionResponse> => {
+        current = {
+          ...current,
+          revision: current.revision + 1,
+          state: request.action === 'update-settings'
+            ? { ...current.state, ...(request.input.patch as Record<string, CreatorJson>) }
+            : current.state
+        };
+        return {
+          job: current,
+          receipt: {
+            actor: 'user', action: request.action, summary: request.action,
+            affectedArtifacts: [], newRevision: current.revision, createdAt: current.updatedAt
+          }
+        };
+      });
+      const { unmount } = renderWorkspace(current, { applyAction });
+      fireEvent.change(screen.getByRole('textbox', { name: '待下载视频链接' }), {
+        target: { value: url }
+      });
+      fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
+      await waitFor(() => expect(applyAction).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ action: 'run-stage', input: { stageId: 'probe' } })
+      ));
+      unmount();
+    }
+  });
+
   it('rejects domains that only mimic a supported video host suffix', () => {
     const applyAction = vi.fn();
     renderWorkspace(job(), { applyAction });
@@ -401,7 +512,72 @@ describe('VideoDownloadWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
 
     expect(screen.getByRole('alert')).toHaveTextContent(
-      '请输入有效的 YouTube 或 Bilibili 公公开视频链接'
+      '请输入有效的 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书或 Pinterest 公开视频链接'
+    );
+    expect(applyAction).not.toHaveBeenCalled();
+  });
+
+  it('rejects TikTok profile URLs without a video', () => {
+    const applyAction = vi.fn();
+    renderWorkspace(job(), { applyAction });
+    fireEvent.change(screen.getByRole('textbox', { name: '待下载视频链接' }), {
+      target: { value: 'https://www.tiktok.com/@creator' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '请输入有效的 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书或 Pinterest 公开视频链接'
+    );
+    expect(applyAction).not.toHaveBeenCalled();
+  });
+
+  it('rejects Instagram profile URLs without a video', () => {
+    const applyAction = vi.fn();
+    renderWorkspace(job(), { applyAction });
+    fireEvent.change(screen.getByRole('textbox', { name: '待下载视频链接' }), {
+      target: { value: 'https://www.instagram.com/creator/' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '请输入有效的 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书或 Pinterest 公开视频链接'
+    );
+    expect(applyAction).not.toHaveBeenCalled();
+  });
+
+  it('rejects Douyin profile URLs without a video', () => {
+    const applyAction = vi.fn();
+    renderWorkspace(job(), { applyAction });
+    fireEvent.change(screen.getByRole('textbox', { name: '待下载视频链接' }), {
+      target: { value: 'https://www.douyin.com/user/creator' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '请输入有效的 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书或 Pinterest 公开视频链接'
+    );
+    expect(applyAction).not.toHaveBeenCalled();
+  });
+
+  it('rejects Facebook profile URLs without a video', () => {
+    const applyAction = vi.fn();
+    renderWorkspace(job(), { applyAction });
+    fireEvent.change(screen.getByRole('textbox', { name: '待下载视频链接' }), {
+      target: { value: 'https://www.facebook.com/creator' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '请输入有效的 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书或 Pinterest 公开视频链接'
+    );
+    expect(applyAction).not.toHaveBeenCalled();
+  });
+
+  it('rejects Xiaohongshu profile URLs without a video note', () => {
+    const applyAction = vi.fn();
+    renderWorkspace(job(), { applyAction });
+    fireEvent.change(screen.getByRole('textbox', { name: '待下载视频链接' }), {
+      target: { value: 'https://www.xiaohongshu.com/user/profile/6a9149f3000000001f01d20a' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '请输入有效的 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书或 Pinterest 公开视频链接'
     );
     expect(applyAction).not.toHaveBeenCalled();
   });

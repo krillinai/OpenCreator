@@ -6,6 +6,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
+import { IssueList } from '../issues/IssuePresenter.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useEffect, useRef, useState } from 'react';
 
@@ -18,12 +19,11 @@ export function RuntimeComponentsSettingsView(props: {
   const { language, t } = useAppLanguage();
   const status = props.controller.ytDlpStatus;
   const busy = props.controller.phase !== 'idle';
+  const issues = props.controller.issues ?? [];
   const [checkNotice, setCheckNotice] = useState<string>();
   const [liveCheckState, setLiveCheckState] = useState<LiveCheckState>('pending');
   const liveCheckStarted = useRef(false);
-  const error = props.controller.error === undefined
-    ? undefined
-    : formatRuntimeDependencyError(props.controller.error, t);
+  const hasIssue = issues.length > 0;
 
   useEffect(() => {
     if (
@@ -61,24 +61,21 @@ export function RuntimeComponentsSettingsView(props: {
     return (
       <section className="settings-section settings-management" aria-labelledby="runtime-components-title">
         <SettingsHeader />
-        {error === undefined ? (
+        {!hasIssue ? (
           <div className="settings-state">
             <LoaderCircle className="settings-spin" size={17} aria-hidden="true" />
             <span>{t('settings.runtimeComponents.loading')}</span>
           </div>
         ) : (
-          <div className="runtime-component-empty">
-            <p className="settings-error" role="alert">{error}</p>
-            <button
-              className="settings-secondary-button"
-              type="button"
-              disabled={busy}
-              onClick={() => void props.controller.checkYtDlpUpdate(true).catch(() => undefined)}
-            >
-              <RefreshCw size={15} aria-hidden="true" />
-              {t('settings.runtimeComponents.retry')}
-            </button>
-          </div>
+          <IssueList
+            issues={issues}
+            actions={{ retryOperations: {
+              'runtime.load-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
+              'runtime.check-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
+              'runtime.update-yt-dlp': async () => { await props.controller.updateYtDlp(); }
+            } }}
+            onDismiss={props.controller.dismissIssue}
+          />
         )}
       </section>
     );
@@ -111,7 +108,7 @@ export function RuntimeComponentsSettingsView(props: {
             </div>
             <p>{t('settings.runtimeComponents.ytDlpDescription')}</p>
             <p>{t('settings.runtimeComponents.autoCheck')}</p>
-            {error === undefined ? <p>{t('settings.runtimeComponents.fallback')}</p> : null}
+            {!hasIssue ? <p>{t('settings.runtimeComponents.fallback')}</p> : null}
           </div>
           <CheckCircle2
             size={19}
@@ -143,9 +140,15 @@ export function RuntimeComponentsSettingsView(props: {
           </div>
         </dl>
 
-        {error === undefined ? null : (
-          <p className="settings-error" role="alert">{error}</p>
-        )}
+        <IssueList
+          issues={issues}
+          actions={{ retryOperations: {
+            'runtime.load-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
+            'runtime.check-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
+            'runtime.update-yt-dlp': async () => { await props.controller.updateYtDlp(); }
+          } }}
+          onDismiss={props.controller.dismissIssue}
+        />
         {checkNotice === undefined ? null : (
           <p className="settings-notice" role="status">{checkNotice}</p>
         )}
@@ -216,23 +219,4 @@ function formatDate(
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(date);
-}
-
-function formatRuntimeDependencyError(
-  message: string,
-  t: ReturnType<typeof useAppLanguage>['t']
-): string {
-  if (/creator_yt_dlp_update_download_failed/i.test(message)) {
-    return t('settings.runtimeComponents.errorDownload');
-  }
-  if (/creator_yt_dlp_update_verification_failed/i.test(message)) {
-    return t('settings.runtimeComponents.errorVerification');
-  }
-  if (/creator_yt_dlp_update_storage_failed/i.test(message)) {
-    return t('settings.runtimeComponents.errorStorage');
-  }
-  if (/runtime_dependency_unavailable/i.test(message)) {
-    return t('settings.runtimeComponents.disconnected');
-  }
-  return t('settings.runtimeComponents.errorCheck');
 }

@@ -7,6 +7,7 @@ import type { OpenCreatorSettingsStore } from '../../src/settings/store.js';
 describe('OpenCreator settings routes', () => {
   let server: FastifyInstance;
   let store: OpenCreatorSettingsStore;
+  let validateStoragePath: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     store = {
@@ -29,10 +30,25 @@ describe('OpenCreator settings routes', () => {
           customAccentColor: update.customAccentColor ?? '#3b82f6',
           defaultPermission: update.defaultPermission ?? 'danger-full-access'
         }
+      })),
+      readStorage: vi.fn(() => ({
+        configured: false,
+        settings: {
+          defaultProjectRoot: '/tmp/OpenCreator',
+          outputRoot: '/tmp/OpenCreator/Exports'
+        }
+      })),
+      updateStorage: vi.fn(update => ({
+        configured: true,
+        settings: {
+          defaultProjectRoot: update.defaultProjectRoot ?? '/tmp/OpenCreator',
+          outputRoot: update.outputRoot ?? '/tmp/OpenCreator/Exports'
+        }
       }))
     };
     server = Fastify({ logger: false });
-    await registerSettingsRoutes(server, store);
+    validateStoragePath = vi.fn((_path: string): boolean => true);
+    await registerSettingsRoutes(server, store, { validateStoragePath });
   });
 
   afterEach(async () => {
@@ -78,5 +94,40 @@ describe('OpenCreator settings routes', () => {
 
     expect(response.statusCode).toBe(400);
     expect(store.updateUi).not.toHaveBeenCalled();
+  });
+
+  it('reads and updates storage settings', async () => {
+    const current = await server.inject({ method: 'GET', url: '/settings/storage' });
+    expect(current.json().settings.outputRoot).toBe('/tmp/OpenCreator/Exports');
+
+    const updated = await server.inject({
+      method: 'PATCH',
+      url: '/settings/storage',
+      payload: { defaultProjectRoot: '/Volumes/Projects' }
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(store.updateStorage).toHaveBeenCalledWith({
+      defaultProjectRoot: '/Volumes/Projects'
+    });
+    expect(validateStoragePath).toHaveBeenCalledWith('/Volumes/Projects');
+  });
+
+  it('rejects relative or unavailable storage directories', async () => {
+    const relative = await server.inject({
+      method: 'PATCH',
+      url: '/settings/storage',
+      payload: { outputRoot: 'relative/exports' }
+    });
+    expect(relative.statusCode).toBe(400);
+    expect(store.updateStorage).not.toHaveBeenCalled();
+
+    validateStoragePath.mockReturnValue(false);
+    const unavailable = await server.inject({
+      method: 'PATCH',
+      url: '/settings/storage',
+      payload: { outputRoot: '/read-only/exports' }
+    });
+    expect(unavailable.statusCode).toBe(400);
+    expect(store.updateStorage).not.toHaveBeenCalled();
   });
 });

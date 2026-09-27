@@ -19,7 +19,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
-import { ApiClientError } from '../../runtime/errors.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 export type ProfileSettingsService = {
   listProfiles(): Promise<CodexProfileListResponse>;
@@ -47,10 +48,12 @@ export function ProfileSettingsView(props: {
   const [loading, setLoading] = useState(
     props.data === undefined && props.connected && props.service !== null
   );
-  const [error, setError] = useState<string>();
+  const [validationError, setValidationError] = useState<string>();
   const [editor, setEditor] = useState<ProfileEditorState>();
   const [saving, setSaving] = useState(false);
   const [busyName, setBusyName] = useState<string>();
+  const [reloadToken, setReloadToken] = useState(0);
+  const pageIssues = usePageIssueState('settings-profiles');
 
   useEffect(() => {
     setData(props.data);
@@ -62,10 +65,18 @@ export function ProfileSettingsView(props: {
     setLoading(true);
     props.service.listProfiles()
       .then(response => {
-        if (!canceled) updateData(response);
+        if (!canceled) {
+          updateData(response);
+          pageIssues.resolveOperation('settings.profiles.load');
+        }
       })
       .catch(reason => {
-        if (!canceled) setError(formatProfileError(reason, '无法加载 Profiles'));
+        if (!canceled) pageIssues.captureOperationFailure(
+          'settings.profiles.load',
+          reason,
+          '无法加载 Profiles，请重试。',
+          { retryable: true }
+        );
       })
       .finally(() => {
         if (!canceled) setLoading(false);
@@ -73,7 +84,14 @@ export function ProfileSettingsView(props: {
     return () => {
       canceled = true;
     };
-  }, [props.connected, props.data, props.service]);
+  }, [
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.connected,
+    props.data,
+    props.service,
+    reloadToken
+  ]);
 
   function updateData(next: CodexProfileListResponse) {
     setData(next);
@@ -92,18 +110,20 @@ export function ProfileSettingsView(props: {
   async function openEdit(profile: CodexProfileResponse) {
     if (props.service === null) return;
     setEditor({ mode: 'edit', name: profile.name, loading: true });
-    setError(undefined);
+    setValidationError(undefined);
+    const operationId = `settings.profiles.detail:${profile.name}`;
     try {
       const detail = await props.service.getProfile(profile.name);
       if (containsSensitiveConfig(detail.profile.config)) {
         setEditor(undefined);
-        setError('CODEX_PROFILE_SENSITIVE：该 Profile 含敏感配置，请直接编辑本机配置文件');
+        setValidationError('该 Profile 含敏感配置，请直接编辑本机配置文件');
         return;
       }
       setEditor({ mode: 'edit', name: profile.name, profile: detail.profile, loading: false });
+      pageIssues.resolveOperation(operationId);
     } catch (reason) {
       setEditor(undefined);
-      setError(formatProfileError(reason, '无法加载 Profile 详情'));
+      pageIssues.captureOperationFailure(operationId, reason, '无法加载 Profile 详情，请重试。');
     }
   }
 
@@ -117,14 +137,15 @@ export function ProfileSettingsView(props: {
     });
     if (!confirmed) return;
     setBusyName(profile.name);
-    setError(undefined);
+    const operationId = `settings.profiles.delete:${profile.name}`;
     try {
       await props.service.deleteProfile(profile.name);
       if (data !== undefined) {
         updateData({ ...data, profiles: data.profiles.filter(item => item.name !== profile.name) });
       }
+      pageIssues.resolveOperation(operationId);
     } catch (reason) {
-      setError(formatProfileError(reason, '无法删除 Profile'));
+      pageIssues.captureOperationFailure(operationId, reason, '无法删除 Profile，请检查占用情况后重试。');
     } finally {
       setBusyName(undefined);
     }
@@ -165,7 +186,14 @@ export function ProfileSettingsView(props: {
       {data?.diagnostics.map(diagnostic => (
         <p className="settings-inline-warning" key={diagnostic}>{diagnostic}</p>
       ))}
-      {error ? <p className="settings-error" role="alert">{error}</p> : null}
+      {validationError ? <p className="settings-error" role="alert">{validationError}</p> : null}
+      <IssueList
+        issues={pageIssues.issues}
+        actions={{ retryOperations: {
+          'settings.profiles.load': () => setReloadToken(value => value + 1)
+        } }}
+        onDismiss={pageIssues.dismissIssue}
+      />
 
       {editor ? (
         <ProfileEditor
@@ -175,15 +203,19 @@ export function ProfileSettingsView(props: {
           onSubmit={async (name, config) => {
             if (props.service === null) return;
             setSaving(true);
-            setError(undefined);
+            setValidationError(undefined);
+            const operationId = editor.mode === 'create'
+              ? 'settings.profiles.create'
+              : `settings.profiles.update:${editor.name}`;
             try {
               const response = editor.mode === 'create'
                 ? await props.service.createProfile({ name, config })
                 : await props.service.updateProfile(editor.name, { config });
               upsertProfile(response.profile);
               setEditor(undefined);
+              pageIssues.resolveOperation(operationId);
             } catch (reason) {
-              setError(formatProfileError(reason, '无法保存 Profile'));
+              pageIssues.captureOperationFailure(operationId, reason, '无法保存 Profile，请检查配置后重试。');
             } finally {
               setSaving(false);
             }
@@ -428,22 +460,4 @@ function profileSummary(profile: CodexProfileResponse): string {
   return [model, reasoning, sandbox, advancedCount > 0 ? `${advancedCount} 项高级配置` : '']
     .filter(Boolean)
     .join(' · ');
-}
-
-function formatProfileError(error: unknown, fallback: string): string {
-  if (!(error instanceof ApiClientError)) return fallback;
-  if (error.code === 'CODEX_PROFILE_IN_USE') {
-    const threadCount = Array.isArray(error.details?.threads) ? error.details.threads.length : 0;
-    const scheduleCount = Array.isArray(error.details?.schedules) ? error.details.schedules.length : 0;
-    return `${error.code}：仍被 ${threadCount} 个会话和 ${scheduleCount} 个计划任务使用`;
-  }
-  const hints: Record<string, string> = {
-    CODEX_HOME_READ_ONLY: '当前 CODEX_HOME 不允许写入',
-    CODEX_PROFILE_EXISTS: '请更换 Profile 名称',
-    CODEX_PROFILE_NOT_FOUND: '该 Profile 已不存在，请重新加载',
-    CODEX_CONFIG_INVALID: '请先修复基础 config.toml',
-    CODEX_PROFILE_INVALID: '请检查 Profile 字段和值',
-    CODEX_CONFIG_WRITE_FAILED: '请检查配置目录权限和磁盘状态'
-  };
-  return `${error.code}：${hints[error.code] ?? error.message}`;
 }

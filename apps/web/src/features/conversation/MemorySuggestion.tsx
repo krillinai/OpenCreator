@@ -2,6 +2,8 @@ import type { CreateMemoryRequest, MemoryScope } from '@opencreator/protocol';
 import { AlertTriangle, Brain, Check, X } from 'lucide-react';
 import { useState } from 'react';
 import { ApiClientError } from '../../runtime/errors.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 export function MemorySuggestion(props: {
   content: string;
@@ -15,6 +17,7 @@ export function MemorySuggestion(props: {
   const [saving, setSaving] = useState(false);
   const [confirmingSensitive, setConfirmingSensitive] = useState(false);
   const [error, setError] = useState<string>();
+  const pageIssues = usePageIssueState('memory-suggestion');
 
   async function save(acknowledgeSensitive = false) {
     const normalized = content.trim();
@@ -42,6 +45,7 @@ export function MemorySuggestion(props: {
         source: 'agent_suggestion',
         ...(acknowledgeSensitive ? { acknowledgeSensitive: true } : {})
       });
+      pageIssues.resolveOperation('memory-suggestion.save');
       props.onDismiss();
     } catch (reason) {
       if (
@@ -50,7 +54,7 @@ export function MemorySuggestion(props: {
       ) {
         setConfirmingSensitive(true);
       } else {
-        setError(reason instanceof Error ? reason.message : '保存记忆失败');
+        pageIssues.captureOperationFailure('memory-suggestion.save', reason, '保存记忆失败，请重试。', { retryable: true });
       }
     } finally {
       setSaving(false);
@@ -109,6 +113,12 @@ export function MemorySuggestion(props: {
         </div>
       ) : null}
       {error ? <p className="inline-error" role="alert">{error}</p> : null}
+      <IssueList
+        issues={pageIssues.issues}
+        actions={{ retryOperations: { 'memory-suggestion.save': () => save() } }}
+        onDismiss={pageIssues.dismissIssue}
+        compact
+      />
     </section>
   );
 }

@@ -1,3 +1,5 @@
+import type { OpenCreatorIssue, PublicErrorFacts } from './issues.js';
+
 export type RuntimeErrorCode =
   | 'VALIDATION_FAILED'
   | 'UNAUTHORIZED'
@@ -159,10 +161,37 @@ export type RuntimeErrorCode =
   | 'krillin_capability_unavailable'
   | 'INTERNAL_ERROR';
 
+export function publicErrorKindForCode(code: string): PublicErrorFacts['kind'] | undefined {
+  const normalized = code.toUpperCase();
+  if (normalized === 'ENOTFOUND' || normalized === 'EAI_AGAIN') return 'dns';
+  if (normalized === 'ECONNREFUSED') return 'connection-refused';
+  if (normalized === 'ECONNRESET' || normalized === 'EPIPE') return 'connection-reset';
+  if (normalized === 'ETIMEDOUT' || normalized.startsWith('UND_ERR_') && normalized.endsWith('_TIMEOUT')) return 'timeout';
+  if (/(?:^|_)CONFIG(?:_[A-Z]+)*_(?:REQUIRED|MISSING|INVALID|UNAVAILABLE)$/.test(normalized)) return 'configuration';
+  if (normalized === 'UNAUTHORIZED' || /(?:^|_)(?:AUTH_FAILED|PERMISSION_DENIED|ACCESS_DENIED)$/.test(normalized)) return 'unauthorized';
+  if (/(?:^|_)VALIDATION_FAILED$/.test(normalized) || /(?:^|_)(?:INPUT_)?INVALID$/.test(normalized)) return 'validation';
+  if (/_NOT_FOUND$/.test(normalized)) return 'not-found';
+  if (/_CONFLICT$|_ALREADY_[A-Z_]+$|_IN_USE$|_BUSY$|_ARCHIVED$/.test(normalized)) return 'conflict';
+  if (/(?:^|_)UNSUPPORTED$|^UNSUPPORTED_|_INCOMPATIBLE$|_CAPABILITY_UNAVAILABLE$/.test(normalized)) return 'unsupported';
+  if (/_STORAGE_FAILED$|_WRITE_FAILED$|_FILE_UNAVAILABLE$/.test(normalized)) return 'storage';
+  return undefined;
+}
+
+export function safePublicErrorCode(value: unknown): string | undefined {
+  return typeof value === 'string'
+    && /^[a-zA-Z0-9._:/-]{1,160}$/.test(value)
+    && !/^sk[-_]/i.test(value)
+    && !/[a-zA-Z0-9]{32,}/.test(value)
+    ? value
+    : undefined;
+}
+
 export type ApiError = {
   error: {
     code: RuntimeErrorCode;
     message: string;
     details?: Record<string, unknown>;
+    publicFacts?: PublicErrorFacts;
+    issue?: OpenCreatorIssue;
   };
 };

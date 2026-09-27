@@ -92,10 +92,12 @@ export function createCodexAppServerClient(
     if (state.closed) return Promise.resolve();
     const hasExited = () => state.child.exitCode !== null || state.child.signalCode !== null;
     state.stopWork = new Promise<void>((resolve, reject) => {
+      const onExit = () => finish();
       const onClose = () => finish();
       const finish = (error?: Error) => {
         clearTimeout(forceKill);
         clearTimeout(deadline);
+        state.child.removeListener('exit', onExit);
         state.child.removeListener('close', onClose);
         state.child.stdin.destroy();
         state.child.stdout.destroy();
@@ -114,7 +116,11 @@ export function createCodexAppServerClient(
       }, CLOSE_GRACE_MS * 2);
       forceKill.unref();
       deadline.unref();
+      state.child.once('exit', onExit);
       state.child.once('close', onClose);
+      // `exit` can have fired before shutdownProcess was entered from the
+      // process exit handler. Do not wait for inherited pipes in that case.
+      if (hasExited()) finish();
     });
     if (!hasExited()) void terminateCodexProcess(state.child, 'SIGTERM');
     return state.stopWork;

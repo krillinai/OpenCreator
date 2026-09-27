@@ -4,7 +4,6 @@ import type {
 } from '@opencreator/protocol';
 import { skillMarketCatalog, type SkillMarketEntry } from '@opencreator/skill-market';
 import {
-  AlertCircle,
   CheckCircle2,
   Loader2,
   Search,
@@ -63,9 +62,7 @@ export function SkillMarketView({
   skills,
   installRecords,
   loading,
-  loadError,
   operation,
-  useError,
   projects,
   currentProjectId,
   onInstall,
@@ -255,17 +252,6 @@ export function SkillMarketView({
           {l('正在加载技能目录', 'Loading the Skills catalog')}
         </p>
       ) : null}
-      {loadError ? (
-        <p className="skill-market-inline-error skill-market-page-error" role="alert">
-          <AlertCircle size={18} aria-hidden="true" />
-          {loadError}
-        </p>
-      ) : null}
-      {useError ? (
-        <p className="skill-market-inline-error skill-market-page-error" role="status">
-          {l('使用失败：', 'Could not use Skill: ')}{useError.error}
-        </p>
-      ) : null}
       {catalog.length === 0 ? (
         <StateMessage text={l('目录暂时为空', 'The catalog is empty')} />
       ) : filteredResult.entries.length === 0 ? (
@@ -313,9 +299,6 @@ export function SkillMarketView({
           onUpdate={onUpdate}
           onUse={requestUse}
           skillsKnown={skillsKnown}
-          useError={
-            useError?.skillId === activeSyncedEntry.id ? useError.error : undefined
-          }
         />
       ) : null}
 

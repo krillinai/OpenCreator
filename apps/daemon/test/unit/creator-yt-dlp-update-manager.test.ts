@@ -189,6 +189,48 @@ describe('yt-dlp update manager', () => {
     });
     expect(restored.getRuntime()).toBe(bundledRuntime);
   });
+
+  it('aborts an in-flight release check when the manager closes', async () => {
+    root = await mkdtemp(join(tmpdir(), 'creator-yt-dlp-update-'));
+    const bundledRuntime = await createBundledRuntime(root);
+    let observedSignal: AbortSignal | undefined;
+    let markFetchStarted!: () => void;
+    const fetchStarted = new Promise<void>(resolve => {
+      markFetchStarted = resolve;
+    });
+    const fetchImpl = vi.fn((
+      _input: string | URL | Request,
+      init?: RequestInit
+    ) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (signal === undefined || signal === null) {
+        reject(new Error('expected an abort signal'));
+        return;
+      }
+      observedSignal = signal;
+      markFetchStarted();
+      signal.addEventListener('abort', () => reject(signal.reason), {
+        once: true
+      });
+    })) as unknown as typeof fetch;
+    const manager = await createManager(
+      join(root, 'updates'),
+      bundledRuntime,
+      fetchImpl
+    );
+    const result = manager.check({ force: true }).then(
+      () => undefined,
+      (error: unknown) => error
+    );
+    await fetchStarted;
+
+    manager.close();
+
+    expect(observedSignal?.aborted).toBe(true);
+    await expect(result).resolves.toMatchObject({
+      code: 'creator_yt_dlp_update_check_failed'
+    });
+  });
 });
 
 async function createBundledRuntime(base: string): Promise<YtDlpRuntime> {

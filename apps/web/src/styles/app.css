@@ -715,7 +715,7 @@ select:focus-visible {
 }
 
 .timeline-load-older {
-  min-height: 52px;
+  height: 53px;
   display: grid;
   place-items: center;
   padding: 12px 18px 2px;
@@ -2240,15 +2240,14 @@ select:focus-visible {
   font-weight: 600;
 }
 
-.file-error-bar {
+.file-loading-bar {
   min-height: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
   padding: 8px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border));
-  background: var(--danger-soft);
-  color: var(--danger);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -3136,7 +3135,7 @@ html.is-pane-resizing * {
 }
 
 .file-workspace-conflict {
-  background: var(--warning-soft);
+  background: var(--surface);
   color: var(--text);
 }
 
@@ -3869,6 +3868,7 @@ html.is-pane-resizing * {
 .creator-template-detail-heading { min-width: 0; }
 .creator-template-detail-heading h1 { margin: 0; font-size: 18px; line-height: 1.3; }
 .creator-template-detail-heading p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.creator-template-detail-heading > span { color: var(--muted); font-size: 12px; }
 .creator-template-detail-actions { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
 .creator-template-detail-actions .creator-template-use-button { margin: 0; }
 
@@ -6996,6 +6996,41 @@ button.creator-template-outcome-expand:hover {
   font-weight: 500;
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+.settings-control-row.settings-directory-row {
+  min-height: 53px;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.settings-directory-row > label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-directory-input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.settings-directory-input:focus {
+  border-color: var(--accent-strong);
+  outline: 2px solid var(--accent-soft);
+}
+
+.settings-directory-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .settings-control-row {

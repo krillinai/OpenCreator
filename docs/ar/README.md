@@ -82,7 +82,7 @@
 </thead>
 <tbody>
 <tr><td valign="top">ترجمة الفيديو</td><td valign="top">✅ متاح</td><td>استورد مقاطع فيديو محلية أو عامة؛ وحوّل الكلام إلى نص باستخدام خدمات Whisper السحابية أو المحلية؛ واستخدم سياق LLM لتقسيم الترجمات ومحاذاتها ومعالجة المصطلحات والترجمة؛ واضبط الترجمات ثنائية اللغة أو الدبلجة أو عينة صوت مخصصة وأنماط الترجمة والتنسيق الأفقي أو العمودي، ثم صدّر SRT أو الصوت أو الفيديو</td></tr>
-<tr><td valign="top">تنزيل الفيديو</td><td valign="top">✅ متاح</td><td>حلّل الروابط العامة المدعومة من YouTube وBilibili والخدمات الأخرى، واستعرض خيارات الجودة والتنسيق المتاحة، ثم نزّل الفيديو أو الصوت لاستخدامه في مسارات العمل اللاحقة</td></tr>
+<tr><td valign="top">تنزيل الفيديو</td><td valign="top">✅ متاح</td><td>حلّل مقاطع الفيديو العامة الفردية من YouTube وBilibili وX وTikTok وInstagram وDouyin وFacebook وXiaohongshu وPinterest، وقارن التنسيقات المتاحة ونزّل الفيديو أو الصوت. قد تتطلب بعض المنصات ملفات تعريف الارتباط</td></tr>
 <tr><td valign="top">إنشاء الصور المصغرة</td><td valign="top">✅ متاح</td><td>ادمج موضوعًا ورابط فيديو وصورة مرجعية اختيارية لإنشاء عدة خيارات من الصور المصغرة للمحتوى ومقارنتها</td></tr>
 <tr><td valign="top">توليد الصور</td><td valign="top">✅ متاح</td><td>أنشئ صورًا باستخدام GPT Image انطلاقًا من prompt وصورة مرجعية اختيارية، واضبط نسبة العرض إلى الارتفاع وعدد النتائج، ثم عاين كل صورة ونزّلها</td></tr>
 <tr><td valign="top">رسوم شخصيات العصا المتحركة</td><td valign="top">قريبًا</td><td>طوّر الشخصيات والقصص المصورة والتعليق الصوتي والرسوم المتحركة ضمن مسار عمل موجه</td></tr>
@@ -254,6 +254,28 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 ### تنزيل الفيديو
 
 حلّل رابط فيديو عامًا، وقارن التنسيقات المتاحة، ثم نزّل الفيديو أو الصوت مباشرةً إلى المشروع.
+
+مصادر الفيديو المدعومة:
+
+<table align="center">
+  <tr>
+    <td align="center" width="96"><img src="../images/platforms/youtube.png" alt="YouTube" width="32" height="32" /><br /><strong>YouTube</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/bilibili.png" alt="Bilibili" width="32" height="32" /><br /><strong>Bilibili</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/x.png" alt="X" width="32" height="32" /><br /><strong>X</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/tiktok.png" alt="TikTok" width="32" height="32" /><br /><strong>TikTok</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/instagram.png" alt="Instagram" width="32" height="32" /><br /><strong>Instagram</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/douyin.png" alt="Douyin" width="32" height="32" /><br /><strong>Douyin</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/facebook.png" alt="Facebook" width="32" height="32" /><br /><strong>Facebook</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/xiaohongshu.png" alt="Xiaohongshu" width="32" height="32" /><br /><strong>Xiaohongshu</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/pinterest.png" alt="Pinterest" width="32" height="32" /><br /><strong>Pinterest</strong></td>
+  </tr>
+</table>
+
+يعتمد توفر التنزيل على الفيديو والمنطقة؛ وقد تتطلب بعض المصادر ملفات تعريف الارتباط الخاصة بالمنصة. لا يستورد OpenCreator ملفات تعريف الارتباط من المتصفح تلقائيًا.
+
+**منشورات فيديو Xiaohongshu:** الصق الرابط العام الكامل `https://www.xiaohongshu.com/explore/<معرّف منشور سداسي عشري من 24 خانة>` مع الاحتفاظ بمعلمات مثل `xsec_token`. المنشورات التي تحتوي على صور فقط لا توفر تنسيقات فيديو؛ ولا تُدعم صفحات الملفات الشخصية أو روابط `xhslink.com` المختصرة. قد تمنع الرموز المنتهية أو قيود الوصول التنزيل.
+
+**دبابيس فيديو Pinterest:** الصق رابطًا عامًا `https://www.pinterest.com/pin/<معرّف رقمي>/`. لا تُدعم الدبابيس التي تحتوي على صور فقط أو اللوحات أو الملفات الشخصية.
 
 ![اختيار تنسيق تنزيل الفيديو في OpenCreator](../images/examples/video-downloader-formats-en.png)
 

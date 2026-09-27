@@ -129,7 +129,7 @@ describe('VideoTranslationResultWorkspace', () => {
     const onExport = vi.fn();
     const onSubtitleChange = vi.fn();
     const onSaveSubtitles = vi.fn();
-    render(
+    const { container } = render(
       <VideoTranslationResultWorkspace
         {...baseProps}
         activeTab="subtitles"
@@ -170,8 +170,13 @@ describe('VideoTranslationResultWorkspace', () => {
     expect(screen.getByRole('radio', { name: '竖屏' })).toHaveAttribute('aria-checked', 'false');
     const horizontal = screen.getByRole('textbox', { name: '横屏字幕 1' });
     expect(horizontal).not.toHaveAttribute('readonly');
+    expect(screen.queryByRole('heading', { name: '横屏字幕' })).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: '横屏字幕内容' }).querySelectorAll('[data-subtitle-cue]'))
+      .toHaveLength(1);
     expect(screen.queryByRole('textbox', { name: '竖屏字幕 1' })).not.toBeInTheDocument();
-    expect(screen.getByText('00:00:00,000 - 00:00:01,000')).toBeInTheDocument();
+    expect(screen.getByText('00:00–00:01')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '跳转到 00:00:00,000' })).toHaveTextContent('00:00–00:01');
+    expect(horizontal).toHaveAttribute('rows', '1');
     fireEvent.change(horizontal, { target: { value: '修改后的横屏字幕' } });
     expect(onSubtitleChange).toHaveBeenCalledWith('horizontal', 1, '修改后的横屏字幕');
     fireEvent.click(screen.getByRole('button', { name: '保存横屏字幕' }));
@@ -187,13 +192,38 @@ describe('VideoTranslationResultWorkspace', () => {
     expect(onSaveSubtitles).toHaveBeenCalledWith('vertical');
     expect(screen.queryByRole('textbox', { name: '横屏字幕 1' })).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: '竖屏' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('list', { name: '竖屏字幕内容' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '竖屏字幕' })).not.toBeInTheDocument();
     const verticalVideo = screen.getByLabelText('竖屏字幕视频预览');
     expect(verticalVideo).toHaveAttribute('src', 'blob:http://localhost/horizontal-source-video');
     expect(verticalVideo.parentElement).toHaveAttribute('data-ratio', '9:16');
+    Object.defineProperties(verticalVideo, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 }
+    });
+    fireEvent.loadedMetadata(verticalVideo);
+    expect(verticalVideo.parentElement).toHaveAttribute('data-ratio', '9:16');
+    fireEvent.click(screen.getByRole('radio', { name: '横屏' }));
+    expect(screen.getByRole('radio', { name: '横屏' })).toHaveAttribute('aria-checked', 'true');
+    expect(container.querySelector('.video-result-player-frame')).toHaveAttribute('data-ratio', '16:9');
     expect(screen.queryByText('target_language_srt.srt')).not.toBeInTheDocument();
     expect(screen.queryByText('short_origin_mixed_srt.srt')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '下载横屏字幕' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '下载竖屏字幕' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the read-only status in the page heading without repeating a list heading', () => {
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="subtitles"
+        subtitleOutputs={[{ ...baseProps.subtitleOutputs[0]!, readOnly: true }]}
+      />
+    );
+
+    expect(screen.getByText('项目 V1 · 1 条字幕 · 已保存 · 只读')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: '横屏字幕内容' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '横屏字幕' })).not.toBeInTheDocument();
   });
 
   it('shows bilingual subtitle lines in the requested order while keeping the translation editable', () => {
@@ -223,10 +253,139 @@ describe('VideoTranslationResultWorkspace', () => {
     expect(translation).not.toHaveAttribute('readonly');
     expect(source).toHaveValue('Source below');
     expect(source).not.toHaveAttribute('readonly');
+    expect(source).toHaveAttribute('rows', '1');
+    expect(translation).toHaveAttribute('rows', '1');
     fireEvent.change(source, { target: { value: 'Corrected source' } });
     expect(baseProps.onSubtitleChange).toHaveBeenCalledWith('horizontal', 1, 'Corrected source', 'sourceText');
     expect(translation.compareDocumentPosition(source) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(cue).toContainElement(source);
+  });
+
+  it('groups vertical cues within the longer timestamp while preserving editing and playback by cue ID', () => {
+    const onSubtitleChange = vi.fn();
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="subtitles"
+        subtitleVideoPreviews={{ vertical: {
+          artifactId: 'vertical-video-v1',
+          src: 'blob:http://localhost/vertical-video',
+          source: false
+        } }}
+        subtitleOutputs={[{
+          artifactId: 'vertical-subtitle-v1',
+          variant: 'vertical',
+          artifactVersion: 1,
+          cues: [
+            { id: 4, start: '00:00:01,000', end: '00:00:02,000', text: '我很乐意。' },
+            { id: 5, start: '00:00:01,000', end: '00:00:02,000', text: "I'm happy to do it." },
+            { id: 6, start: '00:00:02,000', end: '00:00:03,000', text: '另一句译文' },
+            { id: 7, start: '00:00:02,250', end: '00:00:03,000', text: 'Other source' }
+          ],
+          readOnly: false
+        }]}
+        onSubtitleChange={onSubtitleChange}
+      />
+    );
+
+    const list = screen.getByRole('list', { name: '竖屏字幕内容' });
+    expect(list.querySelectorAll('[data-subtitle-cue]')).toHaveLength(2);
+    const translation = screen.getByRole('textbox', { name: '竖屏字幕 1' });
+    const source = screen.getByRole('textbox', { name: '竖屏字幕 2' });
+    expect(translation.closest('[data-subtitle-cue]')).toBe(source.closest('[data-subtitle-cue]'));
+    expect(translation.closest('[data-subtitle-cue]')).toHaveTextContent('00:01–00:02');
+    expect(screen.getAllByText('00:02–00:03')).toHaveLength(1);
+    expect(screen.getByRole('textbox', { name: '竖屏字幕 3' }).closest('[data-subtitle-cue]'))
+      .toBe(screen.getByRole('textbox', { name: '竖屏字幕 4' }).closest('[data-subtitle-cue]'));
+
+    fireEvent.change(translation, { target: { value: '很高兴。' } });
+    fireEvent.change(source, { target: { value: 'Happy to help.' } });
+    expect(onSubtitleChange).toHaveBeenNthCalledWith(1, 'vertical', 4, '很高兴。');
+    expect(onSubtitleChange).toHaveBeenNthCalledWith(2, 'vertical', 5, 'Happy to help.');
+
+    const video = screen.getByLabelText('竖屏字幕视频预览') as HTMLVideoElement;
+    fireEvent.timeUpdate(video, { target: { currentTime: 1.5 } });
+    expect(translation.closest('[data-subtitle-cue]')).toHaveAttribute('data-active', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '跳转到 00:00:02,000' }));
+    expect(video.currentTime).toBe(2);
+    expect(screen.getByRole('textbox', { name: '竖屏字幕 4' }).closest('[data-subtitle-cue]'))
+      .toHaveAttribute('data-active', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '跳转到 00:00:01,000' }));
+    expect(video.currentTime).toBe(1);
+    expect(list.querySelectorAll('[data-subtitle-cue][data-active="true"]')).toHaveLength(1);
+  });
+
+  it('keeps consecutive split source lines under a longer vertical subtitle without swallowing overlapping cues', () => {
+    const onSubtitleChange = vi.fn();
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="subtitles"
+        subtitleVideoPreviews={{ vertical: {
+          artifactId: 'vertical-video-v1',
+          src: 'blob:http://localhost/vertical-video',
+          source: false
+        } }}
+        subtitleOutputs={[{
+          artifactId: 'vertical-subtitle-v1',
+          variant: 'vertical',
+          artifactVersion: 1,
+          cues: [
+            { id: 1, start: '00:00:00,000', end: '00:00:02,000', text: 'Jensen, 谢谢你今天这么做。' },
+            { id: 2, start: '00:00:00,000', end: '00:00:01,000', text: 'Jensen, thank you' },
+            { id: 3, start: '00:00:01,000', end: '00:00:02,000', text: 'for doing this today.' },
+            { id: 4, start: '00:00:01,500', end: '00:00:03,000', text: '跨过边界的字幕' },
+            { id: 5, start: '00:00:03,000', end: '00:00:04,000', text: '下一句译文' },
+            { id: 6, start: '00:00:03,000', end: '00:00:04,000', text: 'Next source' }
+          ],
+          readOnly: false
+        }]}
+        onSubtitleChange={onSubtitleChange}
+      />
+    );
+
+    const list = screen.getByRole('list', { name: '竖屏字幕内容' });
+    expect(list.querySelectorAll('[data-subtitle-cue]')).toHaveLength(3);
+    const first = screen.getByRole('textbox', { name: '竖屏字幕 1' }).closest('[data-subtitle-cue]');
+    expect(first).toHaveTextContent('00:00–00:02');
+    expect(first).toContainElement(screen.getByRole('textbox', { name: '竖屏字幕 2' }));
+    expect(first).toContainElement(screen.getByRole('textbox', { name: '竖屏字幕 3' }));
+    expect(screen.queryByRole('button', { name: '跳转到 00:00:01,000' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '竖屏字幕 4' }).closest('[data-subtitle-cue]'))
+      .not.toBe(first);
+    expect(screen.getByRole('textbox', { name: '竖屏字幕 5' }).closest('[data-subtitle-cue]'))
+      .toContainElement(screen.getByRole('textbox', { name: '竖屏字幕 6' }));
+
+    fireEvent.change(screen.getByRole('textbox', { name: '竖屏字幕 3' }), { target: { value: 'for helping today.' } });
+    expect(onSubtitleChange).toHaveBeenCalledWith('vertical', 3, 'for helping today.');
+    const video = screen.getByLabelText('竖屏字幕视频预览') as HTMLVideoElement;
+    fireEvent.click(screen.getByRole('button', { name: '跳转到 00:00:00,000' }));
+    expect(video.currentTime).toBe(0);
+    fireEvent.timeUpdate(video, { target: { currentTime: 1.25 } });
+    expect(first).toHaveAttribute('data-active', 'true');
+    fireEvent.timeUpdate(video, { target: { currentTime: 2.5 } });
+    expect(first).toHaveAttribute('data-active', 'false');
+    expect(screen.getByRole('textbox', { name: '竖屏字幕 4' }).closest('[data-subtitle-cue]'))
+      .toHaveAttribute('data-active', 'true');
+  });
+
+  it('does not combine horizontal cues even when they have matching timestamps', () => {
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="subtitles"
+        subtitleOutputs={[{
+          ...baseProps.subtitleOutputs[0]!,
+          cues: [
+            { id: 1, start: '00:00:01,000', end: '00:00:02,000', text: '第一条' },
+            { id: 2, start: '00:00:01,000', end: '00:00:02,000', text: '第二条' }
+          ]
+        }]}
+      />
+    );
+
+    expect(screen.getByRole('list', { name: '横屏字幕内容' }).querySelectorAll('[data-subtitle-cue]'))
+      .toHaveLength(2);
   });
 
   it('keeps video playback and subtitle cues synchronized', () => {
@@ -254,6 +413,7 @@ describe('VideoTranslationResultWorkspace', () => {
     const video = screen.getByLabelText('横屏字幕视频预览') as HTMLVideoElement;
     expect(video).toHaveAttribute('src', 'blob:http://localhost/source-video');
     expect(screen.getByText('当前使用原视频同步预览')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: '横屏字幕内容' }).querySelectorAll('[data-subtitle-cue]')).toHaveLength(2);
 
     fireEvent.timeUpdate(video, { target: { currentTime: 1.5 } });
     expect(screen.getByRole('textbox', { name: '横屏字幕 2' }).closest('[data-subtitle-cue]'))

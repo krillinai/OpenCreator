@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { verifyCreatorRuntime } from './creator-runtime-contract.mjs';
 import { verifyStickmanRuntime } from './stickman-runtime-contract.mjs';
 import { findDeveloperIdIdentity } from './mac-signing.mjs';
+import { prepareMacAppIcon } from './mac-app-icon.mjs';
 
 const machOMagicValues = new Set([
   'feedface',
@@ -27,6 +28,7 @@ const machOMagicValues = new Set([
 ]);
 
 export async function afterPack(context) {
+  await prepareMacAppIcon(context);
   if (process.env.OPENCREATOR_SIGN_CREATOR_RUNTIME !== '1') return;
   await signDaemonRuntimeBundle(context);
   await signCreatorRuntimeBundle(context);

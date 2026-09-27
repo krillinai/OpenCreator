@@ -1,5 +1,7 @@
 import { request as httpsRequest } from 'node:https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { safePublicErrorCode, type PublicErrorFacts } from '@opencreator/protocol';
+import { publicFactsFromHttpResponse } from '../creator/public-error-facts.js';
 
 export async function fetchCreatorService(input: {
   endpoint: URL;
@@ -86,22 +88,31 @@ export function creatorProviderEndpoint(baseUrl: string, defaultBaseUrl: string,
   return base;
 }
 
-export async function creatorServiceErrorMessage(
+export async function creatorServiceErrorInfo(
   response: Response,
-  label: string
-): Promise<string> {
+  label: string,
+  provider?: string
+): Promise<{ message: string; publicFacts: PublicErrorFacts }> {
+  let upstreamCode: string | undefined;
   try {
     const payload = await response.json() as unknown;
-    if (isRecord(payload) && isRecord(payload.error) && typeof payload.error.message === 'string') {
-      return `${label} provider rejected the request: ${payload.error.message.slice(0, 300)}`;
-    }
-    if (isRecord(payload) && typeof payload.message === 'string') {
-      return `${label} provider rejected the request: ${payload.message.slice(0, 300)}`;
+    if (isRecord(payload)) {
+      const detail = isRecord(payload.error) ? payload.error : payload;
+      const candidate = detail.code ?? detail.error_code ?? detail.type;
+      const code = typeof candidate === 'number' && Number.isSafeInteger(candidate)
+        ? String(candidate)
+        : candidate;
+      if (typeof code === 'string' && code.length <= 80 && safePublicErrorCode(code) !== undefined) {
+        upstreamCode = code;
+      }
     }
   } catch {
     // Some providers return an HTML or empty error response.
   }
-  return `${label} provider rejected the request with status ${response.status}`;
+  return {
+    message: `${label} provider rejected the request with status ${response.status}`,
+    publicFacts: publicFactsFromHttpResponse(response.status, provider, upstreamCode)
+  };
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

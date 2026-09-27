@@ -140,6 +140,9 @@ export default function VideoTranslationResultWorkspace(props: {
   )) ?? [];
   const activeSubtitleCueIds = new Set(activeSubtitleCues.map(cue => cue.id));
   const activeSubtitleCueKey = activeSubtitleCues.map(cue => cue.id).join('|');
+  const subtitleCueGroups = activeSubtitleOutput === undefined
+    ? []
+    : groupSubtitleCues(activeSubtitleOutput.cues, activeSubtitleOutput.variant);
   const subtitleCueCount = props.subtitleOutputs.reduce((total, output) => total + output.cues.length, 0);
   const generatedArtifactCount = props.videoOutputs.length
     + props.subtitleOutputs.length
@@ -335,7 +338,7 @@ export default function VideoTranslationResultWorkspace(props: {
       ) : null}
 
       {props.activeTab === 'subtitles' ? (
-        <div className="video-result-pane">
+        <div className="video-result-pane video-result-subtitle-pane">
           <header className="video-result-pane-heading">
             <div>
               <h2>{l('字幕', 'Subtitles')}</h2>
@@ -347,6 +350,7 @@ export default function VideoTranslationResultWorkspace(props: {
                   : ` · ${activeSubtitleDirty
                     ? l('有未保存修改', 'Unsaved changes')
                     : l('已保存', 'Saved')}`}
+                {activeSubtitleOutput?.readOnly ? ` · ${l('只读', 'Read only')}` : ''}
               </p>
             </div>
             <div className="video-result-pane-actions">
@@ -431,79 +435,83 @@ export default function VideoTranslationResultWorkspace(props: {
               </section>
 
               <section className="video-result-output-column" data-variant={activeSubtitleOutput.variant}>
-                <div className="video-result-output-heading">
-                  <div>
-                    <h3>{subtitleVariantLabel(activeSubtitleOutput.variant, l)}</h3>
-                    <small>
-                      {l('子项', 'Item')} V{activeSubtitleOutput.artifactVersion}
-                      {' · '}{activeSubtitleOutput.cues.length} {l('条字幕', 'subtitles')}
-                      {activeSubtitleOutput.readOnly ? ` · ${l('只读', 'Read only')}` : ''}
-                    </small>
-                  </div>
-                </div>
                 {activeSubtitleOutput.cues.length > 0 ? (
                   <div
                     className="video-subtitle-editor"
+                    role="list"
                     aria-label={l(
                       `${subtitleVariantLabel(activeSubtitleOutput.variant, l)}内容`,
                       `${subtitleVariantLabel(activeSubtitleOutput.variant, l)} content`
                     )}
                   >
-                    {activeSubtitleOutput.cues.map((cue, index) => {
-                      const sourceLine = cue.sourceText === undefined ? null : (
-                        <textarea
-                          className="video-subtitle-cue-source"
-                          rows={2}
-                          value={cue.sourceText}
-                          readOnly={activeSubtitleOutput.readOnly}
-                          onChange={activeSubtitleOutput.readOnly ? undefined : event => props.onSubtitleChange(
-                            activeSubtitleOutput.variant, cue.id, event.target.value, 'sourceText'
-                          )}
-                          aria-label={l(
-                            `${subtitleVariantLabel(activeSubtitleOutput.variant, l)}原文 ${index + 1}`,
-                            `${subtitleVariantLabel(activeSubtitleOutput.variant, l)} source ${index + 1}`
-                          )}
-                        />
-                      );
-                      const translationLine = (
-                        <textarea
-                          rows={2}
-                          value={cue.text}
-                          readOnly={activeSubtitleOutput.readOnly}
-                          onChange={activeSubtitleOutput.readOnly
-                            ? undefined
-                            : event => props.onSubtitleChange(
-                                activeSubtitleOutput.variant,
-                                cue.id,
-                                event.target.value
-                              )}
-                          aria-label={`${subtitleVariantLabel(activeSubtitleOutput.variant, l)} ${index + 1}`}
-                        />
-                      );
+                    {subtitleCueGroups.map((group, groupIndex) => {
+                      const firstCue = group[0]!.cue;
                       return (
                         <div
                           className="video-subtitle-cue"
-                          data-active={activeSubtitleCueIds.has(cue.id)}
+                          role="listitem"
+                          data-active={group.some(({ cue }) => activeSubtitleCueIds.has(cue.id))}
                           data-subtitle-cue="true"
-                          key={cue.id}
+                          key={firstCue.id}
                           ref={node => {
-                            if (node === null) subtitleCueRefs.current.delete(cue.id);
-                            else subtitleCueRefs.current.set(cue.id, node);
+                            for (const { cue } of group) {
+                              if (node === null) subtitleCueRefs.current.delete(cue.id);
+                              else subtitleCueRefs.current.set(cue.id, node);
+                            }
                           }}
                         >
                           <button
                             type="button"
                             className="video-subtitle-cue-time"
-                            onClick={() => seekToSubtitleCue(cue)}
-                            aria-label={l(`跳转到 ${cue.start}`, `Jump to ${cue.start}`)}
+                            onClick={() => seekToSubtitleCue(firstCue)}
+                            aria-label={l(`跳转到 ${firstCue.start}`, `Jump to ${firstCue.start}`)}
                           >
-                            <span>{String(index + 1).padStart(2, '0')}</span>
-                            <small>{cue.start} - {cue.end}</small>
+                            <span>{String(groupIndex + 1).padStart(2, '0')}</span>
+                            <small title={`${firstCue.start} - ${firstCue.end}`}>
+                              {subtitleCueShortTime(firstCue.start)}–{subtitleCueShortTime(firstCue.end)}
+                            </small>
                           </button>
                           <div className="video-subtitle-cue-lines">
-                            {activeSubtitleOutput.translationPosition === 'bottom' ? sourceLine : null}
-                            {translationLine}
-                            {activeSubtitleOutput.translationPosition !== 'bottom' ? sourceLine : null}
+                            {group.map(({ cue, index }, lineIndex) => {
+                              const sourceLine = cue.sourceText === undefined ? null : (
+                                <textarea
+                                  className="video-subtitle-cue-source"
+                                  rows={1}
+                                  value={cue.sourceText}
+                                  readOnly={activeSubtitleOutput.readOnly}
+                                  onChange={activeSubtitleOutput.readOnly ? undefined : event => props.onSubtitleChange(
+                                    activeSubtitleOutput.variant, cue.id, event.target.value, 'sourceText'
+                                  )}
+                                  aria-label={l(
+                                    `${subtitleVariantLabel(activeSubtitleOutput.variant, l)}原文 ${index + 1}`,
+                                    `${subtitleVariantLabel(activeSubtitleOutput.variant, l)} source ${index + 1}`
+                                  )}
+                                />
+                              );
+                              const translationLine = (
+                                <textarea
+                                  className={lineIndex > 0 ? 'video-subtitle-cue-source' : 'video-subtitle-cue-translation'}
+                                  rows={1}
+                                  value={cue.text}
+                                  readOnly={activeSubtitleOutput.readOnly}
+                                  onChange={activeSubtitleOutput.readOnly
+                                    ? undefined
+                                    : event => props.onSubtitleChange(
+                                        activeSubtitleOutput.variant,
+                                        cue.id,
+                                        event.target.value
+                                      )}
+                                  aria-label={`${subtitleVariantLabel(activeSubtitleOutput.variant, l)} ${index + 1}`}
+                                />
+                              );
+                              return (
+                                <div className="video-subtitle-cue-pair" key={cue.id}>
+                                  {activeSubtitleOutput.translationPosition === 'bottom' ? sourceLine : null}
+                                  {translationLine}
+                                  {activeSubtitleOutput.translationPosition !== 'bottom' ? sourceLine : null}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -688,4 +696,35 @@ function subtitleTimestampSeconds(value: string): number {
     + Number(match[2]) * 60
     + Number(match[3])
     + milliseconds / 1000;
+}
+
+function subtitleCueShortTime(value: string): string {
+  const match = /^(\d+):(\d{2}):(\d{2})/.exec(value.trim());
+  if (match === null) return value;
+  return Number(match[1]) === 0
+    ? `${match[2]}:${match[3]}`
+    : `${match[1]}:${match[2]}:${match[3]}`;
+}
+
+function groupSubtitleCues(cues: SubtitleCue[], variant: SubtitleResultVariant) {
+  const groups: Array<Array<{ cue: SubtitleCue; index: number }>> = [];
+  cues.forEach((cue, index) => {
+    const previous = groups[groups.length - 1];
+    const firstCue = previous?.[0]?.cue;
+    const firstStart = subtitleTimestampSeconds(firstCue?.start ?? '');
+    const firstEnd = subtitleTimestampSeconds(firstCue?.end ?? '');
+    const start = subtitleTimestampSeconds(cue.start);
+    const end = subtitleTimestampSeconds(cue.end);
+    const sameTime = firstStart === start && firstEnd === end;
+    if (variant === 'vertical' && previous !== undefined
+      && Number.isFinite(firstStart) && Number.isFinite(firstEnd)
+      && Number.isFinite(start) && Number.isFinite(end) && end > start
+      && start >= firstStart && end <= firstEnd
+      && (!sameTime || previous.length === 1)) {
+      previous.push({ cue, index });
+    } else {
+      groups.push([{ cue, index }]);
+    }
+  });
+  return groups;
 }

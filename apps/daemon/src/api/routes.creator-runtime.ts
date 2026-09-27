@@ -7,6 +7,10 @@ export async function registerCreatorRuntimeRoutes(
   server: FastifyInstance,
   ytDlp: YtDlpUpdateManager | undefined
 ): Promise<void> {
+  server.addHook('preClose', () => {
+    ytDlp?.close();
+  });
+
   server.get('/creator/yt-dlp/status', async (_request, reply) => {
     if (ytDlp === undefined) return unavailable(reply);
     return { ytDlp: ytDlp.status() };

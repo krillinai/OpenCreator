@@ -2,11 +2,13 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import type {
   CreatorJson,
   DownloadOption,
   DownloadProbe
 } from '@opencreator/protocol';
+import { extractDouyinShareUrl } from '@opencreator/protocol';
 import type {
   CreatorExecutor,
   CreatorExecutorInput,
@@ -14,6 +16,7 @@ import type {
 } from '../executor.js';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import { CreatorExecutorError } from '../executor.js';
+import { sanitizeIssueDetail } from '../issues.js';
 import { spawnCreatorProcess } from '../process-tree.js';
 import { validateMediaFile } from '../validators/media.js';
 import { withYtDlpProxy } from '../yt-dlp/args.js';
@@ -44,6 +47,8 @@ type PlaybackOutput = PlaybackCodecs & {
   normalizedForPlayback: boolean;
 };
 
+const YT_DLP_UTF8_ARGS = ['--encoding', 'utf-8'];
+
 export function createDownloadExecutor(
   input: DownloadExecutorOptions
 ): CreatorExecutor {
@@ -54,7 +59,7 @@ export function createDownloadExecutor(
       if (!isSupported(url)) {
         throw new CreatorExecutorError(
           'unsupported_source',
-          'Only public YouTube and Bilibili URLs are supported'
+          'Only public YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, and Pinterest video URLs are supported'
         );
       }
       const proxy = (await input.configStore.read()).proxy.trim();
@@ -107,10 +112,11 @@ async function probe(
     ytDlp.executable,
     [
       ...ytDlp.prefixArgs,
+      ...YT_DLP_UTF8_ARGS,
       ...withYtDlpProxy([
         '--dump-single-json',
         '--no-playlist',
-        url
+        normalizeSourceUrl(url)
       ], proxy)
     ],
     stage,
@@ -204,9 +210,10 @@ async function downloadSelectedOption(
     stage.workdir,
     'OpenCreator-%(title).120B-%(id)s.%(ext)s'
   );
+  const downloadUrl = normalizeSourceUrl(url);
   const args = option.mediaType === 'audio'
-    ? audioDownloadArgs(input.ffmpegPath, option, outputTemplate, url, proxy)
-    : videoDownloadArgs(input.ffmpegPath, option, outputTemplate, url, proxy);
+    ? audioDownloadArgs(input.ffmpegPath, option, outputTemplate, downloadUrl, proxy)
+    : videoDownloadArgs(input.ffmpegPath, option, outputTemplate, downloadUrl, proxy);
   const reportProgress = createDownloadProgressReporter(
     stage,
     option.mediaType,
@@ -215,7 +222,7 @@ async function downloadSelectedOption(
   const ytDlp = currentYtDlpRuntime(input);
   const stdout = await run(
     ytDlp.executable,
-    [...ytDlp.prefixArgs, ...args],
+    [...ytDlp.prefixArgs, ...YT_DLP_UTF8_ARGS, ...args],
     stage,
     reportProgress,
     ytDlp.env
@@ -224,7 +231,9 @@ async function downloadSelectedOption(
   if (reportedPath === undefined) {
     throw new CreatorExecutorError(
       'download_output_missing',
-      'yt-dlp did not report an output path'
+      'yt-dlp did not report an output path',
+      {},
+      { kind: 'invalid-response', provider: 'yt-dlp' }
     );
   }
   const downloadedPath = await safeOutputPath(stage.workdir, reportedPath);
@@ -294,6 +303,7 @@ async function downloadStickmanSource(
     ytDlp.executable,
     [
       ...ytDlp.prefixArgs,
+      ...YT_DLP_UTF8_ARGS,
       ...withYtDlpProxy([
         '--no-playlist',
         '--newline',
@@ -324,7 +334,9 @@ async function downloadStickmanSource(
   if (reportedPath === undefined) {
     throw new CreatorExecutorError(
       'download_output_missing',
-      'yt-dlp did not report an output path'
+      'yt-dlp did not report an output path',
+      {},
+      { kind: 'invalid-response', provider: 'yt-dlp' }
     );
   }
   const downloadedPath = await safeOutputPath(stage.workdir, reportedPath);
@@ -406,6 +418,7 @@ async function downloadLegacy(
     ytDlp.executable,
     [
       ...ytDlp.prefixArgs,
+      ...YT_DLP_UTF8_ARGS,
       ...withYtDlpProxy([
         '--no-playlist',
         '--newline',
@@ -420,7 +433,7 @@ async function downloadLegacy(
         formatId,
         '-o',
         outputTemplate,
-        url
+        normalizeSourceUrl(url)
       ], proxy)
     ],
     stage,
@@ -431,7 +444,9 @@ async function downloadLegacy(
   if (reportedPath === undefined) {
     throw new CreatorExecutorError(
       'download_output_missing',
-      'yt-dlp did not report an output path'
+      'yt-dlp did not report an output path',
+      {},
+      { kind: 'invalid-response', provider: 'yt-dlp' }
     );
   }
   const path = await safeOutputPath(stage.workdir, reportedPath);
@@ -488,6 +503,9 @@ function downloadPartWeights(
     : [option.audioFormatId];
   const selectedFormatIds = formatIds
     .filter((id): id is string => id !== undefined);
+  if (option.playlistIndex !== undefined) {
+    return Array.from({ length: Math.max(1, selectedFormatIds.length) }, () => 1);
+  }
   const weights = selectedFormatIds
     .map(id => estimatedProbeFormatBytes(probe, id));
   return weights.length > 0 && weights.every(weight => weight > 0)
@@ -528,6 +546,7 @@ function audioDownloadArgs(
   }
   return withYtDlpProxy([
     '--no-playlist',
+    ...(option.playlistIndex === undefined ? [] : ['--playlist-items', String(option.playlistIndex)]),
     '--newline',
     '--windows-filenames',
     '--ffmpeg-location',
@@ -568,6 +587,7 @@ function videoDownloadArgs(
     : `${option.videoFormatId}+${option.audioFormatId}`;
   return withYtDlpProxy([
     '--no-playlist',
+    ...(option.playlistIndex === undefined ? [] : ['--playlist-items', String(option.playlistIndex)]),
     '--newline',
     '--windows-filenames',
     '--ffmpeg-location',
@@ -927,7 +947,18 @@ function parseDownloadTotalBytes(line: string): number | null {
 
 async function safeOutputPath(workdir: string, path: string): Promise<string> {
   const root = await realpath(workdir);
-  const actual = await realpath(resolve(stagePath(workdir, path)));
+  let actual: string;
+  try {
+    actual = await realpath(resolve(stagePath(workdir, path)));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    throw new CreatorExecutorError(
+      'download_output_missing',
+      'yt-dlp completed, but its reported output file was not found. The saved filename may differ from the reported filename.',
+      {},
+      { kind: 'not-found', provider: 'yt-dlp' }
+    );
+  }
   if (
     actual !== root
     && !actual.startsWith(`${root}\\`)
@@ -946,12 +977,21 @@ function stagePath(workdir: string, path: string): string {
 }
 
 function printedOutputPath(stdout: string): string | undefined {
-  return stdout
+  const path = stdout
     .trim()
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean)
     .at(-1);
+  if (path?.includes('\uFFFD')) {
+    throw new CreatorExecutorError(
+      'download_output_encoding_invalid',
+      'yt-dlp reported an output filename with invalid text encoding. The download may exist, but its path cannot be matched safely.',
+      {},
+      { kind: 'invalid-response', provider: 'yt-dlp' }
+    );
+  }
+  return path;
 }
 
 function run(
@@ -972,6 +1012,8 @@ function run(
     }, stage.signal);
     let stdout = '';
     let stderr = '';
+    const stdoutDecoder = new StringDecoder('utf8');
+    const stderrDecoder = new StringDecoder('utf8');
     let settled = false;
     let stdoutBuffer = '';
     let stderrBuffer = '';
@@ -984,12 +1026,12 @@ function run(
       for (const line of lines) onLine?.(line);
     };
     child.stdout?.on('data', chunk => {
-      const value = String(chunk);
+      const value = stdoutDecoder.write(chunk);
       stdout += value;
       emitLines(value, 'stdout');
     });
     child.stderr?.on('data', chunk => {
-      const value = String(chunk);
+      const value = stderrDecoder.write(chunk);
       stderr += value;
       emitLines(value, 'stderr');
     });
@@ -1001,59 +1043,86 @@ function run(
     child.once('close', code => {
       if (settled) return;
       settled = true;
+      const trailingStdout = stdoutDecoder.end();
+      const trailingStderr = stderrDecoder.end();
+      stdout += trailingStdout;
+      stderr += trailingStderr;
+      emitLines(trailingStdout, 'stdout');
+      emitLines(trailingStderr, 'stderr');
       if (stdoutBuffer) onLine?.(stdoutBuffer);
       if (stderrBuffer) onLine?.(stderrBuffer);
       if (code === 0) resolvePromise(stdout);
-      else rejectPromise(classifyDownloadError(stderr));
+      else rejectPromise(classifyDownloadError(stderr, code));
     });
   });
 }
 
-function classifyDownloadError(stderr: string): CreatorExecutorError {
+function classifyDownloadError(stderr: string, exitCode: number | null): CreatorExecutorError {
   const text = stderr.toLowerCase();
+  const failure = (
+    code: string,
+    message: string,
+    kind: NonNullable<CreatorExecutorError['publicFacts']>['kind'],
+    httpStatus?: number
+  ) => new CreatorExecutorError(code, message, {}, {
+    kind,
+    provider: 'yt-dlp',
+    ...(httpStatus === undefined ? {} : { httpStatus })
+  });
+  if (/proxyerror|proxy connection|proxy (?:server )?(?:timed out|refused|unreachable|failed)/.test(text)) {
+    const reason = /timed out|timeout/.test(text) ? 'timed out' : /refused/.test(text) ? 'was refused' : 'failed';
+    return failure('network_unavailable', `yt-dlp proxy connection ${reason}. Check the proxy address and whether the proxy service is running.`,
+      reason === 'timed out' ? 'timeout' : reason === 'was refused' ? 'connection-refused' : 'unavailable');
+  }
+  if (/temporary failure in name resolution|name or service not known|no address associated|nodename nor servname|dns error|failed to resolve/.test(text)) {
+    return failure('network_unavailable', 'yt-dlp could not resolve the video platform host. Check DNS, network, and proxy settings.', 'dns');
+  }
   if (
     text.includes('connection timed out')
     || text.includes('connect timeout')
     || text.includes('timed out')
-    || text.includes('network is unreachable')
+  ) {
+    return failure('network_unavailable', 'yt-dlp connection to the video platform timed out. Check the network or proxy settings.', 'timeout');
+  }
+  if (
+    text.includes('network is unreachable')
     || text.includes('unable to connect')
     || text.includes('connection refused')
-    || text.includes('temporary failure in name resolution')
-    || text.includes('name or service not known')
+    || text.includes('connection reset')
   ) {
-    return new CreatorExecutorError(
-      'network_unavailable',
-      'Unable to connect to the video platform. Check the network or proxy settings.'
-    );
+    const kind = text.includes('refused') ? 'connection-refused'
+      : text.includes('reset') ? 'connection-reset' : 'unavailable';
+    const reason = kind === 'connection-refused' ? 'the connection was refused'
+      : kind === 'connection-reset' ? 'the connection was reset' : 'the network is unavailable';
+    return failure('network_unavailable', `yt-dlp could not connect to the video platform: ${reason}. Check the network or proxy settings.`, kind);
+  }
+  const httpStatus = /http error\s+(\d{3})\b/i.exec(stderr);
+  if (httpStatus !== null) {
+    const status = Number(httpStatus[1]);
+    const kind = status === 429 ? 'rate-limited'
+      : status === 401 || status === 403 ? 'unauthorized'
+        : status >= 500 ? 'unavailable' : 'http-rejected';
+    return failure('download_http_error', `The video platform returned HTTP ${status} to yt-dlp.`, kind, status);
   }
   if (
     text.includes('requested format is not available')
     || text.includes('no video formats found')
   ) {
-    return new CreatorExecutorError(
-      'format_unavailable',
-      'Requested format is unavailable'
-    );
+    return failure('format_unavailable', 'yt-dlp could not find the requested video or audio format.', 'not-found');
   }
   if (
     text.includes('sign in')
     || text.includes('login')
     || text.includes('cookies')
   ) {
-    return new CreatorExecutorError(
-      'login_required',
-      'Platform login is required'
-    );
+    return failure('login_required', 'yt-dlp reports that platform login or fresh cookies are required.', 'unauthorized');
   }
   if (
     text.includes('copyright')
     || text.includes('not available in your country')
     || text.includes('geo-restricted')
   ) {
-    return new CreatorExecutorError(
-      'region_or_copyright_restricted',
-      'Video is region or copyright restricted'
-    );
+    return failure('region_or_copyright_restricted', 'yt-dlp reports that the video is region or copyright restricted.', 'unauthorized');
   }
   if (
     text.includes('please update')
@@ -1063,18 +1132,32 @@ function classifyDownloadError(stderr: string): CreatorExecutorError {
     || text.includes('unable to extract')
     || text.includes('extractor error')
   ) {
-    return new CreatorExecutorError(
-      'yt_dlp_update_recommended',
-      'The video platform extractor may be outdated'
-    );
+    return failure('yt_dlp_update_recommended', 'yt-dlp could not extract this video; its platform extractor may be outdated.', 'unsupported');
   }
   if (text.includes('no space left')) {
-    return new CreatorExecutorError(
-      'disk_full',
-      'Insufficient disk space'
-    );
+    return failure('disk_full', 'yt-dlp could not save the video because disk space is exhausted.', 'storage');
   }
-  return new CreatorExecutorError('download_failed', stderr.slice(-2_000));
+  const detail = publicYtDlpErrorLine(stderr);
+  return failure(
+    'download_failed',
+    detail === undefined
+      ? `yt-dlp exited with code ${exitCode ?? 'unknown'} without a usable error detail.`
+      : `yt-dlp exited with code ${exitCode ?? 'unknown'}: ${detail}`,
+    'unknown'
+  );
+}
+
+function publicYtDlpErrorLine(stderr: string): string | undefined {
+  const line = stderr.split(/\r?\n/).reverse()
+    .find(candidate => /^\s*ERROR:/i.test(candidate));
+  if (line === undefined) return undefined;
+  const redacted = line
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .replace(/(?:https?|ftp):\/\/[^\s"'<>]+/gi, '[URL]')
+    .replace(/\b[A-Za-z]:[\\/][^\s"'<>]+/g, '[local path]')
+    .replace(/\b(?:cookie|token|authorization|password)\s*[:=]\s*[^\s,;]+/gi, '[redacted]')
+    .replace(/\b[A-Za-z0-9_=-]{32,}\b/g, '[redacted]');
+  return sanitizeIssueDetail(redacted, 300);
 }
 
 function currentYtDlpRuntime(input: DownloadExecutorOptions): YtDlpRuntime {
@@ -1091,11 +1174,20 @@ function readSourceUrl(stage: CreatorExecutorInput): string {
     && typeof stage.stageRun.progress.sourceUrl === 'string'
     ? stage.stageRun.progress.sourceUrl
     : stage.job.state.sourceUrl;
-  return typeof sourceUrl === 'string' ? sourceUrl.trim() : '';
+  return typeof sourceUrl === 'string' ? extractDouyinShareUrl(sourceUrl) : '';
 }
 
 function normalizeSourceUrl(value: string): string {
-  return value.trim();
+  const trimmed = extractDouyinShareUrl(value);
+  try {
+    const parsed = new URL(trimmed);
+    if (isDouyinFeaturedVideoUrl(parsed)) {
+      return `https://www.douyin.com/video/${parsed.searchParams.get('modal_id')}`;
+    }
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
 }
 
 function mimeTypeFor(path: string): string {
@@ -1128,10 +1220,75 @@ function isSupported(value: string): boolean {
         || host === 'b23.tv'
         || host === 'bilibili.com'
         || host.endsWith('.bilibili.com')
+        || host === 'x.com'
+        || host.endsWith('.x.com')
+        || host === 'twitter.com'
+        || host.endsWith('.twitter.com')
+        || isTikTokVideoUrl(parsed)
+        || isInstagramVideoUrl(parsed)
+        || isDouyinVideoUrl(parsed)
+        || isFacebookVideoUrl(parsed)
+        || isXiaohongshuVideoUrl(parsed)
+        || isPinterestVideoUrl(parsed)
       );
   } catch {
     return false;
   }
+}
+
+function isTikTokVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  if (host === 'vm.tiktok.com' || host === 'vt.tiktok.com') {
+    return /^\/[\w-]+\/?$/.test(url.pathname);
+  }
+  return (host === 'tiktok.com' || host.endsWith('.tiktok.com'))
+    && /^\/@[^/]+\/video\/\d+\/?$/.test(url.pathname);
+}
+
+function isInstagramVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return (host === 'instagram.com' || host === 'www.instagram.com')
+    && /^\/(?:reel|p|tv)\/[\w-]+\/?$/.test(url.pathname);
+}
+
+function isDouyinVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  if (host === 'v.douyin.com') {
+    return /^\/[\w-]+\/?$/.test(url.pathname);
+  }
+  return (host === 'douyin.com' || host === 'www.douyin.com')
+    && (/^\/video\/\d+\/?$/.test(url.pathname) || isDouyinFeaturedVideoUrl(url));
+}
+
+function isDouyinFeaturedVideoUrl(url: URL): boolean {
+  return (url.hostname === 'douyin.com' || url.hostname === 'www.douyin.com')
+    && url.pathname === '/jingxuan'
+    && /^\d+$/.test(url.searchParams.get('modal_id') ?? '');
+}
+
+function isFacebookVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  if (host === 'fb.watch') {
+    return /^\/[\w-]+\/?$/.test(url.pathname);
+  }
+  if (!['facebook.com', 'www.facebook.com', 'm.facebook.com'].includes(host)) {
+    return false;
+  }
+  return /^\/watch\/?$/.test(url.pathname)
+    ? /^\d+$/.test(url.searchParams.get('v') ?? '')
+    : /^\/(?:reel\/\d+|videos\/\d+|[^/]+\/videos\/\d+)\/?$/.test(url.pathname);
+}
+
+function isXiaohongshuVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return (host === 'xiaohongshu.com' || host === 'www.xiaohongshu.com')
+    && /^\/explore\/[0-9a-f]{24}\/?$/i.test(url.pathname);
+}
+
+function isPinterestVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return (host === 'pinterest.com' || host === 'www.pinterest.com')
+    && /^\/pin\/\d+\/?$/.test(url.pathname);
 }
 
 function isYoutube(value: string): boolean {

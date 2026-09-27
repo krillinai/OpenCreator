@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import sharp from 'sharp';
 import { readStickmanRatio, stickmanCanvasForRatio } from '@opencreator/protocol';
 import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { stickmanShotSpecSchema, stickmanVisualValidationSchema } from './contracts.js';
+import { loadSharp } from './sharp-loader.js';
 
 type OcrResult = {
   available: boolean;
@@ -37,6 +37,7 @@ export function createStickmanValidationExecutor(input: {
       ));
       const rows = [];
       const hashes = new Set<string>();
+      const sharp = await loadSharp();
       for (const shot of value.shots) {
         const candidates = images.filter(image => image.scopeKey === shot.id);
         if (candidates.length !== 1) {

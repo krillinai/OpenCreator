@@ -10,7 +10,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import sharp from 'sharp';
+import type { Metadata, Stats } from 'sharp';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import {
   generateImageContents,
@@ -33,6 +33,7 @@ import {
   shouldUsePreviousShotReference
 } from './image-prompt.js';
 import { previousStickmanShotImage } from './lineage.js';
+import { loadSharp } from './sharp-loader.js';
 import {
   DEFAULT_STICKMAN_CHARACTER_ASSET,
   DEFAULT_STICKMAN_STYLE_ASSET,
@@ -340,7 +341,7 @@ export function createStickmanImageExecutor(input: {
           });
           input.ledger.markSucceeded(ledger.id);
         } catch (error) {
-          input.ledger.markFailed(ledger.id);
+          input.ledger.markFailed(ledger.id, error);
           throw error;
         }
         const image = result.contents[0];
@@ -351,6 +352,7 @@ export function createStickmanImageExecutor(input: {
         }
         const extension = image.mime === 'image/jpeg' ? 'jpg' : image.mime === 'image/webp' ? 'webp' : 'png';
         const candidatePath = join(stage.workdir, `${scopeKey}-candidate-${candidateAttempt}.${extension}`);
+        const sharp = await loadSharp();
         await sharp(image.content)
           .resize(canvas.width, canvas.height, { fit: 'cover', position: 'centre' })
           .toFile(candidatePath);
@@ -445,9 +447,10 @@ async function inspectStickmanImageCandidate(
   tesseractPath?: string,
   expectedCanvas: StickmanCanvas = stickmanCanvasForRatio('16:9')
 ): Promise<StickmanImageCandidateQuality> {
-  let metadata: Awaited<ReturnType<typeof sharp.prototype.metadata>>;
-  let stats: Awaited<ReturnType<typeof sharp.prototype.stats>>;
+  let metadata: Metadata;
+  let stats: Stats;
   try {
+    const sharp = await loadSharp();
     [metadata, stats] = await Promise.all([
       sharp(path).metadata(),
       sharp(path).greyscale().stats()

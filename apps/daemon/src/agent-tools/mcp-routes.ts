@@ -1,4 +1,3 @@
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type {
   FastifyInstance,
   FastifyReply,
@@ -14,14 +13,12 @@ import {
 import {
   createAgentScheduleHttpClient
 } from './schedule-tools.js';
-import { createAgentScheduleMcpServer } from './stdio-server.js';
 import { toolNamesForScopes } from './run-injection.js';
 import {
   createCreatorToolDefinitions,
   createCreatorToolHttpClient,
   type CreatorToolName
 } from './creator-tools.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 export const AGENT_CREATOR_MCP_ROUTE = `${AGENT_TOOL_ROUTE_PREFIX}/mcp/creator`;
 
@@ -41,6 +38,10 @@ export async function registerCreatorMcpRoute(
       ...(allowed.has('creator:artifact:read') ? ['creator_get_artifact' as const] : []),
       ...(allowed.has('creator:action') ? ['creator_apply_action' as const] : [])
     ];
+    const [{ McpServer }, { StreamableHTTPServerTransport }] = await Promise.all([
+      import('@modelcontextprotocol/sdk/server/mcp.js'),
+      import('@modelcontextprotocol/sdk/server/streamableHttp.js')
+    ]);
     const client = createCreatorToolHttpClient({ baseUrl, token: authorization.token });
     const definitions = createCreatorToolDefinitions({ request: client.request });
     const mcpServer = new McpServer({ name: 'opencreator-tools', version: '0.1.0' });
@@ -109,6 +110,11 @@ export async function registerAgentScheduleMcpRoute(
       if (baseUrl === undefined) {
         return reply.code(503).send(jsonRpcError('OpenCreator runtime is not listening'));
       }
+
+      const [{ StreamableHTTPServerTransport }, { createAgentScheduleMcpServer }] = await Promise.all([
+        import('@modelcontextprotocol/sdk/server/streamableHttp.js'),
+        import('./stdio-server.js')
+      ]);
 
       const scheduleClient = createAgentScheduleHttpClient({
         baseUrl,

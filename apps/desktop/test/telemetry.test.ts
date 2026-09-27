@@ -89,7 +89,7 @@ describe('desktop telemetry', () => {
       settings,
       logger: logger(),
       appVersion: '3.0.1',
-      isPackaged: false,
+      isOfficialBuild: false,
       endpointOverride: 'http://127.0.0.1:8790/api/v1/public/desktop-usage',
       platform: 'darwin',
       architecture: 'arm64',
@@ -120,7 +120,7 @@ describe('desktop telemetry', () => {
     expect(requests.at(-1)?.body).not.toHaveProperty('conversation');
   });
 
-  it('only permits HTTPS and local HTTP endpoints', () => {
+  it('uses the production endpoint only for official builds', () => {
     expect(resolveTelemetryEndpoint('https://admin.example.com/report', false))
       .toBe('https://admin.example.com/report');
     expect(resolveTelemetryEndpoint('http://127.0.0.1:8790/report', false))
@@ -157,7 +157,7 @@ describe('desktop telemetry', () => {
       settings: memorySettings(),
       logger: logger(),
       appVersion: '3.0.1',
-      isPackaged: false,
+      isOfficialBuild: false,
       endpointOverride: `http://127.0.0.1:${address.port}/api/v1/public/desktop-usage`,
       now: () => new Date('2026-09-07T02:00:00Z'),
       isWindowActive: () => false,
@@ -190,7 +190,7 @@ describe('desktop telemetry', () => {
       settings,
       logger: logger(),
       appVersion: '3.0.1',
-      isPackaged: true,
+        isOfficialBuild: true,
       isWindowActive: () => true,
       fetchImpl,
       persistence: telemetryMemory.persistence as TelemetryPersistence
@@ -217,7 +217,7 @@ describe('desktop telemetry', () => {
       settings: memorySettings(),
       logger: logger(),
       appVersion: '3.0.1',
-      isPackaged: true,
+      isOfficialBuild: true,
       now: () => new Date('2026-09-07T02:00:00Z'),
       isWindowActive: () => false,
       fetchImpl: async (_url, init) => {
@@ -241,7 +241,7 @@ describe('desktop telemetry', () => {
     });
   });
 
-  it('reports active minutes again while stopping', async () => {
+  it('persists active minutes without reporting again while stopping', async () => {
     vi.useFakeTimers();
     try {
       const telemetryMemory = memoryPersistence();
@@ -251,7 +251,7 @@ describe('desktop telemetry', () => {
         settings: memorySettings(),
         logger: logger(),
         appVersion: '3.0.1',
-        isPackaged: true,
+      isOfficialBuild: true,
         isWindowActive: () => true,
         now: () => new Date('2026-09-07T02:00:00Z'),
         fetchImpl: async (_url, init) => {
@@ -268,10 +268,43 @@ describe('desktop telemetry', () => {
       await vi.advanceTimersByTimeAsync(10);
       await controller.stop();
 
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({ active_minutes: 1 });
+      expect(requests).toHaveLength(0);
+      expect(JSON.parse(telemetryMemory.read())).toEqual({
+        days: [{ date: '2026-09-07', launchCount: 1, activeMinutes: 1 }]
+      });
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('aborts an in-flight report without waiting for the network while stopping', async () => {
+    let requestSignal: AbortSignal | undefined;
+    let markRequestStarted: () => void = () => undefined;
+    const requestStarted = new Promise<void>(resolve => {
+      markRequestStarted = resolve;
+    });
+    const controller = startDesktopTelemetry({
+      path: '/virtual/telemetry.json',
+      settings: memorySettings(),
+      logger: logger(),
+      appVersion: '3.0.1',
+      isOfficialBuild: true,
+      now: () => new Date('2026-09-07T02:00:00Z'),
+      isWindowActive: () => false,
+      fetchImpl: vi.fn(async (_url, init) => {
+        requestSignal = init?.signal ?? undefined;
+        markRequestStarted();
+        return await new Promise<Response>((_resolve, reject) => {
+          requestSignal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          }, { once: true });
+        });
+      })
+    });
+
+    await requestStarted;
+    await controller.stop();
+
+    expect(requestSignal?.aborted).toBe(true);
   });
 });

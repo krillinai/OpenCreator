@@ -1,4 +1,6 @@
-import type {
+import {
+  isOpenCreatorIssue,
+  type OpenCreatorIssue,
   CreatorActionRequest,
   CreatorActivity,
   CreatorAgentApproval,
@@ -26,12 +28,16 @@ import {
 } from 'react';
 import type { CreatorWebService } from '../../services/creator-service.js';
 import { createCreatorSnapshotSubscription } from '../../runtime/creator-sse.js';
+import { normalizePageIssue } from '../issues/page-issue-state.js';
+import { presentIssue } from '../issues/issue-catalog.js';
 
-type CreatorSessionContextValue = {
+export type CreatorSessionContextValue = {
   job: CreatorJob;
   state: Record<string, CreatorJson>;
   conflictedFields: string[];
   error: CreatorSessionError | null;
+  issues: OpenCreatorIssue[];
+  focusedIssue: OpenCreatorIssue | null;
   preflight: CreatorPreflightResponse | null;
   runPreflight(stageId: string): Promise<CreatorPreflightResponse>;
   updateDraft(
@@ -40,6 +46,15 @@ type CreatorSessionContextValue = {
   ): void;
   flush(): Promise<void>;
   clearError(): void;
+  captureCreatorFailure(
+    operation: string,
+    cause: unknown,
+    fallbackMessage?: string,
+    source?: 'upload' | 'preflight' | 'agent' | 'client'
+  ): OpenCreatorIssue;
+  repairIssue(issue: OpenCreatorIssue): Promise<void>;
+  focusIssue(issue: OpenCreatorIssue | null): void;
+  askPendingIssue(question: string, issue: OpenCreatorIssue): void;
   applyRemoteSnapshot(job: CreatorJob): void;
   applyAction(request: Omit<CreatorActionRequest, 'expectedRevision'>): Promise<CreatorJob>;
   cancelJob(): Promise<void>;
@@ -65,6 +80,51 @@ type CreatorSessionContextValue = {
   ): Promise<void>;
 };
 
+type CreatorClientFailureSession = Pick<
+  CreatorSessionContextValue,
+  'captureCreatorFailure' | 'openArtifact'
+>;
+
+export async function captureCreatorClientFailure<T>(
+  session: Pick<CreatorSessionContextValue, 'captureCreatorFailure'> | null | undefined,
+  operation: string,
+  fallbackMessage: string,
+  task: () => T | Promise<T>
+): Promise<T> {
+  try {
+    return await task();
+  } catch (cause) {
+    session?.captureCreatorFailure(operation, cause, fallbackMessage, 'client');
+    throw cause;
+  }
+}
+
+export async function readCreatorArtifactText(
+  session: CreatorClientFailureSession,
+  artifactId: string,
+  operation: string,
+  fallbackMessage: string
+): Promise<string> {
+  const response = await session.openArtifact(artifactId);
+  return captureCreatorClientFailure(session, operation, fallbackMessage, async () => {
+    if (!response.ok) throw new Error(`Creator artifact request failed: ${response.status}`);
+    return response.text();
+  });
+}
+
+export async function createCreatorArtifactObjectUrl(
+  session: CreatorClientFailureSession,
+  artifactId: string,
+  operation: string,
+  fallbackMessage: string
+): Promise<string> {
+  const response = await session.openArtifact(artifactId);
+  return captureCreatorClientFailure(session, operation, fallbackMessage, async () => {
+    if (!response.ok) throw new Error(`Creator artifact request failed: ${response.status}`);
+    return URL.createObjectURL(await response.blob());
+  });
+}
+
 export type CreatorSessionError = {
   code: string;
   message: string;
@@ -82,6 +142,9 @@ const CreatorSessionContext = createContext<CreatorSessionContextValue | null>(n
 export function CreatorSessionProvider(props: {
   initialJob: CreatorJob;
   ensureJob?: (state: Record<string, CreatorJson>) => Promise<CreatorJob>;
+  onPreJobFailure?(operation: string, cause: unknown, fallbackMessage: string): void;
+  onAskPendingIssue?(issue: OpenCreatorIssue, question: string): void;
+  externalIssues?: OpenCreatorIssue[];
   service: Pick<CreatorWebService, 'applyAction' | 'runAgentTurn'> & Partial<Pick<CreatorWebService,
     | 'startAgentTurn'
     | 'steerAgentTurn'
@@ -90,6 +153,8 @@ export function CreatorSessionProvider(props: {
     | 'getAgentHistory'
     | 'getAgentTimeline'
     | 'getJob'
+    | 'listIssues'
+    | 'reportClientIssue'
     | 'openArtifact'
     | 'uploadReferenceImage'
     | 'uploadArticleImage'
@@ -106,6 +171,8 @@ export function CreatorSessionProvider(props: {
   const [dirtyFields, setDirtyFields] = useState<Set<string>>(() => new Set());
   const [conflictedFields, setConflictedFields] = useState<string[]>([]);
   const [error, setError] = useState<CreatorSessionError | null>(null);
+  const [localIssues, setLocalIssues] = useState<OpenCreatorIssue[]>([]);
+  const [focusedIssueId, setFocusedIssueId] = useState<string | null>(null);
   const [preflight, setPreflight] = useState<CreatorPreflightResponse | null>(null);
   const [agentSession, setAgentSession] = useState<CreatorAgentSession | null>(null);
   const [turns, setTurns] = useState<CreatorAgentTurn[]>([]);
@@ -120,9 +187,13 @@ export function CreatorSessionProvider(props: {
   const timelineReloadWorkRef = useRef<Promise<void> | null>(null);
   const timelineReloadRequestedRef = useRef(false);
   const artifactJsonCacheRef = useRef(new Map<string, Promise<unknown>>());
+  const localIssuesRef = useRef(localIssues);
+  const capturedIssueByCauseRef = useRef(new WeakMap<object, OpenCreatorIssue>());
+  const captureFailureRef = useRef<CreatorSessionContextValue['captureCreatorFailure'] | null>(null);
   confirmedRef.current = confirmedJob;
   draftRef.current = draft;
   dirtyRef.current = dirtyFields;
+  localIssuesRef.current = localIssues;
 
   const ensurePersistedJob = useCallback((): Promise<CreatorJob> => {
     if (!isPendingCreatorJob(confirmedRef.current)) {
@@ -213,6 +284,7 @@ export function CreatorSessionProvider(props: {
       } catch (cause) {
         if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
           setError(toSessionError(cause));
+          captureFailureRef.current?.('creator.update-settings', cause);
         }
         throw cause;
       }
@@ -265,17 +337,127 @@ export function CreatorSessionProvider(props: {
 
   const clearError = useCallback(() => setError(null), []);
 
+  const acceptAuthoritativeIssue = useCallback((issue: OpenCreatorIssue) => {
+    if (issue.scope.kind !== 'creator-job' || issue.scope.jobId !== confirmedRef.current.id) return;
+    const replacedIds = new Set(localIssuesRef.current
+      .filter(candidate => candidate.fingerprint === issue.fingerprint)
+      .map(candidate => candidate.id));
+    const next = mergeIssueIntoJob(confirmedRef.current, issue);
+    confirmedRef.current = next;
+    setConfirmedJob(next);
+    setLocalIssues(current => current.filter(candidate => candidate.fingerprint !== issue.fingerprint));
+    setFocusedIssueId(current => current !== null && replacedIds.has(current) ? issue.id : current);
+  }, []);
+
+  const reportLocalIssue = useCallback((issue: OpenCreatorIssue) => {
+    if (
+      props.service.reportClientIssue === undefined
+      || isPendingCreatorJob(confirmedRef.current)
+      || issue.scope.kind !== 'creator-job'
+    ) return;
+    void props.service.reportClientIssue(confirmedRef.current.id, {
+      clientIssueId: issue.id,
+      code: issue.code,
+      source: issue.source === 'upload' || issue.source === 'preflight' || issue.source === 'agent'
+        ? issue.source
+        : 'client',
+      ...(issue.operation === undefined ? {} : { operation: issue.operation }),
+      ...(issue.stageId === undefined ? {} : { stageId: issue.stageId }),
+      ...(issue.scopeKey === undefined ? {} : { scopeKey: issue.scopeKey }),
+      fallbackMessage: issue.fallbackMessage
+    }).then(response => {
+      setLocalIssues(current => current.filter(candidate => candidate.id !== response.clientIssueId));
+      setFocusedIssueId(current => current === response.clientIssueId ? response.issue.id : current);
+      acceptAuthoritativeIssue(response.issue);
+    }).catch(() => undefined);
+  }, [acceptAuthoritativeIssue, props.service]);
+
+  const captureCreatorFailure = useCallback((
+    operation: string,
+    cause: unknown,
+    fallbackMessage = '操作未完成，请在 Agent 区域查看诊断。',
+    source: 'upload' | 'preflight' | 'agent' | 'client' = 'client'
+  ): OpenCreatorIssue => {
+    const causeObject = typeof cause === 'object' && cause !== null ? cause : undefined;
+    const captured = causeObject === undefined
+      ? undefined
+      : capturedIssueByCauseRef.current.get(causeObject);
+    if (captured !== undefined) return captured;
+    if (confirmedRef.current.id.startsWith('pending:')) {
+      const pageIssue = normalizePageIssue('creator-launch', operation, cause, fallbackMessage);
+      if (causeObject !== undefined) capturedIssueByCauseRef.current.set(causeObject, pageIssue);
+      props.onPreJobFailure?.(operation, cause, fallbackMessage);
+      return pageIssue;
+    }
+    const candidate = (cause as { issue?: unknown } | null)?.issue;
+    if (
+      isOpenCreatorIssue(candidate)
+      && candidate.scope.kind === 'creator-job'
+      && candidate.scope.jobId === confirmedRef.current.id
+    ) {
+      acceptAuthoritativeIssue(candidate);
+      if (causeObject !== undefined) capturedIssueByCauseRef.current.set(causeObject, candidate);
+      return candidate;
+    }
+    const pageIssue = normalizePageIssue(
+      'creator-session',
+      operation,
+      isOpenCreatorIssue(candidate) && candidate.scope.kind === 'creator-job'
+        ? new Error('Creator issue scope mismatch')
+        : cause,
+      fallbackMessage
+    );
+    const issue: OpenCreatorIssue = {
+      ...pageIssue,
+      id: pageIssue.id.replace(/^page:/, 'local:'),
+      scope: { kind: 'creator-job', jobId: confirmedRef.current.id },
+      source,
+      repairActions: [{ kind: 'focus-agent' }]
+    };
+    if (causeObject !== undefined) capturedIssueByCauseRef.current.set(causeObject, issue);
+    setLocalIssues(current => {
+      const previous = current.find(item => item.fingerprint === issue.fingerprint);
+      if (previous === undefined) return [...current, issue];
+      return current.map(item => item.id === previous.id ? {
+        ...issue,
+        id: previous.id,
+        diagnosticId: previous.diagnosticId,
+        occurredAt: previous.occurredAt,
+        occurrenceCount: previous.occurrenceCount + 1
+      } : item);
+    });
+    reportLocalIssue(issue);
+    return issue;
+  }, [acceptAuthoritativeIssue, props.onPreJobFailure, reportLocalIssue]);
+  captureFailureRef.current = captureCreatorFailure;
+
+  const focusIssue = useCallback((issue: OpenCreatorIssue | null) => {
+    setFocusedIssueId(issue?.id ?? '');
+  }, []);
+
+  const askPendingIssue = useCallback((question: string, issue: OpenCreatorIssue) => {
+    if (props.onAskPendingIssue === undefined) throw new Error('Agent inquiry is unavailable before task creation');
+    props.onAskPendingIssue(issue, question);
+  }, [props.onAskPendingIssue]);
+
   const runPreflight = useCallback(async (stageId: string) => {
     if (props.service.preflight === undefined) {
-      throw new Error('Creator preflight is unavailable');
+      const cause = new Error('Creator preflight is unavailable');
+      captureCreatorFailure('creator.preflight', cause, '启动条件检查暂不可用，请稍后重试。', 'preflight');
+      throw cause;
     }
     await flush();
     await ensurePersistedJob();
-    const result = await props.service.preflight(confirmedRef.current.id, stageId);
-    setPreflight(result);
-    if (!result.canStart) throw new CreatorPreflightBlockedError(result);
-    return result;
-  }, [ensurePersistedJob, flush, props.service]);
+    try {
+      const result = await props.service.preflight(confirmedRef.current.id, stageId);
+      setPreflight(result);
+      if (!result.canStart) throw new CreatorPreflightBlockedError(result);
+      return result;
+    } catch (cause) {
+      captureCreatorFailure('creator.preflight', cause, '启动条件检查未通过，请查看诊断并修正后重试。', 'preflight');
+      throw cause;
+    }
+  }, [captureCreatorFailure, ensurePersistedJob, flush, props.service]);
 
   const applyRemoteSnapshot = useCallback((next: CreatorJob) => {
     const conflicts = [...dirtyRef.current].filter(field => (
@@ -283,6 +465,15 @@ export function CreatorSessionProvider(props: {
     ));
     confirmedRef.current = next;
     setConfirmedJob(next);
+    const authoritativeByFingerprint = new Map(
+      (next.issues ?? []).map(issue => [issue.fingerprint, issue] as const)
+    );
+    const replacedLocalIds = new Map(localIssuesRef.current.flatMap(issue => {
+      const authoritative = authoritativeByFingerprint.get(issue.fingerprint);
+      return authoritative === undefined ? [] : [[issue.id, authoritative.id] as const];
+    }));
+    setLocalIssues(current => current.filter(issue => !authoritativeByFingerprint.has(issue.fingerprint)));
+    setFocusedIssueId(current => current === null ? null : replacedLocalIds.get(current) ?? current);
     setConflictedFields(conflicts);
     setError(null);
   }, []);
@@ -320,11 +511,15 @@ export function CreatorSessionProvider(props: {
   }, [loadAgentTimeline]);
 
   const applyLiveEvent = useCallback((event: CreatorEventEnvelope) => {
+    if (event.kind === 'issue_changed' && isOpenCreatorIssue(event.payload.issue)) {
+      acceptAuthoritativeIssue(event.payload.issue);
+      return;
+    }
     const next = mergeCreatorEvent(confirmedRef.current, event);
     if (next === confirmedRef.current) return;
     confirmedRef.current = next;
     setConfirmedJob(next);
-  }, []);
+  }, [acceptAuthoritativeIssue]);
 
   useEffect(() => {
     if (props.service.getJob === undefined || props.service.subscribeJobEvents === undefined) return;
@@ -337,6 +532,12 @@ export function CreatorSessionProvider(props: {
       ),
       onSnapshot(snapshot) {
         applyRemoteSnapshot(snapshot);
+        const authoritativeFingerprints = new Set(
+          (snapshot.issues ?? []).map(issue => issue.fingerprint)
+        );
+        for (const issue of localIssuesRef.current) {
+          if (!authoritativeFingerprints.has(issue.fingerprint)) reportLocalIssue(issue);
+        }
         // A reconnect can miss the Agent event that completed the active turn.
         // Reconcile the timeline whenever the authoritative job snapshot reloads.
         void reloadAgentTimeline().catch(() => undefined);
@@ -355,7 +556,7 @@ export function CreatorSessionProvider(props: {
     return () => {
       subscription.close();
     };
-  }, [applyLiveEvent, applyRemoteSnapshot, confirmedJob.id, props.service, reloadAgentTimeline]);
+  }, [applyLiveEvent, applyRemoteSnapshot, confirmedJob.id, props.service, reloadAgentTimeline, reportLocalIssue]);
 
   useEffect(() => {
     if (
@@ -390,6 +591,7 @@ export function CreatorSessionProvider(props: {
       const nextError = toSessionError(cause);
       if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
         setError(nextError);
+        captureCreatorFailure('creator.action', cause);
         if (
           nextError.code === 'creator_revision_conflict'
           && props.service.getJob !== undefined
@@ -400,11 +602,26 @@ export function CreatorSessionProvider(props: {
       }
       throw cause;
     }
-  }, [applyRemoteSnapshot, ensurePersistedJob, flush, props.service, runPreflight]);
+  }, [applyRemoteSnapshot, captureCreatorFailure, ensurePersistedJob, flush, props.service, runPreflight]);
+
+  const repairIssue = useCallback(async (issue: OpenCreatorIssue) => {
+    const action = issue.repairActions.find(candidate => (
+      candidate.kind === 'retry-operation'
+      && candidate.operationId === 'creator.retry-stage'
+    ));
+    if (action === undefined || issue.stageId === undefined || issue.status !== 'open') return;
+    await applyAction({
+      action: 'run-stage',
+      input: { stageId: issue.stageId },
+      repairIssueId: issue.id
+    });
+  }, [applyAction]);
 
   const uploadSourceVideo = useCallback(async (file: File) => {
     if (props.service.uploadSourceVideo === undefined) {
-      throw new Error('Creator source upload transport is unavailable');
+      const cause = new Error('Creator source upload transport is unavailable');
+      captureCreatorFailure('creator.upload-source-video', cause, '源视频上传暂不可用，请稍后重试。', 'upload');
+      throw cause;
     }
     let requestRevision = confirmedRef.current.revision;
     try {
@@ -421,14 +638,17 @@ export function CreatorSessionProvider(props: {
     } catch (cause) {
       if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
         setError(toSessionError(cause));
+        captureCreatorFailure('creator.upload-source-video', cause, '源视频上传未完成，请检查文件后重试。', 'upload');
       }
       throw cause;
     }
-  }, [ensurePersistedJob, flush, props.service]);
+  }, [captureCreatorFailure, ensurePersistedJob, flush, props.service]);
 
   const uploadReferenceImage = useCallback(async (file: File) => {
     if (props.service.uploadReferenceImage === undefined) {
-      throw new Error('Creator reference upload transport is unavailable');
+      const cause = new Error('Creator reference upload transport is unavailable');
+      captureCreatorFailure('creator.upload-reference-image', cause, '参考图上传暂不可用，请稍后重试。', 'upload');
+      throw cause;
     }
     let requestRevision = confirmedRef.current.revision;
     try {
@@ -445,14 +665,17 @@ export function CreatorSessionProvider(props: {
     } catch (cause) {
       if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
         setError(toSessionError(cause));
+        captureCreatorFailure('creator.upload-reference-image', cause, '参考图上传未完成，请检查文件后重试。', 'upload');
       }
       throw cause;
     }
-  }, [ensurePersistedJob, flush, props.service]);
+  }, [captureCreatorFailure, ensurePersistedJob, flush, props.service]);
 
   const uploadArticleImage = useCallback(async (file: File): Promise<CreatorArtifact> => {
     if (props.service.uploadArticleImage === undefined) {
-      throw new Error('Creator article image upload transport is unavailable');
+      const cause = new Error('Creator article image upload transport is unavailable');
+      captureCreatorFailure('creator.upload-article-image', cause, '文章图片上传暂不可用，请稍后重试。', 'upload');
+      throw cause;
     }
     let requestRevision = confirmedRef.current.revision;
     try {
@@ -470,14 +693,17 @@ export function CreatorSessionProvider(props: {
     } catch (cause) {
       if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
         setError(toSessionError(cause));
+        captureCreatorFailure('creator.upload-article-image', cause, '文章图片上传未完成，请检查文件后重试。', 'upload');
       }
       throw cause;
     }
-  }, [ensurePersistedJob, flush, props.service]);
+  }, [captureCreatorFailure, ensurePersistedJob, flush, props.service]);
 
   const uploadSourceDocument = useCallback(async (file: File) => {
     if (props.service.uploadSourceDocument === undefined) {
-      throw new Error('Creator document upload transport is unavailable');
+      const cause = new Error('Creator document upload transport is unavailable');
+      captureCreatorFailure('creator.upload-source-document', cause, '源文档上传暂不可用，请稍后重试。', 'upload');
+      throw cause;
     }
     let requestRevision = confirmedRef.current.revision;
     try {
@@ -494,14 +720,17 @@ export function CreatorSessionProvider(props: {
     } catch (cause) {
       if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
         setError(toSessionError(cause));
+        captureCreatorFailure('creator.upload-source-document', cause, '源文档上传未完成，请检查文件后重试。', 'upload');
       }
       throw cause;
     }
-  }, [ensurePersistedJob, flush, props.service]);
+  }, [captureCreatorFailure, ensurePersistedJob, flush, props.service]);
 
   const cancelJob = useCallback(async () => {
     if (props.service.cancelJob === undefined) {
-      throw new Error('Creator job cancellation is unavailable');
+      const cause = new Error('Creator job cancellation is unavailable');
+      captureCreatorFailure('creator.cancel-job', cause);
+      throw cause;
     }
     try {
       await ensurePersistedJob();
@@ -511,13 +740,16 @@ export function CreatorSessionProvider(props: {
       setError(null);
     } catch (cause) {
       setError(toSessionError(cause));
+      captureCreatorFailure('creator.cancel-job', cause);
       throw cause;
     }
-  }, [ensurePersistedJob, props.service]);
+  }, [captureCreatorFailure, ensurePersistedJob, props.service]);
 
   const resumeJob = useCallback(async () => {
     if (props.service.resumeJob === undefined) {
-      throw new Error('Creator job resume is unavailable');
+      const cause = new Error('Creator job resume is unavailable');
+      captureCreatorFailure('creator.resume-job', cause);
+      throw cause;
     }
     let requestRevision = confirmedRef.current.revision;
     try {
@@ -531,31 +763,46 @@ export function CreatorSessionProvider(props: {
     } catch (cause) {
       if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
         setError(toSessionError(cause));
+        captureCreatorFailure('creator.resume-job', cause);
       }
       throw cause;
     }
-  }, [ensurePersistedJob, flush, props.service]);
+  }, [captureCreatorFailure, ensurePersistedJob, flush, props.service]);
 
-  const openArtifact = useCallback((artifactId: string) => {
+  const openArtifact = useCallback(async (artifactId: string) => {
     if (props.service.openArtifact === undefined) {
-      return Promise.reject(new Error('Creator artifact transport is unavailable'));
+      const cause = new Error('Creator artifact transport is unavailable');
+      captureCreatorFailure('creator.open-artifact', cause, '无法打开创作产物，请稍后重试。');
+      throw cause;
     }
-    return props.service.openArtifact(confirmedRef.current.id, artifactId);
-  }, [props.service]);
+    try {
+      return await props.service.openArtifact(confirmedRef.current.id, artifactId);
+    } catch (cause) {
+      captureCreatorFailure('creator.open-artifact', cause, '无法打开创作产物，请稍后重试。');
+      throw cause;
+    }
+  }, [captureCreatorFailure, props.service]);
 
   const openArtifactJson = useCallback(<T,>(artifactId: string): Promise<T> => {
     const cached = artifactJsonCacheRef.current.get(artifactId);
     if (cached !== undefined) return cached as Promise<T>;
     const request = openArtifact(artifactId).then(async response => {
-      if (!response.ok) throw new Error(`Creator artifact request failed: ${response.status}`);
-      return response.json() as Promise<T>;
+      return captureCreatorClientFailure(
+        { captureCreatorFailure },
+        'creator.read-artifact-json',
+        '无法读取创作产物内容，请稍后重试。',
+        async () => {
+          if (!response.ok) throw new Error(`Creator artifact request failed: ${response.status}`);
+          return response.json() as Promise<T>;
+        }
+      );
     }).catch(error => {
       artifactJsonCacheRef.current.delete(artifactId);
       throw error;
     });
     artifactJsonCacheRef.current.set(artifactId, request);
     return request;
-  }, [openArtifact]);
+  }, [captureCreatorFailure, openArtifact]);
 
   const runAgentTurn = useCallback(async (
     message: string,
@@ -570,10 +817,22 @@ export function CreatorSessionProvider(props: {
       requestRevision = confirmedRef.current.revision;
       const clientMessageId = createClientMessageId();
       const start = props.service.startAgentTurn ?? props.service.runAgentTurn;
+      const openIssues = [...(confirmedRef.current.issues ?? []), ...localIssuesRef.current]
+        .filter(issue => issue.status === 'open');
+      const focused = openIssues.find(issue => issue.id === focusedIssueId)
+        ?? (focusedIssueId === null ? openIssues.at(-1) : undefined);
+      const authoritativeIssueId = focused?.scope.kind === 'creator-job'
+        && confirmedRef.current.issues?.some(issue => issue.id === focused.id)
+        ? focused.id
+        : undefined;
+      const contextualMessage = focused !== undefined && authoritativeIssueId === undefined
+        ? `${content}\n\n相关错误：${presentIssue(focused).description}`
+        : content;
       const response = await start(confirmedRef.current.id, {
-        message: content,
+        message: contextualMessage,
         clientMessageId,
-        ...(sandbox === undefined ? {} : { sandbox })
+        ...(sandbox === undefined ? {} : { sandbox }),
+        ...(authoritativeIssueId === undefined ? {} : { focusedIssueId: authoritativeIssueId })
       });
       if (response.action !== undefined) {
         confirmedRef.current = response.action.job;
@@ -583,12 +842,13 @@ export function CreatorSessionProvider(props: {
     } catch (cause) {
       if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
         setError(toSessionError(cause));
+        captureCreatorFailure('creator.agent-turn', cause, 'Agent 未能完成诊断，请查看问题详情后重试。', 'agent');
       }
       throw cause;
     } finally {
       await reloadAgentTimeline().catch(() => undefined);
     }
-  }, [ensurePersistedJob, flush, props.service, reloadAgentTimeline]);
+  }, [captureCreatorFailure, ensurePersistedJob, flush, focusedIssueId, props.service, reloadAgentTimeline]);
 
   const steerAgentTurn = useCallback(async (message: string) => {
     const content = message.trim();
@@ -608,12 +868,13 @@ export function CreatorSessionProvider(props: {
     } catch (cause) {
       if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
         setError(toSessionError(cause));
+        captureCreatorFailure('creator.agent-steer', cause, 'Agent 未能接收补充要求。', 'agent');
       }
       throw cause;
     } finally {
       await reloadAgentTimeline().catch(() => undefined);
     }
-  }, [flush, props.service, reloadAgentTimeline]);
+  }, [captureCreatorFailure, flush, props.service, reloadAgentTimeline]);
 
   const interruptAgentTurn = useCallback(async () => {
     if (props.service.interruptAgentTurn === undefined) return;
@@ -622,11 +883,12 @@ export function CreatorSessionProvider(props: {
       setError(null);
     } catch (cause) {
       setError(toSessionError(cause));
+      captureCreatorFailure('creator.agent-interrupt', cause, 'Agent 对话未能停止。', 'agent');
       throw cause;
     } finally {
       await reloadAgentTimeline().catch(() => undefined);
     }
-  }, [props.service, reloadAgentTimeline]);
+  }, [captureCreatorFailure, props.service, reloadAgentTimeline]);
 
   const respondAgentApproval = useCallback(async (
     approvalId: string,
@@ -643,27 +905,41 @@ export function CreatorSessionProvider(props: {
       setError(null);
     } catch (cause) {
       setError(toSessionError(cause));
+      captureCreatorFailure('creator.agent-approval', cause, 'Agent 审批操作未完成。', 'agent');
       throw cause;
     } finally {
       await reloadAgentTimeline().catch(() => undefined);
     }
-  }, [props.service, reloadAgentTimeline]);
+  }, [captureCreatorFailure, props.service, reloadAgentTimeline]);
 
   const agentBusy = turns.some(turn => (
     turn.role === 'assistant'
     && ['queued', 'running', 'waiting_approval'].includes(turn.status)
   ));
+  const issues = useMemo(() => mergeVisibleIssues(
+    confirmedJob.issues ?? [],
+    [...localIssues, ...(props.externalIssues ?? [])]
+  ), [confirmedJob.issues, localIssues, props.externalIssues]);
+  const focusedIssue = focusedIssueId === null
+    ? issues.filter(issue => issue.status === 'open').at(-1) ?? null
+    : issues.find(issue => issue.id === focusedIssueId) ?? null;
 
   const value = useMemo<CreatorSessionContextValue>(() => ({
     job: confirmedJob,
     state: { ...confirmedJob.state, ...draft },
     conflictedFields,
     error,
+    issues,
+    focusedIssue,
     preflight,
     runPreflight,
     updateDraft,
     flush,
     clearError,
+    captureCreatorFailure,
+    repairIssue,
+    focusIssue,
+    askPendingIssue,
     applyRemoteSnapshot,
     applyAction,
     cancelJob,
@@ -683,7 +959,7 @@ export function CreatorSessionProvider(props: {
     steerAgentTurn,
     interruptAgentTurn,
     respondAgentApproval
-  }), [agentBusy, agentSession, applyAction, applyRemoteSnapshot, approvals, cancelJob, clearError, confirmedJob, conflictedFields, draft, error, flush, interruptAgentTurn, items, openArtifact, openArtifactJson, preflight, respondAgentApproval, resumeJob, runAgentTurn, runPreflight, steerAgentTurn, turns, updateDraft, uploadArticleImage, uploadReferenceImage, uploadSourceDocument, uploadSourceVideo]);
+  }), [agentBusy, agentSession, askPendingIssue, applyAction, applyRemoteSnapshot, approvals, cancelJob, captureCreatorFailure, clearError, confirmedJob, conflictedFields, draft, error, flush, focusIssue, focusedIssue, interruptAgentTurn, issues, items, openArtifact, openArtifactJson, preflight, repairIssue, respondAgentApproval, resumeJob, runAgentTurn, runPreflight, steerAgentTurn, turns, updateDraft, uploadArticleImage, uploadReferenceImage, uploadSourceDocument, uploadSourceVideo]);
 
   return (
     <CreatorSessionContext.Provider value={value}>
@@ -725,7 +1001,38 @@ function mergeCreatorEvent(job: CreatorJob, event: CreatorEventEnvelope): Creato
       updatedAt: laterTimestamp(job.updatedAt, event.createdAt)
     };
   }
+  if (event.kind === 'issue_changed') {
+    const issue = event.payload.issue;
+    if (!isOpenCreatorIssue(issue)) return job;
+    if (issue.scope.kind !== 'creator-job' || issue.scope.jobId !== job.id) return job;
+    return mergeIssueIntoJob(job, issue);
+  }
   return job;
+}
+
+function mergeIssueIntoJob(job: CreatorJob, issue: OpenCreatorIssue): CreatorJob {
+  const current = job.issues ?? [];
+  return {
+    ...job,
+    issues: current.some(candidate => candidate.id === issue.id)
+      ? current.map(candidate => candidate.id === issue.id ? issue : candidate)
+      : [...current, issue],
+    updatedAt: laterTimestamp(job.updatedAt, issue.lastOccurredAt)
+  };
+}
+
+function mergeVisibleIssues(
+  authoritative: OpenCreatorIssue[],
+  local: OpenCreatorIssue[]
+): OpenCreatorIssue[] {
+  const unique = new Map<string, OpenCreatorIssue>();
+  for (const issue of [...authoritative, ...local]) {
+    if (!unique.has(issue.fingerprint)) unique.set(issue.fingerprint, issue);
+  }
+  return [...unique.values()].sort((left, right) => (
+    left.lastOccurredAt.localeCompare(right.lastOccurredAt)
+    || left.id.localeCompare(right.id)
+  )).slice(-60);
 }
 
 function readCreatorStage(value: CreatorJson | undefined, jobId: string): CreatorStageRun | null {

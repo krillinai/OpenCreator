@@ -260,7 +260,7 @@ describe('Composer', () => {
     const stopButton = screen.getByRole('button', { name: '停止任务' });
     expect(stopButton).toBeDisabled();
     expect(stopButton).toHaveAttribute('title', '停止任务');
-    expect(stopButton.querySelector('.lucide-square')).toBeInTheDocument();
+    expect(stopButton.querySelector('.lucide-square')).toHaveAttribute('fill', 'currentColor');
     expect(screen.queryByRole('button', { name: '排队发送' })).not.toBeInTheDocument();
   });
 
@@ -696,7 +696,10 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: '添加上下文' }));
     await user.click(screen.getByRole('menuitem', { name: '连接器' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('企业连接服务暂时不可用');
+    const issue = await screen.findByRole('alert');
+    expect(issue).toHaveTextContent('连接器目录加载失败');
+    expect(issue).not.toHaveTextContent(/诊断编号：OC-/);
+    expect(issue).not.toHaveTextContent('企业连接服务暂时不可用');
     await user.click(screen.getByRole('menuitem', { name: /github.*已配置/ }));
     expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveValue('使用 MCP：github ');
   });

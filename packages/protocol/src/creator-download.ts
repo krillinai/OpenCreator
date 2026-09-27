@@ -1,4 +1,11 @@
-export type DownloadPlatform = 'youtube' | 'bilibili';
+export type DownloadPlatform = 'youtube' | 'bilibili' | 'x' | 'tiktok' | 'instagram' | 'douyin' | 'facebook' | 'xiaohongshu' | 'pinterest';
+
+export function extractDouyinShareUrl(value: string): string {
+  const trimmed = value.trim();
+  if (/^https:\/\/\S+$/.test(trimmed)) return trimmed;
+  const links = [...new Set(trimmed.match(/https:\/\/v\.douyin\.com\/[\w-]+\/?(?=$|[\s)\]），。！!])/g) ?? [])];
+  return links.length === 1 ? links[0]! : trimmed;
+}
 
 export type DownloadMediaType = 'video' | 'audio';
 
@@ -17,6 +24,7 @@ export type DownloadOption = {
   videoFormatId?: string;
   audioFormatId?: string;
   transcode?: 'mp3';
+  playlistIndex?: number;
 };
 
 export type DownloadProbeFormat = {

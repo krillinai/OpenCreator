@@ -12,7 +12,6 @@ export default function CreatorArtifactDetails() {
   const [artifactId, setArtifactId] = useState('');
   const [compareId, setCompareId] = useState('');
   const [texts, setTexts] = useState<string[] | null>(null);
-  const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   const job = session?.job;
@@ -39,19 +38,26 @@ export default function CreatorArtifactDetails() {
 
   useEffect(() => {
     setTexts(null);
-    setError('');
     if (!open || !artifact || !comparison || !session || !isText(artifact) || !isText(comparison)) return;
     let active = true;
     void Promise.all([artifact, comparison].map(async item => {
       const response = await session.openArtifact(item.id);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const text = await response.text();
-      if (text.length > 200_000) throw new Error(l('文本超过 20 万字符，请下载后对比', 'Text exceeds 200,000 characters. Download it to compare.'));
-      return text;
+      try {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const text = await response.text();
+        if (text.length > 200_000) throw new Error('artifact_text_too_large');
+        return text;
+      } catch (cause) {
+        session.captureCreatorFailure('creator.compare-artifacts', cause, '无法加载产物对比，请稍后重试。', 'client');
+        throw cause;
+      }
     })).then(values => { if (active) setTexts(values); })
-      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); });
+      .catch(cause => {
+        if (!active) return;
+        session.captureCreatorFailure('creator.compare-artifacts', cause, l('无法加载产物对比，请稍后重试。', 'Could not load the artifact comparison. Try again later.'));
+      });
     return () => { active = false; };
-  }, [open, artifact?.id, comparison?.id, session?.openArtifact, l]);
+  }, [open, artifact?.id, comparison?.id, session?.captureCreatorFailure, session?.openArtifact, l]);
 
   if (!job || !artifact || !session) return null;
   const adapter = creatorPanelAdapterFor(job.templateId);
@@ -61,11 +67,10 @@ export default function CreatorArtifactDetails() {
     if (!session || !selectedProject || pendingRef.current) return;
     pendingRef.current = true;
     setPending(true);
-    setError('');
     try {
       await session.applyAction({ action: 'select-result-version', input: { version: selectedProject.version } });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      session.captureCreatorFailure('creator.select-result-version', cause, l('无法采用项目版本，请稍后重试。', 'Could not use the project version. Try again later.'));
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -74,18 +79,22 @@ export default function CreatorArtifactDetails() {
 
   async function download(item: CreatorArtifact) {
     if (!session) return;
-    setError('');
     try {
       const response = await session.openArtifact(item.id);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const url = URL.createObjectURL(await response.blob());
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName(item);
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      try {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName(item);
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      } catch (cause) {
+        session.captureCreatorFailure('creator.download-artifact', cause, '无法下载创作产物，请稍后重试。', 'client');
+        throw cause;
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      session.captureCreatorFailure('creator.download-artifact', cause, l('无法下载创作产物，请稍后重试。', 'Could not download the artifact. Try again later.'));
     }
   }
 
@@ -145,7 +154,6 @@ export default function CreatorArtifactDetails() {
         {comparison ? <p>{isText(artifact) && isText(comparison)
           ? l('按行号并排高亮不同文本，最多显示 2000 行；完整内容请下载。', 'Highlights differences at the same line number, up to 2,000 lines. Download for full content.')
           : l('媒体版本可并排预览或下载，不进行内容比较。', 'Preview or download media versions side by side; no content comparison.')}</p> : null}
-        {error ? <p role="alert">{error}</p> : null}
       </section> : null}
     </details>
   );
@@ -156,7 +164,6 @@ function ArtifactMediaPreview({ artifact }: { artifact: CreatorArtifact }) {
   const l = useLocalizedCopy();
   const [requested, setRequested] = useState(false);
   const [url, setUrl] = useState('');
-  const [error, setError] = useState('');
   const extension = fileName(artifact).split('.').at(-1)?.toLowerCase() ?? '';
   const kind = /^(png|jpe?g|webp|gif|avif)$/.test(extension) ? 'image'
     : /^(mp3|wav|m4a|ogg|flac)$/.test(extension) ? 'audio'
@@ -166,21 +173,28 @@ function ArtifactMediaPreview({ artifact }: { artifact: CreatorArtifact }) {
     let active = true;
     let objectUrl = '';
     void session.openArtifact(artifact.id).then(async response => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
+      try {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      } catch (cause) {
+        session.captureCreatorFailure('creator.preview-artifact', cause, '无法预览创作产物，请稍后重试。', 'client');
+        throw cause;
+      }
+    }).catch(() => {
       if (!active) return;
-      objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
-    }).catch(cause => { if (active) setError(String(cause)); });
+      setRequested(false);
+    });
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [requested, artifact.id, session?.openArtifact]);
+  }, [requested, artifact.id, session?.captureCreatorFailure, session?.openArtifact, l]);
   if (!kind || !artifact.path) return null;
   return <>
     <button type="button" disabled={requested} onClick={() => setRequested(true)}>{l('预览', 'Preview')} V{artifact.version}</button>
     {url && kind === 'image' ? <img src={url} alt={fileName(artifact)} /> : null}
     {url && kind === 'audio' ? <audio src={url} controls aria-label={fileName(artifact)} /> : null}
     {url && kind === 'video' ? <video src={url} controls aria-label={fileName(artifact)} /> : null}
-    {error ? <p role="alert">{error}</p> : null}
   </>;
 }
 

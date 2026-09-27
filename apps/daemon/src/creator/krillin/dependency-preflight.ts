@@ -6,10 +6,13 @@ import {
 
 export function preflightKrillinDependencies(
   resourceRoot: string,
-  config: CreatorServicesConfig
+  config: CreatorServicesConfig,
+  input: { cachePath?: string } = {}
 ) {
   const manifest = readKrillinRuntimeManifest(resourceRoot);
-  verifyKrillinRuntimeManifest(resourceRoot, manifest);
+  verifyKrillinRuntimeManifest(resourceRoot, manifest, {
+    cachePath: input.cachePath
+  });
   return {
     manifest,
     config

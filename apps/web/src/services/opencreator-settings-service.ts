@@ -1,4 +1,6 @@
 import type {
+  OpenCreatorStorageSettingsResponse,
+  UpdateOpenCreatorStorageSettingsRequest,
   OpenCreatorUiSettingsResponse,
   UpdateOpenCreatorUiSettingsRequest
 } from '@opencreator/protocol';
@@ -15,6 +17,14 @@ export function createOpenCreatorSettingsService(client: ClientLike) {
       update: UpdateOpenCreatorUiSettingsRequest
     ): Promise<OpenCreatorUiSettingsResponse> {
       return client.patch('/settings/ui', update);
+    },
+    getStorageSettings(): Promise<OpenCreatorStorageSettingsResponse> {
+      return client.get('/settings/storage');
+    },
+    updateStorageSettings(
+      update: UpdateOpenCreatorStorageSettingsRequest
+    ): Promise<OpenCreatorStorageSettingsResponse> {
+      return client.patch('/settings/storage', update);
     }
   };
 }

@@ -3,9 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent
+  type CSSProperties
 } from 'react';
 import {
   ArrowLeft,
@@ -13,24 +11,24 @@ import {
   Captions,
   Check,
   ChevronDown,
-  CircleStop,
   FileVideo,
   History,
   Languages,
   Mic2,
   MonitorPlay,
   Play,
-  Sparkles
+  Sparkles,
+  Square
 } from 'lucide-react';
-import { beginPaneResize } from '../../components/layout/pane-resize-2026-07-29.js';
 import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import VideoTranslationAgentPanel from './VideoTranslationAgentPanel.js';
+import CreatorResizableLayout from './CreatorResizableLayout.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import VideoSourceInput from './VideoSourceInput.js';
-import VideoSourcePreview from './VideoSourcePreview.js';
+import { parseVideoSource } from './VideoSourcePreview.js';
 import { VideoTranslationSubtitleImport } from './VideoTranslationSubtitleImport.js';
 import VideoTranslationResultWorkspace, {
   type SubtitleCue,
@@ -42,13 +40,17 @@ import VideoTranslationResultWorkspace, {
   type VideoTranslationResultTab,
   type VoiceResultOutput
 } from './VideoTranslationResultWorkspace.js';
-import { useOptionalCreatorSession } from './creator-session-store.js';
+import {
+  createCreatorArtifactObjectUrl,
+  useOptionalCreatorSession
+} from './creator-session-store.js';
 import {
   readCreatorResultSnapshots,
   type CreatorArtifact,
   type CreatorJson,
   type CreatorResultSnapshot,
-  type CreatorTtsProvider
+  type CreatorTtsProvider,
+  type VideoMetadataResponse
 } from '@opencreator/protocol';
 
 type SourceType = 'url' | 'file';
@@ -160,11 +162,6 @@ const defaultSubtitleStyle: SubtitleStyleSettings = {
   subtitleShadowOffsetY: 1.5,
   subtitleShadowBlur: 0.5
 };
-const WORKSPACE_MIN_WIDTH = 390;
-const AGENT_MIN_WIDTH = 280;
-const WORKSPACE_RESIZE_HANDLE_WIDTH = 7;
-const WORKSPACE_RESIZE_KEY_STEP = 32;
-
 const sourceLanguages: LanguageOption[] = [
   { value: 'zh_cn', label: '简体中文' },
   { value: 'en', label: 'English' },
@@ -1382,6 +1379,99 @@ function videoOrientationFromDimensions(width: unknown, height: unknown): VideoO
   return height > width ? 'portrait' : 'landscape';
 }
 
+function videoDimensionsFromUnknown(width: unknown, height: unknown): { width: number; height: number } | undefined {
+  if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) return undefined;
+  return { width, height };
+}
+
+function aspectRatioLabel(width: number, height: number): string {
+  if (Math.abs(width / height - 16 / 9) < 0.02) return '16:9';
+  if (Math.abs(width / height - 9 / 16) < 0.02) return '9:16';
+  let left = width;
+  let right = height;
+  while (right !== 0) [left, right] = [right, left % right];
+  return `${width / left}:${height / left}`;
+}
+
+function isYouTubeShort(url: string): boolean {
+  try {
+    return new URL(url).pathname.startsWith('/shorts/');
+  } catch {
+    return false;
+  }
+}
+
+function SubtitlePreviewVideo(props: {
+  src: string;
+  onDimensions(width: number, height: number): void;
+}) {
+  const [ready, setReady] = useState(false);
+
+  return (
+    <video
+      className="video-translation-subtitle-preview-media"
+      src={props.src}
+      muted
+      playsInline
+      preload="metadata"
+      aria-hidden="true"
+      data-ready={ready}
+      onLoadedMetadata={event => {
+        const video = event.currentTarget;
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          props.onDimensions(video.videoWidth, video.videoHeight);
+        }
+        if (Number.isFinite(video.duration) && video.duration > 0.2) {
+          video.currentTime = Math.min(video.duration * 0.1, 5, video.duration - 0.1);
+        }
+      }}
+      onLoadedData={event => {
+        if (!event.currentTarget.seeking) setReady(true);
+      }}
+      onSeeked={() => setReady(true)}
+      onError={() => setReady(false)}
+    />
+  );
+}
+
+function SubtitleColorControl(props: {
+  label: string;
+  inputLabel: string;
+  customLabel: string;
+  value: string;
+  onChange(value: string): void;
+  prefixPresetLabel?: boolean;
+}) {
+  return (
+    <div className="video-translation-style-control">
+      <span>{props.label}</span>
+      <div className="video-translation-color-options">
+        {subtitleColors.map(color => (
+          <button
+            type="button"
+            aria-label={props.prefixPresetLabel ? `${props.label} ${color}` : color}
+            aria-pressed={props.value.toUpperCase() === color}
+            key={color}
+            style={{ '--subtitle-swatch-color': color } as CSSProperties}
+            onClick={() => props.onChange(color)}
+          >
+            {props.value.toUpperCase() === color ? <Check size={13} strokeWidth={2.4} aria-hidden="true" /> : null}
+          </button>
+        ))}
+        <label className="video-translation-custom-color" title={props.customLabel}>
+          <input
+            type="color"
+            aria-label={props.inputLabel}
+            value={props.value}
+            onChange={event => props.onChange(event.target.value.toUpperCase())}
+          />
+          <span>{props.customLabel}</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
 export default function VideoTranslationWorkspace(props: {
   onBack(): void;
   promptHint?: string;
@@ -1391,9 +1481,9 @@ export default function VideoTranslationWorkspace(props: {
   const l = useLocalizedCopy();
   const creatorSession = useOptionalCreatorSession();
   const videoInputRef = useRef<HTMLInputElement>(null);
-  const collabLayoutRef = useRef<HTMLDivElement>(null);
   const agentFocusTimeoutRef = useRef<number>();
   const skipPersistRef = useRef(false);
+  const dimensionsJobIdRef = useRef<string>();
   const restoredResultNavigationRef = useRef<{
     jobId: string;
     latestVersion: number | null;
@@ -1404,6 +1494,9 @@ export default function VideoTranslationWorkspace(props: {
   const [sourceType, setSourceType] = useState<SourceType>('url');
   const [videoUrl, setVideoUrl] = useState('');
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [sourceDimensions, setSourceDimensions] = useState<{ width: number; height: number }>();
+  const [urlMetadata, setUrlMetadata] = useState<{ url: string; value: VideoMetadataResponse }>();
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<{ file: File; url: string }>();
   const [videoFileName, setVideoFileName] = useState<string | null>(null);
   const [videoFileSize, setVideoFileSize] = useState<number | null>(null);
   const [videoFileLastModified, setVideoFileLastModified] = useState<number | null>(null);
@@ -1438,7 +1531,6 @@ export default function VideoTranslationWorkspace(props: {
   const [verticalTitle, setVerticalTitle] = useState('');
   const [verticalSubtitle, setVerticalSubtitle] = useState('');
   const [attemptedContinue, setAttemptedContinue] = useState(false);
-  const [workspacePaneWidth, setWorkspacePaneWidth] = useState<number>();
   const [resultTab, setResultTab] = useState<VideoTranslationResultTab>('video');
   const [resultVersion, setResultVersion] = useState(1);
   const [resultVersions, setResultVersions] = useState<TranslationResultVersion[]>([]);
@@ -1454,6 +1546,35 @@ export default function VideoTranslationWorkspace(props: {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [agentFocus, setAgentFocus] = useState<AgentFocus>();
   const cancelConfirmRef = useRef<HTMLButtonElement>(null);
+  const parsedVideoSource = useMemo(() => parseVideoSource(videoUrl), [videoUrl]);
+  const currentUrlMetadata = urlMetadata?.url === videoUrl ? urlMetadata.value : undefined;
+
+  useEffect(() => {
+    if (workspacePhase !== 'configure' || currentStep !== 2 || sourceType !== 'file'
+      || videoFile === null || !videoFile.type.startsWith('video/')
+      || typeof URL.createObjectURL !== 'function') {
+      setLocalPreviewUrl(undefined);
+      return;
+    }
+    const url = URL.createObjectURL(videoFile);
+    setLocalPreviewUrl({ file: videoFile, url });
+    return () => URL.revokeObjectURL(url);
+  }, [workspacePhase, currentStep, sourceType, videoFile]);
+
+  useEffect(() => {
+    if (currentStep === 0 || sourceType !== 'url' || !isValidVideoUrl(videoUrl)
+      || props.videoMetadataService === undefined || currentUrlMetadata !== undefined
+      || (parsedVideoSource.kind !== 'youtube' && parsedVideoSource.kind !== 'bilibili')) return;
+    let canceled = false;
+    void props.videoMetadataService.getVideoMetadata(videoUrl).then(metadata => {
+      if (canceled) return;
+      setUrlMetadata({ url: videoUrl, value: metadata });
+      if (metadata.width !== undefined && metadata.height !== undefined) {
+        updateSourceOrientation(metadata.width, metadata.height);
+      }
+    }).catch(() => undefined);
+    return () => { canceled = true; };
+  }, [currentStep, sourceType, videoUrl, props.videoMetadataService, currentUrlMetadata, parsedVideoSource.kind]);
 
   useEffect(() => {
     if (creatorSession === null) return;
@@ -1502,9 +1623,23 @@ export default function VideoTranslationWorkspace(props: {
     const persistedSourceArtifact = [...creatorSession.job.artifacts].reverse().find(artifact => (
       artifact.kind === 'source_video' && artifact.status === 'completed'
     ));
+    const artifactMatchesCurrentFile = persistedSourceArtifact !== undefined
+      && persisted.sourceType === 'file'
+      && videoFile === null
+      && (persisted.sourceArtifactId === persistedSourceArtifact.id
+        || (typeof persisted.sourceFileName === 'string'
+          && persisted.sourceFileName === readArtifactString(persistedSourceArtifact, 'fileName')));
+    const restoredDimensions = videoDimensionsFromUnknown(
+      artifactMatchesCurrentFile ? persistedSourceArtifact.metadata.width : undefined,
+      artifactMatchesCurrentFile ? persistedSourceArtifact.metadata.height : undefined
+    );
+    if (dimensionsJobIdRef.current !== creatorSession.job.id) {
+      setSourceDimensions(restoredDimensions);
+    }
+    dimensionsJobIdRef.current = creatorSession.job.id;
     setSourceOrientation(videoOrientationFromDimensions(
-      persistedSourceArtifact?.metadata.width,
-      persistedSourceArtifact?.metadata.height
+      restoredDimensions?.width,
+      restoredDimensions?.height
     ) ?? persistedOrientation ?? 'landscape');
     if (typeof persisted.verticalTitle === 'string') setVerticalTitle(persisted.verticalTitle);
     if (typeof persisted.verticalSubtitle === 'string') setVerticalSubtitle(persisted.verticalSubtitle);
@@ -1576,7 +1711,15 @@ export default function VideoTranslationWorkspace(props: {
           setVoiceName(providerConfig.defaultVoiceId);
         }
       })
-      .catch(() => undefined);
+      .catch(cause => {
+        if (!active) return;
+        creatorSession?.captureCreatorFailure(
+          'video-translation.load-service-config',
+          cause,
+          l('无法读取配音服务配置，请稍后重试。', 'Could not load dubbing settings. Try again later.'),
+          'client'
+        );
+      });
     return () => {
       active = false;
     };
@@ -1738,6 +1881,61 @@ export default function VideoTranslationWorkspace(props: {
         size: readArtifactNumber(registeredSourceArtifact, 'size') ?? 0,
         mime: readArtifactString(registeredSourceArtifact, 'mimeType') ?? 'application/octet-stream'
       };
+  const [artifactPreviewUrl, setArtifactPreviewUrl] = useState<{ artifactId: string; url: string }>();
+  useEffect(() => {
+    if (workspacePhase !== 'configure' || currentStep !== 2 || sourceType !== 'file'
+      || videoFile !== null || registeredSourceArtifact === undefined
+      || creatorSession?.openArtifact === undefined) {
+      setArtifactPreviewUrl(undefined);
+      return;
+    }
+    let canceled = false;
+    let objectUrl: string | undefined;
+    void createCreatorArtifactObjectUrl(
+      creatorSession,
+      registeredSourceArtifact.id,
+      'video-translation.load-style-preview',
+      l('字幕预览画面加载失败。', 'The subtitle preview frame failed to load.')
+    ).then(url => {
+      objectUrl = url;
+      if (canceled) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      setArtifactPreviewUrl({ artifactId: registeredSourceArtifact.id, url });
+    }).catch(() => undefined);
+    return () => {
+      canceled = true;
+      if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
+    };
+  }, [workspacePhase, currentStep, sourceType, videoFile, registeredSourceArtifact?.id,
+    creatorSession?.openArtifact, creatorSession?.captureCreatorFailure, l]);
+
+  const previewVideoSrc = sourceType === 'file'
+    ? videoFile !== null
+      ? localPreviewUrl?.file === videoFile ? localPreviewUrl.url : undefined
+      : artifactPreviewUrl !== undefined && artifactPreviewUrl.artifactId === registeredSourceArtifact?.id
+        ? artifactPreviewUrl.url : undefined
+    : parsedVideoSource.kind === 'direct' ? parsedVideoSource.url : undefined;
+  const previewPosterUrl = sourceType === 'url'
+    ? currentUrlMetadata?.thumbnailUrl
+      ?? (parsedVideoSource.kind === 'youtube' ? parsedVideoSource.thumbnailUrl : undefined)
+    : undefined;
+  const shortVideo = sourceType === 'url' && parsedVideoSource.kind === 'youtube' && isYouTubeShort(videoUrl);
+  const measuredDimensions = sourceDimensions ?? videoDimensionsFromUnknown(
+    currentUrlMetadata?.width,
+    currentUrlMetadata?.height
+  );
+  const knownDimensions = sourceType === 'url' && parsedVideoSource.kind === 'youtube'
+    && measuredDimensions !== undefined && measuredDimensions.width <= 640 && measuredDimensions.height <= 480
+    ? undefined
+    : measuredDimensions;
+  const sourceIsPortrait = shortVideo || (knownDimensions === undefined
+    ? sourceOrientation === 'portrait'
+    : knownDimensions.height > knownDimensions.width);
+  const convertedToVertical = videoFormat === 'vertical' && !sourceIsPortrait;
+  const previewWidth = convertedToVertical ? 9 : knownDimensions?.width ?? (sourceIsPortrait ? 9 : 16);
+  const previewHeight = convertedToVertical ? 16 : knownDimensions?.height ?? (sourceIsPortrait ? 16 : 9);
   const selectedFileRegistered = videoFile !== null
     && registeredSourceArtifact !== undefined
     && sourceArtifactMatchesFile(registeredSourceArtifact, videoFile);
@@ -1904,13 +2102,13 @@ export default function VideoTranslationWorkspace(props: {
       { loading: true }
     ])));
     for (const artifact of artifacts) {
-      void openArtifact(artifact.id)
-        .then(response => {
-          if (!response.ok) throw new Error(`Creator artifact HTTP ${response.status}`);
-          return response.blob();
-        })
-        .then(blob => {
-          const objectUrl = URL.createObjectURL(blob);
+      void createCreatorArtifactObjectUrl(
+        creatorSession!,
+        artifact.id,
+        'video-translation.load-video-preview',
+        l('视频预览加载失败，请稍后重试。', 'The video preview failed to load. Try again later.')
+      )
+        .then(objectUrl => {
           if (canceled) {
             URL.revokeObjectURL(objectUrl);
             return;
@@ -1933,7 +2131,7 @@ export default function VideoTranslationWorkspace(props: {
       canceled = true;
       for (const objectUrl of objectUrls) URL.revokeObjectURL(objectUrl);
     };
-  }, [l, openArtifact, selectedVideoArtifactIds]);
+  }, [creatorSession?.captureCreatorFailure, l, openArtifact, selectedVideoArtifactIds]);
   const [voicePreview, setVoicePreview] = useState<{
     src?: string;
     loading: boolean;
@@ -1952,13 +2150,14 @@ export default function VideoTranslationWorkspace(props: {
     let canceled = false;
     let objectUrl: string | undefined;
     setVoicePreview({ loading: true });
-    void openArtifact(selectedVoiceArtifactId)
-      .then(response => {
-        if (!response.ok) throw new Error(`Creator artifact HTTP ${response.status}`);
-        return response.blob();
-      })
-      .then(blob => {
-        objectUrl = URL.createObjectURL(blob);
+    void createCreatorArtifactObjectUrl(
+      creatorSession!,
+      selectedVoiceArtifactId,
+      'video-translation.load-voice-preview',
+      l('配音预览加载失败，请稍后重试。', 'The dubbing preview failed to load. Try again later.')
+    )
+      .then(url => {
+        objectUrl = url;
         if (canceled) {
           URL.revokeObjectURL(objectUrl);
           return;
@@ -1976,7 +2175,7 @@ export default function VideoTranslationWorkspace(props: {
       canceled = true;
       if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
     };
-  }, [l, openArtifact, resultTab, selectedVoiceArtifactId, voicePreviewReload]);
+  }, [creatorSession?.captureCreatorFailure, l, openArtifact, resultTab, selectedVoiceArtifactId, voicePreviewReload]);
   const selectedResultSource = selectedResult?.source;
   const selectedSubtitleCues = selectedResult?.subtitleCues ?? [];
   const horizontalSubtitleDraftKey = subtitleDraftKey(resultVersion, 'horizontal');
@@ -2246,6 +2445,7 @@ export default function VideoTranslationWorkspace(props: {
     setVideoFileName(file?.name ?? null);
     setVideoFileSize(file?.size ?? null);
     setVideoFileLastModified(file?.lastModified ?? null);
+    setSourceDimensions(undefined);
     setSourceOrientation('landscape');
     if (file) {
       setVideoUrl('');
@@ -2262,6 +2462,7 @@ export default function VideoTranslationWorkspace(props: {
       return;
     }
     setVideoUrl('');
+    setSourceDimensions(undefined);
     setSourceType('url');
     setAttemptedContinue(false);
   }
@@ -2269,6 +2470,7 @@ export default function VideoTranslationWorkspace(props: {
   function updateSourceOrientation(width: number, height: number) {
     const orientation = videoOrientationFromDimensions(width, height);
     if (orientation === undefined) return;
+    setSourceDimensions(current => current?.width === width && current.height === height ? current : { width, height });
     setSourceOrientation(orientation);
     if (orientation === 'portrait') setVideoFormat('vertical');
   }
@@ -2528,7 +2730,7 @@ export default function VideoTranslationWorkspace(props: {
           disabled={taskControlPending !== undefined || cancelRequested}
           onClick={requestCancelTask}
         >
-          <CircleStop size={16} strokeWidth={1.9} aria-hidden="true" />
+          <Square size={16} fill="currentColor" aria-hidden="true" />
           {taskControlPending === 'canceling' || cancelRequested
             ? l('正在终止...', 'Stopping...')
             : l('终止任务', 'Stop task')}
@@ -2595,9 +2797,12 @@ export default function VideoTranslationWorkspace(props: {
         return;
       }
       try {
-        const response = await creatorSession.openArtifact(artifact.id);
-        if (!response.ok) throw new Error(`Creator artifact HTTP ${response.status}`);
-        const url = URL.createObjectURL(await response.blob());
+        const url = await createCreatorArtifactObjectUrl(
+          creatorSession,
+          artifact.id,
+          'video-translation.download-artifact',
+          l('产物下载失败，请稍后重试。', 'The artifact download failed. Try again later.')
+        );
         const link = document.createElement('a');
         link.href = url;
         link.download = artifactFileName(artifact) ?? `OpenCreator-${artifact.kind}-V${resultVersion}`;
@@ -2679,69 +2884,12 @@ export default function VideoTranslationWorkspace(props: {
     }
   }
 
-  function paneWidthBounds() {
-    const rect = collabLayoutRef.current?.getBoundingClientRect();
-    const fallbackWidth = 900;
-    return {
-      fallback: rect ? Math.round(rect.width * 0.68) : fallbackWidth,
-      max: rect
-        ? Math.max(
-            WORKSPACE_MIN_WIDTH,
-            rect.width - AGENT_MIN_WIDTH - WORKSPACE_RESIZE_HANDLE_WIDTH
-          )
-        : fallbackWidth
-    };
-  }
-
-  function updateWorkspacePaneWidth(clientX: number) {
-    const rect = collabLayoutRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setWorkspacePaneWidth(clampPaneWidth(
-      clientX - rect.left,
-      WORKSPACE_MIN_WIDTH,
-      Math.max(
-        WORKSPACE_MIN_WIDTH,
-        rect.width - AGENT_MIN_WIDTH - WORKSPACE_RESIZE_HANDLE_WIDTH
-      )
-    ));
-  }
-
-  function adjustWorkspacePaneWidth(delta: number) {
-    const bounds = paneWidthBounds();
-    setWorkspacePaneWidth(previous => clampPaneWidth(
-      (previous ?? bounds.fallback) + delta,
-      WORKSPACE_MIN_WIDTH,
-      bounds.max
-    ));
-  }
-
-  function handlePaneResizeMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
-    beginPaneResize(event, updateWorkspacePaneWidth);
-  }
-
-  function handlePaneResizeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      adjustWorkspacePaneWidth(-WORKSPACE_RESIZE_KEY_STEP);
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      adjustWorkspacePaneWidth(WORKSPACE_RESIZE_KEY_STEP);
-    }
-  }
-
-  const collabLayoutStyle = workspacePaneWidth === undefined
-    ? undefined
-    : ({ '--video-translation-pane-width': `${workspacePaneWidth}px` } as CSSProperties);
-
   return (
     <main className="video-translation-page">
       <div className="video-translation-page-inner video-translation-wizard">
-        <div
+        <CreatorResizableLayout
           className="video-translation-collab-layout"
-          ref={collabLayoutRef}
-          style={collabLayoutStyle}
-        >
-          <div
+          workspace={<div
             className="video-translation-wizard-main"
             data-step={currentStep}
             data-phase={workspacePhase}
@@ -2856,11 +3004,15 @@ export default function VideoTranslationWorkspace(props: {
                 setVideoUrl(url);
                 setSourceType('url');
                 setVideoFile(null);
+                setSourceDimensions(undefined);
                 setSourceOrientation('landscape');
                 setAttemptedContinue(false);
               }}
               onClear={clearCurrentSource}
               onDimensions={updateSourceOrientation}
+              onMetadata={(url, metadata) => {
+                setUrlMetadata({ url, value: metadata });
+              }}
             />
           ) : null}
 
@@ -2985,52 +3137,32 @@ export default function VideoTranslationWorkspace(props: {
                     </div>
                   </div>
 
-                  <div className="video-translation-style-control">
-                    <span>{l('译文颜色', 'Translation color')}</span>
-                    <div className="video-translation-color-options">
-                      {subtitleColors.map(color => (
-                        <button
-                          type="button"
-                          aria-label={color}
-                          aria-pressed={subtitleColor.toUpperCase() === color}
-                          key={color}
-                          style={{ '--subtitle-swatch-color': color } as CSSProperties}
-                          onClick={() => setSubtitleColor(color)}
-                        >
-                          {subtitleColor.toUpperCase() === color ? <Check size={13} strokeWidth={2.4} aria-hidden="true" /> : null}
-                        </button>
-                      ))}
-                      <label className="video-translation-custom-color" title={l('自定义颜色', 'Custom color')}>
-                        <input
-                          type="color"
-                          aria-label={l('自定义译文颜色', 'Custom translation color')}
-                          value={subtitleColor}
-                          onChange={event => setSubtitleColor(event.target.value.toUpperCase())}
-                        />
-                        <span>{l('自定义', 'Custom')}</span>
-                      </label>
-                    </div>
-                  </div>
+                  <SubtitleColorControl
+                    label={l('译文颜色', 'Translation color')}
+                    inputLabel={l('自定义译文颜色', 'Custom translation color')}
+                    customLabel={l('自定义', 'Custom')}
+                    value={subtitleColor}
+                    onChange={setSubtitleColor}
+                  />
 
-                  <div className="video-translation-style-fields">
-                    <label className="video-translation-field video-translation-color-field">
-                      <span>{l('原文颜色', 'Original color')}</span>
-                      <input
-                        type="color"
-                        aria-label={l('原文颜色', 'Original color')}
-                        value={subtitleSecondaryColor}
-                        onChange={event => setSubtitleSecondaryColor(event.target.value.toUpperCase())}
-                      />
-                    </label>
-                    <label className="video-translation-field video-translation-color-field">
-                      <span>{l('描边颜色', 'Outline color')}</span>
-                      <input
-                        type="color"
-                        aria-label={l('描边颜色', 'Outline color')}
-                        value={subtitleOutlineColor}
-                        onChange={event => setSubtitleOutlineColor(event.target.value.toUpperCase())}
-                      />
-                    </label>
+                  <SubtitleColorControl
+                    label={l('原文颜色', 'Original color')}
+                    inputLabel={l('原文颜色', 'Original color')}
+                    customLabel={l('自定义', 'Custom')}
+                    value={subtitleSecondaryColor}
+                    onChange={setSubtitleSecondaryColor}
+                    prefixPresetLabel
+                  />
+
+                  <div className="video-translation-outline-fields">
+                    <SubtitleColorControl
+                      label={l('描边颜色', 'Outline color')}
+                      inputLabel={l('描边颜色', 'Outline color')}
+                      customLabel={l('自定义', 'Custom')}
+                      value={subtitleOutlineColor}
+                      onChange={setSubtitleOutlineColor}
+                      prefixPresetLabel
+                    />
                     <label className="video-translation-field">
                       <span>{l('描边宽度', 'Outline width')}</span>
                       <input
@@ -3052,74 +3184,78 @@ export default function VideoTranslationWorkspace(props: {
                       onChange={setSubtitleShadowEnabled}
                     />
                     {subtitleShadowEnabled ? (
-                      <div className="video-translation-style-fields">
-                        <label className="video-translation-field video-translation-color-field">
-                          <span>{l('阴影颜色', 'Shadow color')}</span>
-                          <input
-                            type="color"
-                            aria-label={l('阴影颜色', 'Shadow color')}
-                            value={subtitleShadowColor}
-                            onChange={event => setSubtitleShadowColor(event.target.value.toUpperCase())}
-                          />
-                        </label>
-                        <label className="video-translation-field">
-                          <span>{l('不透明度', 'Opacity')}</span>
-                          <input
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            value={subtitleShadowOpacity}
-                            onChange={event => setSubtitleShadowOpacity(Number(event.target.value))}
-                          />
-                        </label>
-                        <label className="video-translation-field">
-                          <span>{l('水平偏移', 'Horizontal offset')}</span>
-                          <input
-                            type="number"
-                            min="-20"
-                            max="20"
-                            step="1"
-                            value={subtitleShadowOffsetX}
-                            onChange={event => setSubtitleShadowOffsetX(Number(event.target.value))}
-                          />
-                        </label>
-                        <label className="video-translation-field">
-                          <span>{l('垂直偏移', 'Vertical offset')}</span>
-                          <input
-                            type="number"
-                            min="-20"
-                            max="20"
-                            step="1"
-                            value={subtitleShadowOffsetY}
-                            onChange={event => setSubtitleShadowOffsetY(Number(event.target.value))}
-                          />
-                        </label>
-                        <label className="video-translation-field">
-                          <span>{l('模糊', 'Blur')}</span>
-                          <input
-                            type="number"
-                            min="0"
-                            max="10"
-                            step="0.5"
-                            value={subtitleShadowBlur}
-                            onChange={event => setSubtitleShadowBlur(Number(event.target.value))}
-                          />
-                        </label>
-                      </div>
+                      <>
+                        <SubtitleColorControl
+                          label={l('阴影颜色', 'Shadow color')}
+                          inputLabel={l('阴影颜色', 'Shadow color')}
+                          customLabel={l('自定义', 'Custom')}
+                          value={subtitleShadowColor}
+                          onChange={setSubtitleShadowColor}
+                          prefixPresetLabel
+                        />
+                        <div className="video-translation-style-fields">
+                          <label className="video-translation-field">
+                            <span>{l('不透明度', 'Opacity')}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={subtitleShadowOpacity}
+                              onChange={event => setSubtitleShadowOpacity(Number(event.target.value))}
+                            />
+                          </label>
+                          <label className="video-translation-field">
+                            <span>{l('水平偏移', 'Horizontal offset')}</span>
+                            <input
+                              type="number"
+                              min="-20"
+                              max="20"
+                              step="1"
+                              value={subtitleShadowOffsetX}
+                              onChange={event => setSubtitleShadowOffsetX(Number(event.target.value))}
+                            />
+                          </label>
+                          <label className="video-translation-field">
+                            <span>{l('垂直偏移', 'Vertical offset')}</span>
+                            <input
+                              type="number"
+                              min="-20"
+                              max="20"
+                              step="1"
+                              value={subtitleShadowOffsetY}
+                              onChange={event => setSubtitleShadowOffsetY(Number(event.target.value))}
+                            />
+                          </label>
+                          <label className="video-translation-field">
+                            <span>{l('模糊', 'Blur')}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              step="0.5"
+                              value={subtitleShadowBlur}
+                              onChange={event => setSubtitleShadowBlur(Number(event.target.value))}
+                            />
+                          </label>
+                        </div>
+                      </>
                     ) : null}
                   </div>
                 </div>
 
                 <div
                   className="video-translation-subtitle-preview"
-                  data-ratio={videoFormat === 'vertical' ? '9:16' : '16:9'}
+                  data-ratio={aspectRatioLabel(previewWidth, previewHeight)}
+                  data-orientation={previewHeight > previewWidth ? 'portrait' : 'landscape'}
+                  data-converted={convertedToVertical}
                   role="region"
                   aria-label={l('字幕样式预览', 'Subtitle style preview')}
                 >
                   <span>{l('字幕样式预览', 'Subtitle style preview')}</span>
                   <div
                     style={{
+                      '--subtitle-preview-aspect-ratio': `${previewWidth} / ${previewHeight}`,
                       '--subtitle-preview-color': subtitleColor,
                       '--subtitle-preview-secondary-color': subtitleSecondaryColor,
                       '--subtitle-preview-outline-color': subtitleOutlineColor,
@@ -3132,13 +3268,27 @@ export default function VideoTranslationWorkspace(props: {
                       '--subtitle-preview-font-weight': ({ regular: 400, medium: 500, bold: 700 } as const)[subtitleWeight]
                     } as CSSProperties}
                   >
-                    {bilingual && subtitlePosition === 'bottom' ? (
-                      <small data-subtitle-kind="original">{l('这是一段原文字幕', 'This is an original subtitle')}</small>
+                    {previewPosterUrl ? (
+                      <img
+                        className="video-translation-subtitle-preview-media"
+                        src={previewPosterUrl}
+                        alt=""
+                        aria-hidden="true"
+                        onError={event => { event.currentTarget.hidden = true; }}
+                      />
                     ) : null}
-                    <strong data-subtitle-kind="translation">{l('这是一段译文字幕', 'This is a translated subtitle')}</strong>
-                    {bilingual && subtitlePosition === 'top' ? (
-                      <small data-subtitle-kind="original">{l('这是一段原文字幕', 'This is an original subtitle')}</small>
+                    {previewVideoSrc ? (
+                      <SubtitlePreviewVideo key={previewVideoSrc} src={previewVideoSrc} onDimensions={updateSourceOrientation} />
                     ) : null}
+                    <div className="video-translation-subtitle-preview-cues">
+                      {bilingual && subtitlePosition === 'bottom' ? (
+                        <small data-subtitle-kind="original">{l('这是一段原文字幕', 'This is an original subtitle')}</small>
+                      ) : null}
+                      <strong data-subtitle-kind="translation">{l('这是一段译文字幕', 'This is a translated subtitle')}</strong>
+                      {bilingual && subtitlePosition === 'top' ? (
+                        <small data-subtitle-kind="original">{l('这是一段原文字幕', 'This is an original subtitle')}</small>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3295,24 +3445,8 @@ export default function VideoTranslationWorkspace(props: {
             </button>
           )}
         </footer>
-        {sessionError !== null || needsInput !== null || stageFailure !== undefined || resultNotice ? (
-          <div
-            className={`video-translation-run-notice${sessionError !== null || needsInput !== null || stageFailure !== undefined ? ' is-error' : ''}`}
-            role={sessionError !== null || needsInput !== null || stageFailure !== undefined ? 'alert' : 'status'}
-          >
-            <span>
-              {runIssueMessage || resultNotice}
-            </span>
-            {needsCreatorServicesConfiguration(sessionError?.code, needsInput?.code, stageConfigurationCode) ? (
-              <a href={creatorServicesSettingsHref(
-                sessionError?.code,
-                needsInput?.code,
-                stageConfigurationCode
-              )}>
-                {l('打开 AI 服务设置', 'Open AI service settings')}
-              </a>
-            ) : null}
-          </div>
+        {resultNotice && !runIssueMessage ? (
+          <div className="video-translation-run-notice" role="status">{resultNotice}</div>
         ) : null}
         </div>
         ) : null}
@@ -3322,31 +3456,19 @@ export default function VideoTranslationWorkspace(props: {
             {renderTaskControlButton()}
           </footer>
         ) : null}
-          </div>
-
-          <div
-            className="pane-resize-handle video-translation-pane-resize"
-            role="separator"
-            aria-label={l('调整操作区和对话区宽度', 'Resize workspace and conversation panels')}
-            aria-orientation="vertical"
-            aria-valuemin={WORKSPACE_MIN_WIDTH}
-            aria-valuenow={workspacePaneWidth}
-            aria-valuetext={workspacePaneWidth === undefined
-              ? l('默认宽度', 'Default width')
-              : l(`操作区宽度 ${workspacePaneWidth} 像素`, `Workspace width ${workspacePaneWidth} pixels`)}
-            tabIndex={0}
-            title={l('拖动调整宽度，双击恢复默认', 'Drag to resize. Double-click to restore the default.')}
-            onDoubleClick={() => setWorkspacePaneWidth(undefined)}
-            onMouseDown={handlePaneResizeMouseDown}
-            onKeyDown={handlePaneResizeKeyDown}
-          />
-
-          <VideoTranslationAgentPanel
+          </div>}
+          agentPanel={<VideoTranslationAgentPanel
             stepLabel={workspacePhase === 'result' ? l('项目结果', 'Project results') : localizeStep(steps[currentStep], l)}
             contextSummary={agentContextSummary}
             promptHint={props.promptHint}
             currentIssue={runIssueMessage || undefined}
             quickActions={[
+              ...(needsCreatorServicesConfiguration(sessionError?.code, needsInput?.code, stageConfigurationCode) ? [{
+                id: 'open-ai-services',
+                label: l('打开 AI 服务设置', 'Open AI service settings'),
+                kind: 'action' as const,
+                onAction: () => { window.location.hash = creatorServicesSettingsHref(sessionError?.code, needsInput?.code, stageConfigurationCode); }
+              }] : []),
               {
                 id: 'open-settings',
                 label: workspacePhase === 'result'
@@ -3384,8 +3506,8 @@ export default function VideoTranslationWorkspace(props: {
             onCancelTask={requestCancelTask}
             onResumeTask={() => void resumeTask()}
             taskControlPending={taskControlPending}
-          />
-        </div>
+          />}
+        />
       </div>
       {cancelDialogOpen && activeStage !== undefined ? (
         <div
@@ -3402,7 +3524,7 @@ export default function VideoTranslationWorkspace(props: {
             aria-labelledby="video-translation-cancel-title"
           >
             <header>
-              <span aria-hidden="true"><CircleStop size={18} strokeWidth={1.9} /></span>
+              <span aria-hidden="true"><Square size={18} fill="currentColor" /></span>
               <div>
                 <h2 id="video-translation-cancel-title">{l('终止翻译任务？', 'Stop translation task?')}</h2>
                 <p>
@@ -3424,7 +3546,7 @@ export default function VideoTranslationWorkspace(props: {
                 data-intent="danger"
                 onClick={() => void cancelTask()}
               >
-                <CircleStop size={15} strokeWidth={1.9} aria-hidden="true" />
+                <Square size={15} fill="currentColor" aria-hidden="true" />
                 {l('终止任务', 'Stop task')}
               </button>
             </footer>
@@ -3449,10 +3571,6 @@ function sourceArtifactMatchesFile(artifact: CreatorArtifact, file: File): boole
   return readArtifactString(artifact, 'fileName') === file.name
     && readArtifactNumber(artifact, 'size') === file.size
     && readArtifactNumber(artifact, 'lastModified') === file.lastModified;
-}
-
-function clampPaneWidth(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
 }
 
 function creatorErrorMessage(cause: unknown, l: LocalizeCopy): string {
@@ -3494,8 +3612,7 @@ function creatorErrorMessage(cause: unknown, l: LocalizeCopy): string {
   if (code === 'unsupported_source') {
     return l('当前仅支持 YouTube、Bilibili 公共链接或已上传的本地视频。', 'Only public YouTube/Bilibili links or uploaded local videos are supported.');
   }
-  const message = typeof candidate?.message === 'string' ? candidate.message : '';
-  return message || l('启动翻译失败，请检查配置后重试。', 'Failed to start translation. Check the configuration and retry.');
+  return l('启动翻译失败，请在 Agent 区域查看诊断后重试。', 'Failed to start translation. Review the diagnosis in the Agent panel and retry.');
 }
 
 function translationStageLabel(stageId: string, l: LocalizeCopy): string {
@@ -3552,15 +3669,9 @@ function stageResumeDescription(
 function creatorStageProgressPercent(
   stage: import('@opencreator/protocol').CreatorStageRun
 ): number | null {
-  const payload = stage.progress.krillinEventPayload;
-  const nested = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
-    ? payload as Record<string, unknown>
-    : null;
   const value = typeof stage.progress.percent === 'number'
     ? stage.progress.percent
-    : typeof nested?.percent === 'number'
-      ? nested.percent
-      : null;
+    : null;
   return value === null || !Number.isFinite(value)
     ? null
     : Math.max(0, Math.min(100, Math.round(value)));
@@ -3572,7 +3683,7 @@ function stageErrorMessage(code: string | null, message: string | null, l: Local
   if (code === 'dependency_not_packaged') {
     return l('当前安装包缺少所选语音识别能力，请更换服务或重新安装完整运行时。', 'The selected transcription runtime is not packaged. Choose another service or reinstall the full runtime.');
   }
-  return message || l('翻译阶段执行失败，请检查创作动态和服务配置。', 'The translation stage failed. Check activity and service configuration.');
+  return l('翻译阶段执行失败，请在 Agent 区域查看诊断和服务配置。', 'The translation stage failed. Review the diagnosis in the Agent panel and service configuration.');
 }
 
 function normalizeStageConfigurationError(code: string | null | undefined, message: string | null | undefined): string | null {

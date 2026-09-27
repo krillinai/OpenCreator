@@ -7,8 +7,7 @@ import { createWriteStream } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { finished } from 'node:stream/promises';
-import { marked, Renderer, type Token, type Tokens } from 'marked';
-import PDFDocument from 'pdfkit';
+import type { Token, Tokens } from 'marked';
 
 type ArticleImageSource = {
   path: string;
@@ -46,6 +45,7 @@ export async function writeArticleHtml(
   path: string,
   input: ArticleDocumentInput
 ): Promise<number> {
+  const { marked, Renderer } = await import('marked');
   const images = await imageSources(input.artifacts);
   const renderer = new Renderer();
   renderer.html = token => `<pre>${escapeHtml(token.text)}</pre>`;
@@ -116,6 +116,10 @@ export async function writeArticlePdf(
   path: string,
   input: ArticleDocumentInput
 ): Promise<number> {
+  const [{ marked }, { default: PDFDocument }] = await Promise.all([
+    import('marked'),
+    import('pdfkit')
+  ]);
   const fonts = resolvePdfFonts();
   const images = await imageSources(input.artifacts);
   const document = new PDFDocument({

@@ -35,6 +35,7 @@ const videoArtifactKinds = [
 export function createCreatorProjectCoverService(input: {
   jobsRoot: string;
   ffmpegPath?: string;
+  ensureRuntimeReady?(): Promise<void>;
   extractFrame?: FrameExtractor;
 }): CreatorProjectCoverService {
   const pending = new Map<string, Promise<CreatorProjectCover | undefined>>();
@@ -55,6 +56,7 @@ export function createCreatorProjectCoverService(input: {
       const sourceVideo = latestArtifact(job.artifacts, videoArtifactKinds);
       if (sourceVideo?.path === null || sourceVideo === undefined || extractFrame === undefined) return undefined;
       if (!await isNonEmptyFile(sourceVideo.path)) return undefined;
+      await input.ensureRuntimeReady?.();
 
       const cacheKey = `${job.id}:${sourceVideo.id}`;
       const existing = pending.get(cacheKey);

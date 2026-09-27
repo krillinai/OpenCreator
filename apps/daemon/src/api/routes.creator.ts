@@ -7,13 +7,16 @@ import type {
   CreatorAgentHistoryResponse,
   CreatorAgentItem,
   CreatorAgentTurnRequest,
+  CreatorClientIssueReportRequest,
   CreatorEventEnvelope,
   CreatorJob,
   CreatorJson,
   CreatorStageRun,
+  IssueSource,
+  OpenCreatorIssue,
   RuntimeErrorCode
 } from '@opencreator/protocol';
-import { isCreateCreatorJobRequest } from '@opencreator/protocol';
+import { isCreateCreatorJobRequest, isOpenCreatorIssue } from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { rm, stat } from 'node:fs/promises';
@@ -24,6 +27,7 @@ import { ZodError } from 'zod';
 import type { CreatorEventHub } from '../creator/events.js';
 import {
   creatorAgentEventKind,
+  creatorIssueEventId,
   creatorStageEventId
 } from '../creator/events.js';
 import {
@@ -31,6 +35,7 @@ import {
   type CreatorService
 } from '../creator/service.js';
 import { CreatorRepositoryDataError } from '../creator/repository.js';
+import { publicFactsFromFailure } from '../creator/public-error-facts.js';
 import { formatSseEvent } from './sse.js';
 import { apiError } from './errors.js';
 import type { CreatorAgentService } from '../creator/agent/agent-service.js';
@@ -78,6 +83,7 @@ import {
   resolveCreatorPresetAsset
 } from '../creator/presets/catalog.js';
 import type { CreatorPresetRegistry } from '../creator/presets/types.js';
+import type { CreatorIssueService } from '../creator/issues.js';
 
 export async function registerCreatorRoutes(
   server: FastifyInstance,
@@ -101,6 +107,7 @@ export async function registerCreatorRoutes(
     stageRunner?: Pick<CreatorStageRunner, 'cancel' | 'cancelJob'>;
     presets?: CreatorPresetRegistry;
     presetCatalogRoot?: string;
+    issueService?: CreatorIssueService;
   }
 ): Promise<void> {
   if (options.stickmanVisualAssets !== undefined) {
@@ -199,8 +206,20 @@ export async function registerCreatorRoutes(
     );
     server.post<{ Body: Readable }>('/creator/jobs/:id/source-video', async (request, reply) => {
       const { id } = request.params as { id: string };
+      let repair: { issueId: string; attemptId: string } | undefined;
       try {
         const query = readObject(request.query);
+        repair = readUploadRepairContext(query);
+        if (repair !== undefined) {
+          if (options.issueService === undefined) throw new TypeError('Creator issue service is unavailable');
+          options.issueService.beginResolution({
+            jobId: id,
+            issueId: repair.issueId,
+            resolutionAttemptId: repair.attemptId,
+            associationKind: 'endpoint',
+            associationId: repair.attemptId
+          });
+        }
         if (!isReadable(request.body)) {
           throw new TypeError('body must be a media stream');
         }
@@ -221,9 +240,41 @@ export async function registerCreatorRoutes(
           kind: 'snapshot_changed',
           payload: { revision: response.job.revision }
         });
+        if (repair !== undefined) {
+          options.issueService!.finishResolution({
+            jobId: id,
+            issueId: repair.issueId,
+            resolutionAttemptId: repair.attemptId,
+            result: 'succeeded'
+          });
+        }
         return reply.code(response.deduplicated ? 200 : 201).send(response);
       } catch (error) {
-        return sendCreatorError(reply, error);
+        let existingIssue: OpenCreatorIssue | undefined;
+        if (repair !== undefined && options.issueService !== undefined) {
+          try {
+            existingIssue = options.issueService.finishResolution({
+              jobId: id,
+              issueId: repair.issueId,
+              resolutionAttemptId: repair.attemptId,
+              result: request.raw.aborted
+                ? 'canceled'
+                : error instanceof Error && error.name === 'TimeoutError'
+                  ? 'timeout'
+                  : 'failed'
+            });
+          } catch {
+            existingIssue = undefined;
+          }
+        }
+        return sendCreatorError(reply, error, {
+          jobId: id,
+          source: 'upload',
+          operation: 'creator.upload-source',
+          service,
+          issueService: options.issueService,
+          existingIssue
+        });
       }
     });
   }
@@ -261,7 +312,13 @@ export async function registerCreatorRoutes(
           });
           return reply.code(response.deduplicated ? 200 : 201).send(response);
         } catch (error) {
-          return sendCreatorError(reply, error);
+          return sendCreatorError(reply, error, {
+            jobId: id,
+            source: 'upload',
+            operation: 'creator.upload-reference-image',
+            service,
+            issueService: options.issueService
+          });
         }
       }
     );
@@ -294,7 +351,13 @@ export async function registerCreatorRoutes(
           });
           return reply.code(response.deduplicated ? 200 : 201).send(response);
         } catch (error) {
-          return sendCreatorError(reply, error);
+          return sendCreatorError(reply, error, {
+            jobId: id,
+            source: 'upload',
+            operation: 'creator.upload-article-image',
+            service,
+            issueService: options.issueService
+          });
         }
       }
     );
@@ -333,7 +396,13 @@ export async function registerCreatorRoutes(
           });
           return reply.code(response.deduplicated ? 200 : 201).send(response);
         } catch (error) {
-          return sendCreatorError(reply, error);
+          return sendCreatorError(reply, error, {
+            jobId: id,
+            source: 'upload',
+            operation: 'creator.upload-document',
+            service,
+            issueService: options.issueService
+          });
         }
       }
     );
@@ -397,7 +466,14 @@ export async function registerCreatorRoutes(
             : { inputResultVersion: readQueryInteger(request.query.inputResultVersion, 'inputResultVersion') })
         });
       } catch (error) {
-        return sendCreatorError(reply, error);
+        return sendCreatorError(reply, error, {
+          jobId: request.params.id,
+          source: 'preflight',
+          operation: 'creator.run-stage',
+          stageId: request.query.stageId,
+          service,
+          issueService: options.issueService
+        });
       }
     }
   );
@@ -442,6 +518,77 @@ export async function registerCreatorRoutes(
         return reply.code(404).send(apiError('creator_job_not_found', 'Creator job not found'));
       }
       return { job };
+    } catch (error) {
+      return sendCreatorError(reply, error);
+    }
+  });
+
+  server.get('/creator/jobs/:id/issues/stats', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      requireCreatorJob(service, id);
+      if (options.issueService === undefined) {
+        return reply.code(503).send(apiError(
+          'creator_job_control_unavailable',
+          'Creator issue service is unavailable'
+        ));
+      }
+      const query = readObject(request.query);
+      const to = readIssueStatTime(query.to, new Date());
+      const from = readIssueStatTime(query.from, new Date(Date.parse(to) - 24 * 60 * 60 * 1_000));
+      if (Date.parse(to) <= Date.parse(from)) throw new TypeError('to must be later than from');
+      if (Date.parse(to) - Date.parse(from) > 31 * 24 * 60 * 60 * 1_000) {
+        throw new TypeError('issue statistics range cannot exceed 31 days');
+      }
+      return { jobId: id, from, to, rows: options.issueService.stats(id, { from, to }) };
+    } catch (error) {
+      return sendCreatorError(reply, error);
+    }
+  });
+
+  server.get('/creator/jobs/:id/issues', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      requireCreatorJob(service, id);
+      if (options.issueService === undefined) {
+        return { issues: [], events: [] };
+      }
+      const query = readObject(request.query);
+      const cursor = query.cursor === undefined ? undefined : readString(query.cursor, 'cursor');
+      const limit = query.limit === undefined ? undefined : readQueryInteger(query.limit, 'limit');
+      const page = options.issueService.listEvents(id, { cursor, limit });
+      return {
+        issues: options.issueService.list(id),
+        events: page.events,
+        ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor })
+      };
+    } catch (error) {
+      return sendCreatorError(reply, error);
+    }
+  });
+
+  server.post<{ Body: unknown }>('/creator/jobs/:id/issues/report', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      requireCreatorJob(service, id);
+      if (options.issueService === undefined) {
+        return reply.code(503).send(apiError(
+          'creator_job_control_unavailable',
+          'Creator issue service is unavailable'
+        ));
+      }
+      const report = readClientIssueReport(request.body);
+      const issue = options.issueService.capture({
+        jobId: id,
+        code: report.code,
+        source: report.source,
+        operation: report.operation,
+        stageId: report.stageId,
+        scopeKey: report.scopeKey,
+        fallbackMessage: report.fallbackMessage,
+        repairActions: [{ kind: 'focus-agent' }]
+      });
+      return reply.code(201).send({ clientIssueId: report.clientIssueId, issue });
     } catch (error) {
       return sendCreatorError(reply, error);
     }
@@ -793,6 +940,21 @@ export async function registerCreatorRoutes(
         expectedRevision,
         input: actionInput
       }, 'user');
+      const repairIssueId = typeof body.repairIssueId === 'string' ? body.repairIssueId : undefined;
+      if (repairIssueId !== undefined) {
+        const stageRunId = result.commandReceipt.stageRunId;
+        if (stageRunId === null || (action !== 'run-stage' && action !== 'retry-stage')) {
+          throw new TypeError('repairIssueId requires a stage retry action');
+        }
+        options.issueService?.beginResolution({
+          jobId: id,
+          issueId: repairIssueId,
+          resolutionAttemptId: stageRunId,
+          associationKind: 'stage-run',
+          associationId: stageRunId,
+          stageRunId
+        });
+      }
       if (
         options.stickmanVideoWorkflow !== undefined
         && jobBeforeAction.templateId === 'stickman-video'
@@ -813,7 +975,13 @@ export async function registerCreatorRoutes(
       }
       return result;
     } catch (error) {
-      return sendCreatorError(reply, error);
+      return sendCreatorError(reply, error, {
+        jobId: id,
+        source: error instanceof CreatorPreflightError ? 'preflight' : 'api',
+        operation: 'creator.action',
+        service,
+        issueService: options.issueService
+      });
     }
   });
 
@@ -831,11 +999,21 @@ export async function registerCreatorRoutes(
           ? { clientMessageId: body.clientMessageId }
           : {}),
         ...(sandbox === undefined ? {} : { sandbox }),
-        selection: body.selection as never
+        selection: body.selection as never,
+        ...(typeof body.focusedIssueId === 'string'
+          ? { focusedIssueId: body.focusedIssueId }
+          : {})
       });
       return result;
     } catch (error) {
-      return sendCreatorError(reply, error);
+      const { id } = request.params as { id: string };
+      return sendCreatorError(reply, error, {
+        jobId: id,
+        source: 'agent',
+        operation: 'creator.agent-turn',
+        service,
+        issueService: options.issueService
+      });
     }
   });
 
@@ -874,7 +1052,14 @@ export async function registerCreatorRoutes(
       });
       return { turn };
     } catch (error) {
-      return sendCreatorError(reply, error);
+      const { id } = request.params as { id: string };
+      return sendCreatorError(reply, error, {
+        jobId: id,
+        source: 'agent',
+        operation: 'creator.agent-steer',
+        service,
+        issueService: options.issueService
+      });
     }
   });
 
@@ -953,7 +1138,11 @@ export async function registerCreatorRoutes(
         });
       } else {
         for (const event of persistent.slice(cursorIndex + 1)) {
-          if (event.revision === job.revision && event.kind !== 'snapshot_changed') continue;
+          if (
+            event.revision === job.revision
+            && event.kind !== 'snapshot_changed'
+            && event.kind !== 'issue_changed'
+          ) continue;
           writeEvent(event);
         }
       }
@@ -1088,6 +1277,14 @@ function persistentCreatorEvents(
       payload: creatorPayload({ event }),
       createdAt: event.createdAt
     })),
+    ...(job.issues ?? []).map(issue => ({
+      id: creatorIssueEventId(issue),
+      jobId: job.id,
+      revision: job.revision,
+      kind: 'issue_changed' as const,
+      payload: creatorPayload({ issue }),
+      createdAt: issue.lastOccurredAt
+    })),
     snapshotEvent(job)
   ];
   return events.sort((left, right) => (
@@ -1130,37 +1327,54 @@ function readCreatorAgentSandbox(
   throw new TypeError('sandbox must be workspace-write or danger-full-access');
 }
 
-function sendCreatorError(reply: FastifyReply, error: unknown) {
+type CreatorErrorContext = {
+  jobId: string;
+  source: IssueSource;
+  operation: string;
+  stageId?: string;
+  scopeKey?: string;
+  service: CreatorService;
+  issueService?: CreatorIssueService;
+  existingIssue?: OpenCreatorIssue;
+};
+
+function sendCreatorError(reply: FastifyReply, error: unknown, context?: CreatorErrorContext) {
+  const issue = context?.existingIssue ?? captureIssueForError(error, context);
+  const response = (
+    code: RuntimeErrorCode,
+    message: string,
+    details?: Record<string, unknown>
+  ) => apiError(code, message, details, issue);
   if (error instanceof CreatorPreflightError) {
     return reply.code(400).send({
       error: {
-        ...apiError(error.code as RuntimeErrorCode, error.message).error,
+        ...response(error.code as RuntimeErrorCode, error.message).error,
         preflight: error.result
       }
     });
   }
   if (error instanceof StickmanVisualAssetError) {
     const status = error.code.endsWith('_not_found') ? 404 : 422;
-    return reply.code(status).send(apiError(error.code as RuntimeErrorCode, error.message));
+    return reply.code(status).send(response(error.code as RuntimeErrorCode, error.message));
   }
   if (error instanceof CreatorRepositoryDataError) {
-    return reply.code(500).send(apiError('creator_data_corrupt', error.message));
+    return reply.code(500).send(response('creator_data_corrupt', error.message));
   }
   if (error instanceof CreatorArtifactImportError) {
     return reply.code(error.statusCode)
-      .send(apiError(error.code, error.message));
+      .send(response(error.code, error.message));
   }
   if (error instanceof CreatorReferenceImageUploadError) {
     return reply.code(error.statusCode)
-      .send(apiError(error.code as RuntimeErrorCode, error.message));
+      .send(response(error.code as RuntimeErrorCode, error.message));
   }
   if (error instanceof CreatorSourceUploadError) {
     return reply.code(error.statusCode)
-      .send(apiError(error.code as RuntimeErrorCode, error.message));
+      .send(response(error.code as RuntimeErrorCode, error.message));
   }
   if (error instanceof CreatorDocumentUploadError) {
     return reply.code(error.statusCode)
-      .send(apiError(error.code as RuntimeErrorCode, error.message));
+      .send(response(error.code as RuntimeErrorCode, error.message));
   }
   if (error instanceof CreatorCommandError) {
     const status = error.code === 'creator_job_not_found'
@@ -1169,7 +1383,7 @@ function sendCreatorError(reply: FastifyReply, error: unknown) {
         || error.code === 'creator_idempotency_key_reused'
         ? 409
         : 400;
-    return reply.code(status).send(apiError(error.code as RuntimeErrorCode, error.message, {
+    return reply.code(status).send(response(error.code as RuntimeErrorCode, error.message, {
       ...(error.latestRevision === undefined ? {} : { latestRevision: error.latestRevision })
     }));
   }
@@ -1192,16 +1406,16 @@ function sendCreatorError(reply: FastifyReply, error: unknown) {
         || error.code === 'creator_idempotency_key_reused'
         ? 409
         : 400;
-    return reply.code(status).send(apiError(error.code as RuntimeErrorCode, error.message, {
+    return reply.code(status).send(response(error.code as RuntimeErrorCode, error.message, {
       ...(error.latestRevision === undefined ? {} : { latestRevision: error.latestRevision })
     }));
   }
   if (error instanceof ZodError || error instanceof TypeError) {
-    return reply.code(400).send(apiError('VALIDATION_FAILED', error.message));
+    return reply.code(400).send(response('VALIDATION_FAILED', error.message));
   }
   if (error instanceof VideoTranslationWorkflowError) {
     return reply.code(error.code === 'unsupported_source' ? 422 : 400)
-      .send(apiError(error.code as RuntimeErrorCode, error.message));
+      .send(response(error.code as RuntimeErrorCode, error.message));
   }
   if (error instanceof CoverWorkflowError) {
     const status = error.code === 'unsupported_source'
@@ -1210,9 +1424,78 @@ function sendCreatorError(reply: FastifyReply, error: unknown) {
         ? 409
         : 400;
     return reply.code(status)
-      .send(apiError(error.code as RuntimeErrorCode, error.message));
+      .send(response(error.code as RuntimeErrorCode, error.message));
   }
   throw error;
+}
+
+function captureIssueForError(
+  error: unknown,
+  context: CreatorErrorContext | undefined
+): OpenCreatorIssue | undefined {
+  const attachedIssue = typeof error === 'object' && error !== null
+    ? (error as { issue?: unknown }).issue
+    : undefined;
+  if (isOpenCreatorIssue(attachedIssue)) return attachedIssue;
+  if (
+    context === undefined
+    || context.issueService === undefined
+    || context.service.getJob(context.jobId) === undefined
+    || error instanceof CreatorRepositoryDataError
+  ) return undefined;
+  const code = errorCodeForIssue(error);
+  if (code === 'creator_job_not_found') return undefined;
+  const retryOperation = context.source === 'upload'
+    ? [{
+        kind: 'retry-operation' as const,
+        operationId: context.operation,
+        requiresConfirmation: false,
+        risk: 'normal' as const
+      }]
+    : context.source === 'preflight' || context.source === 'stage'
+      ? [{
+          kind: 'retry-operation' as const,
+          operationId: 'creator.retry-stage',
+          requiresConfirmation: false,
+          risk: 'normal' as const
+        }]
+      : [];
+  try {
+    return context.issueService.capture({
+      jobId: context.jobId,
+      code,
+      source: context.source,
+      operation: context.operation,
+      stageId: context.stageId,
+      scopeKey: context.scopeKey,
+      fallbackMessage: fallbackForIssueSource(context.source),
+      publicFacts: publicFactsFromFailure(error),
+      technicalDetail: error instanceof Error ? error.message : undefined,
+      retryable: retryOperation.length > 0,
+      repairActions: [...retryOperation, { kind: 'focus-agent' }]
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function errorCodeForIssue(error: unknown): string {
+  if (
+    typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && typeof (error as { code?: unknown }).code === 'string'
+  ) return (error as { code: string }).code;
+  if (error instanceof ZodError || error instanceof TypeError) return 'VALIDATION_FAILED';
+  return 'creator_operation_failed';
+}
+
+function fallbackForIssueSource(source: IssueSource): string {
+  if (source === 'upload') return '上传未完成，请检查文件后重试。';
+  if (source === 'preflight') return '执行条件未满足，请按提示修正后重试。';
+  if (source === 'provider') return '外部服务调用失败，请检查配置或稍后重试。';
+  if (source === 'agent') return 'Agent 操作未完成，可以在此询问原因。';
+  return '操作未完成，可以重试或询问 Agent。';
 }
 
 function requireCreatorJob(service: CreatorService, jobId: string): CreatorJob {
@@ -1294,6 +1577,63 @@ function readString(value: unknown, field: string): string {
     throw new TypeError(`${field} must be a non-empty string`);
   }
   return value;
+}
+
+function readClientIssueReport(value: unknown): CreatorClientIssueReportRequest {
+  const record = readObject(value);
+  const allowed = new Set([
+    'clientIssueId', 'code', 'source', 'operation', 'stageId', 'scopeKey', 'fallbackMessage'
+  ]);
+  if (Object.keys(record).some(key => !allowed.has(key))) {
+    throw new TypeError('client issue report contains unsupported fields');
+  }
+  const source = readString(record.source, 'source');
+  if (!['upload', 'preflight', 'agent', 'client'].includes(source)) {
+    throw new TypeError('source is not reportable by a client');
+  }
+  const optional = (field: string, max: number) => {
+    const raw = record[field];
+    if (raw === undefined) return undefined;
+    const text = readString(raw, field);
+    if (text.length > max) throw new TypeError(`${field} is too long`);
+    return text;
+  };
+  const clientIssueId = readString(record.clientIssueId, 'clientIssueId');
+  const code = readString(record.code, 'code');
+  const fallbackMessage = readString(record.fallbackMessage, 'fallbackMessage');
+  if (clientIssueId.length > 160 || code.length > 160 || fallbackMessage.length > 500) {
+    throw new TypeError('client issue report field is too long');
+  }
+  return {
+    clientIssueId,
+    code,
+    source: source as CreatorClientIssueReportRequest['source'],
+    fallbackMessage,
+    ...(optional('operation', 160) === undefined ? {} : { operation: optional('operation', 160)! }),
+    ...(optional('stageId', 160) === undefined ? {} : { stageId: optional('stageId', 160)! }),
+    ...(optional('scopeKey', 200) === undefined ? {} : { scopeKey: optional('scopeKey', 200)! })
+  };
+}
+
+function readIssueStatTime(value: unknown, fallback: Date): string {
+  if (value === undefined) return fallback.toISOString();
+  const text = readString(value, 'issue statistics time');
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(text) || Number.isNaN(Date.parse(text))) {
+    throw new TypeError('issue statistics time must be UTC ISO-8601');
+  }
+  return new Date(text).toISOString();
+}
+
+function readUploadRepairContext(
+  query: Record<string, unknown>
+): { issueId: string; attemptId: string } | undefined {
+  if (query.repairIssueId === undefined && query.resolutionAttemptId === undefined) return undefined;
+  const issueId = readString(query.repairIssueId, 'repairIssueId');
+  const attemptId = readString(query.resolutionAttemptId, 'resolutionAttemptId');
+  if (issueId.length > 160 || !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(attemptId)) {
+    throw new TypeError('upload repair context is invalid');
+  }
+  return { issueId, attemptId };
 }
 
 function readInteger(value: unknown, field: string): number {

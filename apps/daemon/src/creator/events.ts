@@ -3,7 +3,8 @@ import type {
   CreatorEventEnvelope,
   CreatorEventKind,
   CreatorJson,
-  CreatorStageRun
+  CreatorStageRun,
+  OpenCreatorIssue
 } from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
 
@@ -54,6 +55,17 @@ export function creatorStageEventId(stage: CreatorStageRun): string {
     finishedAt: stage.finishedAt
   })).digest('hex').slice(0, 16);
   return `stage:${stage.id}:${digest}`;
+}
+
+export function creatorIssueEventId(issue: OpenCreatorIssue): string {
+  const digest = createHash('sha256').update(JSON.stringify({
+    status: issue.status,
+    occurrenceCount: issue.occurrenceCount,
+    lastOccurredAt: issue.lastOccurredAt,
+    resolvedAt: issue.resolvedAt ?? null,
+    stageRunId: issue.stageRunId ?? null
+  })).digest('hex').slice(0, 16);
+  return `issue:${issue.id}:${digest}`;
 }
 
 export function creatorAgentEventKind(event: CreatorAgentEvent): CreatorEventKind {

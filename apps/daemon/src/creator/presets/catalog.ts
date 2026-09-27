@@ -2,12 +2,13 @@ import type {
   CreatorPresetRef,
   CreatorPresetSummary
 } from '@opencreator/protocol';
+import { verifyFileIntegrityWithCache } from '@opencreator/config';
 import { existsSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { CreatorTemplateRegistry } from '../templates/types.js';
-import { canonicalJson, sha256 } from './compiler.js';
+import { canonicalJson, sha256 } from './hash.js';
 import { creatorPresetSourceManifestSchema } from './schema.js';
 import type {
   CompiledCreatorPreset,
@@ -25,6 +26,7 @@ import {
 export async function loadCreatorPresetCatalog(input: {
   root?: string;
   templates: CreatorTemplateRegistry;
+  verificationCachePath?: string;
 }): Promise<CreatorPresetRegistry> {
   const root = path.resolve(input.root ?? resolveCreatorPresetCatalogRoot());
   const catalogPath = path.join(root, 'catalog.json');
@@ -45,11 +47,21 @@ export async function loadCreatorPresetCatalog(input: {
       throw new Error(`${manifestPath}: duplicate file ${file.path}`);
     }
     knownFiles.add(file.path);
-    const absolute = resolveCatalogFile(root, file.path);
-    const bytes = await readFile(absolute);
-    if (bytes.length !== file.size || sha256(bytes) !== file.sha256) {
-      throw new Error(`${absolute}: packaged creator preset resource hash mismatch`);
-    }
+  }
+  const verification = verifyFileIntegrityWithCache({
+    cachePath: input.verificationCachePath,
+    identity: root,
+    fingerprint: sha256(manifestBytes),
+    files: manifest.files.map(file => ({
+      key: file.path,
+      path: resolveCatalogFile(root, file.path),
+      sha256: file.sha256,
+      expectedSize: file.size
+    }))
+  });
+  if (!verification.verified) {
+    const absolute = resolveCatalogFile(root, verification.key);
+    throw new Error(`${absolute}: packaged creator preset resource hash mismatch`);
   }
   if (!knownFiles.has('catalog.json')) {
     throw new Error(`${manifestPath}: catalog.json is missing from the file manifest`);

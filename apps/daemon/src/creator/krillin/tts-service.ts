@@ -4,6 +4,7 @@ import type {
   CreatorTtsProvider,
   CreatorTtsVoice,
   CreatorTtsVoicesResponse,
+  PublicErrorFacts,
   RuntimeErrorCode
 } from '@opencreator/protocol';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -22,6 +23,8 @@ import {
   volcengineSpeechRate
 } from './volcengine-tts-catalog.js';
 import { parseVolcengineV3Audio } from './volcengine-tts-v3.js';
+import { creatorServiceErrorInfo } from '../../creator-services/upstream-fetch.js';
+import { publicFactsFromFailure } from '../public-error-facts.js';
 
 const MAX_OUTPUT_BYTES = 100 * 1024 * 1024;
 const MAX_PROCESS_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -104,7 +107,8 @@ export class KrillinTtsServiceError extends Error {
       | 'creator_tts_upstream_error'
       | 'unsupported_capability'>,
     message: string,
-    readonly statusCode: number
+    readonly statusCode: number,
+    readonly publicFacts?: PublicErrorFacts
   ) {
     super(message);
     this.name = 'KrillinTtsServiceError';
@@ -116,14 +120,23 @@ export function createKrillinTtsService(input: {
   workRoot: string;
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
   timeoutMs?: number;
+  verificationCachePath?: string;
+  ensureRuntimeReady?(): Promise<void>;
   executeUtility?: (input: ExecuteUtilityInput) => Promise<KrillinUtilityResponse>;
   executeSynthesis?: (input: ExecuteSynthesisInput) => Promise<ExecuteSynthesisResult>;
 }) {
-  const executeUtility = input.executeUtility ?? (utility => executePackagedKrillinUtility({
-    ...utility,
-    resourceRoot: input.resourceRoot,
-    timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  }));
+  const runUtility = input.executeUtility ?? (async utility => {
+    return await executePackagedKrillinUtility({
+      ...utility,
+      resourceRoot: input.resourceRoot,
+      timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      verificationCachePath: input.verificationCachePath
+    });
+  });
+  const executeUtility = async (utility: ExecuteUtilityInput) => {
+    await input.ensureRuntimeReady?.();
+    return await runUtility(utility);
+  };
   const executeSynthesis = input.executeSynthesis ?? (request => executeProviderSynthesis({
     ...request,
     timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -231,8 +244,9 @@ export function createKrillinTtsService(input: {
       if (error instanceof KrillinTtsServiceError) throw error;
       throw new KrillinTtsServiceError(
         'creator_tts_upstream_error',
-        error instanceof Error ? error.message : 'KrillinAI speech synthesis failed',
-        502
+        'KrillinAI speech synthesis failed',
+        502,
+        publicFactsFromFailure(error, provider)
       );
     }
   }
@@ -372,7 +386,7 @@ async function synthesizeVolcengine(
       }
     })
   }, input);
-  if (!response.ok) await throwProviderHttpError(response);
+  if (!response.ok) await throwProviderHttpError(response, input.provider);
   const payload = await readJsonResponse(response) as {
     code?: number;
     message?: string;
@@ -418,7 +432,7 @@ async function synthesizeVolcengineV3(
       }
     })
   }, input);
-  if (!response.ok) await throwProviderHttpError(response);
+  if (!response.ok) await throwProviderHttpError(response, input.provider);
   const content = parseVolcengineV3Audio(await response.text());
   return { content, format: detectAudioFormat(content, input.format) };
 }
@@ -474,7 +488,7 @@ async function synthesizeAliyun(
   if (audioUrl.protocol === 'http:') audioUrl.protocol = 'https:';
   if (audioUrl.protocol !== 'https:') throw new Error('Aliyun TTS returned an invalid audio URL');
   const audioResponse = await timedFetch(audioUrl, { method: 'GET' }, input);
-  if (!audioResponse.ok) await throwProviderHttpError(audioResponse);
+  if (!audioResponse.ok) await throwProviderHttpError(audioResponse, input.provider);
   const content = await readAudioResponse(audioResponse);
   return {
     content,
@@ -541,7 +555,7 @@ async function providerFetch(
     },
     body: JSON.stringify(body)
   }, input);
-  if (!response.ok) await throwProviderHttpError(response);
+  if (!response.ok) await throwProviderHttpError(response, input.provider);
   return response;
 }
 
@@ -584,11 +598,9 @@ async function readAudioResponse(response: Response): Promise<Buffer> {
   return content;
 }
 
-async function throwProviderHttpError(response: Response): Promise<never> {
-  const detail = redactProviderDetail((await response.text()).slice(-1_000));
-  throw new Error(
-    `TTS provider request failed: HTTP ${response.status}${detail ? `: ${detail}` : ''}`
-  );
+async function throwProviderHttpError(response: Response, provider: string): Promise<never> {
+  const failure = await creatorServiceErrorInfo(response, 'TTS', provider);
+  throw new KrillinTtsServiceError('creator_tts_upstream_error', failure.message, 502, failure.publicFacts);
 }
 
 function appendPath(baseUrl: string, suffix: string): string {
@@ -641,13 +653,6 @@ function containsCjk(value: string): boolean {
   return /[\u3400-\u9fff]/u.test(value);
 }
 
-function redactProviderDetail(value: string): string {
-  return value
-    .replace(/https?:\/\/[^\s"']+/gi, '[url]')
-    .replace(/[A-Za-z0-9_-]{32,}/g, '[redacted]')
-    .trim();
-}
-
 async function createLauncherRoot(workRoot: string): Promise<string> {
   await mkdir(workRoot, { recursive: true, mode: 0o700 });
   return mkdtemp(join(resolve(workRoot), 'tts-'));
@@ -656,6 +661,7 @@ async function createLauncherRoot(workRoot: string): Promise<string> {
 async function executePackagedKrillinUtility(input: ExecuteUtilityInput & {
   resourceRoot: string;
   timeoutMs: number;
+  verificationCachePath?: string;
 }): Promise<KrillinUtilityResponse> {
   if (input.signal?.aborted) {
     throw new KrillinTtsServiceError(
@@ -667,7 +673,9 @@ async function executePackagedKrillinUtility(input: ExecuteUtilityInput & {
   let manifest;
   try {
     manifest = readKrillinRuntimeManifest(input.resourceRoot);
-    verifyKrillinRuntimeManifest(input.resourceRoot, manifest);
+    verifyKrillinRuntimeManifest(input.resourceRoot, manifest, {
+      cachePath: input.verificationCachePath
+    });
   } catch (error) {
     throw new KrillinTtsServiceError(
       'creator_tts_runtime_unavailable',

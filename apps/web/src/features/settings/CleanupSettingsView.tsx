@@ -6,6 +6,8 @@ import type {
 } from '@opencreator/protocol';
 import { AlertTriangle, CheckCircle2, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 export type CleanupSettingsService = {
   previewCleanup(olderThanDays: number): Promise<CleanupPreviewResponse>;
@@ -25,7 +27,8 @@ export function CleanupSettingsView(props: CleanupSettingsViewProps) {
   const [result, setResult] = useState<CleanupDeleteResponse>();
   const [phase, setPhase] = useState<CleanupPhase>('idle');
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string>();
+  const [validationError, setValidationError] = useState<string>();
+  const pageIssues = usePageIssueState('settings-cleanup');
 
   const available = props.connected && props.service !== null;
   const candidateCount = preview?.items.length ?? 0;
@@ -33,19 +36,25 @@ export function CleanupSettingsView(props: CleanupSettingsViewProps) {
   async function loadPreview() {
     if (!available || phase !== 'idle') return;
     if (!Number.isInteger(olderThanDays) || olderThanDays <= 0) {
-      setError('保留天数必须是正整数');
+      setValidationError('保留天数必须是正整数');
       return;
     }
 
     setPhase('previewing');
-    setError(undefined);
+    setValidationError(undefined);
     setResult(undefined);
     setConfirming(false);
     try {
       setPreview(await props.service!.previewCleanup(olderThanDays));
+      pageIssues.resolveOperation('settings.cleanup.preview');
     } catch (reason) {
       setPreview(undefined);
-      setError(formatError(reason, '无法检查可清理内容'));
+      pageIssues.captureOperationFailure(
+        'settings.cleanup.preview',
+        reason,
+        '无法检查可清理内容，请确认本地服务状态后重试。',
+        { retryable: true }
+      );
     } finally {
       setPhase('idle');
     }
@@ -54,15 +63,20 @@ export function CleanupSettingsView(props: CleanupSettingsViewProps) {
   async function deleteCandidates() {
     if (!available || preview === undefined || phase !== 'idle') return;
     setPhase('deleting');
-    setError(undefined);
     try {
       setResult(await props.service!.deleteCleanup({
         olderThanDays: preview.olderThanDays,
         confirm: true
       }));
+      pageIssues.resolveOperation('settings.cleanup.delete');
       setConfirming(false);
     } catch (reason) {
-      setError(formatError(reason, '清理失败'));
+      pageIssues.captureOperationFailure(
+        'settings.cleanup.delete',
+        reason,
+        '清理未完成，请检查诊断信息后重试。',
+        { retryable: true, risk: 'overwrite' }
+      );
     } finally {
       setPhase('idle');
     }
@@ -83,7 +97,15 @@ export function CleanupSettingsView(props: CleanupSettingsViewProps) {
       {props.connected && props.service === null ? (
         <p className="settings-notice">清理服务当前不可用。</p>
       ) : null}
-      {error ? <p className="settings-error" role="alert">{error}</p> : null}
+      {validationError ? <p className="settings-error" role="alert">{validationError}</p> : null}
+      <IssueList
+        issues={pageIssues.issues}
+        actions={{ retryOperations: {
+          'settings.cleanup.preview': loadPreview,
+          'settings.cleanup.delete': deleteCandidates
+        } }}
+        onDismiss={pageIssues.dismissIssue}
+      />
 
       <section className="cleanup-controls" aria-label="清理范围">
         <label>
@@ -267,8 +289,4 @@ function formatNumber(value: number): string {
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-function formatError(reason: unknown, fallback: string): string {
-  return reason instanceof Error && reason.message.length > 0 ? reason.message : fallback;
 }

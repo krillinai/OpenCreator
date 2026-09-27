@@ -67,6 +67,27 @@ describe('project manager', () => {
     expect(existsSync(created.cwd)).toBe(true);
   });
 
+  it('uses the latest configured root for newly managed projects', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-managed-project-root-'));
+    const firstRoot = join(tempDir, 'first');
+    const secondRoot = join(tempDir, 'second');
+    let currentRoot = firstRoot;
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    let id = 0;
+    const manager = createProjectManager({
+      db,
+      resolveManagedProjectRoot: () => currentRoot,
+      idFactory: () => `project_dynamic_${++id}`
+    });
+
+    const first = manager.createManagedProject({ name: 'First' });
+    currentRoot = secondRoot;
+    const second = manager.createManagedProject({ name: 'Second' });
+
+    expect(first.cwd.startsWith(firstRoot)).toBe(true);
+    expect(second.cwd.startsWith(secondRoot)).toBe(true);
+  });
+
   it('removes a newly created empty directory when registration fails', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'opencreator-managed-project-'));
     const managedProjectRoot = join(tempDir, 'Documents', 'OpenCreator');

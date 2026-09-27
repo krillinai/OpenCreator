@@ -31,3 +31,15 @@ export type OpenCreatorUiSettingsResponse = {
 };
 
 export type UpdateOpenCreatorUiSettingsRequest = Partial<OpenCreatorUiSettings>;
+
+export type OpenCreatorStorageSettings = {
+  defaultProjectRoot: string;
+  outputRoot: string;
+};
+
+export type OpenCreatorStorageSettingsResponse = {
+  settings: OpenCreatorStorageSettings;
+  configured: boolean;
+};
+
+export type UpdateOpenCreatorStorageSettingsRequest = Partial<OpenCreatorStorageSettings>;

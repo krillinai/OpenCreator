@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ApiClientError } from '../../runtime/errors.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 export type MemorySettingsService = {
   listMemories(query?: MemoryListQuery): Promise<MemoryListResponse>;
@@ -61,10 +63,11 @@ export function MemorySettingsView(props: {
   const [editor, setEditor] = useState<EditorState>();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
+  const [validationError, setValidationError] = useState<string>();
   const [confirmingSensitive, setConfirmingSensitive] = useState(false);
   const [confirmingDisableAll, setConfirmingDisableAll] = useState(false);
   const available = props.connected && props.service !== null;
+  const pageIssues = usePageIssueState('settings-memory');
 
   useEffect(() => {
     let canceled = false;
@@ -76,7 +79,6 @@ export function MemorySettingsView(props: {
       };
     }
     setLoading(true);
-    setError(undefined);
     Promise.all([
       props.service!.listMemories({
         query: query.trim(),
@@ -89,15 +91,29 @@ export function MemorySettingsView(props: {
       if (canceled) return;
       setMemories(memoryResponse.memories);
       setSummaries(summaryResponse.summaries);
+      pageIssues.resolveOperation('settings.memory.load');
     }).catch(reason => {
-      if (!canceled) setError(formatError(reason, '无法加载记忆'));
+      if (!canceled) pageIssues.captureOperationFailure(
+        'settings.memory.load',
+        reason,
+        '无法加载记忆，请重试。',
+        { retryable: true }
+      );
     }).finally(() => {
       if (!canceled) setLoading(false);
     });
     return () => {
       canceled = true;
     };
-  }, [available, enabled, props.service, query, scope]);
+  }, [
+    available,
+    enabled,
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.service,
+    query,
+    scope
+  ]);
 
   async function refresh() {
     if (!available) return;
@@ -112,6 +128,7 @@ export function MemorySettingsView(props: {
     ]);
     setMemories(memoryResponse.memories);
     setSummaries(summaryResponse.summaries);
+    pageIssues.resolveOperation('settings.memory.load');
   }
 
   function openCreate() {
@@ -121,7 +138,7 @@ export function MemorySettingsView(props: {
       scope: 'global'
     });
     setConfirmingSensitive(false);
-    setError(undefined);
+    setValidationError(undefined);
   }
 
   function openEdit(memory: MemoryEntry) {
@@ -133,22 +150,22 @@ export function MemorySettingsView(props: {
       scopeKey: memory.scopeKey
     });
     setConfirmingSensitive(false);
-    setError(undefined);
+    setValidationError(undefined);
   }
 
   async function saveEditor(acknowledgeSensitive = false) {
     if (!available || editor === undefined) return;
     const content = editor.content.trim();
     if (content.length === 0) {
-      setError('记忆内容不能为空');
+      setValidationError('记忆内容不能为空');
       return;
     }
     if (editor.scope !== 'global' && editor.scopeKey === undefined) {
-      setError('请选择范围目标');
+      setValidationError('请选择范围目标');
       return;
     }
     setSaving(true);
-    setError(undefined);
+    setValidationError(undefined);
     try {
       if (editor.mode === 'create') {
         await props.service!.createMemory({
@@ -167,6 +184,7 @@ export function MemorySettingsView(props: {
       setEditor(undefined);
       setConfirmingSensitive(false);
       await refresh();
+      pageIssues.resolveOperation('settings.memory.save');
     } catch (reason) {
       if (
         reason instanceof ApiClientError
@@ -174,7 +192,12 @@ export function MemorySettingsView(props: {
       ) {
         setConfirmingSensitive(true);
       } else {
-        setError(formatError(reason, '保存记忆失败'));
+        pageIssues.captureOperationFailure(
+          'settings.memory.save',
+          reason,
+          '保存记忆失败，请检查内容后重试。',
+          { retryable: true }
+        );
       }
     } finally {
       setSaving(false);
@@ -183,46 +206,49 @@ export function MemorySettingsView(props: {
 
   async function toggleMemory(memory: MemoryEntry) {
     if (!available) return;
-    setError(undefined);
+    const operationId = `settings.memory.toggle:${memory.id}`;
     try {
       await props.service!.updateMemory(memory.id, { enabled: !memory.enabled });
       await refresh();
+      pageIssues.resolveOperation(operationId);
     } catch (reason) {
-      setError(formatError(reason, '更新记忆状态失败'));
+      pageIssues.captureOperationFailure(operationId, reason, '更新记忆状态失败，请重试。');
     }
   }
 
   async function deleteMemory(id: string) {
     if (!available) return;
-    setError(undefined);
+    const operationId = `settings.memory.delete:${id}`;
     try {
       await props.service!.deleteMemory(id);
       await refresh();
+      pageIssues.resolveOperation(operationId);
     } catch (reason) {
-      setError(formatError(reason, '删除记忆失败'));
+      pageIssues.captureOperationFailure(operationId, reason, '删除记忆失败，请重试。');
     }
   }
 
   async function disableAll() {
     if (!available) return;
-    setError(undefined);
     try {
       await props.service!.disableAll();
       setConfirmingDisableAll(false);
       await refresh();
+      pageIssues.resolveOperation('settings.memory.disable-all');
     } catch (reason) {
-      setError(formatError(reason, '全部停用失败'));
+      pageIssues.captureOperationFailure('settings.memory.disable-all', reason, '全部停用失败，请重试。');
     }
   }
 
   async function deleteSummary(id: string) {
     if (!available) return;
-    setError(undefined);
+    const operationId = `settings.memory.delete-summary:${id}`;
     try {
       await props.service!.deleteSummary(id);
       await refresh();
+      pageIssues.resolveOperation(operationId);
     } catch (reason) {
-      setError(formatError(reason, '删除摘要失败'));
+      pageIssues.captureOperationFailure(operationId, reason, '删除摘要失败，请重试。');
     }
   }
 
@@ -241,7 +267,15 @@ export function MemorySettingsView(props: {
 
       {!props.connected ? <p className="settings-notice">本地服务未连接，无法管理记忆。</p> : null}
       {props.connected && props.service === null ? <p className="settings-notice">记忆服务当前不可用。</p> : null}
-      {error ? <p className="settings-error" role="alert">{error}</p> : null}
+      {validationError ? <p className="settings-error" role="alert">{validationError}</p> : null}
+      <IssueList
+        issues={pageIssues.issues}
+        actions={{ retryOperations: {
+          'settings.memory.load': refresh,
+          'settings.memory.save': saveEditor
+        } }}
+        onDismiss={pageIssues.dismissIssue}
+      />
 
       <div className="memory-toolbar">
         <label className="memory-search">
@@ -524,8 +558,4 @@ function scopeKeyLabel(
 ): string {
   if (memory.scopeKey === undefined) return '';
   return optionLabel(memory.scopeKey, memory.scope === 'project' ? projects : threads);
-}
-
-function formatError(reason: unknown, fallback: string): string {
-  return reason instanceof Error && reason.message.length > 0 ? reason.message : fallback;
 }

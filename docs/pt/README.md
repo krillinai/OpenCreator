@@ -82,7 +82,7 @@ Abra o Dashboard para traduzir ou baixar vídeos, gerar miniaturas ou imagens, c
 </thead>
 <tbody>
 <tr><td valign="top">Tradução de vídeos</td><td valign="top">✅ Disponível</td><td>Importe vídeos locais ou públicos; transcreva com serviços Whisper locais ou na nuvem; use o contexto de um LLM para segmentar e alinhar legendas, gerenciar terminologia e traduzir; configure legendas bilíngues, dublagem ou uma amostra de voz personalizada, estilos de legenda e composição horizontal ou vertical, e exporte SRT, áudio ou vídeo</td></tr>
-<tr><td valign="top">Download de vídeos</td><td valign="top">✅ Disponível</td><td>Analise links públicos compatíveis do YouTube, Bilibili e outros serviços, consulte as opções disponíveis de qualidade e formato e baixe vídeo ou áudio para fluxos de trabalho posteriores</td></tr>
+<tr><td valign="top">Download de vídeos</td><td valign="top">✅ Disponível</td><td>Analise vídeos públicos individuais do YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu e Pinterest; compare os formatos disponíveis e baixe vídeo ou áudio. Algumas plataformas podem exigir cookies</td></tr>
 <tr><td valign="top">Geração de miniaturas</td><td valign="top">✅ Disponível</td><td>Combine um tema, um link de vídeo e uma imagem de referência opcional para gerar e comparar várias opções de miniaturas de conteúdo</td></tr>
 <tr><td valign="top">Geração de imagens</td><td valign="top">✅ Disponível</td><td>Gere imagens com GPT Image a partir de um prompt e de uma imagem de referência opcional, configure a proporção e a quantidade de resultados e depois visualize e baixe cada imagem</td></tr>
 <tr><td valign="top">Animação de bonecos palito</td><td valign="top">Em breve</td><td>Desenvolva personagens, storyboards, locuções e animações em um fluxo de trabalho guiado</td></tr>
@@ -254,6 +254,28 @@ Gere um vídeo com IA a partir de um prompt de texto ou de uma imagem de referê
 ### Download de vídeos
 
 Analise um link de vídeo público, compare os formatos disponíveis e baixe o vídeo ou o áudio diretamente para o projeto.
+
+Fontes de vídeo compatíveis:
+
+<table align="center">
+  <tr>
+    <td align="center" width="96"><img src="../images/platforms/youtube.png" alt="YouTube" width="32" height="32" /><br /><strong>YouTube</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/bilibili.png" alt="Bilibili" width="32" height="32" /><br /><strong>Bilibili</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/x.png" alt="X" width="32" height="32" /><br /><strong>X</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/tiktok.png" alt="TikTok" width="32" height="32" /><br /><strong>TikTok</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/instagram.png" alt="Instagram" width="32" height="32" /><br /><strong>Instagram</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/douyin.png" alt="Douyin" width="32" height="32" /><br /><strong>Douyin</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/facebook.png" alt="Facebook" width="32" height="32" /><br /><strong>Facebook</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/xiaohongshu.png" alt="Xiaohongshu" width="32" height="32" /><br /><strong>Xiaohongshu</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/pinterest.png" alt="Pinterest" width="32" height="32" /><br /><strong>Pinterest</strong></td>
+  </tr>
+</table>
+
+A disponibilidade depende do vídeo e da região; algumas fontes podem exigir cookies da plataforma. O OpenCreator não importa automaticamente os cookies do navegador.
+
+**Publicações de vídeo do Xiaohongshu:** Cole a URL pública completa `https://www.xiaohongshu.com/explore/<ID hexadecimal de 24 caracteres>`, mantendo parâmetros como `xsec_token`. Publicações apenas com imagens não têm formatos de vídeo; perfis e links curtos de `xhslink.com` não são compatíveis. Tokens expirados ou restrições de acesso podem impedir o download.
+
+**Pins de vídeo do Pinterest:** Cole um link público `https://www.pinterest.com/pin/<ID numérico>/`. Pins apenas com imagens, painéis e perfis não são compatíveis.
 
 ![Seleção de formatos do downloader de vídeos do OpenCreator](../images/examples/video-downloader-formats-en.png)
 

@@ -25,6 +25,8 @@ import { CreatorPreflightError, type CreatorPreflight } from '../preflight.js';
 import { createCreatorAgentReconciler } from './reconciler.js';
 import type { CreatorAgentRepository } from './repository.js';
 import type { AgentRuntimeAdapter } from './runtime-adapter.js';
+import type { CreatorIssueService } from '../issues.js';
+import { publicFactsFromFailure } from '../public-error-facts.js';
 
 export type CreatorAgentService = ReturnType<typeof createCreatorAgentService>;
 
@@ -42,6 +44,7 @@ export function createCreatorAgentService(input: {
   threads: Pick<ThreadManager, 'createThread' | 'getThread' | 'updateThread'>;
   contextBuilder: AgentContextBuilder;
   runtime: AgentRuntimeAdapter;
+  issueService?: CreatorIssueService;
   preflight?: Pick<CreatorPreflight, 'check'>;
   now?(): string;
   onEvent?(event: CreatorAgentEvent): void;
@@ -59,8 +62,20 @@ export function createCreatorAgentService(input: {
     if (initialJob === undefined) {
       throw new CreatorServiceError('creator_job_not_found', 'Creator job not found');
     }
+    if (
+      request.focusedIssueId !== undefined
+      && !(initialJob.issues ?? []).some(issue => issue.id === request.focusedIssueId)
+    ) {
+      throw agentFailure(
+        jobId,
+        new CreatorServiceError('creator_issue_not_found', 'Focused issue does not belong to this Creator job')
+      );
+    }
     if (!input.runtime.available) {
-      throw new CreatorServiceError('creator_agent_unavailable', 'Creator Agent is not ready');
+      throw agentFailure(
+        jobId,
+        new CreatorServiceError('creator_agent_unavailable', 'Creator Agent is not ready')
+      );
     }
     const { threadId, sessionId } = ensureSession(jobId, request.sandbox);
     const userTurn = input.repository.createTurn({
@@ -96,7 +111,11 @@ export function createCreatorAgentService(input: {
     let actionResponse: CreatorActionResponse | undefined;
     for (const conflictAttempt of [0, 1] as const) {
       const job = input.creator.getJob(jobId)!;
-      const context = input.contextBuilder.build(job, request.selection ?? null);
+      const context = input.contextBuilder.build(
+        job,
+        request.selection ?? null,
+        request.focusedIssueId
+      );
       audit.push({ tool: 'creator_get_context', revision: context.revision, result: 'ok' });
       const assistantTurn = input.repository.createTurn({
         jobId,
@@ -252,7 +271,7 @@ export function createCreatorAgentService(input: {
           name: 'turn.failed',
           payload: { message: lastTurn.content }
         });
-        throw error;
+        throw agentFailure(jobId, error);
       } finally {
         if (activeRunByJob.get(jobId) === runId) activeRunByJob.delete(jobId);
       }
@@ -262,6 +281,26 @@ export function createCreatorAgentService(input: {
       turn: lastTurn,
       ...(actionResponse === undefined ? {} : { action: actionResponse })
     };
+  }
+
+  function agentFailure(jobId: string, cause: unknown): Error {
+    const error = cause instanceof Error ? cause : new Error('Creator Agent failed');
+    if (input.issueService === undefined) return error;
+    const code = typeof (error as { code?: unknown }).code === 'string'
+      ? (error as unknown as { code: string }).code
+      : 'creator_agent_failed';
+    const issue = input.issueService.capture({
+      jobId,
+      code,
+      source: 'agent',
+      operation: 'creator.agent-turn',
+      fallbackMessage: 'Agent 未能完成本次诊断，请查看问题详情后重试。',
+      publicFacts: publicFactsFromFailure(error),
+      technicalDetail: error.message,
+      repairActions: [{ kind: 'focus-agent' }]
+    });
+    Object.assign(error, { issue });
+    return error;
   }
 
   function ensureSession(

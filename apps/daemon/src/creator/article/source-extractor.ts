@@ -1,5 +1,4 @@
 import type { CreatorArtifact, WechatArticleSourceLink } from '@opencreator/protocol';
-import { load } from 'cheerio';
 import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
@@ -12,7 +11,7 @@ import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
 
 const MAX_SOURCE_CHARS = 50_000;
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string }>;
+let pdfParser: ((buffer: Buffer) => Promise<{ text: string }>) | undefined;
 
 export type ExtractedArticleSource = {
   id: string;
@@ -107,6 +106,7 @@ async function extractWebpage(
     );
   }
   const html = await response.text();
+  const { load } = await import('cheerio');
   const $ = load(html);
   $('script,style,noscript,svg,nav,footer,form').remove();
   const title = cleanText(
@@ -162,7 +162,7 @@ async function extractVideo(
       `Unable to download subtitles (${response.status}): ${link.url}`
     );
   }
-  const captions = parseCaptions(await response.text(), caption.ext);
+  const captions = await parseCaptions(await response.text(), caption.ext);
   if (!captions) {
     throw new CreatorExecutorError(
       'creator_source_transcript_missing',
@@ -190,8 +190,10 @@ async function extractDocument(artifact: CreatorArtifact): Promise<ExtractedArti
   const buffer = await readFile(artifact.path);
   let content: string;
   if (extension === '.pdf') {
-    content = cleanText((await pdfParse(buffer)).text);
+    pdfParser ??= require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string }>;
+    content = cleanText((await pdfParser(buffer)).text);
   } else if (extension === '.html' || extension === '.htm') {
+    const { load } = await import('cheerio');
     const $ = load(buffer.toString('utf8'));
     $('script,style,noscript,svg,nav,footer,form').remove();
     content = cleanText($('article,main,[role="main"]').first().text() || $('body').text());
@@ -260,7 +262,7 @@ function chooseCaption(value: unknown): { url: string; ext: string; language: st
   return undefined;
 }
 
-function parseCaptions(value: string, extension: string): string {
+async function parseCaptions(value: string, extension: string): Promise<string> {
   if (extension === 'json3') {
     try {
       const payload = JSON.parse(value) as { events?: Array<{ segs?: Array<{ utf8?: unknown }> }> };
@@ -276,6 +278,7 @@ function parseCaptions(value: string, extension: string): string {
     }
   }
   if (extension === 'srv3' || extension === 'ttml' || /^\s*</.test(value)) {
+    const { load } = await import('cheerio');
     const $ = load(value, { xmlMode: true });
     return cleanText($.root().text()).slice(0, MAX_SOURCE_CHARS);
   }

@@ -34,13 +34,18 @@ export function createKrillinExecutor(input: {
   dependencyLoader: KrillinDependencyLoader;
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
   getYtDlpRuntime?(): YtDlpRuntime | undefined;
+  verificationCachePath?: string;
+  ensureRuntimeReady?(): Promise<void>;
   getCodexLlmConfig?(): { baseUrl: string; apiKey: string; model: string } | undefined;
 }): CreatorExecutor {
   return {
     id: 'krillinai',
     async run(stage): Promise<CreatorExecutorResult> {
+      await input.ensureRuntimeReady?.();
       const configured = await input.configStore.read();
-      const preflight = preflightKrillinDependencies(input.resourceRoot, configured);
+      const preflight = preflightKrillinDependencies(input.resourceRoot, configured, {
+        cachePath: input.verificationCachePath
+      });
       const ffprobe = executablePath(input.resourceRoot, /(?:^|\/)ffprobe(?:\.exe)?$/i);
       const materializedArtifacts = await writeArtifactIndex(input.jobsRoot, stage);
       const options = buildKrillinStageOptions(stage);

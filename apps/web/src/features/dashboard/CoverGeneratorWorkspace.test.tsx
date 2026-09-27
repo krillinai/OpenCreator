@@ -381,6 +381,12 @@ describe('CoverGeneratorWorkspace', () => {
     expect(screen.getAllByText(/已完成 1\/2/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByRole('button', { name: '终止任务' }).length)
       .toBeGreaterThanOrEqual(1);
+    const iconButtons = screen.getAllByRole('button', { name: '终止任务' })
+      .filter(button => button.querySelector('.lucide-square'));
+    expect(iconButtons.length).toBeGreaterThan(0);
+    for (const button of iconButtons) {
+      expect(button.querySelector('.lucide-square')).toHaveAttribute('fill', 'currentColor');
+    }
   });
 
   it('shows the same normalized YouTube workflow progress in both panels', () => {

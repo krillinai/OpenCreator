@@ -14,6 +14,10 @@ import {
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
+import {
+  captureCreatorClientFailure,
+  useOptionalCreatorSession
+} from './creator-session-store.js';
 
 type AvatarStep = 0 | 1 | 2 | 3;
 type AvatarSource = 'preset' | 'upload';
@@ -43,6 +47,7 @@ const tones: Array<{ value: AvatarTone; zh: string; en: string }> = [
 
 export default function DigitalAvatarWorkspace(props: { onBack(): void; promptHint?: string }) {
   const l = useLocalizedCopy();
+  const session = useOptionalCreatorSession();
   const [currentStep, setCurrentStep] = useState<AvatarStep>(0);
   const [furthestStep, setFurthestStep] = useState<AvatarStep>(0);
   const [avatarSource, setAvatarSource] = useState<AvatarSource>('preset');
@@ -69,10 +74,26 @@ export default function DigitalAvatarWorkspace(props: { onBack(): void; promptHi
       setAvatarUrl('');
       return undefined;
     }
-    const objectUrl = URL.createObjectURL(avatarFile);
-    setAvatarUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [avatarFile]);
+    let objectUrl = '';
+    let active = true;
+    void captureCreatorClientFailure(
+      session,
+      'digital-avatar.load-avatar-preview',
+      l('人物照片预览失败，请重新选择图片。', 'The presenter preview failed. Select the image again.'),
+      () => URL.createObjectURL(avatarFile)
+    ).then(url => {
+      objectUrl = url;
+      if (active) setAvatarUrl(url);
+    }).catch(() => {
+      if (active) {
+        setAvatarUrl('');
+      }
+    });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [avatarFile, l, session?.captureCreatorFailure]);
 
   function openStep(step: AvatarStep) {
     setCurrentStep(step);

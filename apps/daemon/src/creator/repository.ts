@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type {
@@ -9,20 +10,82 @@ import type {
   CreatorArtifactStatus,
   CreatorJob,
   CreatorJobStatus,
+  CreatorIssueEvent,
+  CreatorIssueStatsResponse,
   CreatorJson,
   CreatorProviderRequest,
   CreatorProviderRequestStatus,
   CreatorPresetOrigin,
+  CreatorRepairAction,
   CreatorStageRun,
   CreatorStageDispatchStatus,
-  CreatorStageRunStatus
+  CreatorStageRunStatus,
+  IssueRetryResult,
+  OpenCreatorIssue
 } from '@opencreator/protocol';
+import { isOpenCreatorIssue, isPublicErrorFacts } from '@opencreator/protocol';
+import type {
+  CreatorIssueAssociationKind,
+  NormalizedCreatorIssueInput
+} from './issues.js';
 import { parseSrt } from './validators/srt.js';
 
 type RepositoryOptions = {
   idFactory?(prefix: string): string;
   now?(): string;
 };
+
+export const CREATOR_ISSUE_UPSERT_SQL = `
+  INSERT INTO creator_issues (
+    id, job_id, diagnostic_id, code, source, category, severity, status,
+    operation, stage_id, stage_run_id, scope_key, summary_key,
+    summary_params_json, fallback_message, public_facts_json, technical_detail, retryable,
+    repair_actions_json, fingerprint, occurrence_count,
+    resolution_attempt_id, association_kind, association_id,
+    last_retry_result, last_event_kind,
+    occurred_at, last_occurred_at, resolved_at, updated_at
+  ) VALUES (
+    @id, @jobId, @diagnosticId, @code, @source, @category, @severity, 'open',
+    @operation, @stageId, @stageRunId, @scopeKey, @summaryKey,
+    @summaryParamsJson, @fallbackMessage, @publicFactsJson, @technicalDetail, @retryable,
+    @repairActionsJson, @fingerprint, 1,
+    NULL, NULL, NULL, 'none', 'occurrence',
+    @timestamp, @timestamp, NULL, @timestamp
+  )
+  ON CONFLICT(job_id, fingerprint) DO UPDATE SET
+    code = excluded.code,
+    source = excluded.source,
+    category = excluded.category,
+    severity = excluded.severity,
+    status = 'open',
+    operation = excluded.operation,
+    stage_id = excluded.stage_id,
+    stage_run_id = COALESCE(excluded.stage_run_id, creator_issues.stage_run_id),
+    scope_key = excluded.scope_key,
+    summary_key = excluded.summary_key,
+    summary_params_json = excluded.summary_params_json,
+    fallback_message = excluded.fallback_message,
+    public_facts_json = excluded.public_facts_json,
+    technical_detail = excluded.technical_detail,
+    retryable = excluded.retryable,
+    repair_actions_json = excluded.repair_actions_json,
+    occurrence_count = creator_issues.occurrence_count + 1,
+    resolution_attempt_id = NULL,
+    association_kind = NULL,
+    association_id = NULL,
+    last_retry_result = CASE
+      WHEN creator_issues.status = 'resolving' THEN 'failed'
+      ELSE creator_issues.last_retry_result
+    END,
+    last_event_kind = CASE
+      WHEN creator_issues.status = 'resolved' THEN 'reopened'
+      ELSE 'occurrence'
+    END,
+    last_occurred_at = excluded.last_occurred_at,
+    resolved_at = NULL,
+    updated_at = excluded.updated_at
+  RETURNING *
+`;
 
 type CreateJobInput = {
   creationKey?: string;
@@ -137,6 +200,33 @@ export type CreatorRepository = {
   }): CreatorProviderRequest;
   listArtifacts(jobId: string): CreatorArtifact[];
   listActivities(jobId: string): CreatorActivity[];
+  captureIssue(input: NormalizedCreatorIssueInput): OpenCreatorIssue;
+  getIssue(jobId: string, issueId: string): OpenCreatorIssue | undefined;
+  listIssues(jobId: string): OpenCreatorIssue[];
+  listIssueEvents(jobId: string, input?: {
+    cursor?: string;
+    limit?: number;
+  }): { events: CreatorIssueEvent[]; nextCursor?: string };
+  beginIssueResolution(input: {
+    jobId: string;
+    issueId: string;
+    resolutionAttemptId: string;
+    associationKind: CreatorIssueAssociationKind;
+    associationId: string;
+    stageRunId?: string;
+  }): OpenCreatorIssue;
+  finishIssueResolution(input: {
+    jobId: string;
+    issueId: string;
+    resolutionAttemptId: string;
+    result: Exclude<IssueRetryResult, 'none'>;
+    publicFacts?: OpenCreatorIssue['publicFacts'];
+    technicalDetail?: string;
+  }): OpenCreatorIssue;
+  aggregateIssueStats(
+    jobId: string,
+    range: { from: string; to: string }
+  ): CreatorIssueStatsResponse['rows'];
 };
 
 export function createCreatorRepository(
@@ -148,6 +238,7 @@ export function createCreatorRepository(
   repairLeadingResultSnapshotGaps(db);
   repairLegacyVerticalSubtitleArtifacts(db);
   recoverInterruptedStageRuns(db, now());
+  recoverInterruptedIssues(db, now(), idFactory);
 
   const getJob = (id: string): CreatorJob | undefined => {
     const row = db.prepare(`
@@ -176,6 +267,7 @@ export function createCreatorRepository(
       artifacts: listArtifacts(row.id),
       providerRequests: listProviderRequests(row.id),
       activities: listActivities(row.id),
+      issues: listIssues(row.id),
       createdAt: toIso(row.created_at),
       updatedAt: toIso(row.updated_at)
     };
@@ -263,6 +355,45 @@ export function createCreatorRepository(
       ORDER BY created_at ASC, generation ASC, id ASC
     `).all(jobId) as ProviderRequestRow[]
   ).map(hydrateProviderRequest);
+
+  const getIssue = (jobId: string, issueId: string): OpenCreatorIssue | undefined => {
+    const row = db.prepare(`
+      SELECT * FROM creator_issues WHERE job_id = ? AND id = ?
+    `).get(jobId, issueId) as IssueRow | undefined;
+    if (row !== undefined) return hydrateIssue(row);
+    return deriveLegacyStageIssues(jobId, listStageRuns(jobId))
+      .find(issue => issue.id === issueId);
+  };
+
+  const listIssues = (jobId: string): OpenCreatorIssue[] => {
+    const active = db.prepare(`
+      SELECT * FROM creator_issues
+      WHERE job_id = ? AND status IN ('open', 'resolving')
+      ORDER BY last_occurred_at DESC, id DESC
+    `).all(jobId) as IssueRow[];
+    const resolved = db.prepare(`
+      SELECT * FROM creator_issues
+      WHERE job_id = ? AND status = 'resolved'
+      ORDER BY resolved_at DESC, id DESC
+      LIMIT 5
+    `).all(jobId) as IssueRow[];
+    const persisted = [...active, ...resolved].map(hydrateIssue);
+    return persisted.length > 0
+      ? persisted
+      : deriveLegacyStageIssues(jobId, listStageRuns(jobId));
+  };
+
+  const appendIssueEvent = (
+    issueId: string,
+    kind: CreatorIssueEvent['kind'],
+    retryResult: IssueRetryResult,
+    timestamp: string
+  ): void => {
+    db.prepare(`
+      INSERT INTO creator_issue_events (id, issue_id, kind, retry_result, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(idFactory('creator_issue_event'), issueId, kind, retryResult, timestamp);
+  };
 
   const insertArtifact = (input: InsertArtifactInput): CreatorArtifact => {
     const id = idFactory('creator_artifact');
@@ -626,6 +757,156 @@ export function createCreatorRepository(
       );
       return this.getProviderRequest(providerInput.id)!;
     },
+    captureIssue(input): OpenCreatorIssue {
+      return db.transaction(() => {
+        const timestamp = now();
+        const candidateId = idFactory('creator_issue');
+        const row = db.prepare(CREATOR_ISSUE_UPSERT_SQL).get({
+          id: candidateId,
+          jobId: input.scope.jobId,
+          diagnosticId: diagnosticId(candidateId),
+          code: input.code,
+          source: input.source,
+          category: input.category,
+          severity: input.severity,
+          operation: input.operation ?? null,
+          stageId: input.stageId ?? null,
+          stageRunId: input.stageRunId ?? null,
+          scopeKey: input.scopeKey ?? null,
+          summaryKey: input.summaryKey,
+          summaryParamsJson: JSON.stringify(input.summaryParams),
+          fallbackMessage: input.fallbackMessage,
+          publicFactsJson: input.publicFacts === undefined ? null : JSON.stringify(input.publicFacts),
+          technicalDetail: input.technicalDetail ?? null,
+          retryable: input.retryable ? 1 : 0,
+          repairActionsJson: JSON.stringify(input.repairActions),
+          fingerprint: input.fingerprint,
+          timestamp
+        }) as IssueRow;
+        appendIssueEvent(row.id, row.last_event_kind, row.last_retry_result, timestamp);
+        return hydrateIssue(row);
+      })();
+    },
+    getIssue,
+    listIssues,
+    listIssueEvents(jobId, input = {}) {
+      const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+      const cursor = decodeIssueCursor(input.cursor);
+      const rows = db.prepare(`
+        SELECT event.rowid AS sequence, event.id, event.issue_id,
+               event.kind, event.retry_result, event.created_at
+        FROM creator_issue_events event
+        JOIN creator_issues issue ON issue.id = event.issue_id
+        WHERE issue.job_id = ?
+          AND (? IS NULL OR event.rowid > ?)
+        ORDER BY event.rowid ASC
+        LIMIT ?
+      `).all(
+        jobId,
+        cursor ?? null,
+        cursor ?? null,
+        limit + 1
+      ) as IssueEventRow[];
+      const page = rows.slice(0, limit);
+      const events = page.map(hydrateIssueEvent);
+      const tail = page.at(-1);
+      return {
+        events,
+        ...(rows.length > limit && tail !== undefined
+          ? { nextCursor: encodeIssueCursor(tail.sequence) }
+          : {})
+      };
+    },
+    beginIssueResolution(input): OpenCreatorIssue {
+      return db.transaction(() => {
+        const current = getIssue(input.jobId, input.issueId);
+        if (current === undefined) throw new Error('Creator issue not found');
+        const row = db.prepare('SELECT * FROM creator_issues WHERE id = ?').get(input.issueId) as IssueRow;
+        if (row.resolution_attempt_id === input.resolutionAttemptId) return hydrateIssue(row);
+        if (row.status !== 'open') throw new Error('Creator issue is not open');
+        const timestamp = now();
+        const result = db.prepare(`
+          UPDATE creator_issues
+          SET status = 'resolving', resolution_attempt_id = ?,
+              association_kind = ?, association_id = ?,
+              stage_run_id = COALESCE(?, stage_run_id), updated_at = ?
+          WHERE id = ? AND job_id = ? AND status = 'open'
+        `).run(
+          input.resolutionAttemptId,
+          input.associationKind,
+          input.associationId,
+          input.stageRunId ?? null,
+          timestamp,
+          input.issueId,
+          input.jobId
+        );
+        if (result.changes !== 1) throw new Error('Creator issue resolution conflict');
+        appendIssueEvent(input.issueId, 'resolving', 'none', timestamp);
+        return getIssue(input.jobId, input.issueId)!;
+      })();
+    },
+    finishIssueResolution(input): OpenCreatorIssue {
+      return db.transaction(() => {
+        const row = db.prepare('SELECT * FROM creator_issues WHERE id = ? AND job_id = ?')
+          .get(input.issueId, input.jobId) as IssueRow | undefined;
+        if (row === undefined) throw new Error('Creator issue not found');
+        if (row.resolution_attempt_id !== input.resolutionAttemptId) {
+          throw new Error('Creator issue resolution attempt mismatch');
+        }
+        if (row.status !== 'resolving') {
+          if (row.last_retry_result === input.result) return hydrateIssue(row);
+          throw new Error('Creator issue is not resolving');
+        }
+        const timestamp = now();
+        const succeeded = input.result === 'succeeded';
+        const failedOccurrence = input.result === 'failed';
+        const actions = input.result === 'unknown'
+          ? safeRepairActions(row.repair_actions_json).filter(action => (
+              action.kind !== 'retry-operation' || action.risk === 'normal'
+            ))
+          : safeRepairActions(row.repair_actions_json);
+        db.prepare(`
+          UPDATE creator_issues
+          SET status = ?, last_retry_result = ?, repair_actions_json = ?,
+              public_facts_json = COALESCE(?, public_facts_json),
+              technical_detail = COALESCE(?, technical_detail),
+              occurrence_count = occurrence_count + ?,
+              last_occurred_at = CASE WHEN ? = 1 THEN ? ELSE last_occurred_at END,
+              resolved_at = ?, updated_at = ?
+          WHERE id = ? AND job_id = ? AND status = 'resolving'
+        `).run(
+          succeeded ? 'resolved' : 'open',
+          input.result,
+          JSON.stringify(actions),
+          input.publicFacts === undefined ? null : JSON.stringify(input.publicFacts),
+          input.technicalDetail ?? null,
+          failedOccurrence ? 1 : 0,
+          failedOccurrence ? 1 : 0,
+          timestamp,
+          succeeded ? timestamp : null,
+          timestamp,
+          input.issueId,
+          input.jobId
+        );
+        appendIssueEvent(
+          input.issueId,
+          `attempt_${input.result}` as CreatorIssueEvent['kind'],
+          input.result,
+          timestamp
+        );
+        if (succeeded) appendIssueEvent(input.issueId, 'resolved', input.result, timestamp);
+        return getIssue(input.jobId, input.issueId)!;
+      })();
+    },
+    aggregateIssueStats(jobId, range) {
+      return db.prepare(`
+        SELECT code, source, status, last_retry_result AS retryResult, COUNT(id) AS count
+        FROM creator_issues
+        WHERE job_id = ? AND last_occurred_at >= ? AND last_occurred_at < ?
+        GROUP BY code, source, status, last_retry_result
+        ORDER BY code ASC, source ASC, status ASC, last_retry_result ASC
+      `).all(jobId, range.from, range.to) as CreatorIssueStatsResponse['rows'];
+    },
     listArtifacts,
     listActivities
   };
@@ -847,6 +1128,269 @@ function recoverInterruptedStageRuns(db: Database.Database, timestamp: string): 
   })();
 }
 
+function recoverInterruptedIssues(
+  db: Database.Database,
+  timestamp: string,
+  idFactory: (prefix: string) => string
+): void {
+  db.transaction(() => {
+    const rows = db.prepare(`
+      SELECT * FROM creator_issues WHERE status = 'resolving'
+    `).all() as IssueRow[];
+    const update = db.prepare(`
+      UPDATE creator_issues
+      SET status = ?, last_retry_result = ?, resolved_at = ?, updated_at = ?
+      WHERE id = ? AND status = 'resolving'
+    `);
+    const insertEvent = db.prepare(`
+      INSERT INTO creator_issue_events (id, issue_id, kind, retry_result, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    for (const row of rows) {
+      const result = recoveredIssueResult(db, row);
+      const succeeded = result === 'succeeded';
+      update.run(succeeded ? 'resolved' : 'open', result, succeeded ? timestamp : null, timestamp, row.id);
+      insertEvent.run(
+        idFactory('creator_issue_event'),
+        row.id,
+        `attempt_${result}`,
+        result,
+        timestamp
+      );
+      if (succeeded) {
+        insertEvent.run(idFactory('creator_issue_event'), row.id, 'resolved', result, timestamp);
+      }
+    }
+  })();
+}
+
+function recoveredIssueResult(db: Database.Database, row: IssueRow): Exclude<IssueRetryResult, 'none'> {
+  if (row.association_kind === 'stage-run') {
+    const stage = db.prepare('SELECT status FROM creator_stage_runs WHERE id = ?')
+      .get(row.association_id) as { status: CreatorStageRunStatus } | undefined;
+    if (stage?.status === 'succeeded') return 'succeeded';
+    if (stage?.status === 'failed') return 'failed';
+    if (stage?.status === 'canceled') return 'canceled';
+    return 'interrupted';
+  }
+  if (row.association_kind === 'provider-request') {
+    const provider = db.prepare('SELECT status FROM creator_provider_requests WHERE id = ?')
+      .get(row.association_id) as { status: CreatorProviderRequestStatus } | undefined;
+    if (provider?.status === 'succeeded') return 'succeeded';
+    if (provider?.status === 'failed') return 'failed';
+    if (provider?.status === 'canceled') return 'canceled';
+    if (provider?.status === 'unknown_remote_acceptance') return 'unknown';
+    return 'interrupted';
+  }
+  if (row.association_kind === 'command-receipt') {
+    const receipt = db.prepare('SELECT status FROM creator_command_receipts WHERE id = ?')
+      .get(row.association_id) as { status: string } | undefined;
+    if (receipt?.status === 'committed' || receipt?.status === 'replayed') return 'succeeded';
+    if (receipt?.status === 'failed' || receipt?.status === 'rejected') return 'failed';
+    return 'interrupted';
+  }
+  return 'interrupted';
+}
+
+function hydrateIssue(row: IssueRow): OpenCreatorIssue {
+  const candidate: OpenCreatorIssue = {
+    id: row.id,
+    diagnosticId: row.diagnostic_id,
+    code: row.code,
+    scope: { kind: 'creator-job', jobId: row.job_id },
+    source: row.source,
+    category: row.category,
+    severity: row.severity,
+    status: row.status,
+    ...(row.operation === null ? {} : { operation: row.operation }),
+    ...(row.stage_id === null ? {} : { stageId: row.stage_id }),
+    ...(row.stage_run_id === null ? {} : { stageRunId: row.stage_run_id }),
+    ...(row.scope_key === null ? {} : { scopeKey: row.scope_key }),
+    summaryKey: row.summary_key,
+    summaryParams: parseIssueSummaryParams(row.summary_params_json),
+    fallbackMessage: row.fallback_message,
+    ...(row.public_facts_json === null ? {} : { publicFacts: parseIssuePublicFacts(row.public_facts_json) }),
+    ...(row.technical_detail === null ? {} : { technicalDetail: row.technical_detail }),
+    retryable: row.retryable === 1,
+    repairActions: safeRepairActions(row.repair_actions_json),
+    fingerprint: row.fingerprint,
+    occurrenceCount: row.occurrence_count,
+    occurredAt: toIso(row.occurred_at),
+    lastOccurredAt: toIso(row.last_occurred_at),
+    ...(row.resolved_at === null ? {} : { resolvedAt: toIso(row.resolved_at) })
+  };
+  if (!isOpenCreatorIssue(candidate)) {
+    throw new CreatorRepositoryDataError(`Creator issue ${row.id} is corrupt`);
+  }
+  return candidate;
+}
+
+function hydrateIssueEvent(row: IssueEventRow): CreatorIssueEvent {
+  return {
+    id: row.id,
+    issueId: row.issue_id,
+    kind: row.kind,
+    retryResult: row.retry_result,
+    createdAt: toIso(row.created_at)
+  };
+}
+
+function parseIssueSummaryParams(value: string): Record<string, string | number> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new CreatorRepositoryDataError('Creator issue summary params are invalid JSON');
+  }
+  if (!isUnknownRecord(parsed)) {
+    throw new CreatorRepositoryDataError('Creator issue summary params must be an object');
+  }
+  const entries = Object.entries(parsed);
+  if (entries.length > 12 || entries.some(([, item]) => (
+    typeof item !== 'string' && typeof item !== 'number'
+  ))) {
+    throw new CreatorRepositoryDataError('Creator issue summary params are invalid');
+  }
+  return parsed as Record<string, string | number>;
+}
+
+function parseIssuePublicFacts(value: string): NonNullable<OpenCreatorIssue['publicFacts']> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new CreatorRepositoryDataError('Creator issue public facts are invalid JSON');
+  }
+  if (!isPublicErrorFacts(parsed)) {
+    throw new CreatorRepositoryDataError('Creator issue public facts are invalid');
+  }
+  return parsed;
+}
+
+function safeRepairActions(value: string): CreatorRepairAction[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new CreatorRepositoryDataError('Creator issue repair actions are invalid JSON');
+  }
+  if (!Array.isArray(parsed) || parsed.length > 8) {
+    throw new CreatorRepositoryDataError('Creator issue repair actions are invalid');
+  }
+  return parsed.flatMap(item => {
+    if (!isUnknownRecord(item) || typeof item.kind !== 'string') return [];
+    if (
+      item.kind === 'retry-operation'
+      && typeof item.operationId === 'string'
+      && typeof item.requiresConfirmation === 'boolean'
+      && ['normal', 'paid', 'overwrite'].includes(String(item.risk))
+    ) {
+      return [item as CreatorRepairAction];
+    }
+    if (item.kind === 'open-settings' && typeof item.settingsRouteId === 'string') {
+      return [item as CreatorRepairAction];
+    }
+    if (item.kind === 'select-input' && typeof item.inputField === 'string') {
+      return [item as CreatorRepairAction];
+    }
+    if (item.kind === 'focus-agent') return [{ kind: 'focus-agent' as const }];
+    return [];
+  });
+}
+
+function diagnosticId(id: string): string {
+  const compact = id.replace(/[^a-zA-Z0-9]/g, '').slice(-8).padStart(8, '0').toUpperCase();
+  return `OC-${compact}`;
+}
+
+function deriveLegacyStageIssues(
+  jobId: string,
+  stages: CreatorStageRun[]
+): OpenCreatorIssue[] {
+  const latestByScope = new Map<string, CreatorStageRun>();
+  for (const stage of stages) {
+    latestByScope.set(`${stage.stageId}\u0000${stage.scopeKey ?? ''}`, stage);
+  }
+  return [...latestByScope.values()].flatMap(stage => {
+    if (stage.status !== 'failed') return [];
+    const code = stage.errorCode?.trim() || 'creator_stage_failed';
+    const digest = createHash('sha256')
+      .update(JSON.stringify([jobId, stage.stageId, stage.scopeKey, stage.id, code]))
+      .digest('hex');
+    const id = `legacy_${digest.slice(0, 32)}`;
+    const providerFailure = code.startsWith('creator_provider_');
+    const outputFailure = code === 'creator_translation_output_language_mismatch'
+      || code.startsWith('creator_output_');
+    const retryable = code !== 'creator_provider_resolution_required';
+    const repairActions: CreatorRepairAction[] = [
+      ...(retryable
+        ? [{
+            kind: 'retry-operation' as const,
+            operationId: 'creator.retry-stage',
+            requiresConfirmation: false,
+            risk: 'normal' as const
+          }]
+        : []),
+      { kind: 'focus-agent' as const }
+    ];
+    const occurredAt = stage.finishedAt ?? stage.startedAt ?? new Date(0).toISOString();
+    return [{
+      id,
+      diagnosticId: diagnosticId(id),
+      code,
+      scope: { kind: 'creator-job' as const, jobId },
+      source: providerFailure
+        ? 'provider' as const
+        : outputFailure
+          ? 'output-validator' as const
+          : 'stage' as const,
+      category: providerFailure
+        ? 'provider' as const
+        : outputFailure
+          ? 'output-validation' as const
+          : 'execution' as const,
+      severity: 'error' as const,
+      status: 'open' as const,
+      operation: 'creator.retry-stage',
+      stageId: stage.stageId,
+      stageRunId: stage.id,
+      ...(stage.scopeKey === null ? {} : { scopeKey: stage.scopeKey }),
+      summaryKey: outputFailure
+        ? 'issue.translation_language_mismatch'
+        : providerFailure
+          ? 'issue.provider'
+          : 'issue.execution',
+      summaryParams: {},
+      fallbackMessage: outputFailure
+        ? '翻译结果未通过目标语言检查，请修正后重试。'
+        : providerFailure
+          ? '外部服务调用失败，请先确认请求状态后再继续。'
+          : '创作步骤执行失败，可以重试或询问 Agent。',
+      retryable,
+      repairActions,
+      fingerprint: digest,
+      occurrenceCount: 1,
+      occurredAt,
+      lastOccurredAt: occurredAt
+    }];
+  });
+}
+
+function encodeIssueCursor(sequence: number): string {
+  return Buffer.from(String(sequence), 'utf8').toString('base64url');
+}
+
+function decodeIssueCursor(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const parsed = Number(Buffer.from(value, 'base64url').toString('utf8'));
+    if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  } catch {
+    // Invalid cursors produce an empty page boundary; the API rejects them before this layer.
+  }
+  return undefined;
+}
+
 type JobRow = {
   id: string;
   project_id: string;
@@ -860,6 +1404,48 @@ type JobRow = {
   agent_thread_id: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type IssueRow = {
+  id: string;
+  job_id: string;
+  diagnostic_id: string;
+  code: string;
+  source: OpenCreatorIssue['source'];
+  category: OpenCreatorIssue['category'];
+  severity: OpenCreatorIssue['severity'];
+  status: OpenCreatorIssue['status'];
+  operation: string | null;
+  stage_id: string | null;
+  stage_run_id: string | null;
+  scope_key: string | null;
+  summary_key: string;
+  summary_params_json: string;
+  fallback_message: string;
+  public_facts_json: string | null;
+  technical_detail: string | null;
+  retryable: 0 | 1;
+  repair_actions_json: string;
+  fingerprint: string;
+  occurrence_count: number;
+  resolution_attempt_id: string | null;
+  association_kind: CreatorIssueAssociationKind | null;
+  association_id: string | null;
+  last_retry_result: IssueRetryResult;
+  last_event_kind: Extract<CreatorIssueEvent['kind'], 'occurrence' | 'reopened'>;
+  occurred_at: string;
+  last_occurred_at: string;
+  resolved_at: string | null;
+  updated_at: string;
+};
+
+type IssueEventRow = {
+  sequence: number;
+  id: string;
+  issue_id: string;
+  kind: CreatorIssueEvent['kind'];
+  retry_result: IssueRetryResult;
+  created_at: string;
 };
 
 export class CreatorRepositoryDataError extends Error {

@@ -230,10 +230,10 @@ describe('StickmanVideoWorkspace', () => {
     }));
     const { container } = renderWorkspace(failedJob, new Map(), applyAction);
 
-    const error = container.querySelector('.stickman-script-placeholder-error');
-    expect(error).not.toBeNull();
-    expect(within(error as HTMLElement).getByText('脚本服务暂时不可用')).toBeInTheDocument();
-    fireEvent.click(within(error as HTMLElement).getByRole('button', { name: '重新生成' }));
+    const actions = container.querySelector('.stickman-script-placeholder-actions');
+    expect(actions).not.toBeNull();
+    expect(screen.queryByText('脚本服务暂时不可用')).not.toBeInTheDocument();
+    fireEvent.click(within(actions as HTMLElement).getByRole('button', { name: '重新生成' }));
 
     await waitFor(() => expect(applyAction).toHaveBeenCalledWith(
       failedJob.id,

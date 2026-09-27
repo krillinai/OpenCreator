@@ -155,6 +155,32 @@ describe('KrillinTtsService', () => {
     expect(executeUtility).toHaveBeenCalledOnce();
   });
 
+  it('waits for Runtime verification before invoking the Runtime utility', async () => {
+    const root = await temporaryRoot();
+    const config = createDefaultCreatorServicesConfig();
+    config.tts.aliyun.model = 'custom-tts-model';
+    let releaseVerification!: () => void;
+    const ensureRuntimeReady = vi.fn(() => new Promise<void>(resolve => {
+      releaseVerification = resolve;
+    }));
+    const executeUtility = vi.fn(async () => ({ ok: true, voices: [] }));
+    const service = createKrillinTtsService({
+      resourceRoot: join(root, 'runtime'),
+      workRoot: join(root, 'work'),
+      configStore: createConfigStore(config),
+      ensureRuntimeReady,
+      executeUtility
+    });
+    const listing = service.listVoices('aliyun');
+
+    await vi.waitFor(() => expect(ensureRuntimeReady).toHaveBeenCalledOnce());
+    expect(executeUtility).not.toHaveBeenCalled();
+    releaseVerification();
+    await listing;
+
+    expect(executeUtility).toHaveBeenCalledOnce();
+  });
+
   it('synthesizes through the configured provider with voice controls', async () => {
     const root = await temporaryRoot();
     const config = createDefaultCreatorServicesConfig();

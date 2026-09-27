@@ -24,7 +24,6 @@ export function SkillDetailModal({
   connected,
   mutationLocked,
   skillsKnown,
-  useError,
   onClose,
   onInstall,
   onUpdate,
@@ -34,7 +33,6 @@ export function SkillDetailModal({
   connected: boolean;
   mutationLocked?: boolean;
   skillsKnown: boolean;
-  useError?: string;
   onClose(): void;
   onInstall(skillId: string): void;
   onUpdate(skillId: string): void;
@@ -213,16 +211,6 @@ export function SkillDetailModal({
             </section>
           </div>
 
-          {item.operationError ? (
-            <p className="skill-market-inline-error" role="alert">
-              {item.operationError}
-            </p>
-          ) : null}
-          {useError ? (
-            <p className="skill-market-inline-error" role="alert">
-              {l('使用失败：', 'Could not use Skill: ')}{useError}
-            </p>
-          ) : null}
         </div>
 
         <footer

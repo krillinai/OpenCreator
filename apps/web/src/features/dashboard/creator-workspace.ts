@@ -66,7 +66,7 @@ const templateByWorkspace: Record<CreatorRuntimeWorkspace, string> = {
 const templateVersionByWorkspace: Record<CreatorRuntimeWorkspace, number> = {
   'video-translation': 2,
   'video-download': 2,
-  'stickman-video': 1,
+  'stickman-video': 2,
   'auto-clips': 1,
   'smart-dubbing': 1,
   'xiaohongshu-post': 1,

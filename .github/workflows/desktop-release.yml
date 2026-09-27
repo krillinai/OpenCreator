@@ -95,6 +95,7 @@ jobs:
     env:
       OPENCREATOR_DESKTOP_CACHE_DIR: ${{ github.workspace }}/apps/desktop/.cache
       OPENCREATOR_DESKTOP_BUILD_MANIFEST: ${{ github.workspace }}/apps/desktop/release/opencreator-desktop-build-manifest-${{ matrix.platform }}-${{ matrix.arch }}.json
+      OPENCREATOR_DESKTOP_OFFICIAL_BUILD: '1'
     steps:
       - name: 验证 macOS 正式签名凭据
         if: matrix.platform == 'darwin'
@@ -123,6 +124,22 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v4
+      - name: 验证并使用 macOS Command Line Tools
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools=/Library/Developer/CommandLineTools
+          if [[ ! -d "$tools" ]]; then
+            echo '::error::macOS Command Line Tools 未安装；打包不使用完整 Xcode。'
+            exit 1
+          fi
+          for tool in iconutil codesign; do
+            command -v "$tool" >/dev/null
+          done
+          DEVELOPER_DIR="$tools" xcrun --find notarytool
+          DEVELOPER_DIR="$tools" xcrun --find stapler
+          echo "DEVELOPER_DIR=$tools" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

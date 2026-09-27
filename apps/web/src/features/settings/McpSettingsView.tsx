@@ -20,7 +20,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
-import { ApiClientError } from '../../runtime/errors.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 export type McpSettingsService = {
   listServers(): Promise<CodexMcpListResponse>;
@@ -63,9 +64,10 @@ export function McpSettingsView(props: {
   const [loading, setLoading] = useState(
     props.data === undefined && props.connected && props.service !== null
   );
-  const [error, setError] = useState<string>();
   const [editorOpen, setEditorOpen] = useState(false);
   const [busyName, setBusyName] = useState<string>();
+  const [reloadToken, setReloadToken] = useState(0);
+  const pageIssues = usePageIssueState('settings-mcp');
 
   useEffect(() => {
     setData(props.data);
@@ -77,10 +79,18 @@ export function McpSettingsView(props: {
     setLoading(true);
     props.service.listServers()
       .then(response => {
-        if (!canceled) updateData(response);
+        if (!canceled) {
+          updateData(response);
+          pageIssues.resolveOperation('settings.mcp.load');
+        }
       })
       .catch(reason => {
-        if (!canceled) setError(formatMcpError(reason, '无法加载 MCP 服务'));
+        if (!canceled) pageIssues.captureOperationFailure(
+          'settings.mcp.load',
+          reason,
+          '无法加载 MCP 服务，请重试。',
+          { retryable: true }
+        );
       })
       .finally(() => {
         if (!canceled) setLoading(false);
@@ -88,7 +98,14 @@ export function McpSettingsView(props: {
     return () => {
       canceled = true;
     };
-  }, [props.connected, props.data, props.service]);
+  }, [
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.connected,
+    props.data,
+    props.service,
+    reloadToken
+  ]);
 
   function updateData(next: CodexMcpListResponse) {
     setData(next);
@@ -117,7 +134,7 @@ export function McpSettingsView(props: {
     if (!confirmed) return;
 
     setBusyName(server.name);
-    setError(undefined);
+    const operationId = `settings.mcp.${action}:${server.name}`;
     try {
       if (action === 'login') await props.service.loginServer(server.name, data?.requiresWriteConfirmation);
       if (action === 'logout') await props.service.logoutServer(server.name, data?.requiresWriteConfirmation);
@@ -127,8 +144,13 @@ export function McpSettingsView(props: {
           updateData({ ...data, servers: data.servers.filter(item => item.name !== server.name) });
         }
       }
+      pageIssues.resolveOperation(operationId);
     } catch (reason) {
-      setError(formatMcpError(reason, `无法${actionLabel(action)} ${server.name}`));
+      pageIssues.captureOperationFailure(
+        operationId,
+        reason,
+        `MCP ${action === 'login' ? '登录' : action === 'logout' ? '退出' : '删除'}操作未完成，请检查诊断信息后重试。`
+      );
     } finally {
       setBusyName(undefined);
     }
@@ -163,7 +185,13 @@ export function McpSettingsView(props: {
       {data?.requiresWriteConfirmation ? (
         <p className="settings-notice">写操作会修改全局 CODEX_HOME，每次操作都需要确认。</p>
       ) : null}
-      {error ? <p className="settings-error" role="alert">{error}</p> : null}
+      <IssueList
+        issues={pageIssues.issues}
+        actions={{ retryOperations: {
+          'settings.mcp.load': () => setReloadToken(value => value + 1)
+        } }}
+        onDismiss={pageIssues.dismissIssue}
+      />
 
       {editorOpen ? (
         <McpEditor
@@ -172,7 +200,6 @@ export function McpSettingsView(props: {
           onCancel={() => setEditorOpen(false)}
           onSubmit={async input => {
             if (props.service === null) return;
-            setError(undefined);
             const confirmed = !data?.requiresWriteConfirmation
               || (props.confirmWrite?.() ?? await confirm({
                 title: '确认修改全局配置',
@@ -196,8 +223,13 @@ export function McpSettingsView(props: {
                 updateData(await props.service.listServers());
               }
               setEditorOpen(false);
+              pageIssues.resolveOperation('settings.mcp.add');
             } catch (reason) {
-              setError(formatMcpError(reason, '无法新增 MCP'));
+              pageIssues.captureOperationFailure(
+                'settings.mcp.add',
+                reason,
+                '无法新增 MCP，请检查配置后重试。'
+              );
             }
           }}
         />
@@ -471,23 +503,4 @@ function mcpEndpoint(server: CodexMcpServerResponse): string {
     return [server.command, ...(server.args ?? [])].filter(Boolean).join(' ') || 'stdio';
   }
   return server.url ?? server.transport;
-}
-
-function actionLabel(action: 'login' | 'logout' | 'remove'): string {
-  if (action === 'login') return '登录';
-  if (action === 'logout') return '退出';
-  return '删除';
-}
-
-function formatMcpError(error: unknown, fallback: string): string {
-  if (!(error instanceof ApiClientError)) return fallback;
-  const hints: Record<string, string> = {
-    MCP_WRITE_CONFIRMATION_REQUIRED: '请确认修改全局 CODEX_HOME 后重试',
-    MCP_SERVER_NOT_FOUND: '该服务已不存在，请重新加载',
-    MCP_SERVER_EXISTS: '请更换 MCP 名称',
-    MCP_SERVER_INVALID: '请检查命令、URL 和环境变量配置',
-    CODEX_INCOMPATIBLE: '请更新 Codex CLI 或调整当前配置',
-    MCP_COMMAND_FAILED: '请检查 Codex 登录状态和 MCP 命令输出'
-  };
-  return `${error.code}：${hints[error.code] ?? error.message}`;
 }

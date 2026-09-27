@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { execPath } from 'node:process';
 import {
   applyCapabilityMatrix,
+  BUNDLED_CODEX_COMMIT,
+  BUNDLED_CODEX_VERSION,
   collectCodexCapabilityMatrix,
   createUnknownCapabilityMatrix,
   isResumeExecutionSupported,
   normalizeCodexVersionOutput,
   parseCodexCapabilityMatrix,
   parseCodexExecHelp,
-  probeCodexVersionAsync
+  probeCodexVersionAsync,
+  resolveBundledCodexStartupSnapshot
 } from '../../src/codex/capabilities.js';
 
 const EXEC_HELP_01425 = `
@@ -64,6 +67,39 @@ Commands:
 `;
 
 describe('codex capability parsing', () => {
+  it('uses the verified bundled runtime snapshot without launching Codex', () => {
+    const snapshot = resolveBundledCodexStartupSnapshot({
+      mode: 'bundled',
+      version: BUNDLED_CODEX_VERSION,
+      commit: BUNDLED_CODEX_COMMIT,
+      checkedAt: '2026-09-21T00:00:00.000Z'
+    });
+
+    expect(snapshot).toMatchObject({
+      version: 'codex-cli 0.149.0',
+      capabilities: {
+        codexVersion: 'codex-cli 0.149.0',
+        checkedAt: '2026-09-21T00:00:00.000Z',
+        execJson: true,
+        resumeJson: true,
+        appServer: true,
+        appServerApprovals: true,
+        mcpList: true,
+        warnings: []
+      }
+    });
+    expect(resolveBundledCodexStartupSnapshot({
+      mode: 'external',
+      version: BUNDLED_CODEX_VERSION,
+      commit: BUNDLED_CODEX_COMMIT
+    })).toBeUndefined();
+    expect(resolveBundledCodexStartupSnapshot({
+      mode: 'bundled',
+      version: BUNDLED_CODEX_VERSION,
+      commit: 'different-commit'
+    })).toBeUndefined();
+  });
+
   it('extracts the Codex version line when startup warnings are present', () => {
     expect(normalizeCodexVersionOutput([
       'WARNING: CODEX_HOME does not exist',

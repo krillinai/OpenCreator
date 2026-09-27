@@ -48,6 +48,8 @@ import {
   AttachmentTray,
   type AttachmentTrayItem
 } from './AttachmentTray.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 export type ComposerRunConfig = {
   permission: ProjectPermission;
@@ -199,7 +201,6 @@ export function Composer(props: {
   const [addCommandQuery, setAddCommandQuery] = useState('');
   const [connectorCatalog, setConnectorCatalog] = useState<ComposerConnector[]>();
   const [connectorCatalogLoading, setConnectorCatalogLoading] = useState(false);
-  const [connectorCatalogError, setConnectorCatalogError] = useState<string>();
   const [connectorUpdatingId, setConnectorUpdatingId] = useState<string>();
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
   const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
@@ -222,6 +223,7 @@ export function Composer(props: {
   const connectorCatalogGenerationRef = useRef(0);
   const connectorLoaderRef = useRef(props.onLoadConnectors);
   const composerMountedRef = useRef(true);
+  const pageIssues = usePageIssueState('composer');
   const trimmedPrompt = prompt.trim();
   const activeFloatingMenu = openMenu ?? (slashTrigger === null ? null : 'slash');
   const availableModels = props.models ?? [];
@@ -236,6 +238,40 @@ export function Composer(props: {
     props.modelsLoading === true,
     t
   );
+
+  useEffect(() => {
+    if (props.modelsError === undefined) {
+      pageIssues.resolveOperation('composer.load-models');
+    } else {
+      pageIssues.captureOperationFailure(
+        'composer.load-models',
+        new Error(props.modelsError),
+        t('composer.model.loadFailed')
+      );
+    }
+  }, [
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.modelsError,
+    t
+  ]);
+
+  useEffect(() => {
+    if (props.slashCommandsError === undefined) {
+      pageIssues.resolveOperation('composer.load-commands');
+    } else {
+      pageIssues.captureOperationFailure(
+        'composer.load-commands',
+        new Error(props.slashCommandsError),
+        t('composer.capabilities.noMatch')
+      );
+    }
+  }, [
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.slashCommandsError,
+    t
+  ]);
   const selectedReasoningLabel = selectedReasoning === null || selectedReasoning === 'default'
     ? t('composer.reasoning.default')
     : reasoningEffortLabel(selectedReasoning, t);
@@ -316,7 +352,7 @@ export function Composer(props: {
     connectorCatalogRequestRef.current = undefined;
     setConnectorCatalog(undefined);
     setConnectorCatalogLoading(false);
-    setConnectorCatalogError(undefined);
+    pageIssues.resolveOperation('composer.load-connectors');
   }, [props.onLoadConnectors]);
 
   const loadConnectorCatalog = () => {
@@ -330,7 +366,6 @@ export function Composer(props: {
     }
     const generation = connectorCatalogGenerationRef.current;
     setConnectorCatalogLoading(true);
-    setConnectorCatalogError(undefined);
     const request = props.onLoadConnectors()
       .then(connectors => {
         if (
@@ -338,6 +373,7 @@ export function Composer(props: {
           && connectorCatalogGenerationRef.current === generation
         ) {
           setConnectorCatalog(connectors);
+          pageIssues.resolveOperation('composer.load-connectors');
         }
       })
       .catch(error => {
@@ -345,10 +381,11 @@ export function Composer(props: {
           composerMountedRef.current
           && connectorCatalogGenerationRef.current === generation
         ) {
-          setConnectorCatalogError(
-            error instanceof Error && error.message.trim().length > 0
-              ? error.message
-              : t('composer.connectors.loadFailed')
+          pageIssues.captureOperationFailure(
+            'composer.load-connectors',
+            error,
+            t('composer.connectors.loadFailed'),
+            { retryable: true }
           );
         }
       })
@@ -373,18 +410,15 @@ export function Composer(props: {
   const toggleConnector = async (connector: ComposerConnector) => {
     if (props.onToggleConnector === undefined || connectorUpdatingId !== undefined) return;
     setConnectorUpdatingId(connector.id);
-    setConnectorCatalogError(undefined);
+    const operationId = `composer.toggle-connector:${connector.id}`;
     try {
       setConnectorCatalog(await props.onToggleConnector(
         connector.id,
         connector.status !== 'enabled'
       ));
+      pageIssues.resolveOperation(operationId);
     } catch (error) {
-      setConnectorCatalogError(
-        error instanceof Error && error.message.trim().length > 0
-          ? error.message
-          : t('composer.connectors.updateFailed')
-      );
+      pageIssues.captureOperationFailure(operationId, error, t('composer.connectors.updateFailed'));
     } finally {
       setConnectorUpdatingId(undefined);
     }
@@ -557,11 +591,18 @@ export function Composer(props: {
       }
     } catch (error) {
       for (const item of attachments) transferredPreviewUrlsRef.current.delete(item.previewUrl);
-      throw error;
+      pageIssues.captureOperationFailure(
+        'composer.submit',
+        error,
+        t('composer.input.unavailable'),
+        { retryable: true }
+      );
+      return;
     } finally {
       setSubmitting(false);
     }
     if (accepted === false) return;
+    pageIssues.resolveOperation('composer.submit');
     promptRevisionRef.current += 1;
     setPrompt('');
     setSlashTrigger(null);
@@ -683,7 +724,13 @@ export function Composer(props: {
   ) => {
     if (action === undefined) return;
     closeProjectMenu();
-    void action();
+    void Promise.resolve(action())
+      .then(() => pageIssues.resolveOperation('composer.project-action'))
+      .catch(cause => pageIssues.captureOperationFailure(
+        'composer.project-action',
+        cause,
+        t('composer.input.unavailable')
+      ));
   };
 
   const applySlashCommand = (command: ComposerSlashCommand) => {
@@ -802,16 +849,23 @@ export function Composer(props: {
           ? { ...candidate, status: 'ready', attachment, error: undefined }
           : candidate
       ));
+      pageIssues.resolveOperation(`composer.upload:${localId}`);
     } catch (error) {
       setAttachmentDrafts(current => current.map(candidate =>
         candidate.localId === localId
           ? {
               ...candidate,
               status: 'error',
-              error: error instanceof Error ? error.message : t('composer.uploadFailed')
+              error: t('composer.uploadFailed')
             }
           : candidate
       ));
+      pageIssues.captureOperationFailure(
+        `composer.upload:${localId}`,
+        error,
+        t('composer.uploadFailed'),
+        { retryable: true }
+      );
     }
   }
 
@@ -841,12 +895,19 @@ export function Composer(props: {
   async function removeAttachment(localId: string) {
     const item = attachmentDraftsRef.current.find(candidate => candidate.localId === localId);
     if (item === undefined) return;
+    const operationId = `composer.delete-attachment:${localId}`;
+    try {
+      if (item.attachment !== undefined) await props.onDeleteAttachment?.(item.attachment);
+      pageIssues.resolveOperation(operationId);
+    } catch (cause) {
+      pageIssues.captureOperationFailure(operationId, cause, t('composer.uploadFailed'));
+      return;
+    }
     setAttachmentDrafts(current => current.filter(candidate => candidate.localId !== localId));
     attachmentDraftsRef.current = attachmentDraftsRef.current.filter(
       candidate => candidate.localId !== localId
     );
     URL.revokeObjectURL(item.previewUrl);
-    if (item.attachment !== undefined) await props.onDeleteAttachment?.(item.attachment);
   }
 
   function handlePaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
@@ -870,7 +931,14 @@ export function Composer(props: {
       if (accepted !== false) {
         setSelectedPermission(permission);
         setOpenMenu(null);
+        pageIssues.resolveOperation('composer.change-permission');
       }
+    } catch (cause) {
+      pageIssues.captureOperationFailure(
+        'composer.change-permission',
+        cause,
+        t('composer.input.unavailable')
+      );
     } finally {
       setPermissionUpdating(false);
       setPendingPermission(undefined);
@@ -896,11 +964,6 @@ export function Composer(props: {
               {t('composer.connectors.loadingCatalog')}
             </p>
           ) : null}
-          {connectorCatalogError === undefined ? null : (
-            <p className="composer-model-status composer-model-status-error" role="alert">
-              {connectorCatalogError}
-            </p>
-          )}
           {!connectorCatalogLoading && visibleConnectors.length === 0 ? (
             <p className="composer-model-status">
               {addCommandQuery.trim().length > 0
@@ -978,11 +1041,6 @@ export function Composer(props: {
               {t('composer.connectors.loading')}
             </p>
           ) : null}
-          {connectorCatalogError === undefined ? null : (
-            <p className="composer-model-status composer-model-status-error" role="alert">
-              {connectorCatalogError}
-            </p>
-          )}
           {!connectorCatalogLoading && quickConnectors.length === 0 ? (
             <p className="composer-model-status">{t('composer.connectors.noneInstalled')}</p>
           ) : quickConnectors.map(connector => {
@@ -1024,6 +1082,16 @@ export function Composer(props: {
       </>
     );
   }
+
+  const retryOperations: Record<string, () => void | Promise<void>> = {
+    'composer.load-connectors': loadConnectorCatalog,
+    'composer.submit': submitPrompt,
+    ...Object.fromEntries(
+      attachmentDrafts
+        .filter(item => item.status === 'error')
+        .map(item => [`composer.upload:${item.localId}`, () => uploadAttachment(item.localId)])
+    )
+  };
 
   return (
     <div className="composer-stack">
@@ -1150,8 +1218,8 @@ export function Composer(props: {
                       <button
                         className="composer-project-create-trigger"
                         type="button"
-                        onClick={() => runProjectAction(() => {
-                          props.onCreateBlankProject?.();
+                        onClick={() => runProjectAction(async () => {
+                          await props.onCreateBlankProject?.();
                         })}
                       >
                         <Plus aria-hidden="true" size={17} />
@@ -1175,6 +1243,12 @@ export function Composer(props: {
           </div>
         </div>
       ) : null}
+      <IssueList
+        issues={pageIssues.issues}
+        actions={{ retryOperations }}
+        onDismiss={pageIssues.dismissIssue}
+        compact
+      />
       <AttachmentTray
         items={attachmentDrafts}
         onRemove={(localId) => void removeAttachment(localId)}
@@ -1232,7 +1306,6 @@ export function Composer(props: {
                 {t('composer.capabilities.loading')}
               </div>
             ) : null}
-            {props.slashCommandsError ? <div className="composer-slash-status composer-slash-status-error">{props.slashCommandsError}</div> : null}
             {!props.slashCommandsLoading && filteredSlashCommands.length === 0 ? (
               <div className="composer-slash-status">{t('composer.capabilities.noMatch')}</div>
             ) : null}
@@ -1554,11 +1627,6 @@ export function Composer(props: {
                   {props.modelsLoading === true && availableModels.length === 0 ? (
                     <div className="composer-model-status" role="status">
                       {t('composer.model.loading')}
-                    </div>
-                  ) : null}
-                  {props.modelsError !== undefined && availableModels.length === 0 ? (
-                    <div className="composer-model-status composer-model-status-error">
-                      {props.modelsError}
                     </div>
                   ) : null}
                   {props.modelsNotice !== undefined && availableModels.length > 0 ? (

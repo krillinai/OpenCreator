@@ -40,8 +40,53 @@ export function parseDownloadProbe(
   value: unknown,
   requestedUrl = ''
 ): DownloadProbe {
+  if (
+    typeof value === 'object'
+    && value !== null
+    && '_type' in value
+    && value._type === 'playlist'
+  ) {
+    const playlist = z.object({
+      id: z.string(),
+      title: z.string(),
+      extractor_key: z.string(),
+      entries: z.array(z.unknown()).min(1).max(16)
+    }).parse(value);
+    if (!/^(twitter|x)(?::|$)/i.test(playlist.extractor_key)) {
+      throw new Error('Unsupported multi-video source');
+    }
+    const entries = playlist.entries.map((entry, index) => ({
+      index: index + 1,
+      probe: parseSingleDownloadProbe(entry, requestedUrl)
+    }));
+    const first = entries[0]!.probe;
+    return {
+      ...first,
+      id: playlist.id,
+      title: playlist.title,
+      duration: null,
+      options: entries.flatMap(({ index, probe }) => probe.options.map(option => ({
+        ...option,
+        id: `item-${index}-${option.id}`,
+        playlistIndex: index
+      })))
+    };
+  }
+  return parseSingleDownloadProbe(value, requestedUrl);
+}
+
+function parseSingleDownloadProbe(value: unknown, requestedUrl: string): DownloadProbe {
   const parsed = probeSchema.parse(value);
-  const platform = /bilibili/i.test(parsed.extractor_key ?? parsed.webpage_url ?? '') ? 'bilibili' : 'youtube';
+  const extractor = parsed.extractor_key ?? '';
+  const platform = /^https:\/\/(?:v|www)\.douyin\.com\//i.test(requestedUrl)
+    || /^douyin(?::|$)/i.test(extractor) ? 'douyin'
+    : /bilibili/i.test(extractor) ? 'bilibili'
+    : /^(twitter|x)(?::|$)/i.test(extractor) ? 'x'
+      : /^tiktok(?::|$|VM)/i.test(extractor) ? 'tiktok'
+        : /^instagram(?::|$)/i.test(extractor) ? 'instagram'
+          : /^facebook(?::|$)/i.test(extractor) ? 'facebook'
+            : /^xiaohongshu(?::|$)/i.test(extractor) ? 'xiaohongshu'
+              : /^pinterest(?::|$)/i.test(extractor) ? 'pinterest' : 'youtube';
   const formats: DownloadProbeFormat[] = parsed.formats.map(format => ({
     id: format.format_id,
     ext: format.ext ?? null,

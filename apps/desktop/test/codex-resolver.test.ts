@@ -64,6 +64,21 @@ describe('Desktop Codex resolver', () => {
     })).rejects.toMatchObject({ code: 'codex_runtime_hash_mismatch' });
   });
 
+  it('invalidates the bundled Runtime verification cache after a binary change', async () => {
+    const fixture = createBundledFixture();
+    await resolveCodexEnvironment({
+      runtimeRoot: fixture.runtimeRoot,
+      userDataDir: fixture.userDataDir
+    });
+
+    writeFileSync(fixture.binary, 'tampered-value');
+
+    await expect(resolveCodexEnvironment({
+      runtimeRoot: fixture.runtimeRoot,
+      userDataDir: fixture.userDataDir
+    })).rejects.toMatchObject({ code: 'codex_runtime_hash_mismatch' });
+  });
+
   it('requires an explicit external mode path and separates its Home', async () => {
     createBundledFixture();
     const external = join(tempDir, executableName());

@@ -35,6 +35,7 @@ export type CreateProjectManagerInput = {
   db: Database.Database;
   homeDir?: string;
   managedProjectRoot?: string;
+  resolveManagedProjectRoot?: () => string;
   idFactory?: () => string;
 };
 
@@ -42,14 +43,18 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
   const projects = createProjectRepository(input.db);
   const threads = createThreadRepository(input.db);
   const homeDir = input.homeDir ?? homedir();
-  const managedProjectRoot = input.managedProjectRoot === undefined
+  const defaultManagedProjectRoot = input.managedProjectRoot === undefined
     ? join(homeDir, 'Documents', 'OpenCreator')
     : resolve(expandHome(input.managedProjectRoot, homeDir));
+  const managedProjectRoot = () => resolve(expandHome(
+    input.resolveManagedProjectRoot?.() ?? defaultManagedProjectRoot,
+    homeDir
+  ));
   const createId = input.idFactory ?? (() => `project_${nanoid(10)}`);
 
   const createManagedProjectDirectory = (): string => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const cwd = join(managedProjectRoot, `project-${nanoid(12)}`);
+      const cwd = join(managedProjectRoot(), `project-${nanoid(12)}`);
       try {
         mkdirSync(cwd);
         return cwd;
@@ -71,7 +76,7 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
   return {
     ensureDefaultProject(): ProjectResponse {
       try {
-        mkdirSync(managedProjectRoot, { recursive: true });
+        mkdirSync(managedProjectRoot(), { recursive: true });
       } catch {
         throw new ProjectManagerError(
           'PROJECT_DIRECTORY_UNAVAILABLE',
@@ -79,7 +84,7 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
         );
       }
 
-      const cwd = join(managedProjectRoot, 'Default Project');
+      const cwd = join(managedProjectRoot(), 'Default Project');
       let createdDirectory = false;
       if (!existsSync(cwd)) {
         try {
@@ -118,7 +123,7 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
     createManagedProject(request: CreateManagedProjectRequest): ProjectResponse {
       const name = normalizeManagedProjectName(request.name);
       try {
-        mkdirSync(managedProjectRoot, { recursive: true });
+        mkdirSync(managedProjectRoot(), { recursive: true });
       } catch {
         throw new ProjectManagerError(
           'PROJECT_DIRECTORY_UNAVAILABLE',

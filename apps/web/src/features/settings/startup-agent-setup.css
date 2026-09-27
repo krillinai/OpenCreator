@@ -1,0 +1,66 @@
+.startup-agent-setup {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: max(32px, var(--opencreator-titlebar-height, 0px)) 20px 32px;
+  background: var(--bg);
+}
+
+.startup-agent-setup__card {
+  width: min(100%, 480px);
+  display: grid;
+  gap: 18px;
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.startup-agent-setup__eyebrow { color: var(--accent-strong); font-size: 13px; font-weight: 700; }
+.startup-agent-setup__card h1 { margin: 0; font-size: 27px; }
+.startup-agent-setup__card p { margin: 0; color: var(--muted); line-height: 1.6; }
+.startup-agent-setup__card .startup-agent-setup__detected {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.startup-agent-setup__choices { display: flex; gap: 8px; }
+.startup-agent-setup__choices button { flex: 1; }
+.startup-agent-setup__card button,
+.startup-agent-setup__card input,
+.startup-agent-setup__card select {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-2);
+  font: inherit;
+}
+.startup-agent-setup__choices button[aria-pressed="true"] { border-color: var(--accent); }
+.startup-agent-setup__card button:disabled { opacity: .5; cursor: not-allowed; }
+.startup-agent-setup__form { display: grid; gap: 12px; }
+.startup-agent-setup__form label { display: grid; gap: 6px; font-size: 13px; }
+.startup-agent-setup__form label span,
+.startup-agent-setup__form small { color: var(--muted); }
+.startup-agent-setup__card .startup-agent-setup__primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.startup-agent-setup__card .startup-agent-setup__skip { justify-self: center; border: 0; background: transparent; color: var(--muted); }
+.startup-agent-setup__card .startup-agent-setup__error { color: var(--danger); }
+
+.startup-agent-banner {
+  width: min(760px, 100%);
+  margin: 0 auto 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.startup-agent-banner button { margin-left: 12px; color: var(--accent-strong); background: transparent; border: 0; cursor: pointer; }

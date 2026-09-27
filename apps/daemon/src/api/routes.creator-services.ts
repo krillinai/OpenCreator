@@ -148,7 +148,7 @@ function sendStoreError(reply: FastifyReply, error: unknown) {
 
 function sendTtsError(reply: FastifyReply, error: unknown) {
   if (error instanceof KrillinTtsServiceError) {
-    return reply.code(error.statusCode).send(apiError(error.code, error.message));
+    return reply.code(error.statusCode).send(apiError(error.code, error.message, undefined, undefined, error.publicFacts));
   }
   throw error;
 }

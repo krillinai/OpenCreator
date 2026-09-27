@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { resolveOpenCreatorPaths } from '@opencreator/config';
 import {
@@ -74,6 +75,7 @@ async function launchDesktop(): Promise<void> {
   let bootstrap: BootstrapController | undefined;
   let workspaceLoaded = false;
   let workspaceLoadWork: Promise<void> | undefined;
+  let bootstrapSurfaceReady: Promise<void> = Promise.resolve();
   let shutdownStarted = false;
   let allowQuit = false;
   let loginShellTask: LoginShellEnvironmentTask | undefined;
@@ -174,7 +176,7 @@ async function launchDesktop(): Promise<void> {
     settings,
     logger,
     appVersion: app.getVersion(),
-    isPackaged: app.isPackaged,
+    isOfficialBuild: app.isPackaged && readOfficialBuildMarker(process.resourcesPath),
     isWindowActive: () => windowManager?.isActive() === true,
     endpointOverride: process.env.OPENCREATOR_TELEMETRY_URL
   });
@@ -197,9 +199,13 @@ async function launchDesktop(): Promise<void> {
     workspaceLoadWork = (async () => {
       workspaceLoaded = false;
       try {
+        await bootstrapSurfaceReady;
         await windowManager?.loadWorkspace();
         workspaceLoaded = true;
         bootstrap?.markWorkspaceReady();
+        logger.info('OpenCreator workspace ready', {
+          durationMs: Date.now() - APP_ENTRY_AT
+        });
         windowManager?.show();
         for (const route of pendingRoutes.splice(0)) {
           windowManager?.send(desktopIpc.navigate, route);
@@ -254,13 +260,23 @@ async function launchDesktop(): Promise<void> {
     void loadWorkspace();
   });
 
-  await windowManager.loadBootstrap();
+  bootstrapSurfaceReady = windowManager.loadBootstrap();
+  loginShellTask = startLoginShellEnvironmentRead({
+    timeoutMs: 5_000
+  });
+  void bootstrap.start(undefined, loginShellTask);
+  await bootstrapSurfaceReady;
   bootstrap.setStartupMetrics({
     ...windowManager.metrics,
     appReadyAt
   });
+  const trayIconName = process.platform === 'darwin'
+    ? 'tray.png'
+    : process.platform === 'win32'
+      ? 'icon-win.png'
+      : 'icon.png';
   tray.create({
-    iconPath: join(resourceRoot, process.platform === 'darwin' ? 'tray.png' : 'icon.png'),
+    iconPath: join(resourceRoot, trayIconName),
     open: () => windowManager?.show(),
     navigate,
     quit: () => app.quit()
@@ -285,11 +301,6 @@ async function launchDesktop(): Promise<void> {
     }
   });
   queueDeepLink(findDeepLink(process.argv));
-  loginShellTask = startLoginShellEnvironmentRead({
-    timeoutMs: 5_000
-  });
-  void bootstrap.start(undefined, loginShellTask);
-
   app.on('activate', () => windowManager?.show());
   app.on('window-all-closed', () => {
     // The tray and Runtime intentionally remain active.
@@ -320,6 +331,17 @@ async function launchDesktop(): Promise<void> {
         });
       });
   });
+}
+
+function readOfficialBuildMarker(resourcesPath: string): boolean {
+  try {
+    const profile = JSON.parse(
+      readFileSync(join(resourcesPath, 'desktop-build-profile.json'), 'utf8')
+    ) as unknown;
+    return isRecord(profile) && profile.officialBuild === true;
+  } catch {
+    return false;
+  }
 }
 
 function registerIpcHandlers(input: {
@@ -361,10 +383,14 @@ function registerIpcHandlers(input: {
       ? ok()
       : failed(input.bootstrap.currentState.error?.message ?? 'Codex 检测失败');
   });
-  handle(desktopIpc.selectProjectDirectory, input.development, async () => {
+  handle(desktopIpc.selectProjectDirectory, input.development, async (_event, purpose: unknown) => {
+    const labels = purpose === 'default-project-root'
+      ? { title: '选择默认项目位置', buttonLabel: '使用此位置' }
+      : purpose === 'output-root'
+        ? { title: '选择完成产物位置', buttonLabel: '使用此位置' }
+        : { title: '添加项目文件夹', buttonLabel: '添加项目' };
     const result = await dialog.showOpenDialog({
-      title: '添加项目文件夹',
-      buttonLabel: '添加项目',
+      ...labels,
       properties: ['openDirectory']
     });
     if (result.canceled) return null;

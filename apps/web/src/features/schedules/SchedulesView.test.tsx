@@ -4,7 +4,7 @@ import type {
   ScheduleResponse,
   UpdateScheduleRequest,
 } from '@opencreator/protocol';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiClientError } from '../../runtime/errors.js';
@@ -186,7 +186,8 @@ describe('SchedulesView', () => {
     await user.type(screen.getByLabelText('任务内容'), '检查项目状态');
     await user.click(screen.getByRole('button', { name: '创建任务' }));
 
-    expect(await screen.findByText('项目目录不存在或无法访问')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('项目目录不存在或无法访问');
+    expect(within(screen.getByRole('dialog')).queryByText('项目目录不存在或无法访问')).not.toBeInTheDocument();
   });
 
   it('loads full details, preserves legacy schedules, and saves advanced edits', async () => {

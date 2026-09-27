@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import type { CreatorEventEnvelope, CreatorJob } from '@opencreator/protocol';
+import type { CreatorEventEnvelope, CreatorJob, OpenCreatorIssue } from '@opencreator/protocol';
 import {
   CreatorSessionProvider,
   useCreatorSession
@@ -22,6 +22,7 @@ function job(revision: number, state: Record<string, any>): CreatorJob {
     artifacts: [],
     providerRequests: [],
     activities: [],
+    issues: [],
     createdAt: '2026-08-20T00:00:00.000Z',
     updatedAt: '2026-08-20T00:00:00.000Z'
   };
@@ -918,7 +919,337 @@ describe('CreatorSessionStore', () => {
       { decision: 'approved', processGeneration: 7 }
     ));
   });
+
+  it('keeps an authoritative server issue without reporting it a second time', async () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    const authoritative = creatorIssue();
+    const failure = Object.assign(new Error('provider raw detail'), { issue: authoritative });
+    const reportClientIssue = vi.fn();
+    render(
+      <CreatorSessionProvider
+        initialJob={job(0, {})}
+        service={{
+          applyAction: vi.fn(async () => { throw failure; }),
+          runAgentTurn: vi.fn(),
+          reportClientIssue
+        } as never}
+      >
+        <SessionCaptureHarness onSession={value => { session = value; }} />
+      </CreatorSessionProvider>
+    );
+
+    await act(async () => {
+      await session!.applyAction({ action: 'run-stage', input: { stageId: 'subtitle' } })
+        .catch(() => undefined);
+    });
+
+    expect(reportClientIssue).not.toHaveBeenCalled();
+    expect(session!.issues).toEqual([authoritative]);
+  });
+
+  it('reports artifact JSON parsing failures and replaces a focused local issue with its authoritative id', async () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    let finishReport!: (value: { clientIssueId: string; issue: OpenCreatorIssue }) => void;
+    const reportClientIssue = vi.fn((
+      _jobId: string,
+      _request: { clientIssueId: string }
+    ) => new Promise<{ clientIssueId: string; issue: OpenCreatorIssue }>(resolve => {
+      finishReport = resolve;
+    }));
+    const openArtifact = vi.fn(async () => new Response('{invalid-json', {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }));
+    render(
+      <CreatorSessionProvider
+        initialJob={job(0, {})}
+        service={{ applyAction: vi.fn(), runAgentTurn: vi.fn(), openArtifact, reportClientIssue } as never}
+      >
+        <SessionCaptureHarness onSession={value => { session = value; }} />
+      </CreatorSessionProvider>
+    );
+
+    await act(async () => {
+      await session!.openArtifactJson('artifact_1').catch(() => undefined);
+    });
+    await waitFor(() => expect(reportClientIssue).toHaveBeenCalledTimes(1));
+    expect(openArtifact).toHaveBeenCalledWith('job_1', 'artifact_1');
+    expect(session!.issues).toHaveLength(1);
+    expect(session!.issues[0]).toMatchObject({
+      source: 'client',
+      operation: 'creator.read-artifact-json',
+      status: 'open'
+    });
+
+    const localIssue = session!.issues[0]!;
+    act(() => session!.focusIssue(localIssue));
+    expect(session!.focusedIssue?.id).toBe(localIssue.id);
+    const request = reportClientIssue.mock.calls[0]![1];
+    const authoritative = creatorIssue({
+      id: 'issue_authoritative',
+      diagnosticId: 'OC-AUTH0001',
+      fingerprint: localIssue.fingerprint,
+      operation: 'creator.read-artifact-json'
+    });
+    await act(async () => {
+      finishReport({ clientIssueId: request.clientIssueId, issue: authoritative });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(session!.issues.map(issue => issue.id)).toEqual(['issue_authoritative']));
+    expect(session!.focusedIssue?.id).toBe('issue_authoritative');
+  });
+
+  it('does not double-report an artifact transport rejection as a parsing failure', async () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    const reportClientIssue = vi.fn(() => new Promise(() => undefined));
+    render(
+      <CreatorSessionProvider
+        initialJob={job(0, {})}
+        service={{
+          applyAction: vi.fn(),
+          runAgentTurn: vi.fn(),
+          openArtifact: vi.fn(async () => { throw new Error('transport unavailable'); }),
+          reportClientIssue
+        } as never}
+      >
+        <SessionCaptureHarness onSession={value => { session = value; }} />
+      </CreatorSessionProvider>
+    );
+
+    await act(async () => {
+      await session!.openArtifactJson('artifact_1').catch(() => undefined);
+    });
+
+    expect(reportClientIssue).toHaveBeenCalledTimes(1);
+    expect(reportClientIssue).toHaveBeenCalledWith('job_1', expect.objectContaining({
+      operation: 'creator.open-artifact'
+    }));
+    expect(session!.issues).toHaveLength(1);
+  });
+
+  it('keeps pre-job failures on the creator launch surface and does not report them as job issues', () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    const onPreJobFailure = vi.fn();
+    const reportClientIssue = vi.fn();
+    render(
+      <CreatorSessionProvider
+        initialJob={pendingJob()}
+        onPreJobFailure={onPreJobFailure}
+        service={{ applyAction: vi.fn(), runAgentTurn: vi.fn(), reportClientIssue } as never}
+      >
+        <SessionCaptureHarness onSession={value => { session = value; }} />
+      </CreatorSessionProvider>
+    );
+
+    act(() => {
+      session!.captureCreatorFailure('creator.launch', new Error('launch failed'), '创建任务失败。');
+    });
+
+    expect(onPreJobFailure).toHaveBeenCalledWith(
+      'creator.launch',
+      expect.any(Error),
+      '创建任务失败。'
+    );
+    expect(reportClientIssue).not.toHaveBeenCalled();
+    expect(session!.issues).toEqual([]);
+  });
+
+  it('merges repeated local failures into one issue occurrence', async () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    render(
+      <CreatorSessionProvider
+        initialJob={job(0, {})}
+        service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+      >
+        <SessionCaptureHarness onSession={value => { session = value; }} />
+      </CreatorSessionProvider>
+    );
+
+    act(() => {
+      session!.captureCreatorFailure('creator.client-operation', new Error('first'));
+      session!.captureCreatorFailure('creator.client-operation', new Error('second'));
+      session!.captureCreatorFailure('creator.client-operation', new Error('third'));
+    });
+
+    await waitFor(() => expect(session!.issues).toHaveLength(1));
+    expect(session!.issues[0]!.occurrenceCount).toBe(3);
+  });
+
+  it('waits for daemon state after retrying an issue and forwards the focused issue id to Agent', async () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    const openIssue = creatorIssue({
+      stageId: 'subtitle',
+      repairActions: [{
+        kind: 'retry-operation',
+        operationId: 'creator.retry-stage',
+        requiresConfirmation: false,
+        risk: 'normal'
+      }]
+    });
+    const initialJob = { ...job(0, {}), issues: [openIssue] };
+    const applyAction = vi.fn(async () => ({ job: initialJob }));
+    const startAgentTurn = vi.fn(async () => ({ turn: undefined as never }));
+    render(
+      <CreatorSessionProvider
+        initialJob={initialJob}
+        service={{ applyAction, runAgentTurn: startAgentTurn, startAgentTurn } as never}
+      >
+        <SessionCaptureHarness onSession={value => { session = value; }} />
+      </CreatorSessionProvider>
+    );
+
+    await act(async () => session!.repairIssue(openIssue));
+    expect(applyAction).toHaveBeenCalledWith('job_1', expect.objectContaining({
+      action: 'run-stage',
+      input: { stageId: 'subtitle' },
+      repairIssueId: openIssue.id
+    }));
+    expect(session!.issues[0]!.status).toBe('open');
+
+    act(() => session!.focusIssue(openIssue));
+    await act(async () => session!.runAgentTurn('为什么失败？'));
+    expect(startAgentTurn).toHaveBeenCalledWith('job_1', expect.objectContaining({
+      message: '为什么失败？',
+      focusedIssueId: openIssue.id
+    }));
+  });
+
+  it('reports automatic settings persistence failures through the session issue path', async () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    const reportClientIssue = vi.fn(() => new Promise(() => undefined));
+    render(
+      <CreatorSessionProvider
+        initialJob={job(0, { targetLanguage: 'en' })}
+        service={{
+          applyAction: vi.fn(async () => { throw new Error('database unavailable'); }),
+          runAgentTurn: vi.fn(),
+          reportClientIssue
+        } as never}
+      >
+        <SessionCaptureHarness onSession={value => { session = value; }} />
+      </CreatorSessionProvider>
+    );
+
+    act(() => session!.updateDraft({ targetLanguage: 'ja' }));
+    await act(async () => session!.flush().catch(() => undefined));
+
+    expect(reportClientIssue).toHaveBeenCalledWith('job_1', expect.objectContaining({
+      operation: 'creator.update-settings'
+    }));
+    expect(session!.issues).toHaveLength(1);
+  });
+
+  it('captures a blocked preflight only once across the nested action boundary', async () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    const reportClientIssue = vi.fn(() => new Promise(() => undefined));
+    render(
+      <CreatorSessionProvider
+        initialJob={job(0, {})}
+        service={{
+          applyAction: vi.fn(),
+          runAgentTurn: vi.fn(),
+          reportClientIssue,
+          preflight: vi.fn(async () => ({
+            templateId: 'video-translation',
+            templateVersion: 1,
+            stageId: 'subtitle',
+            executionMode: 'remote',
+            canStart: false,
+            ready: [],
+            warning: [],
+            blocked: [{
+              id: 'provider',
+              title: '服务未配置',
+              message: '请先配置服务。',
+              executionMode: 'remote'
+            }],
+            checkedAt: '2026-09-22T00:00:00.000Z'
+          }))
+        } as never}
+      >
+        <SessionCaptureHarness onSession={value => { session = value; }} />
+      </CreatorSessionProvider>
+    );
+
+    await act(async () => {
+      await session!.applyAction({ action: 'run-stage', input: { stageId: 'subtitle' } })
+        .catch(() => undefined);
+    });
+
+    expect(reportClientIssue).toHaveBeenCalledTimes(1);
+    expect(reportClientIssue).toHaveBeenCalledWith('job_1', expect.objectContaining({
+      operation: 'creator.preflight',
+      source: 'preflight'
+    }));
+    expect(session!.issues).toHaveLength(1);
+  });
+
+  it('reconciles a focused local issue from a daemon snapshot without reporting another occurrence', async () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    render(
+      <CreatorSessionProvider
+        initialJob={job(0, {})}
+        service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+      >
+        <SessionCaptureHarness onSession={value => { session = value; }} />
+      </CreatorSessionProvider>
+    );
+
+    act(() => {
+      session!.captureCreatorFailure('creator.offline-operation', new Error('offline'));
+    });
+    await waitFor(() => expect(session!.issues).toHaveLength(1));
+    const localIssue = session!.issues[0]!;
+    act(() => session!.focusIssue(localIssue));
+    const authoritative = creatorIssue({
+      id: 'issue_from_snapshot',
+      diagnosticId: 'OC-SNAPSHOT',
+      operation: localIssue.operation,
+      fingerprint: localIssue.fingerprint
+    });
+
+    act(() => session!.applyRemoteSnapshot({
+      ...job(1, {}),
+      issues: [authoritative]
+    }));
+
+    expect(session!.issues).toEqual([authoritative]);
+    expect(session!.focusedIssue?.id).toBe(authoritative.id);
+  });
 });
+
+function SessionCaptureHarness(props: {
+  onSession(value: ReturnType<typeof useCreatorSession>): void;
+}) {
+  const session = useCreatorSession();
+  props.onSession(session);
+  return null;
+}
+
+function creatorIssue(overrides: Partial<OpenCreatorIssue> = {}): OpenCreatorIssue {
+  return {
+    id: 'issue_1',
+    diagnosticId: 'OC-ISSUE001',
+    code: 'creator_stage_failed',
+    scope: { kind: 'creator-job', jobId: 'job_1' },
+    source: 'stage',
+    category: 'execution',
+    severity: 'error',
+    status: 'open',
+    operation: 'creator.retry-stage',
+    summaryKey: 'issue.execution',
+    summaryParams: {},
+    fallbackMessage: '任务执行失败，请查看诊断。',
+    retryable: true,
+    repairActions: [{ kind: 'focus-agent' }],
+    fingerprint: 'creator-stage-failed',
+    occurrenceCount: 1,
+    occurredAt: '2026-09-22T00:00:00.000Z',
+    lastOccurredAt: '2026-09-22T00:00:00.000Z',
+    ...overrides
+  };
+}
 
 function timeline(turn: { status: 'completed' | 'running' | 'waiting_approval'; content: string }) {
   return {

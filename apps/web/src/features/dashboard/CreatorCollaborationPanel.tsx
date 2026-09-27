@@ -4,23 +4,26 @@ import type {
   CreatorAgentItem,
   CreatorAgentTurn,
   CreatorJob,
+  OpenCreatorIssue,
   CreatorStageRun
 } from '@opencreator/protocol';
 import {
   CheckCircle2,
   CircleDot,
-  CircleStop,
   LoaderCircle,
   MessageSquareText,
   Play,
+  RefreshCw,
   ServerOff,
   Sparkles,
+  Square,
   XCircle
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import OpenCreatorMark from '../../components/brand/OpenCreatorMark.js';
 import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { issueConversationText } from '../issues/issue-catalog.js';
 import ToolAgentComposer, { type ToolAgentPermission } from './ToolAgentComposer.js';
 import {
   creatorSystemIssueText,
@@ -52,11 +55,11 @@ type SyncEvent = {
 
 type CollaborationMessage = {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   status: CreatorAgentTurn['status'] | CreatorAgentItem['status'];
   createdAt: string;
-  source: 'agent';
+  source: 'agent' | 'diagnostic';
 };
 
 type CollaborationTimelineItem =
@@ -78,6 +81,12 @@ type CollaborationTimelineItem =
       createdAt: string;
       stage: CreatorStageRun;
       actor: CreatorActivity['actor'];
+    }
+  | {
+      id: string;
+      kind: 'issue';
+      createdAt: string;
+      issue: OpenCreatorIssue;
     };
 
 export default function CreatorCollaborationPanel(props: {
@@ -95,11 +104,11 @@ export default function CreatorCollaborationPanel(props: {
   const session = useOptionalCreatorSession();
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [submitError, setSubmitError] = useState('');
   const [permission, setPermission] = useState<ToolAgentPermission>('full-access');
   const sendingRef = useRef(false);
   const permissionSessionRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
+  const followTimelineRef = useRef(true);
   const agentTurns = useMemo(() => session?.turns.filter(turn => (
     (turn.role === 'user' || turn.role === 'assistant')
     && (turn.content.trim().length > 0 || ['queued', 'running', 'waiting_approval'].includes(turn.status))
@@ -115,11 +124,12 @@ export default function CreatorCollaborationPanel(props: {
   const timelineItems = useMemo(
     () => buildCollaborationTimeline(
       session?.job,
+      session?.issues ?? [],
       conversationMessages,
       syncEvents,
       props.adapter
     ),
-    [conversationMessages, props.adapter, session?.job, syncEvents]
+    [conversationMessages, props.adapter, session?.issues, session?.job, syncEvents]
   );
   const pendingApprovals = useMemo(
     () => session?.approvals.filter(approval => approval.status === 'pending') ?? [],
@@ -153,14 +163,11 @@ export default function CreatorCollaborationPanel(props: {
     if (sandbox === 'workspace-write') setPermission('approval');
   }, [session?.agentSession?.id, session?.agentSession?.sandbox]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const list = messageListRef.current;
-    if (list !== null) list.scrollTop = list.scrollHeight;
+    if (list !== null && followTimelineRef.current) list.scrollTop = list.scrollHeight;
   }, [
-    conversationMessages.at(-1)?.content,
-    conversationMessages.at(-1)?.status,
-    session?.job.updatedAt,
-    timelineItems.at(-1)?.id,
+    timelineItems,
     pendingApprovals.length,
     session?.agentBusy,
     showAgentWorking
@@ -171,17 +178,17 @@ export default function CreatorCollaborationPanel(props: {
     if (!content || session === null || sendingRef.current) return;
     sendingRef.current = true;
     session.clearError();
-    setSubmitError('');
     setInput('');
     setSending(true);
     try {
-      if (session.agentBusy) await session.steerAgentTurn(content);
+      if (session.job.id.startsWith('pending:') && session.focusedIssue !== null) {
+        session.askPendingIssue(content, session.focusedIssue);
+      } else if (session.agentBusy) await session.steerAgentTurn(content);
       else await session.runAgentTurn(
         content,
         permission === 'full-access' ? 'danger-full-access' : 'workspace-write'
       );
     } catch (cause) {
-      setSubmitError(cause instanceof Error ? cause.message : String(cause));
       session.clearError();
       setInput(current => current.trim().length > 0 ? current : content);
       throw cause;
@@ -217,7 +224,7 @@ export default function CreatorCollaborationPanel(props: {
             aria-label={l('停止 Agent 对话', 'Stop Agent conversation')}
             title={l('停止 Agent 对话', 'Stop Agent conversation')}
           >
-            <CircleStop size={15} strokeWidth={1.9} aria-hidden="true" />
+            <Square size={15} fill="currentColor" aria-hidden="true" />
           </button>
         ) : null}
       </header>
@@ -265,6 +272,10 @@ export default function CreatorCollaborationPanel(props: {
           <div
             ref={messageListRef}
             className="creator-collaboration-messages"
+            onScroll={event => {
+              const list = event.currentTarget;
+              followTimelineRef.current = list.scrollHeight - list.clientHeight - list.scrollTop <= 24;
+            }}
             role="log"
             aria-label={l('协作时间线', 'Collaboration timeline')}
             aria-live="polite"
@@ -280,6 +291,18 @@ export default function CreatorCollaborationPanel(props: {
               }
               if (item.kind === 'activity') {
                 return <CollaborationActivityView key={item.id} event={item.event} />;
+              }
+              if (item.kind === 'issue') {
+                return (
+                  <CollaborationIssueView
+                    key={item.id}
+                    issue={item.issue}
+                    onRetry={() => session.repairIssue(item.issue)}
+                    onFocus={() => {
+                      session.focusIssue(item.issue);
+                    }}
+                  />
+                );
               }
               return (
                 <CollaborationStageView
@@ -349,13 +372,6 @@ export default function CreatorCollaborationPanel(props: {
             </div>
           ) : null}
 
-          {submitError ? (
-            <div className="creator-collaboration-submit-error" role="alert">
-              <XCircle size={15} strokeWidth={1.8} aria-hidden="true" />
-              <span>{submitError}</span>
-            </div>
-          ) : null}
-
           <ToolAgentComposer
             value={input}
             onChange={setInput}
@@ -378,6 +394,42 @@ export default function CreatorCollaborationPanel(props: {
   );
 }
 
+function CollaborationIssueView(props: {
+  issue: OpenCreatorIssue;
+  onRetry(): Promise<void>;
+  onFocus(): void;
+}) {
+  const l = useLocalizedCopy();
+  const copy = issueConversationText(props.issue, l('zh-CN', 'en-US') as 'zh-CN' | 'en-US');
+  const retryable = props.issue.stageId !== undefined
+    && props.issue.repairActions.some(action => (
+      action.kind === 'retry-operation'
+      && action.operationId === 'creator.retry-stage'
+    ));
+  return (
+    <article className="creator-collaboration-message creator-collaboration-issue" data-role="system" data-source="diagnostic" data-status={props.issue.status} data-issue-id={props.issue.id}>
+      <header>
+        <span aria-hidden="true"><OpenCreatorMark size={14} /></span>
+        <strong>OpenCreator</strong>
+        <small>{l('系统诊断', 'System diagnosis')}</small>
+      </header>
+      <div className="creator-collaboration-bubble">
+        <p>{copy.message}</p>
+        {props.issue.status === 'resolving' ? <p>{l('正在检查修复结果。', 'Checking the repair result.')}</p> : null}
+        {props.issue.status === 'resolved' ? <p>{l('这个问题已解决。', 'This issue has been resolved.')}</p> : null}
+      </div>
+      {props.issue.status === 'open' ? (
+        <div className="creator-collaboration-issue-actions">
+          <button type="button" onClick={props.onFocus} title={l('询问这个问题', 'Ask about this issue')} aria-label={l('询问这个问题', 'Ask about this issue')}>
+            <MessageSquareText size={15} aria-hidden="true" />
+          </button>
+          {retryable ? <button type="button" onClick={() => void props.onRetry().catch(() => undefined)} title={l('重试当前步骤', 'Retry this stage')} aria-label={l('重试当前步骤', 'Retry this stage')}><RefreshCw size={15} aria-hidden="true" /></button> : null}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 function CollaborationMessageView(props: { message: CollaborationMessage }) {
   const l = useLocalizedCopy();
   const { message } = props;
@@ -388,11 +440,11 @@ function CollaborationMessageView(props: { message: CollaborationMessage }) {
       data-source={message.source}
       data-status={message.status}
     >
-      {message.role === 'assistant' ? (
+      {message.role !== 'user' ? (
         <header>
           <span aria-hidden="true"><OpenCreatorMark size={14} /></span>
           <strong>OpenCreator</strong>
-          <small>{l('Agent 回复', 'Agent reply')}</small>
+          <small>{message.role === 'system' ? l('系统诊断', 'System diagnosis') : l('Agent 回复', 'Agent reply')}</small>
         </header>
       ) : null}
       <div className="creator-collaboration-bubble">
@@ -467,7 +519,7 @@ function CollaborationStageView(props: {
               aria-label={l(`终止${label}`, `Stop ${label}`)}
               title={l('终止当前阶段', 'Stop current stage')}
             >
-              <CircleStop size={14} strokeWidth={1.9} aria-hidden="true" />
+              <Square size={14} fill="currentColor" aria-hidden="true" />
             </button>
           ) : props.onResume !== undefined ? (
             <button
@@ -562,6 +614,7 @@ function buildCollaborationMessages(
 
 function buildCollaborationTimeline(
   job: CreatorJob | undefined,
+  issues: OpenCreatorIssue[],
   messages: CollaborationMessage[],
   events: SyncEvent[],
   adapter: CreatorPanelAdapter
@@ -599,6 +652,14 @@ function buildCollaborationTimeline(
       actor: stageActor(stage, job?.activities ?? [], adapter)
     });
   }
+  for (const issue of issues) {
+    items.push({
+      id: `issue:${issue.id}`,
+      kind: 'issue',
+      createdAt: issue.lastOccurredAt,
+      issue
+    });
+  }
   return items
     .sort((left, right) => (
       left.createdAt.localeCompare(right.createdAt)
@@ -611,6 +672,7 @@ function buildCollaborationTimeline(
 function timelineItemOrder(item: CollaborationTimelineItem): number {
   if (item.kind === 'message') return item.message.role === 'user' ? 0 : 3;
   if (item.kind === 'activity') return 1;
+  if (item.kind === 'issue') return 3;
   return 2;
 }
 
@@ -802,7 +864,7 @@ function stageStatusIcon(stage: CreatorStageRun) {
     return <LoaderCircle className="creator-collaboration-spin" size={15} strokeWidth={1.8} />;
   }
   if (stage.status === 'canceled' || stage.status === 'interrupted') {
-    return <CircleStop size={14} strokeWidth={1.8} />;
+    return <Square size={14} fill="currentColor" />;
   }
   return <CheckCircle2 size={15} strokeWidth={1.8} />;
 }

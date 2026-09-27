@@ -20,6 +20,8 @@ export type DesktopPreferences = {
   telemetryEnabled: boolean;
 };
 
+export type DirectorySelectionPurpose = 'project' | 'default-project-root' | 'output-root';
+
 export type HostWindowChrome = {
   integratedTitleBar: true;
   titleBarHeight: number;
@@ -48,6 +50,6 @@ export type HostBridge = {
   ): Promise<DesktopPreferences>;
   setWindowColorMode?(mode: ColorMode): Promise<void>;
   controlWindow?(action: 'close' | 'minimize' | 'zoom'): Promise<void>;
-  selectProjectDirectory?(): Promise<string | null>;
+  selectProjectDirectory?(purpose?: DirectorySelectionPurpose): Promise<string | null>;
   resolveDroppedFilePath?(file: File): string | null;
 };

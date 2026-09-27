@@ -13,7 +13,6 @@ import {
   writeFile
 } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import sharp from 'sharp';
 import { stickmanCanvasForRatio, type CreatorArtifact } from '@opencreator/protocol';
 import type { CreatorExecutor, CreatorExecutorOutput } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
@@ -27,6 +26,7 @@ import {
   stickmanTimelineSchema,
   stickmanVisualValidationSchema
 } from './contracts.js';
+import { loadSharp } from './sharp-loader.js';
 import { renderStickmanPublishCopy } from './publish-copy.js';
 
 const deliveryFiles = [
@@ -165,7 +165,7 @@ export function createStickmanDeliveryExecutor(input: {
         ...(input.ffmpegPath === undefined ? {} : { ffmpegPath: input.ffmpegPath })
       });
       const thumbnailInfo = await stat(thumbnailPath);
-      const thumbnailMetadata = await sharp(thumbnailPath).metadata();
+      const thumbnailMetadata = await (await loadSharp())(thumbnailPath).metadata();
       if (thumbnailMetadata.width !== canvas.width || thumbnailMetadata.height !== canvas.height) {
         throw new CreatorExecutorError(
           'creator_delivery_thumbnail_failed',
@@ -392,7 +392,7 @@ async function renderThumbnailWithFfmpeg(input: {
       '-y', '-ss', timestamp.toFixed(3), '-i', input.path,
       '-frames:v', '1', '-f', 'image2', sourcePath
     ]);
-    await sharp(sourcePath)
+    await (await loadSharp())(sourcePath)
       .resize(input.width, input.height, { fit: 'cover', position: 'centre' })
       .png()
       .toFile(input.targetPath);
@@ -553,6 +553,7 @@ async function sampleFramesWithFfmpeg(input: {
     input.duration / 2,
     Math.max(0, input.duration - Math.min(0.2, input.duration / 4))
   ];
+  const sharp = await loadSharp();
   for (const [index, timestamp] of timestamps.entries()) {
     const target = join(input.workdir, `frame-${index + 1}.png`);
     await execFileAsync(input.ffmpegPath, [

@@ -9,6 +9,7 @@ const emptySnapshot = (): OpenCreatorConfigSnapshot => ({
   document: { version: 1 },
   configured: {
     ui: false,
+    storage: false,
     desktop: false,
     runtime: false,
     creatorServices: false

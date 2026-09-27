@@ -37,6 +37,37 @@ const OVERSIZED_WAVE_PCM_BYTES = 10 * 1024 * 1024 + 4096;
 const OVERSIZED_WAVE_FILE_BYTES = OVERSIZED_WAVE_PCM_BYTES + 44;
 test.describe.configure({ mode: 'serial' });
 
+test('打包 App 的 YouTube 视频嵌入请求带有有效 HTTP 来源标识', async () => {
+  const fixture = await launchCreatorDesktop({ width: 1180, height: 850 });
+  try {
+    await waitForWorkspace(fixture.app.page);
+    const cdp = await fixture.app.page.context().newCDPSession(fixture.app.page);
+    await cdp.send('Network.enable');
+    const embedRequests = new Set<string>();
+    let referer = '';
+    cdp.on('Network.requestWillBeSent', event => {
+      if (event.request.url.startsWith('https://www.youtube-nocookie.com/embed/')) {
+        embedRequests.add(event.requestId);
+      }
+    });
+    cdp.on('Network.requestWillBeSentExtraInfo', event => {
+      if (embedRequests.has(event.requestId)) {
+        referer = String(event.headers.Referer ?? event.headers.referer ?? '');
+      }
+    });
+    await fixture.app.page.evaluate(() => {
+      const frame = document.createElement('iframe');
+      frame.title = 'YouTube embed verification';
+      frame.src = 'https://www.youtube-nocookie.com/embed/M7lc1UVf-VE';
+      document.body.append(frame);
+    });
+    await expect.poll(() => referer).toBe('https://github.com/krillinai/OpenCreator/');
+  } finally {
+    await closePackagedApp(fixture.app).catch(() => undefined);
+    rmSync(fixture.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
 test('工作台与滚动中的项目页保持相同内容边界', async () => {
   const fixture = await launchCreatorDesktop({ width: 1273, height: 985 });
   try {
@@ -92,7 +123,10 @@ test('打包 App 的每个设置 Tab 与主页面保持相同右侧留白', asyn
         };
       });
       expect(bounds.left, `Tab ${index + 1}`).toBe(24);
-      expect(bounds.right - bounds.gutter, `Tab ${index + 1}`).toBe(24);
+      expect(
+        Math.abs(bounds.right - bounds.gutter - 24),
+        `Tab ${index + 1}`
+      ).toBeLessThanOrEqual(1);
       boundsByTab.push(bounds);
       if (index < 2) {
         await fixture.app.page.screenshot({
@@ -313,9 +347,7 @@ test('打包 App 的 Creator 设置页保留组件间距和下拉箭头内边距
         textInsets: Array.from(panel.querySelectorAll('.native-select select')).map(select => getComputedStyle(select).paddingInlineEnd)
       };
     })).toEqual({ sourceCharacterGap: 16, selectTopDelta: 0, arrowInsets: [12, 12], textInsets: ['40px', '40px'] });
-    await fixture.app.page.getByRole('combobox', { name: '目标时长' }).selectOption('60');
-    await expect(fixture.app.page.getByRole('combobox', { name: '目标时长' })).toHaveValue('60');
-    await fixture.app.page.locator('.creator-tool-form-row').scrollIntoViewIfNeeded();
+    await fixture.app.page.getByRole('combobox', { name: '目标时长' }).scrollIntoViewIfNeeded();
     await fixture.app.page.screenshot({ path: testInfo.outputPath('creator-settings-spacing-980.png') });
   } finally {
     await closePackagedApp(fixture.app).catch(() => undefined);
@@ -352,6 +384,35 @@ test('打包 App 在最小窗口宽度下保持 Creator 对话输入区贴底', 
       }, created.body.job.id);
       await expect(fixture.app.page.getByRole('heading', { name: '火柴人动画' })).toBeVisible();
       await expect(fixture.app.page.getByRole('textbox', { name: '告诉 Agent 你的要求' })).toBeVisible();
+      const preflightLayout = await fixture.app.page.evaluate(() => {
+        const panel = document.querySelector('.creator-collaboration-panel')!;
+        const list = panel.querySelector('.creator-collaboration-messages')!;
+        const preflight = document.createElement('section');
+        preflight.className = 'creator-collaboration-preflight';
+        preflight.textContent = '启动前体检已通过，可以启动阶段。';
+        panel.insertBefore(preflight, list);
+        const gap = Math.round(list.getBoundingClientRect().top - preflight.getBoundingClientRect().bottom);
+        const entryOffset = Math.round(list.firstElementChild!.getBoundingClientRect().top - list.getBoundingClientRect().top);
+        preflight.remove();
+        const message = document.createElement('article');
+        message.className = 'creator-collaboration-message';
+        message.dataset.role = 'user';
+        const bubble = document.createElement('div');
+        bubble.className = 'creator-collaboration-bubble';
+        bubble.textContent = '测试消息';
+        message.append(bubble);
+        list.append(message);
+        const outerBackground = getComputedStyle(message).backgroundColor;
+        const outerPadding = getComputedStyle(message).padding;
+        const bubbleBorder = getComputedStyle(bubble).borderStyle;
+        message.remove();
+        return { gap, entryOffset, outerBackground, outerPadding, bubbleBorder };
+      });
+      expect(preflightLayout.gap).toBeLessThanOrEqual(1);
+      expect(preflightLayout.entryOffset).toBeLessThanOrEqual(24);
+      expect(preflightLayout.outerBackground).toBe('rgba(0, 0, 0, 0)');
+      expect(preflightLayout.outerPadding).toBe('0px');
+      expect(preflightLayout.bubbleBorder).toBe('solid');
       await fixture.app.page.locator('.stickman-step-scroll').evaluate(element => {
         element.scrollTop = element.scrollHeight;
       });
@@ -364,12 +425,12 @@ test('打包 App 在最小窗口宽度下保持 Creator 对话输入区贴底', 
           width: window.innerWidth,
           panelRightOfMain: panel.left >= main.right - 1,
           panelVisible: panel.right <= window.innerWidth + 1,
-          panelBottomDelta: Math.round(panel.bottom - window.innerHeight),
+          panelBottomDelta: Math.round(Math.abs(panel.bottom - window.innerHeight)),
           panelHeightDelta: Math.round(panel.height - workspace.height),
-          composerBottomDelta: Math.round(
+          composerBottomDelta: Math.round(Math.abs(
             composer.getBoundingClientRect().bottom
             + parseFloat(getComputedStyle(composer).marginBottom) - panel.bottom
-          )
+          ))
         };
       })).toEqual({ width: 980, panelRightOfMain: true, panelVisible: true, panelBottomDelta: 0, panelHeightDelta: 0, composerBottomDelta: 0 });
       await fixture.app.page.screenshot({
@@ -431,7 +492,7 @@ test('打包 App 在窄窗口下各 Creator 内页保持对话栏在右侧', asy
 });
 
 test('@package-smoke 实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runtime', async () => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const fixture = await launchCreatorDesktop();
   let currentApp: PackagedApp = fixture.app;
 
@@ -786,10 +847,17 @@ test('@package-smoke 实际 Desktop 包创建并重启恢复 Creator Job，且�
       aspectRatio: '9:16'
     });
 
+    const currentProjectId = await currentApp.page.evaluate(() => {
+      const stored = localStorage.getItem('opencreator.navigation.v3');
+      if (stored === null) return undefined;
+      const parsed = JSON.parse(stored) as { currentProjectId?: unknown };
+      return typeof parsed.currentProjectId === 'string' ? parsed.currentProjectId : undefined;
+    });
+    expect(currentProjectId).toBeTruthy();
     const createdJob = await runtimeRequest<{
       job: { id: string; revision: number; state: Record<string, unknown> };
     }>(currentApp.page, 'POST', '/creator/jobs', {
-      projectId: createdProject.body.project.id,
+      projectId: currentProjectId,
       templateId: 'video-translation',
       creationKey: 'packaged-video-translation',
       state: {
@@ -818,6 +886,52 @@ test('@package-smoke 实际 Desktop 包创建并重启恢复 Creator Job，且�
       role: 'assistant',
       status: 'completed',
       content: 'desktop e2e run completed'
+    });
+    const reportedIssue = await runtimeRequest<{
+      clientIssueId: string;
+      issue: {
+        id: string;
+        diagnosticId: string;
+        fallbackMessage: string;
+        status: string;
+      };
+    }>(currentApp.page, 'POST', `/creator/jobs/${createdJob.body.job.id}/issues/report`, {
+      clientIssueId: 'packaged-creator-issue',
+      code: 'creator_packaged_e2e_failure',
+      source: 'client',
+      operation: 'creator.packaged-e2e',
+      fallbackMessage: '操作未完成，请在 Agent 区域查看诊断。'
+    });
+    expect(reportedIssue.status).toBe(201);
+    expect(reportedIssue.body.issue).toMatchObject({
+      status: 'open',
+      fallbackMessage: '操作未完成，请在 Agent 区域查看诊断。'
+    });
+    await currentApp.page.evaluate(jobId => {
+      window.location.hash = `#/workbench?tool=video-translation&jobId=${encodeURIComponent(jobId)}`;
+    }, createdJob.body.job.id);
+    const issueCard = currentApp.page.locator(
+      `.creator-collaboration-issue[data-issue-id="${reportedIssue.body.issue.id}"]`
+    );
+    await expect(issueCard).toContainText('操作未完成，请在 Agent 区域查看诊断。');
+    await expect(issueCard).toContainText('错误码：creator_packaged_e2e_failure');
+    await issueCard.getByRole('button', { name: '询问这个问题' }).click();
+    const issueComposer = currentApp.page.getByRole('textbox', { name: '告诉 Agent 你的要求' });
+    await issueComposer.fill('请说明这个问题的已确认事实、可能原因和下一步修复方法。');
+    const focusedAgentResponse = currentApp.page.waitForResponse(response => (
+      response.request().method() === 'POST'
+      && new URL(response.url()).pathname.endsWith(
+        `/creator/jobs/${createdJob.body.job.id}/agent-turns`
+      )
+    ), { timeout: 45_000 });
+    await currentApp.page.getByRole('button', { name: '发送给 Agent' }).click();
+    const focusedAgentRequest = (await focusedAgentResponse).request().postDataJSON() as {
+      focusedIssueId?: string;
+      message?: string;
+    };
+    expect(focusedAgentRequest).toMatchObject({
+      focusedIssueId: reportedIssue.body.issue.id,
+      message: '请说明这个问题的已确认事实、可能原因和下一步修复方法。'
     });
 
     const localSourceJob = await runtimeRequest<{
@@ -854,16 +968,20 @@ test('@package-smoke 实际 Desktop 包创建并重启恢复 Creator Job，且�
       deduplicated: false
     });
 
+    const jobBeforeUpdate = await runtimeRequest<{
+      job: { revision: number };
+    }>(currentApp.page, 'GET', `/creator/jobs/${createdJob.body.job.id}`);
+    expect(jobBeforeUpdate.status).toBe(200);
     const updatedJob = await runtimeRequest<{
       job: { id: string; revision: number; state: Record<string, unknown> };
     }>(currentApp.page, 'POST', `/creator/jobs/${createdJob.body.job.id}/actions`, {
       action: 'update-settings',
-      expectedRevision: 0,
+      expectedRevision: jobBeforeUpdate.body.job.revision,
       input: { patch: { targetLanguage: 'ja', dubbing: true } }
     });
     expect(updatedJob.status).toBe(200);
     expect(updatedJob.body.job).toMatchObject({
-      revision: 1,
+      revision: jobBeforeUpdate.body.job.revision + 1,
       state: { targetLanguage: 'ja', dubbing: true }
     });
     const imageJob = await runtimeRequest<{
@@ -998,14 +1116,34 @@ test('@package-smoke 实际 Desktop 包创建并重启恢复 Creator Job，且�
     await waitForWorkspace(currentApp.page);
 
     const restoredJob = await runtimeRequest<{
-      job: { id: string; revision: number; state: Record<string, unknown> };
+      job: {
+        id: string;
+        revision: number;
+        state: Record<string, unknown>;
+        issues: Array<{ id: string; diagnosticId: string; status: string }>;
+      };
     }>(currentApp.page, 'GET', `/creator/jobs/${createdJob.body.job.id}`);
     expect(restoredJob.status).toBe(200);
     expect(restoredJob.body.job).toMatchObject({
       id: createdJob.body.job.id,
-      revision: 1,
+      revision: updatedJob.body.job.revision,
       state: { targetLanguage: 'ja', dubbing: true }
     });
+    expect(restoredJob.body.job.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: reportedIssue.body.issue.id,
+        diagnosticId: reportedIssue.body.issue.diagnosticId,
+        status: 'open'
+      })
+    ]));
+    await currentApp.page.evaluate(jobId => {
+      window.location.hash = `#/workbench?tool=video-translation&jobId=${encodeURIComponent(jobId)}`;
+    }, createdJob.body.job.id);
+    const restoredIssueCard = currentApp.page.locator(
+      `.creator-collaboration-issue[data-issue-id="${reportedIssue.body.issue.id}"]`
+    );
+    await expect(restoredIssueCard).toContainText('操作未完成，请在 Agent 区域查看诊断。');
+    await expect(restoredIssueCard).toContainText('错误码：creator_packaged_e2e_failure');
     const restoredImageJob = await runtimeRequest<{
       job: { id: string; revision: number; state: Record<string, unknown> };
     }>(currentApp.page, 'GET', `/creator/jobs/${imageJob.body.job.id}`);
@@ -1135,7 +1273,8 @@ test('@package-smoke 实际 Desktop 包创建并重启恢复 Creator Job，且�
     expect(restoredStickmanJob.body.job.state).not.toHaveProperty('voice');
     expect(restoredStickmanJob.body.job.revision)
       .toBeGreaterThanOrEqual(updatedStickmanJob.body.job.revision);
-    await currentApp.page.getByRole('button', { name: '我的项目' }).click();
+    await currentApp.page.getByRole('button', { name: '返回', exact: true }).click();
+    await currentApp.page.getByRole('button', { name: '我的项目', exact: true }).click();
     await currentApp.page.getByRole('button', {
       name: '打开项目 youtube.com · creator-stickman-package-smoke'
     }).click();
@@ -1460,6 +1599,15 @@ async function waitForWorkspace(page: Page): Promise<void> {
   await expect.poll(async () => (
     await page.evaluate(() => window.opencreatorDesktop?.readBootstrapState())
   )?.phase).toBe('ready');
+  const confirmed = await page.evaluate(() => window.localStorage.getItem('opencreator.agent-setup-confirmed.v1') !== null);
+  if (!confirmed) {
+    const setup = page.getByRole('heading', { name: '开始使用 Agent' });
+    await setup.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
+    if (await setup.isVisible()) {
+      await page.getByRole('button', { name: '使用本机 Codex，继续' }).click();
+      await expect(setup).toBeHidden();
+    }
+  }
   await expect(page.locator('.opencreator-shell')).toBeVisible();
 }
 

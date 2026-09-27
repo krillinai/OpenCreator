@@ -1,6 +1,7 @@
 import {
   smartDubbingStyles,
   type CreateSmartDubbingRequest,
+  type PublicErrorFacts,
   type RuntimeErrorCode,
   type SmartDubbingResult,
   type SmartDubbingStyle
@@ -13,6 +14,7 @@ import {
   type KrillinTtsService
 } from '../creator/krillin/tts-service.js';
 import { smartDubbingInstructions } from './styles.js';
+import { publicFactsFromFailure } from '../creator/public-error-facts.js';
 
 const MAX_TEXT_LENGTH = 5_000;
 const SAFE_RESULT_ID = /^[A-Za-z0-9_-]{12,64}$/;
@@ -37,7 +39,8 @@ export class SmartDubbingError extends Error {
       | 'SMART_DUBBING_RESULT_NOT_FOUND'
       | 'SMART_DUBBING_STORAGE_FAILED'>,
     message: string,
-    readonly statusCode: number
+    readonly statusCode: number,
+    readonly publicFacts?: PublicErrorFacts
   ) {
     super(message);
     this.name = 'SmartDubbingError';
@@ -192,13 +195,15 @@ function mapTtsError(error: unknown): SmartDubbingError {
     return new SmartDubbingError(
       'SMART_DUBBING_UPSTREAM_ERROR',
       error.message,
-      error.statusCode >= 500 ? error.statusCode : 502
+      error.statusCode >= 500 ? error.statusCode : 502,
+      error.publicFacts
     );
   }
   return new SmartDubbingError(
     'SMART_DUBBING_UPSTREAM_ERROR',
-    error instanceof Error ? error.message : 'The dubbing provider could not be reached',
-    502
+    'The dubbing provider could not be reached',
+    502,
+    publicFactsFromFailure(error)
   );
 }
 

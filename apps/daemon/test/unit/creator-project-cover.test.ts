@@ -100,6 +100,33 @@ describe('creator project cover', () => {
     }));
   });
 
+  it('waits for Runtime verification before extracting a video frame', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-project-cover-verification-'));
+    const sourcePath = join(tempDir, 'source.mp4');
+    writeFileSync(sourcePath, 'video');
+    let releaseVerification!: () => void;
+    const ensureRuntimeReady = vi.fn(() => new Promise<void>(resolve => {
+      releaseVerification = resolve;
+    }));
+    const extractFrame = vi.fn(async (input: { outputPath: string }) => {
+      await writeFile(input.outputPath, 'verified-frame');
+    });
+    const service = createCreatorProjectCoverService({
+      jobsRoot: tempDir,
+      ensureRuntimeReady,
+      extractFrame
+    });
+    const resolving = service.resolve(creatorJob([artifact('source_video', sourcePath)]));
+
+    await vi.waitFor(() => expect(ensureRuntimeReady).toHaveBeenCalledOnce());
+    expect(extractFrame).not.toHaveBeenCalled();
+    releaseVerification();
+    const cover = await resolving;
+
+    expect(extractFrame).toHaveBeenCalledOnce();
+    expect(await readFile(cover!.path, 'utf8')).toBe('verified-frame');
+  });
+
   it('extracts a project cover from generated video artifacts', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-project-generated-video-'));
     const sourcePath = join(tempDir, 'generated.mp4');

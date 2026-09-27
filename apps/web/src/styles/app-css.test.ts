@@ -173,6 +173,25 @@ describe('app CSS visual contracts', () => {
     expect(cssBlock('.settings-section h1')).toContain('min-height: var(--page-title-row-height);');
   });
 
+  it('keeps collaboration entries top-aligned and scrollable instead of shrinking them into the panel', () => {
+    const dashboardCss = readSource('src/features/dashboard/dashboard.css');
+    expect(dashboardCss).toMatch(/\.creator-collaboration\s*\{[^}]*display: flex;\s*flex-direction: column;/);
+    expect(dashboardCss).not.toMatch(/\.creator-collaboration\s*\{[^}]*grid-template-rows:/);
+    expect(dashboardCss).toMatch(/\.creator-collaboration-preflight\s*\{[^}]*padding: 10px 14px 0;/);
+    expect(dashboardCss).toMatch(/\.creator-collaboration-messages\s*>\s*\*\s*\{\s*flex: 0 0 auto;/);
+    expect(dashboardCss).not.toMatch(/\.creator-collaboration-messages\s*\{[^}]*flex-direction:\s*column-reverse;/);
+  });
+
+  it('uses only the bordered bubble for user messages, without an outer surface', () => {
+    const dashboardCss = readSource('src/features/dashboard/dashboard.css');
+    const outerRules = [...dashboardCss.matchAll(/\.creator-collaboration-message\[data-role="user"\]\s*\{([^}]*)\}/g)];
+    expect(outerRules).toHaveLength(2);
+    for (const [, rules] of outerRules) {
+      expect(rules).not.toMatch(/\b(?:padding|background|border-radius)\s*:/);
+    }
+    expect(dashboardCss).toMatch(/\.creator-collaboration-message\[data-role="user"\] \.creator-collaboration-bubble\s*\{[^}]*border: 1px solid var\(--border-hairline\);/);
+  });
+
   it('assigns page, sidebar, composer, and popover surfaces by semantic role', () => {
     expect(tokensCss).toContain('--bg: var(--surface-page);');
     expect(tokensCss).toContain('--conversation-bg: var(--surface-page);');

@@ -80,6 +80,16 @@ export function createCodexIsolatedHome(
   };
 }
 
+export function importLocalCodexConfiguration(sourceHome: string, isolatedHome: string): boolean {
+  if (resolve(sourceHome) === resolve(isolatedHome)
+    || (existsSync(join(isolatedHome, 'auth.json')) || existsSync(join(isolatedHome, 'config.toml')))
+    || (!existsSync(join(sourceHome, 'auth.json')) && !existsSync(join(sourceHome, 'config.toml')))) {
+    return false;
+  }
+  createCodexIsolatedHome(sourceHome, isolatedHome);
+  return true;
+}
+
 function createMinimalProbeConfig(sourceHome: string, probeHome: string): void {
   const sourcePath = join(sourceHome, 'config.toml');
   if (!existsSync(sourcePath)) return;

@@ -1,5 +1,6 @@
 import type { ConnectionConfig } from '../runtime/types.js';
 import type {
+  DirectorySelectionPurpose,
   HostBridge,
   HostBridgeResult,
   HostNotification
@@ -34,7 +35,7 @@ type DesktopApi = {
   }>;
   setWindowColorMode?(mode: 'light' | 'dark'): Promise<void>;
   controlWindow?(action: 'close' | 'minimize' | 'zoom'): Promise<void>;
-  selectProjectDirectory(): Promise<string | null>;
+  selectProjectDirectory(purpose?: DirectorySelectionPurpose): Promise<string | null>;
   resolveDroppedFilePath(file: File): string | null;
   openExternal(url: string): Promise<void>;
   revealPath(path: string): Promise<HostBridgeResult>;
@@ -88,7 +89,7 @@ export function readDesktopHostBridge(): DesktopHostBridge | undefined {
     ...(windowChrome !== undefined && api.controlWindow !== undefined
       ? { controlWindow: (action: 'close' | 'minimize' | 'zoom') => api.controlWindow!(action) }
       : {}),
-    selectProjectDirectory: () => api.selectProjectDirectory(),
+    selectProjectDirectory: purpose => api.selectProjectDirectory(purpose),
     resolveDroppedFilePath: file => api.resolveDroppedFilePath(file),
     openExternal: url => api.openExternal(url),
     revealPath: path => api.revealPath(path),

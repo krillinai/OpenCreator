@@ -22,6 +22,46 @@ describe('video generation API', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
+  it('returns provider HTTP facts without exposing arbitrary response text', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.video.seedance.apiKey = 'sk-video-test';
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      error: { code: 'quota_exceeded', message: 'token=private' }
+    }), { status: 429 }));
+    await registerVideoGenerationRoutes(server, createVideoGenerationService({
+      dataDir, configStore: createConfigStore(config), fetchImpl: fetchImpl as typeof fetch
+    }));
+
+    const response = await server.inject({
+      method: 'POST', url: '/video-generation/results',
+      payload: { prompt: 'A portrait', provider: 'seedance', size: '1280x720', duration: 5 }
+    });
+    expect(response.json().error).toMatchObject({
+      code: 'VIDEO_GENERATION_UPSTREAM_ERROR',
+      publicFacts: { kind: 'rate-limited', provider: 'seedance', httpStatus: 429, upstreamCode: 'quota_exceeded' }
+    });
+    expect(response.body).not.toContain('private');
+  });
+
+  it('keeps only a safe upstream code from an asynchronous failed job', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.video.seedance.apiKey = 'sk-video-test';
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      id: 'remote_failed', status: 'failed',
+      error: { code: 'CONTENT_REJECTED', message: 'api_key=private' }
+    }), { status: 200 }));
+    await registerVideoGenerationRoutes(server, createVideoGenerationService({
+      dataDir, configStore: createConfigStore(config), fetchImpl: fetchImpl as typeof fetch,
+      createId: () => 'video_failed_1234'
+    }));
+    const response = await server.inject({
+      method: 'POST', url: '/video-generation/results',
+      payload: { prompt: 'A portrait', provider: 'seedance', size: '1280x720', duration: 5 }
+    });
+    expect(response.json().result.error).toContain('CONTENT_REJECTED');
+    expect(response.body).not.toContain('private');
+  });
+
   it('creates, refreshes, stores, and serves an asynchronous video job', async () => {
     const config = createDefaultCreatorServicesConfig();
     config.video.seedance.apiKey = 'sk-video-test';

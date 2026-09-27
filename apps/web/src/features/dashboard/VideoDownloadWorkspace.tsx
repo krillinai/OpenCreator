@@ -6,6 +6,7 @@ import type {
   DownloadOption,
   DownloadProbe
 } from '@opencreator/protocol';
+import { extractDouyinShareUrl } from '@opencreator/protocol';
 import {
   AlertCircle,
   Check,
@@ -21,7 +22,6 @@ import {
   PackageOpen,
   Play,
   RefreshCw,
-  Settings2,
   Video,
   XCircle
 } from 'lucide-react';
@@ -30,7 +30,10 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
-import { useOptionalCreatorSession } from './creator-session-store.js';
+import {
+  createCreatorArtifactObjectUrl,
+  useOptionalCreatorSession
+} from './creator-session-store.js';
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
 
 type DownloadStep = 0 | 1;
@@ -169,7 +172,13 @@ export default function VideoDownloadWorkspace(props: {
     ? platformFor(url, l)
     : probe.platform === 'bilibili'
       ? 'Bilibili'
-      : 'YouTube';
+      : probe.platform === 'x' ? 'X'
+        : probe.platform === 'tiktok' ? 'TikTok'
+          : probe.platform === 'instagram' ? 'Instagram'
+            : probe.platform === 'douyin' ? l('抖音', 'Douyin')
+              : probe.platform === 'facebook' ? 'Facebook'
+                : probe.platform === 'xiaohongshu' ? l('小红书', 'Xiaohongshu')
+                  : probe.platform === 'pinterest' ? 'Pinterest' : 'YouTube';
   const context = probe === undefined
     ? validUrl
       ? `${platform} · ${probing ? l('正在解析', 'Analyzing') : l('待解析', 'Waiting to analyze')}`
@@ -246,14 +255,15 @@ export default function VideoDownloadWorkspace(props: {
   ]);
 
   function updateUrl(value: string) {
-    setUrl(value);
+    const sourceUrl = extractDouyinShareUrl(value);
+    setUrl(sourceUrl);
     setSelectedOptionId('');
     setCurrentStep(0);
     setResultTab('formats');
     setNotice('');
     setError('');
     session?.updateDraft({
-      sourceUrl: value,
+      sourceUrl,
       selectedOptionId: null
     });
   }
@@ -262,8 +272,8 @@ export default function VideoDownloadWorkspace(props: {
     if (probing || hasActiveDownloads) return;
     if (!validUrl) {
       setError(l(
-        '请输入有效的 YouTube 或 Bilibili 公公开视频链接',
-        'Enter a valid public YouTube or Bilibili video URL'
+        '请输入有效的 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书或 Pinterest 公开视频链接',
+        'Enter a valid public YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, or Pinterest video URL'
       ));
       return;
     }
@@ -380,9 +390,12 @@ export default function VideoDownloadWorkspace(props: {
   async function downloadArtifact(artifact: CreatorArtifact) {
     if (session === null) return;
     try {
-      const response = await session.openArtifact(artifact.id);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const objectUrl = URL.createObjectURL(await response.blob());
+      const objectUrl = await createCreatorArtifactObjectUrl(
+        session,
+        artifact.id,
+        'video-download.download-artifact',
+        l('文件下载失败，请稍后重试。', 'The file download failed. Try again later.')
+      );
       const link = document.createElement('a');
       link.href = objectUrl;
       link.download = artifactFileName(artifact);
@@ -422,9 +435,12 @@ export default function VideoDownloadWorkspace(props: {
       return;
     }
     try {
-      const response = await session.openArtifact(artifact.id);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const objectUrl = URL.createObjectURL(await response.blob());
+      const objectUrl = await createCreatorArtifactObjectUrl(
+        session,
+        artifact.id,
+        'video-download.load-artifact-preview',
+        l('文件预览加载失败，请稍后重试。', 'The file preview failed to load. Try again later.')
+      );
       if (artifactPreviewRequestRef.current !== requestId) {
         URL.revokeObjectURL(objectUrl);
         return;
@@ -454,6 +470,11 @@ export default function VideoDownloadWorkspace(props: {
 
   function handleArtifactPreviewError(artifactId: string) {
     if (artifactPreview?.artifactId !== artifactId) return;
+    session?.captureCreatorFailure(
+      'video-download.play-artifact-preview',
+      new Error('artifact_preview_playback_failed'),
+      l('文件预览播放失败，可重新加载或保存到本机。', 'The preview could not play. Reload it or save the file locally.')
+    );
     artifactPreviewRequestRef.current += 1;
     releaseArtifactPreviewUrl();
     setArtifactPreview({
@@ -515,6 +536,7 @@ export default function VideoDownloadWorkspace(props: {
             'yt-dlp is current and the task was retried'
           ));
     } catch (caught) {
+      session?.captureCreatorFailure('video-download.update-yt-dlp', caught, formatYtDlpUpdateError(caught, l));
       setYtDlpRecoveryError(formatYtDlpUpdateError(caught, l));
     }
   }
@@ -560,6 +582,7 @@ export default function VideoDownloadWorkspace(props: {
   return (
     <CreatorToolShell
       title={l('视频下载', 'Video Downloader')}
+      pageClassName="video-download-workspace-page"
       subtitle={l(
         '解析公开链接并把视频或音频保存到项目',
         'Analyze a public link and save video or audio to the project'
@@ -569,8 +592,8 @@ export default function VideoDownloadWorkspace(props: {
         ? [l('这个链接支持哪些规格', 'Which formats are available?')]
         : [l('下载最高画质视频', 'Download the highest-quality video'), l('提取 MP3 音频', 'Extract MP3 audio')]}
       placeholder={props.promptHint ?? l(
-        '粘贴 YouTube 或 Bilibili 公公开视频链接',
-        'Paste a public YouTube or Bilibili video URL'
+        '粘贴 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书或 Pinterest 公开视频链接',
+        'Paste a public YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, or Pinterest video URL'
       )}
       stepLabel={activeStage?.stageId === 'probe'
         ? l('解析视频信息', 'Analyze video information')
@@ -578,6 +601,19 @@ export default function VideoDownloadWorkspace(props: {
           ? l('下载到项目', 'Download to project')
           : l('视频下载', 'Video download')}
       currentIssue={currentIssue}
+      quickActions={ytDlpUpdateSuggested ? [{
+        id: 'update-yt-dlp',
+        label: ytDlpRecoveryError ? l('重试更新', 'Retry update') : l('更新并重试', 'Update and retry'),
+        kind: 'action',
+        onAction: () => void updateYtDlpAndRetry(),
+        disabled: props.runtimeDependencies?.phase !== 'idle'
+      }, {
+        id: 'open-runtime-components',
+        label: l('前往第三方组件', 'Open third-party components'),
+        kind: 'action',
+        onAction: props.onOpenRuntimeComponents,
+        disabled: props.onOpenRuntimeComponents === undefined
+      }] : undefined}
       onCancelTask={activeStage === undefined ? undefined : cancelTask}
       onResumeTask={resumableStage === undefined ? undefined : resumeTask}
       taskControlPending={taskControlPending}
@@ -614,56 +650,6 @@ export default function VideoDownloadWorkspace(props: {
           </ol>
         </nav>
 
-        {ytDlpUpdateSuggested ? (
-          <div
-            className="video-download-runtime-notice"
-            data-tone={ytDlpRecoveryError ? 'danger' : 'warning'}
-            role={ytDlpRecoveryError ? 'alert' : 'status'}
-          >
-            <span aria-hidden="true">
-              {props.runtimeDependencies?.phase === 'updating'
-                ? <LoaderCircle className="smart-dubbing-spinner" size={17} />
-                : <AlertCircle size={17} strokeWidth={1.8} />}
-            </span>
-            <div>
-              <strong>{l(
-                '视频平台规则可能已变化',
-                'The video platform may have changed'
-              )}</strong>
-              <small>
-                {ytDlpRecoveryError || l(
-                  '建议更新解析器后重新执行刚才的任务',
-                  'Update the extractor and retry the failed task'
-                )}
-              </small>
-            </div>
-            <div className="video-download-runtime-actions">
-              <button
-                type="button"
-                disabled={
-                  props.runtimeDependencies === undefined
-                  || props.runtimeDependencies.phase !== 'idle'
-                }
-                onClick={() => void updateYtDlpAndRetry()}
-              >
-                {props.runtimeDependencies?.phase === 'updating'
-                  ? <LoaderCircle className="smart-dubbing-spinner" size={15} />
-                  : <RefreshCw size={15} strokeWidth={1.8} />}
-                {ytDlpRecoveryError
-                  ? l('重试更新', 'Retry update')
-                  : l('更新并重试', 'Update and retry')}
-              </button>
-              <button
-                type="button"
-                onClick={props.onOpenRuntimeComponents}
-                disabled={props.onOpenRuntimeComponents === undefined}
-              >
-                <Settings2 size={15} strokeWidth={1.8} />
-                {l('前往第三方组件', 'Open third-party components')}
-              </button>
-            </div>
-          </div>
-        ) : null}
 
         {currentStep === 0 ? (
           <section
@@ -675,13 +661,22 @@ export default function VideoDownloadWorkspace(props: {
                 <h2 id="video-download-source-title">
                   {l('公开视频链接', 'Public video link')}
                 </h2>
-                <p>
-                  {l(
-                    '当前支持 YouTube 和 Bilibili 单个公开视频',
-                    'Supports individual public YouTube and Bilibili videos'
-                  )}
-                </p>
               </div>
+            </div>
+            <div className="video-download-platform-section">
+              <span>{l('支持的视频来源（支持单个公开视频链接）', 'Supported video sources (one public video link)')}</span>
+              <ul className="video-download-platforms" aria-label={l('支持的平台', 'Supported platforms')}>
+                {([
+                  ['youtube', 'YouTube'], ['bilibili', 'Bilibili'], ['x', 'X'],
+                  ['tiktok', 'TikTok'], ['instagram', 'Instagram'], ['douyin', l('抖音', 'Douyin')],
+                  ['facebook', 'Facebook'], ['xiaohongshu', l('小红书', 'Xiaohongshu')], ['pinterest', 'Pinterest']
+                ] as const).map(([platformName, name]) => (
+                  <li key={platformName}>
+                    <img src={`/platforms/${platformName}.png`} alt="" width="32" height="32" />
+                    <span>{name}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
             <label className="creator-tool-url-input">
               <Link2 size={17} strokeWidth={1.8} aria-hidden="true" />
@@ -1051,15 +1046,11 @@ export default function VideoDownloadWorkspace(props: {
                                     </span>
                                   </div>
                                 ) : artifactPreview.status === 'failed' ? (
-                                  <div
-                                    className="video-download-media-status"
-                                    data-tone="danger"
-                                    role="alert"
-                                  >
+                                  <div className="video-download-media-status" role="status">
                                     <span>
                                       {l(
-                                        '预览加载失败，可重试或直接保存到本机',
-                                        'Preview failed to load. Retry or save the file locally.'
+                                        '可重新加载预览或保存到本机',
+                                        'Reload the preview or save the file locally.'
                                       )}
                                     </span>
                                     <button
@@ -1145,12 +1136,7 @@ export default function VideoDownloadWorkspace(props: {
             {notice}
           </p>
         ) : null}
-        {error ? (
-          <p className="creator-tool-notice" data-tone="danger" role="alert">
-            <AlertCircle size={15} strokeWidth={1.9} />
-            {error}
-          </p>
-        ) : null}
+        {error && !validUrl ? <p className="creator-tool-notice" role="alert">{error}</p> : null}
       </div>
     </CreatorToolShell>
   );
@@ -1179,7 +1165,7 @@ function readDownloadProbe(
     || typeof metadata.title !== 'string'
     || typeof metadata.requestedUrl !== 'string'
     || typeof metadata.url !== 'string'
-    || (metadata.platform !== 'youtube' && metadata.platform !== 'bilibili')
+    || (metadata.platform !== 'youtube' && metadata.platform !== 'bilibili' && metadata.platform !== 'x' && metadata.platform !== 'tiktok' && metadata.platform !== 'instagram' && metadata.platform !== 'douyin' && metadata.platform !== 'facebook' && metadata.platform !== 'xiaohongshu' && metadata.platform !== 'pinterest')
     || !Array.isArray(metadata.formats)
     || !Array.isArray(metadata.options)
   ) {
@@ -1237,6 +1223,9 @@ function readDownloadOption(value: CreatorJson): DownloadOption | undefined {
     ...(readString(value.audioFormatId) === undefined
       ? {}
       : { audioFormatId: readString(value.audioFormatId) }),
+    ...(Number.isSafeInteger(value.playlistIndex) && Number(value.playlistIndex) > 0
+      ? { playlistIndex: Number(value.playlistIndex) }
+      : {}),
     ...(value.transcode === 'mp3' ? { transcode: 'mp3' as const } : {})
   };
 }
@@ -1392,10 +1381,7 @@ function downloadStageDescription(
       : stage.status === 'succeeded'
         ? l('已保存到项目', 'Saved to project')
         : stage.status === 'failed'
-          ? formatDownloadError(
-              new Error(`${stage.errorCode ?? ''}: ${stage.errorMessage ?? ''}`),
-              l
-            )
+          ? l('下载未完成', 'Download did not complete')
           : stage.status === 'canceled'
             ? l('下载已取消，可返回规格列表重新提交', 'Canceled. Submit it again from formats.')
             : l('下载已中断，可返回规格列表重新提交', 'Interrupted. Submit it again from formats.');
@@ -1447,11 +1433,14 @@ function optionLabel(
   option: DownloadOption,
   l: ReturnType<typeof useLocalizedCopy>
 ): string {
+  const prefix = option.playlistIndex === undefined
+    ? ''
+    : `${l('视频', 'Video')} ${option.playlistIndex} · `;
   if (option.mediaType === 'audio') {
-    return `${option.bitrateKbps ?? 192}kbps`;
+    return `${prefix}${option.bitrateKbps ?? 192}kbps`;
   }
-  if (option.height !== undefined) return `${option.height}p`;
-  return l('原始画质', 'Source quality');
+  if (option.height !== undefined) return `${prefix}${option.height}p`;
+  return `${prefix}${l('原始画质', 'Source quality')}`;
 }
 
 function optionDetail(
@@ -1579,10 +1568,73 @@ function isSupportedUrl(value: string): boolean {
         || host === 'b23.tv'
         || host === 'bilibili.com'
         || host.endsWith('.bilibili.com')
+        || host === 'x.com'
+        || host.endsWith('.x.com')
+        || host === 'twitter.com'
+        || host.endsWith('.twitter.com')
+        || isTikTokVideoUrl(parsed)
+        || isInstagramVideoUrl(parsed)
+        || isDouyinVideoUrl(parsed)
+        || isFacebookVideoUrl(parsed)
+        || isXiaohongshuVideoUrl(parsed)
+        || isPinterestVideoUrl(parsed)
       );
   } catch {
     return false;
   }
+}
+
+function isTikTokVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  if (host === 'vm.tiktok.com' || host === 'vt.tiktok.com') {
+    return /^\/[\w-]+\/?$/.test(url.pathname);
+  }
+  return (host === 'tiktok.com' || host.endsWith('.tiktok.com'))
+    && /^\/@[^/]+\/video\/\d+\/?$/.test(url.pathname);
+}
+
+function isInstagramVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return (host === 'instagram.com' || host === 'www.instagram.com')
+    && /^\/(?:reel|p|tv)\/[\w-]+\/?$/.test(url.pathname);
+}
+
+function isDouyinVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  if (host === 'v.douyin.com') {
+    return /^\/[\w-]+\/?$/.test(url.pathname);
+  }
+  return (host === 'douyin.com' || host === 'www.douyin.com')
+    && (
+      /^\/video\/\d+\/?$/.test(url.pathname)
+      || (url.pathname === '/jingxuan'
+        && /^\d+$/.test(url.searchParams.get('modal_id') ?? ''))
+    );
+}
+
+function isFacebookVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  if (host === 'fb.watch') {
+    return /^\/[\w-]+\/?$/.test(url.pathname);
+  }
+  if (!['facebook.com', 'www.facebook.com', 'm.facebook.com'].includes(host)) {
+    return false;
+  }
+  return /^\/watch\/?$/.test(url.pathname)
+    ? /^\d+$/.test(url.searchParams.get('v') ?? '')
+    : /^\/(?:reel\/\d+|videos\/\d+|[^/]+\/videos\/\d+)\/?$/.test(url.pathname);
+}
+
+function isXiaohongshuVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return (host === 'xiaohongshu.com' || host === 'www.xiaohongshu.com')
+    && /^\/explore\/[0-9a-f]{24}\/?$/i.test(url.pathname);
+}
+
+function isPinterestVideoUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return (host === 'pinterest.com' || host === 'www.pinterest.com')
+    && /^\/pin\/\d+\/?$/.test(url.pathname);
 }
 
 function platformFor(
@@ -1591,6 +1643,13 @@ function platformFor(
 ): string {
   if (/youtu(?:\.be|be\.com)/i.test(value)) return 'YouTube';
   if (/bilibili\.com|b23\.tv/i.test(value)) return 'Bilibili';
+  if (/^https:\/\/(?:[^/]+\.)?(?:x|twitter)\.com\//i.test(value)) return 'X';
+  if (/^https:\/\/(?:[^/]+\.)?tiktok\.com\//i.test(value)) return 'TikTok';
+  if (/^https:\/\/(?:www\.)?instagram\.com\//i.test(value)) return 'Instagram';
+  if (/^https:\/\/(?:v|www)\.douyin\.com\//i.test(value)) return l('抖音', 'Douyin');
+  if (/^https:\/\/(?:www\.|m\.)?facebook\.com\//i.test(value) || /^https:\/\/fb\.watch\//i.test(value)) return 'Facebook';
+  if (/^https:\/\/(?:www\.)?xiaohongshu\.com\//i.test(value)) return l('小红书', 'Xiaohongshu');
+  if (/^https:\/\/(?:www\.)?pinterest\.com\//i.test(value)) return 'Pinterest';
   return l('公开视频', 'Public video');
 }
 
@@ -1609,8 +1668,8 @@ function formatDownloadError(
   const message = caught instanceof Error ? caught.message : String(caught);
   if (/unsupported_source/i.test(message)) {
     return l(
-      '当前仅支持 YouTube 和 Bilibili 公公开视频',
-      'Only public YouTube and Bilibili videos are supported'
+      '当前仅支持 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书和 Pinterest 公开视频',
+      'Only public YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, and Pinterest videos are supported'
     );
   }
   if (/download_probe_stale/i.test(message)) {
@@ -1623,7 +1682,7 @@ function formatDownloadError(
     return l('该规格已经下载完成', 'This format has already been downloaded.');
   }
   if (/login_required/i.test(message)) {
-    return l('该视频需要登录后访问，当前无法下载', 'This video requires a signed-in session.');
+    return l('平台要求登录或有效 Cookie，当前无法下载', 'This video requires sign-in or fresh platform cookies.');
   }
   if (/region_or_copyright_restricted/i.test(message)) {
     return l('该视频受地区或版权限制，当前无法下载', 'This video is region or copyright restricted.');
@@ -1649,7 +1708,7 @@ function formatDownloadError(
       'The video platform may have changed. Update yt-dlp and try again.'
     );
   }
-  return message;
+  return l('视频下载失败，请在 Agent 区域查看诊断后重试', 'Video download failed. Review the diagnosis in the Agent panel and retry.');
 }
 
 function shouldSuggestYtDlpUpdate(stage: CreatorStageRun | undefined): boolean {

@@ -32,6 +32,7 @@ import {
 } from './AppController.js';
 import { PROJECTS_STORAGE_KEY } from '../features/projects/project-model.js';
 import type { OpenCreatorProject } from '../features/projects/project-model.js';
+import { confirmAgentSetup } from '../features/settings/StartupAgentSetup.js';
 import type { HostBridge } from '../host/bridge.js';
 import type { SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
@@ -72,8 +73,27 @@ const testCreatorPresets: CreatorPresetSummary[] = [{
   ]
 }];
 
+const wrappedRuntimeFetches = new WeakMap<NonNullable<AppProps['runtimeFetch']>, NonNullable<AppProps['runtimeFetch']>>();
+
 function App(props: AppProps = {}) {
-  return <ProductionApp projectNavigationMode="tree" {...props} />;
+  const originalFetch = props.runtimeFetch;
+  const runtimeFetch = originalFetch === undefined ? undefined : async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/codex/readiness') || (url.endsWith('/codex/provider') && init?.method !== 'PATCH')) {
+      try {
+        return await originalFetch(input, init);
+      } catch {
+        return jsonResponse(url.endsWith('/codex/readiness') ? {
+          state: 'ready', codexHome: '/tmp/codex',
+          account: { status: 'ready', accountStatus: 'signed_in' },
+          binary: { status: 'ready' }, protocol: { status: 'ready' }, models: { status: 'ready' }, diagnostics: []
+        } : { baseUrl: '', model: 'gpt-test', apiKeyConfigured: true, authentication: 'api_key' });
+      }
+    }
+    return originalFetch(input, init);
+  };
+  if (originalFetch !== undefined && runtimeFetch !== undefined) wrappedRuntimeFetches.set(originalFetch, runtimeFetch);
+  return <ProductionApp projectNavigationMode="tree" {...props} runtimeFetch={runtimeFetch} />;
 }
 
 function navigateToTestRoute(hash: string) {
@@ -84,6 +104,120 @@ function navigateToTestRoute(hash: string) {
 describe('App', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '#/chat');
+    confirmAgentSetup({
+      readiness: {
+        state: 'ready', mode: 'bundled', version: 'test', commit: null,
+        binaryPath: '/codex', codexHome: '/tmp/codex', checkedAt: new Date(0).toISOString(),
+        account: { status: 'ready', accountStatus: 'signed_in' },
+        binary: { status: 'ready' }, protocol: { status: 'ready' }, models: { status: 'ready' },
+        skills: { status: 'ready' }, toolServer: { status: 'ready' }, diagnostics: []
+      },
+      provider: { baseUrl: '', model: 'gpt-test', apiKeyConfigured: true, authentication: 'api_key' }
+    });
+  });
+
+  it.each(['browser', 'desktop'] as const)(
+    'guides unauthenticated users in the %s host and restores Agent input after configuration',
+    async hostKind => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.kind = hostKind;
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token'
+    });
+    let authenticated = false;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectResponse !== undefined) return projectResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/readiness')) return jsonResponse({
+        state: authenticated ? 'ready' : 'degraded',
+        account: { status: authenticated ? 'ready' : 'not_authenticated', accountStatus: authenticated ? 'signed_in' : 'signed_out' },
+        binary: { status: 'ready' }, protocol: { status: 'ready' }, models: { status: 'ready' }, diagnostics: []
+      });
+      if (url.endsWith('/codex/provider') && init?.method === 'PATCH') {
+        authenticated = true;
+        return jsonResponse({ baseUrl: 'https://api.openai.com/v1', model: 'gpt-test', apiKeyConfigured: true, authentication: 'api_key' });
+      }
+      if (url.endsWith('/codex/provider')) return jsonResponse({ baseUrl: authenticated ? 'https://api.openai.com/v1' : '', model: 'gpt-test', apiKeyConfigured: authenticated, authentication: authenticated ? 'api_key' : 'none' });
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
+    expect(await screen.findByRole('heading', { name: '开始使用 Agent' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('OpenCreator 导航')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '暂时跳过' }));
+    expect(await screen.findByText('Agent 尚未配置，暂时无法发送任务。')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '配置 Agent' }));
+    expect(await screen.findByRole('combobox', { name: '供应商' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '使用 ChatGPT 登录' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '暂时跳过' }));
+    await user.click(screen.getByRole('button', { name: '设置' }));
+    await user.click(await screen.findByRole('button', { name: /AI 服务/ }));
+    await user.click(screen.getByRole('button', { name: '配置 Agent' }));
+    await user.selectOptions(await screen.findByRole('combobox', { name: '供应商' }), 'openai');
+    expect(screen.getByLabelText('模型名称')).toHaveValue('gpt-5.6-sol');
+    await user.type(screen.getByLabelText('API Key'), 'secret');
+    await user.click(screen.getByRole('button', { name: '保存并开始使用' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: '开始使用 Agent' })).not.toBeInTheDocument();
+      expect(window.location.hash).toBe('#/new');
+    });
+    expect(screen.queryByText('Agent 尚未配置，暂时无法发送任务。')).not.toBeInTheDocument();
+
+    cleanup();
+    render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
+    await waitFor(() => {
+      expect(screen.queryByText('正在检查 Agent 配置…')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('OpenCreator 导航')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('heading', { name: '开始使用 Agent' })).not.toBeInTheDocument();
+    }
+  );
+
+  it('asks to confirm an existing ChatGPT login on first run, then remembers that choice while it remains valid', async () => {
+    window.localStorage.clear();
+    const user = userEvent.setup();
+    let signedIn = true;
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectResponse !== undefined) return projectResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/readiness')) return jsonResponse({
+        state: signedIn ? 'ready' : 'degraded', codexHome: '/tmp/codex',
+        account: { status: signedIn ? 'ready' : 'not_authenticated', accountStatus: signedIn ? 'signed_in' : 'signed_out' },
+        binary: { status: 'ready' }, protocol: { status: 'ready' }, models: { status: 'ready' }, diagnostics: []
+      });
+      if (url.endsWith('/codex/provider')) return jsonResponse({
+        baseUrl: '', model: 'gpt-test', apiKeyConfigured: false, authentication: signedIn ? 'chatgpt' : 'none'
+      });
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
+    expect(await screen.findByText('已找到本机 Codex')).toBeInTheDocument();
+    expect(screen.queryByLabelText('OpenCreator 导航')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '使用本机 Codex，继续' }));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '开始使用 Agent' })).not.toBeInTheDocument());
+
+    cleanup();
+    render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
+    await waitFor(() => expect(screen.getByLabelText('OpenCreator 导航')).toBeInTheDocument());
+    expect(screen.queryByRole('heading', { name: '开始使用 Agent' })).not.toBeInTheDocument();
+
+    cleanup();
+    signedIn = false;
+    render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
+    expect(await screen.findByRole('heading', { name: '开始使用 Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '供应商' })).toBeInTheDocument();
   });
 
   it('maps valid skills and configured MCP servers into Composer commands', () => {
@@ -959,9 +1093,10 @@ describe('App', () => {
       name: '查看电商商品主图增强版模板详情'
     }));
     await user.click(screen.getByRole('button', { name: '使用此模板' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      '模板任务创建超时，请重试。'
-    );
+    const timeoutIssue = await findIssueByDescription('无法启动此模板，请查看诊断后重试。');
+    expect(timeoutIssue).toHaveTextContent('无法启动此模板，请查看诊断后重试。');
+    expect(timeoutIssue).not.toHaveTextContent(/诊断编号：OC-/);
+    expect(timeoutIssue).not.toHaveTextContent('模板任务创建超时');
     expect(creatorPresetCreationStorageKeys()).toHaveLength(1);
 
     await user.click(screen.getByRole('button', { name: '使用此模板' }));
@@ -1027,9 +1162,10 @@ describe('App', () => {
     }));
     await user.click(screen.getByRole('button', { name: '使用此模板' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      '该模板已不可用，模板目录已刷新。'
-    );
+    const missingPresetIssue = await findIssueByDescription('无法启动此模板，请查看诊断后重试。');
+    expect(missingPresetIssue).toHaveTextContent('无法启动此模板，请查看诊断后重试。');
+    expect(missingPresetIssue).not.toHaveTextContent(/诊断编号：OC-/);
+    expect(missingPresetIssue).not.toHaveTextContent('Creator preset asset not found');
     await waitFor(() => expect(catalogRequests).toBeGreaterThanOrEqual(2));
     expect(creatorPresetCreationStorageKeys()).toHaveLength(0);
   });
@@ -3069,7 +3205,8 @@ describe('App', () => {
     navigateToTestRoute('#/plugins');
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     await showSkillMarketCard(user, 'frontend-slides');
-    expect(screen.getByRole('alert')).toHaveTextContent('安装记录加载失败');
+    const marketIssue = await findIssueByDescription('无法加载技能市场，请重试。');
+    expect(marketIssue).not.toHaveTextContent(/诊断编号：OC-/);
     const card = getSkillMarketCard('frontend-slides');
     expect(within(card).queryByText('版本未知')).not.toBeInTheDocument();
     expect(within(card).getByRole('button', { name: '使用' })).toBeEnabled();
@@ -3112,7 +3249,8 @@ describe('App', () => {
     navigateToTestRoute('#/plugins');
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     await showSkillMarketCard(user, 'frontend-slides');
-    expect(screen.getByRole('alert')).toHaveTextContent('技能状态加载失败');
+    const marketIssue = await findIssueByDescription('无法加载技能市场，请重试。');
+    expect(marketIssue).not.toHaveTextContent(/诊断编号：OC-/);
     const action = within(getSkillMarketCard('frontend-slides')).getByRole('button', {
       name: '状态未知'
     });
@@ -3170,14 +3308,17 @@ describe('App', () => {
     await user.click(within(dialog).getByRole('button', { name: '使用' }));
     await user.click(screen.getByRole('button', { name: '在 content-design' }));
 
-    expect(await screen.findAllByText('使用失败：创建对话失败')).toHaveLength(1);
+    const useIssue = await findIssueByDescription('无法使用该技能，请重试。');
+    expect(useIssue).toHaveTextContent('无法使用该技能，请重试。');
+    expect(useIssue).not.toHaveTextContent(/诊断编号：OC-/);
+    expect(screen.queryByText(/创建对话失败/)).not.toBeInTheDocument();
     await user.click(
       within(getSkillMarketCard('frontend-slides')).getByRole('button', {
         name: /打开 .*详情/
       })
     );
     const retryDialog = screen.getByRole('dialog');
-    expect(within(retryDialog).getByText('使用失败：创建对话失败')).toBeInTheDocument();
+    expect(within(retryDialog).queryByText(/创建对话失败/)).not.toBeInTheDocument();
     await user.click(within(retryDialog).getByRole('button', { name: '使用' }));
     await user.click(screen.getByRole('button', { name: '在 content-design' }));
     await waitFor(() => {
@@ -3480,7 +3621,7 @@ describe('App', () => {
     await showSkillMarketCard(user, 'frontend-slides');
     await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '安装' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('安装记录刷新失败');
+    expect(await findIssueByDescription('无法加载技能市场，请重试。')).not.toHaveTextContent(/诊断编号：OC-/);
     expect(within(getSkillMarketCard('frontend-slides')).queryByText('版本未知')).not.toBeInTheDocument();
     expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled();
     expect(screen.queryByText('安装失败，请重试')).not.toBeInTheDocument();
@@ -3544,7 +3685,7 @@ describe('App', () => {
     await showSkillMarketCard(user, 'frontend-slides');
     await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '更新' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('技能状态刷新失败');
+    expect(await findIssueByDescription('无法加载技能市场，请重试。')).not.toHaveTextContent(/诊断编号：OC-/);
     const action = within(getSkillMarketCard('frontend-slides')).getByRole('button', {
       name: '状态未知'
     });
@@ -3655,7 +3796,7 @@ describe('App', () => {
       prompt,
       resumeMode: 'auto'
     });
-    expect(sseFetchImpl).toBe(runtimeFetch);
+    expect(sseFetchImpl).toBe(wrappedRuntimeFetches.get(runtimeFetch));
 
     expect(screen.queryByRole('button', { name: /查看运行详情/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/当前动态/)).not.toBeInTheDocument();
@@ -7050,15 +7191,23 @@ describe('App', () => {
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const projectApiResponse = handleDefaultProjectApiRequest(url, init);
       if (projectApiResponse !== undefined) return projectApiResponse;
+      fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/codex/models')) throw new Error('model catalog unavailable');
       if (url.endsWith('/threads?status=active&limit=50')) {
         return jsonResponse({ threads: [] });
+      }
+      if (url.endsWith('/threads') && init?.method === 'POST') {
+        return jsonResponse({ thread: createThreadResponse({ id: 'thread_issue', title: '排查模型错误' }) }, { status: 201 });
+      }
+      if (url.endsWith('/runs') && init?.method === 'POST') {
+        return jsonResponse({ id: 'run_issue', threadId: 'thread_issue', status: 'running' }, { status: 202 });
       }
       throw new Error(`Unexpected request ${url}`);
     };
@@ -7078,8 +7227,22 @@ describe('App', () => {
       name: '选择模型 默认模型'
     }));
 
-    expect(await screen.findByText('无法加载模型列表')).toBeInTheDocument();
+    const modelsIssue = await findIssueByDescription('无法加载模型列表，请重试。');
+    expect(modelsIssue).toHaveTextContent('无法加载模型列表，请重试。');
+    expect(modelsIssue).not.toHaveTextContent(/诊断编号：OC-/);
+    expect(modelsIssue).not.toHaveTextContent('model catalog unavailable');
     expect(screen.queryByText('暂无可用模型')).not.toBeInTheDocument();
+
+    fireEvent.click(within(modelsIssue).getByRole('button', { name: '询问这条问题' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '询问错误原因或修复办法' }), {
+      target: { value: '为什么模型列表失败？' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送问题' }));
+    await waitFor(() => expect(findPostCall(fetchCalls, '/runs')).toBeDefined());
+    const request = JSON.parse(String(findPostCall(fetchCalls, '/runs')?.init?.body)) as { prompt: string };
+    expect(request.prompt).toContain('无法加载模型列表，请重试。');
+    expect(request.prompt).toContain('为什么模型列表失败？');
+    expect(request.prompt).not.toContain('model catalog unavailable');
   });
 
   it('restores the recent model config for a new conversation', async () => {
@@ -7846,8 +8009,10 @@ describe('App', () => {
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
     await user.click(screen.getByRole('button', { name: '开启' }));
 
-    expect(await screen.findByText('任务运行期间不能修改访问权限，请等待当前任务结束'))
-      .toBeInTheDocument();
+    const permissionIssue = await findIssueByDescription('会话配置未更新，请重试。');
+    expect(permissionIssue).toHaveTextContent('会话配置未更新，请重试。');
+    expect(permissionIssue).not.toHaveTextContent(/诊断编号：OC-/);
+    expect(permissionIssue).not.toHaveTextContent('Thread has active run');
     expect(screen.getByRole('button', { name: '选择访问权限 请求批准' }))
       .toBeInTheDocument();
     expect(findPatchCall(fetchCalls, '/threads/thread_permission_race')).toBeDefined();
@@ -8797,6 +8962,19 @@ async function findTimelineUserMessage(text: string) {
     if (match === undefined) throw new Error(`Expected timeline user message: ${text}`);
     return match;
   });
+}
+
+async function findIssueByDescription(description: string | RegExp): Promise<HTMLElement> {
+  const message = await screen.findByText((content, element) => (
+    element !== null
+    && element.closest('[data-issue-id]') !== null
+    && (typeof description === 'string'
+      ? content.includes(description)
+      : description.test(content))
+  ));
+  const issue = message.closest<HTMLElement>('[data-issue-id]');
+  if (issue === null) throw new Error(`Expected issue for description: ${String(description)}`);
+  return issue;
 }
 
 function createRuntimeEvent<Type extends AgentEventEnvelope['type']>(

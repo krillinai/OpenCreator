@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_DAEMON_START_TIMEOUT_MS,
   DaemonStartError,
@@ -12,6 +12,7 @@ import {
 } from '../src/main/daemon-manager.js';
 
 describe('Daemon stdout parser', () => {
+  afterEach(() => vi.unstubAllEnvs());
   it('parses bootstrap events and the final connection without logging assumptions', () => {
     expect(parseDaemonOutputLine(JSON.stringify({
       type: 'opencreator_daemon_bootstrap',
@@ -109,6 +110,7 @@ describe('Daemon stdout parser', () => {
   });
 
   it('passes the product home and exact Codex home to the Daemon', () => {
+    vi.stubEnv('CODEX_HOME', '/Users/demo/.codex-custom');
     const environment = buildDaemonEnvironment({
       entryPath: '/app/daemon/main.js',
       cwd: '/Users/demo',
@@ -116,6 +118,8 @@ describe('Daemon stdout parser', () => {
       appHome: '/Users/demo/.opencreator',
       codexBin: '/app/codex',
       codexHome: '/Users/demo/.opencreator/runtime/codex',
+      codexVersion: '0.149.0',
+      codexCommit: 'bundled-commit',
       dataDir: '/Users/demo/.opencreator/data',
       defaultCwd: '/Users/demo',
       defaultProjectRoot: '/Users/demo/Documents',
@@ -127,6 +131,9 @@ describe('Daemon stdout parser', () => {
       OPENCREATOR_HOME: '/Users/demo/.opencreator',
       OPENCREATOR_DATA_DIR: '/Users/demo/.opencreator/data',
       CODEX_HOME: '/Users/demo/.opencreator/runtime/codex',
+      OPENCREATOR_LOCAL_CODEX_HOME: '/Users/demo/.codex-custom',
+      OPENCREATOR_CODEX_VERSION: '0.149.0',
+      OPENCREATOR_CODEX_COMMIT: 'bundled-commit',
       OPENCREATOR_MANAGED_PARENT_PID: String(process.pid)
     });
   });

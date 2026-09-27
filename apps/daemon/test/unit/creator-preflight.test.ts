@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultCreatorServicesConfig, type CreatorJob, type CreatorJson } from '@opencreator/protocol';
 import { createCreatorPreflight } from '../../src/creator/preflight.js';
 import { createImageGenerationTemplate } from '../../src/creator/templates/image-generation.js';
@@ -56,6 +56,36 @@ describe('creator preflight', () => {
     expect(result.canStart).toBe(false);
     expect(result.blocked.map(item => item.id)).toEqual(expect.arrayContaining(['ffmpeg', 'ffprobe', 'yt-dlp']));
     expect(result.blocked.every(item => item.repair.label.length > 0)).toBe(true);
+  });
+
+  it('waits for Runtime verification before checking Runtime-backed stages', async () => {
+    root = await mkdtemp(join(tmpdir(), 'creator-preflight-'));
+    const stage = createVideoDownloadTemplate().stages[0]!;
+    let releaseVerification!: () => void;
+    const ensureRuntimeReady = vi.fn(() => new Promise<void>(resolve => {
+      releaseVerification = resolve;
+    }));
+    let settled = false;
+    const checking = createCreatorPreflight({
+      configStore: { read: async () => createDefaultCreatorServicesConfig() },
+      readCapabilities: () => createKrillinCreatorServicesCapabilities('win32', 'x64'),
+      resourceRoot: join(root, 'runtime'),
+      jobsRoot: join(root, 'jobs'),
+      executorIds: ['download'],
+      validateRuntimeAssets: true,
+      ensureRuntimeReady
+    }).check(fakeJob('video-download', { sourceUrl: 'https://youtu.be/example' }), stage)
+      .then(result => {
+        settled = true;
+        return result;
+      });
+
+    await vi.waitFor(() => expect(ensureRuntimeReady).toHaveBeenCalledOnce());
+    expect(settled).toBe(false);
+    releaseVerification();
+    const result = await checking;
+
+    expect(result.blocked.map(item => item.id)).toEqual(expect.arrayContaining(['ffmpeg', 'ffprobe', 'yt-dlp']));
   });
 
   it('blocks a reference image when the configured provider cannot edit images', async () => {

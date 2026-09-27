@@ -2,7 +2,7 @@ import type { WechatArticleImagePlanItem, WechatArticleTopic } from '@opencreato
 import { z } from 'zod';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import {
-  creatorServiceErrorMessage,
+  creatorServiceErrorInfo,
   fetchCreatorService,
   openAiCompatibleEndpoint
 } from '../../creator-services/upstream-fetch.js';
@@ -56,9 +56,12 @@ export function createWechatArticleModel(input: {
       fetchImpl: input.fetchImpl
     });
     if (!response.ok) {
+      const failure = await creatorServiceErrorInfo(response, 'Article writing', 'llm');
       throw new CreatorExecutorError(
         'creator_llm_upstream_error',
-        await creatorServiceErrorMessage(response, 'Article writing')
+        failure.message,
+        {},
+        failure.publicFacts
       );
     }
     const payload = await response.json() as {

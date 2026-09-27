@@ -11,7 +11,7 @@ type VideoSource =
   | { kind: 'link'; url: string; hostname: string; label: string }
   | { kind: 'invalid'; label: string };
 
-function parseVideoSource(value: string): VideoSource {
+export function parseVideoSource(value: string): VideoSource {
   const trimmed = value.trim();
 
   try {
@@ -123,6 +123,7 @@ export default function VideoSourcePreview(props: {
   displayDetail?: string;
   metadataService?: VideoMetadataService;
   onDimensions?(width: number, height: number): void;
+  onMetadata?(url: string, metadata: VideoMetadataResponse): void;
 }) {
   const l = useLocalizedCopy();
   const [showYouTubePlayer, setShowYouTubePlayer] = useState(false);
@@ -177,6 +178,7 @@ export default function VideoSourcePreview(props: {
     void props.metadataService.getVideoMetadata(props.url).then(result => {
       if (!active) return;
       setMetadata(result);
+      props.onMetadata?.(props.url, result);
       if (result.width !== undefined && result.height !== undefined) {
         updateMediaDimensions(result.width, result.height);
       }

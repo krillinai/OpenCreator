@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Check, Moon, Sun } from 'lucide-react';
+import { Check, FolderOpen, Moon, Save, Sun } from 'lucide-react';
 import type {
   CodexProfileListResponse,
-  CodexStatusResponse
+  CodexStatusResponse,
+  OpenCreatorStorageSettings
 } from '@opencreator/protocol';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import type { ColorMode } from '../../styles/color-mode.js';
@@ -30,6 +31,9 @@ import {
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
 import { RuntimeComponentsSettingsView } from './RuntimeComponentsSettingsView.js';
 import './settings-management.css';
+import type { OpenCreatorSettingsService } from '../../services/opencreator-settings-service.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 const CreatorServicesSettingsView = lazy(async () => {
   const module = await import('./CreatorServicesSettingsView.js');
@@ -69,10 +73,14 @@ export type OpenCreatorSettingsViewProps = {
   cleanupService?: CleanupSettingsService | null;
   creatorServicesService?: CreatorServicesSettingsService | null;
   codexRuntimeService?: CodexRuntimeSettingsService | null;
+  agentSetupNeeded?: boolean;
+  onOpenAgentSetup?(): void;
   memoryService?: MemorySettingsService | null;
   memoryProjects?: MemoryScopeOption[];
   memoryThreads?: MemoryScopeOption[];
   runtimeDependencies?: RuntimeDependenciesController;
+  storageSettingsService?: Pick<OpenCreatorSettingsService, 'getStorageSettings' | 'updateStorageSettings'> | null;
+  onSelectStorageDirectory?(purpose: 'default-project-root' | 'output-root'): Promise<string | null>;
   codexStatus?: CodexStatusResponse;
   initialTab?: 'general' | 'ai-services' | 'local-components';
   initialSection?: CreatorServicesSection;
@@ -157,19 +165,32 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
             onDesktopCloseBehaviorChange={props.onDesktopCloseBehaviorChange}
             desktopTelemetryEnabled={props.desktopTelemetryEnabled}
             onDesktopTelemetryEnabledChange={props.onDesktopTelemetryEnabledChange}
+            storageSettingsService={props.storageSettingsService}
+            onSelectStorageDirectory={props.onSelectStorageDirectory}
           />
         ) : null}
         {activeTab === 'ai-services' ? (
-          <Suspense fallback={
-            <p role="status">{l('正在加载 AI 服务设置…', 'Loading AI service settings…')}</p>
-          }>
-            <CreatorServicesSettingsView
-              connected={props.runtimeStatus.connected}
-              service={props.creatorServicesService ?? null}
-              modelService={props.codexRuntimeService ?? null}
-              initialSection={props.initialSection}
-            />
-          </Suspense>
+          <>
+            {props.agentSetupNeeded && props.onOpenAgentSetup !== undefined ? (
+              <div className="settings-inline-warning" role="status">
+                {l('Agent 尚未配置，无法发送任务。', 'Agent is not configured; tasks cannot be sent.')}
+                {' '}
+                <button className="settings-secondary-button" type="button" onClick={props.onOpenAgentSetup}>
+                  {l('配置 Agent', 'Set up Agent')}
+                </button>
+              </div>
+            ) : null}
+            <Suspense fallback={
+              <p role="status">{l('正在加载 AI 服务设置…', 'Loading AI service settings…')}</p>
+            }>
+              <CreatorServicesSettingsView
+                connected={props.runtimeStatus.connected}
+                service={props.creatorServicesService ?? null}
+                modelService={props.codexRuntimeService ?? null}
+                initialSection={props.initialSection}
+              />
+            </Suspense>
+          </>
         ) : null}
         {activeTab === 'local-components' && props.runtimeDependencies !== undefined ? (
           <RuntimeComponentsSettingsView
@@ -227,9 +248,112 @@ function GeneralSettings(props: {
   onDesktopCloseBehaviorChange?(behavior: 'hide' | 'quit'): void;
   desktopTelemetryEnabled?: boolean;
   onDesktopTelemetryEnabledChange?(enabled: boolean): void;
+  storageSettingsService?: Pick<OpenCreatorSettingsService, 'getStorageSettings' | 'updateStorageSettings'> | null;
+  onSelectStorageDirectory?(purpose: 'default-project-root' | 'output-root'): Promise<string | null>;
 }) {
   const { language, preference, setPreference, t } = useAppLanguage();
   const confirm = useConfirmDialog();
+  const l = useLocalizedCopy();
+  const [storage, setStorage] = useState<OpenCreatorStorageSettings>();
+  const [storageDraft, setStorageDraft] = useState<OpenCreatorStorageSettings>();
+  const [storageBusy, setStorageBusy] = useState(false);
+  const [storageReloadToken, setStorageReloadToken] = useState(0);
+  const pageIssues = usePageIssueState('settings-general');
+
+  useEffect(() => {
+    if (props.defaultPermissionError === undefined) {
+      pageIssues.resolveOperation('settings.default-permission.sync');
+      return;
+    }
+    pageIssues.captureOperationFailure(
+      'settings.default-permission.sync',
+      new Error(props.defaultPermissionError),
+      l('默认权限同步失败，重新打开相关会话后会重试。', 'Default permission sync failed. Reopen the affected session to retry.')
+    );
+  }, [
+    l,
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.defaultPermissionError
+  ]);
+
+  useEffect(() => {
+    let canceled = false;
+    void props.storageSettingsService?.getStorageSettings()
+      .then(response => {
+        if (!canceled) {
+          setStorage(response.settings);
+          setStorageDraft(response.settings);
+          pageIssues.resolveOperation('settings.storage.load');
+        }
+      })
+      .catch(cause => {
+        if (!canceled) pageIssues.captureOperationFailure(
+          'settings.storage.load',
+          cause,
+          l('无法读取存储位置，请重试。', 'Unable to load storage locations. Try again.'),
+          { retryable: true }
+        );
+      });
+    return () => { canceled = true; };
+  }, [
+    l,
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.storageSettingsService,
+    storageReloadToken
+  ]);
+
+  async function saveStorageDirectory(
+    key: keyof OpenCreatorStorageSettings,
+    selectedValue?: string
+  ) {
+    if (props.storageSettingsService === null || props.storageSettingsService === undefined) return;
+    const value = (selectedValue ?? storageDraft?.[key] ?? '').trim();
+    if (value.length === 0 || value === storage?.[key]) return;
+    setStorageBusy(true);
+    const operationId = `settings.storage.save:${key}`;
+    try {
+      const response = await props.storageSettingsService.updateStorageSettings({ [key]: value });
+      setStorage(response.settings);
+      setStorageDraft(response.settings);
+      pageIssues.resolveOperation(operationId);
+    } catch (cause) {
+      pageIssues.captureOperationFailure(
+        operationId,
+        cause,
+        l(
+          '无法保存存储位置，请填写可创建且可写的绝对目录后重试。',
+          'Unable to save the storage location. Enter a writable absolute path and retry.'
+        ),
+        { retryable: true }
+      );
+    } finally {
+      setStorageBusy(false);
+    }
+  }
+
+  async function selectStorageDirectory(key: keyof OpenCreatorStorageSettings) {
+    if (
+      props.onSelectStorageDirectory === undefined
+    ) return;
+    const operationId = `settings.storage.select:${key}`;
+    try {
+      const selected = await props.onSelectStorageDirectory(
+        key === 'defaultProjectRoot' ? 'default-project-root' : 'output-root'
+      );
+      if (selected === null) return;
+      pageIssues.resolveOperation(operationId);
+      setStorageDraft(current => current === undefined ? current : { ...current, [key]: selected });
+      await saveStorageDirectory(key, selected);
+    } catch (cause) {
+      pageIssues.captureOperationFailure(
+        operationId,
+        cause,
+        l('无法选择存储目录，请重试。', 'Unable to select a storage directory. Try again.')
+      );
+    }
+  }
   const defaultPermissionOptions: Array<{
     value: DefaultPermissionPreference;
     label: string;
@@ -260,6 +384,38 @@ function GeneralSettings(props: {
         <p>{t('settings.general.description')}</p>
       </header>
       <div className="settings-card">
+        {storage === undefined || storageDraft === undefined ? null : (
+          <>
+            <StorageDirectoryRow
+              id="settings-default-project-root"
+              label={l('默认项目位置', 'Default project location')}
+              value={storageDraft.defaultProjectRoot}
+              savedValue={storage.defaultProjectRoot}
+              disabled={storageBusy}
+              onChange={value => setStorageDraft(current => current === undefined
+                ? current
+                : { ...current, defaultProjectRoot: value })}
+              onSave={() => void saveStorageDirectory('defaultProjectRoot')}
+              onSelect={props.onSelectStorageDirectory === undefined
+                ? undefined
+                : () => void selectStorageDirectory('defaultProjectRoot')}
+            />
+            <StorageDirectoryRow
+              id="settings-output-root"
+              label={l('完成产物位置', 'Completed output location')}
+              value={storageDraft.outputRoot}
+              savedValue={storage.outputRoot}
+              disabled={storageBusy}
+              onChange={value => setStorageDraft(current => current === undefined
+                ? current
+                : { ...current, outputRoot: value })}
+              onSave={() => void saveStorageDirectory('outputRoot')}
+              onSelect={props.onSelectStorageDirectory === undefined
+                ? undefined
+                : () => void selectStorageDirectory('outputRoot')}
+            />
+          </>
+        )}
         <SettingsColorModeRow
           value={props.colorMode}
           onChange={(mode) => props.onColorModeChange?.(mode)}
@@ -335,10 +491,66 @@ function GeneralSettings(props: {
           </label>
         )}
       </div>
-      {props.defaultPermissionError ? (
-        <p className="settings-error" role="alert">{props.defaultPermissionError}</p>
-      ) : null}
+      <IssueList
+        issues={pageIssues.issues}
+        actions={{ retryOperations: {
+          'settings.storage.load': () => setStorageReloadToken(value => value + 1),
+          'settings.storage.save:defaultProjectRoot': () => saveStorageDirectory('defaultProjectRoot'),
+          'settings.storage.save:outputRoot': () => saveStorageDirectory('outputRoot')
+        } }}
+        onDismiss={pageIssues.dismissIssue}
+      />
     </section>
+  );
+}
+
+function StorageDirectoryRow(props: {
+  id: string;
+  label: string;
+  value: string;
+  savedValue: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  onSelect?: () => void;
+}) {
+  const dirty = props.value.trim().length > 0 && props.value.trim() !== props.savedValue;
+  return (
+    <div className="settings-row settings-control-row settings-directory-row">
+      <label htmlFor={props.id}>{props.label}</label>
+      <input
+        id={props.id}
+        className="settings-directory-input"
+        value={props.value}
+        disabled={props.disabled}
+        onChange={event => props.onChange(event.target.value)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' && dirty) props.onSave();
+        }}
+      />
+      <span className="settings-directory-actions">
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={`保存${props.label}`}
+          title={`保存${props.label}`}
+          disabled={props.disabled || !dirty}
+          onClick={props.onSave}
+        >
+          <Save size={17} aria-hidden="true" />
+        </button>
+        {props.onSelect === undefined ? null : <button
+          type="button"
+          className="icon-button"
+          aria-label={`选择${props.label}`}
+          title={`选择${props.label}`}
+          disabled={props.disabled}
+          onClick={props.onSelect}
+        >
+          <FolderOpen size={17} aria-hidden="true" />
+        </button>}
+      </span>
+    </div>
   );
 }
 

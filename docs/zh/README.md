@@ -84,7 +84,7 @@ Web 是唯一的前端实现；Desktop 直接加载同一份 Web 构建产物，
 </thead>
 <tbody>
 <tr><td valign="top">视频翻译</td><td valign="top">✅ 已开放</td><td>导入本地或公开视频；通过云端或本地 Whisper 服务转写；利用 LLM 上下文完成字幕断句、对齐、术语处理和翻译；设置双语字幕、配音或自定义声音样本、字幕样式及横竖屏合成，并导出 SRT、音频或成片</td></tr>
-<tr><td valign="top">视频下载</td><td valign="top">✅ 已开放</td><td>解析 YouTube、Bilibili 等平台的公开视频链接，查看可用清晰度和格式，并下载视频或音频供后续创作使用</td></tr>
+<tr><td valign="top">视频下载</td><td valign="top">✅ 已开放</td><td>解析 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书和 Pinterest 的单个公开视频，比较可用格式并下载视频或音频；部分平台可能需要 Cookie</td></tr>
 <tr><td valign="top">封面生成</td><td valign="top">✅ 已开放</td><td>结合主题、视频链接和可选参考图片生成多版内容封面，并进行对比选择</td></tr>
 <tr><td valign="top">图像生成</td><td valign="top">✅ 已开放</td><td>使用 GPT Image，根据提示词和可选参考图片生成图像，设置画幅与生成数量，并预览和单独下载图片</td></tr>
 <tr><td valign="top">文章写作</td><td valign="top">✅ 已开放</td><td>根据主题、链接、视频或参考文档生成可编辑的候选选题、大纲和完整文章，支持添加生成配图，并导出 Markdown、HTML 或 PDF</td></tr>
@@ -260,6 +260,28 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 解析公开视频链接，比较可用格式，并将视频或音频直接下载到项目中。
 
+支持的视频来源：
+
+<table align="center">
+  <tr>
+    <td align="center" width="96"><img src="../images/platforms/youtube.png" alt="YouTube" width="32" height="32" /><br /><strong>YouTube</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/bilibili.png" alt="Bilibili" width="32" height="32" /><br /><strong>Bilibili</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/x.png" alt="X" width="32" height="32" /><br /><strong>X</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/tiktok.png" alt="TikTok" width="32" height="32" /><br /><strong>TikTok</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/instagram.png" alt="Instagram" width="32" height="32" /><br /><strong>Instagram</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/douyin.png" alt="抖音" width="32" height="32" /><br /><strong>抖音</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/facebook.png" alt="Facebook" width="32" height="32" /><br /><strong>Facebook</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/xiaohongshu.png" alt="小红书" width="32" height="32" /><br /><strong>小红书</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/pinterest.png" alt="Pinterest" width="32" height="32" /><br /><strong>Pinterest</strong></td>
+  </tr>
+</table>
+
+实际可用性取决于视频和地区；部分来源可能需要平台 Cookie。
+
+**小红书视频笔记：**粘贴完整的公开 `https://www.xiaohongshu.com/explore/<24 位十六进制笔记 ID>` 链接；若带有 `xsec_token` 等查询参数，请一并保留。纯图片笔记没有可下载的视频格式；个人主页和 `xhslink.com` 分享短链暂不支持。识别链接不代表一定能下载：令牌过期、访问限制或平台变更都可能导致失败。OpenCreator 不会自动读取浏览器 Cookie。
+
+**Pinterest 视频 Pin：**粘贴公开的 `https://www.pinterest.com/pin/<数字 ID>/` 链接。纯图片 Pin 没有可下载的视频格式；画板和个人主页暂不支持。
+
 ![OpenCreator 视频下载格式选择](../images/examples/video-downloader-formats-en.png)
 
 ### 火柴人动画
@@ -301,7 +323,7 @@ pnpm web:dev
 
 打开 `http://127.0.0.1:19861/`。开发服务器会按需启动本地 daemon，并通过同源代理注入临时 Runtime token，不需要手工复制连接信息。
 
-首次启动时，Runtime 会准备默认项目；连接完成后输入框即可直接使用。如果只需要调试 daemon：
+首次启动时，Runtime 会准备默认项目，并检查本机 Codex 配置。已有可用登录态或 API Key 时，确认使用本机 Codex 即可；否则在引导页选择供应商并填写模型、Base URL（使用 OpenAI 默认地址时可留空）和 API Key。配置完成后即可使用输入框。如果只需要调试 daemon：
 
 ```bash
 pnpm daemon:dev

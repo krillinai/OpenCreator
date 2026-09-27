@@ -25,6 +25,8 @@ files:
   - "!**/*.d.ts"
   - "!**/{test,tests,__tests__,example,examples}/**/*"
 extraResources:
+  - from: .pack/desktop-build-profile.json
+    to: desktop-build-profile.json
   - from: .pack/daemon/dist
     to: daemon/dist
     filter:
@@ -88,7 +90,7 @@ dmg:
 win:
   target:
     - nsis
-  icon: resources/icon.png
+  icon: resources/icon-win.png
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

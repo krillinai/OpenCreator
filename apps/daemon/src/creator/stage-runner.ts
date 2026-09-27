@@ -3,6 +3,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   readCreatorResultSnapshots,
+  publicErrorKindForCode,
   type CreatorArtifact,
   type CreatorJob,
   type CreatorJson,
@@ -11,7 +12,9 @@ import {
 import type { CreatorExecutor } from './executor.js';
 import { CreatorExecutorError } from './executor.js';
 import type { CreatorRepository } from './repository.js';
+import type { CreatorIssueService } from './issues.js';
 import { CreatorProviderRequestError } from './provider-requests.js';
+import { publicFactsFromFailure } from './public-error-facts.js';
 import {
   appendCreatorResultSnapshot,
   creatorResultSnapshotForVersion,
@@ -20,11 +23,16 @@ import {
 import { currentStickmanScopedArtifacts } from './stickman/lineage.js';
 import type { CreatorTemplateRegistry, CreatorTemplateStage } from './templates/types.js';
 import { videoTranslationArtifactRefsPatch } from './templates/video-translation-results.js';
+import {
+  CreatorOutputValidationError,
+  validateCreatorStageOutputs
+} from './output-validation.js';
 
 export type CreatorStageRunner = ReturnType<typeof createCreatorStageRunner>;
 
 export function createCreatorStageRunner(input: {
   repository: CreatorRepository;
+  issueService?: CreatorIssueService;
   templates: CreatorTemplateRegistry;
   executors: CreatorExecutor[];
   workRoot: string;
@@ -121,13 +129,30 @@ export function createCreatorStageRunner(input: {
         }
       });
       if (resolved.missing.length > 0) {
-        updateStageRun({
-          id: stageRun.id,
-          status: 'failed',
-          errorCode: 'creator_stage_input_missing',
-          errorMessage: `Missing completed inputs: ${resolved.missing.join(', ')}`
+        input.repository.transaction(() => {
+          updateStageRun({
+            id: stageRun!.id,
+            status: 'failed',
+            errorCode: 'creator_stage_input_missing',
+            errorMessage: `Missing completed inputs: ${resolved.missing.join(', ')}`
+          });
+          updateJob(input.repository, job, 'needs_input', { currentStage: stageId }, input.onJobChanged);
+          const resolution = finishStageIssueResolution(jobId, stageRun!.id, 'failed');
+          if (resolution === undefined) {
+            input.issueService?.capture({
+              jobId,
+              code: 'creator_stage_input_missing',
+              source: 'stage',
+              category: 'input',
+              operation: 'creator.run-stage',
+              stageId,
+              stageRunId: stageRun!.id,
+              scopeKey: stageRun!.scopeKey ?? undefined,
+              fallbackMessage: '缺少执行当前步骤所需的输入，请补充后重试。',
+              repairActions: [{ kind: 'select-input', inputField: 'source' }, { kind: 'focus-agent' }]
+            });
+          }
         });
-        updateJob(input.repository, job, 'needs_input', { currentStage: stageId }, input.onJobChanged);
         return input.repository.listStageRuns(jobId).find(candidate => candidate.id === stageRun!.id)!;
       }
       await input.beforeRun?.(input.repository.getJob(jobId)!, stageId);
@@ -166,6 +191,17 @@ export function createCreatorStageRunner(input: {
             'Executor output scope does not match the current stage run'
           );
         }
+      }
+      const validationFindings = await validateCreatorStageOutputs({
+        job: input.repository.getJob(jobId)!,
+        stage,
+        stageRun: input.repository.getStageRun(stageRun.id)!,
+        inputArtifacts: resolved.artifacts,
+        candidateOutputs: result.outputs
+      });
+      const blockingFinding = validationFindings.find(finding => finding.severity === 'blocking');
+      if (blockingFinding !== undefined) {
+        throw new CreatorOutputValidationError(blockingFinding);
       }
       const outputHashes = await Promise.all(result.outputs.map(async output => (
         output.path === null ? null : sha256File(output.path)
@@ -280,6 +316,7 @@ export function createCreatorStageRunner(input: {
           },
           input.onJobChanged
         );
+        finishStageIssueResolution(jobId, stageRun!.id, 'succeeded');
       });
       const completed = input.repository.getStageRun(stageRun.id);
       if (completed !== undefined) {
@@ -303,41 +340,126 @@ export function createCreatorStageRunner(input: {
           failureCode,
           failureMessage
         );
-        updateStageRun({
-          id: stageRun.id,
-          status: canceled ? 'canceled' : 'failed',
-          errorCode: failureCode,
-          errorMessage: failureMessage
-        });
-        const job = input.repository.getJob(jobId);
-        if (job !== undefined) {
-          const scopedFailure = stageRun.scopeKey !== null && !canceled;
-          updateJob(
-            input.repository,
-            job,
-            canceled
-              ? 'canceled'
-              : scopedFailure || configurationInput !== null
-                ? 'needs_input'
-                : 'failed',
-            {
-              currentStage: stageId,
-              ...(configurationInput !== null
-                ? { needsInput: configurationInput }
-                : scopedFailure
+        const providerRequests = input.repository.listProviderRequests(jobId)
+          .filter(request => request.stageRunId === stageRun!.id);
+        const unknownProviderAcceptance = providerRequests.some(request => (
+          request.status === 'unknown_remote_acceptance'
+        ));
+        const providerFailure = error instanceof CreatorProviderRequestError
+          || providerRequests.some(request => (
+            request.status === 'failed' || request.status === 'unknown_remote_acceptance'
+          ));
+        input.repository.transaction(() => {
+          updateStageRun({
+            id: stageRun!.id,
+            status: canceled ? 'canceled' : 'failed',
+            errorCode: failureCode,
+            errorMessage: failureMessage
+          });
+          const job = input.repository.getJob(jobId);
+          if (job !== undefined) {
+            const outputValidation = error instanceof CreatorOutputValidationError;
+            const scopedFailure = stageRun!.scopeKey !== null && !canceled;
+            updateJob(
+              input.repository,
+              job,
+              canceled
+                ? 'canceled'
+                : outputValidation || scopedFailure || configurationInput !== null
+                  ? 'needs_input'
+                  : 'failed',
+              {
+                currentStage: stageId,
+                ...(outputValidation
                   ? {
                       needsInput: {
                         code: failureCode,
                         message: failureMessage,
-                        stageId,
-                        scopeKey: stageRun.scopeKey
+                        stageId
                       }
                     }
-                  : {})
-            },
-            input.onJobChanged
-          );
-        }
+                  : configurationInput !== null
+                  ? { needsInput: configurationInput }
+                  : scopedFailure
+                    ? {
+                        needsInput: {
+                          code: failureCode,
+                          message: failureMessage,
+                          stageId,
+                          scopeKey: stageRun!.scopeKey
+                        }
+                      }
+                    : {})
+              },
+              input.onJobChanged
+            );
+            const resolution = finishStageIssueResolution(
+              jobId,
+              stageRun!.id,
+              canceled ? 'canceled' : 'failed'
+            );
+            const existingProviderIssue = providerFailure
+              ? input.issueService?.list(jobId).find(issue => (
+                  issue.source === 'provider'
+                  && issue.stageRunId === stageRun!.id
+                  && issue.status !== 'resolved'
+                ))
+              : undefined;
+            if (!canceled && resolution === undefined && existingProviderIssue === undefined) {
+              input.issueService?.capture({
+                jobId,
+                code: failureCode,
+                source: outputValidation
+                  ? 'output-validator'
+                  : providerFailure
+                    ? 'provider'
+                    : 'stage',
+                category: outputValidation
+                  ? 'output-validation'
+                  : configurationInput !== null
+                    ? 'configuration'
+                  : providerFailure
+                    ? 'provider'
+                    : undefined,
+                operation: 'creator.retry-stage',
+                stageId,
+                stageRunId: stageRun!.id,
+                scopeKey: stageRun!.scopeKey ?? undefined,
+                summaryKey: outputValidation
+                  ? 'issue.translation_language_mismatch'
+                  : undefined,
+                fallbackMessage: outputValidation
+                  ? failureMessage
+                  : configurationInput !== null
+                    ? '缺少执行当前步骤所需的服务配置，请检查相关服务设置。'
+                  : unknownProviderAcceptance
+                    ? '外部服务是否已接收请求尚不明确，请先查询状态或确认后再继续。'
+                    : error instanceof CreatorExecutorError
+                      && error.publicFacts?.provider === 'yt-dlp'
+                      ? failureMessage
+                    : providerFailure
+                      ? '外部服务调用失败，可以重试或询问 Agent。'
+                      : '创作步骤执行失败，可以重试或询问 Agent。',
+                technicalDetail: failureMessage,
+                publicFacts: configurationInput !== null
+                  ? { kind: 'configuration' }
+                  : stageFailureFacts(error, failureCode),
+                retryable: !unknownProviderAcceptance,
+                repairActions: [
+                  ...(!unknownProviderAcceptance
+                    ? [{
+                        kind: 'retry-operation' as const,
+                        operationId: 'creator.retry-stage',
+                        requiresConfirmation: false,
+                        risk: 'normal' as const
+                      }]
+                    : []),
+                  { kind: 'focus-agent' }
+                ]
+              });
+            }
+          }
+        });
       }
       if (stageRun === undefined) throw error;
     } finally {
@@ -363,6 +485,23 @@ export function createCreatorStageRunner(input: {
     }
     input.onStageChanged?.(stage);
     return stage;
+  }
+
+  function finishStageIssueResolution(
+    jobId: string,
+    stageRunId: string,
+    result: 'succeeded' | 'failed' | 'canceled'
+  ) {
+    const issue = input.issueService?.list(jobId).find(candidate => (
+      candidate.status === 'resolving' && candidate.stageRunId === stageRunId
+    ));
+    if (issue === undefined) return undefined;
+    return input.issueService?.finishResolution({
+      jobId,
+      issueId: issue.id,
+      resolutionAttemptId: stageRunId,
+      result
+    });
   }
 
   return {
@@ -632,7 +771,9 @@ function requireJob(repository: CreatorRepository, jobId: string): CreatorJob {
 }
 
 function errorCode(error: unknown): string {
-  return error instanceof CreatorExecutorError || error instanceof CreatorProviderRequestError
+  return error instanceof CreatorExecutorError
+    || error instanceof CreatorProviderRequestError
+    || error instanceof CreatorOutputValidationError
     ? error.code
     : 'creator_stage_failed';
 }
@@ -703,4 +844,12 @@ function creatorConfigurationInput(
     message,
     deepLink: `#/settings?tab=ai-services&section=${section === 'llm' ? 'text' : section}`
   };
+}
+
+function stageFailureFacts(error: unknown, code: string) {
+  const facts = publicFactsFromFailure(error);
+  const codeKind = publicErrorKindForCode(code);
+  return facts.kind === 'unknown' && codeKind !== undefined
+    ? { ...facts, kind: codeKind }
+    : facts;
 }

@@ -59,7 +59,7 @@ describe('Codex app-server shutdown with inherited pipes', () => {
 
     let restarted = false;
     const restart = client.restart().then(() => { restarted = true; });
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(restarted).toBe(true);
     await restart;
@@ -68,7 +68,7 @@ describe('Codex app-server shutdown with inherited pipes', () => {
     expect(oldChild.stderr.destroyed).toBe(true);
     await expect(client.request('config/read', {})).resolves.toEqual({ pid: 102 });
     const close = client.close();
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(0);
     await close;
     expect(vi.getTimerCount()).toBe(0);
   });

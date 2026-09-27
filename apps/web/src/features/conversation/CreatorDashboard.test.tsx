@@ -773,7 +773,9 @@ describe('CreatorDashboard', () => {
     expect(onSelectPreset).toHaveBeenCalledTimes(1);
 
     rejectSelection?.(new Error('创建模板任务失败'));
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('创建模板任务失败'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('无法启动此模板，请查看诊断后重试。'));
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/诊断编号：OC-/);
+    expect(screen.getByRole('alert')).not.toHaveTextContent('创建模板任务失败');
     expect(useButton).toBeEnabled();
   });
 

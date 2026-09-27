@@ -88,6 +88,50 @@ describe('stickman action handler', () => {
     expect(new Set(staleIds)).toHaveLength(artifacts.length);
   });
 
+  it('preserves an explicit duration update when the output preset is unchanged', () => {
+    const job = {
+      id: 'job-1',
+      projectId: 'project-1',
+      templateId: 'stickman-video',
+      templateVersion: 2,
+      status: 'running',
+      revision: 1,
+      state: {
+        outputPreset: 'landscape',
+        ratio: '16:9',
+        targetDurationSeconds: 30,
+        targetLanguage: 'zh-CN'
+      },
+      stages: [],
+      artifacts: [],
+      providerRequests: [],
+      activities: [],
+      agentThreadId: null,
+      createdAt: '2026-09-20T00:00:00.000Z',
+      updatedAt: '2026-09-20T00:00:00.000Z'
+    } as CreatorJob;
+    const repository = {
+      setArtifactStatus() {}
+    } as unknown as CreatorRepository;
+
+    const result = handleStickmanAction({
+      repository,
+      current: job,
+      action: 'update-settings',
+      parsedInput: { patch: { targetDurationSeconds: 125 } },
+      actor: 'user',
+      newRevision: 2
+    });
+
+    expect(result.handled).toBe(true);
+    expect(result.state).toMatchObject({
+      outputPreset: 'landscape',
+      ratio: '16:9',
+      targetDurationSeconds: 125,
+      targetLanguage: 'zh-CN'
+    });
+  });
+
   it('restores landscape defaults and global TTS selection when leaving Shorts', () => {
     const artifacts: CreatorArtifact[] = ['script_manifest', 'clean_video'].map((kind, index) => ({
       id: `artifact-${index + 1}`,

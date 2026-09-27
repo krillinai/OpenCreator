@@ -5,7 +5,6 @@ import { creatorProjectTypes, type CreatorProjectType } from './project-types.js
 import './CreateProjectDropdown.css';
 
 export function CreateProjectDropdown(props: {
-  error?: string;
   align?: 'start' | 'end';
   onCreate(projectType: CreatorProjectType): boolean | void | Promise<boolean | void>;
 }) {
@@ -73,7 +72,6 @@ export function CreateProjectDropdown(props: {
           role="menu"
           aria-label={l('项目类型', 'Project type')}
         >
-          {props.error ? <p className="create-project-error" role="alert">{props.error}</p> : null}
           {creatorProjectTypes.map(projectType => (
             <button
               key={projectType.workspace}

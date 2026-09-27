@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { inflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
@@ -29,11 +30,26 @@ describe('品牌资源', () => {
     const trayManager = readFileSync(resolve(desktopRoot, 'src/main/tray-manager.ts'), 'utf8');
     expect(trayManager).toContain("if (process.platform === 'darwin') icon.setTemplateImage(true);");
     expect(trayManager).toContain('height: size');
+    const desktopMain = readFileSync(resolve(desktopRoot, 'src/main/main.ts'), 'utf8');
+    expect(desktopMain).toContain("process.platform === 'win32'");
+    expect(desktopMain).toContain("? 'icon-win.png'");
+    expect(desktopMain).toContain('iconPath: join(resourceRoot, trayIconName)');
     expect(existsSync(resolve(desktopRoot, 'resources/tray.png'))).toBe(true);
     expect(existsSync(resolve(desktopRoot, 'resources/icon.png'))).toBe(true);
+    expect(existsSync(resolve(desktopRoot, 'resources/icon-win.png'))).toBe(true);
 
     const icon = readPngMetadata(resolve(desktopRoot, 'resources/icon.png'));
     expect(icon).toEqual({ width: 1024, height: 1024, colorType: 6 });
+    const windowsIcon = readPngMetadata(resolve(desktopRoot, 'resources/icon-win.png'));
+    expect(windowsIcon).toEqual({ width: 1024, height: 1024, colorType: 6 });
+    expect(readPngAlphaBounds(resolve(desktopRoot, 'resources/icon-win.png'))).toEqual({
+      minX: 0,
+      minY: 0,
+      maxX: 1023,
+      maxY: 1023,
+      darkWidth: 776,
+      darkHeight: 833
+    });
   });
 
   it('Desktop 图标、托盘和 Web 使用同一枚双链品牌图形', () => {
@@ -55,6 +71,10 @@ describe('品牌资源', () => {
     expect(sidebar).toContain('<OpenCreatorMark');
     expect(iconSvg).toContain('<rect width="460" height="460" rx="92" fill="#fff"/>');
     expect(traySvg).not.toContain('<rect');
+
+    const builderConfig = readFileSync(resolve(desktopRoot, 'electron-builder.yml'), 'utf8');
+    expect(builderConfig).toMatch(/mac:[\s\S]*?icon: resources\/icon\.png/);
+    expect(builderConfig).toMatch(/win:[\s\S]*?icon: resources\/icon-win\.png/);
   });
 
   it('不再发布旧品牌素材或历史兼容路径', () => {
@@ -117,4 +137,100 @@ function readPngMetadata(path: string): { width: number; height: number; colorTy
     height: bytes.readUInt32BE(20),
     colorType: bytes.readUInt8(25)
   };
+}
+
+function readPngAlphaBounds(path: string): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  darkWidth: number;
+  darkHeight: number;
+} {
+  const bytes = readFileSync(path);
+  const { width, height, colorType } = readPngMetadata(path);
+  expect(bytes.readUInt8(24)).toBe(8);
+  expect(colorType).toBe(6);
+  expect(bytes.readUInt8(28)).toBe(0);
+
+  const idatChunks: Buffer[] = [];
+  for (let offset = 8; offset < bytes.length;) {
+    const length = bytes.readUInt32BE(offset);
+    const type = bytes.subarray(offset + 4, offset + 8).toString('ascii');
+    if (type === 'IDAT') idatChunks.push(bytes.subarray(offset + 8, offset + 8 + length));
+    offset += length + 12;
+  }
+
+  const decoded = inflateSync(Buffer.concat(idatChunks));
+  const bytesPerPixel = 4;
+  const stride = width * bytesPerPixel;
+  let sourceOffset = 0;
+  let previous = Buffer.alloc(stride);
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  let darkMinX = width;
+  let darkMinY = height;
+  let darkMaxX = -1;
+  let darkMaxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    const filter = decoded[sourceOffset]!;
+    sourceOffset += 1;
+    const row = Buffer.allocUnsafe(stride);
+    for (let index = 0; index < stride; index += 1) {
+      const left = index >= bytesPerPixel ? row[index - bytesPerPixel]! : 0;
+      const up = previous[index]!;
+      const upperLeft = index >= bytesPerPixel ? previous[index - bytesPerPixel]! : 0;
+      const encoded = decoded[sourceOffset + index]!;
+      row[index] = (encoded + pngFilterValue(filter, left, up, upperLeft)) & 0xff;
+    }
+    sourceOffset += stride;
+
+    for (let x = 0; x < width; x += 1) {
+      const pixelOffset = x * bytesPerPixel;
+      const alpha = row[pixelOffset + 3]!;
+      if (alpha === 0) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      if (
+        alpha >= 128
+        && row[pixelOffset]! + row[pixelOffset + 1]! + row[pixelOffset + 2]! < 240
+      ) {
+        darkMinX = Math.min(darkMinX, x);
+        darkMinY = Math.min(darkMinY, y);
+        darkMaxX = Math.max(darkMaxX, x);
+        darkMaxY = Math.max(darkMaxY, y);
+      }
+    }
+    previous = row;
+  }
+
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    darkWidth: darkMaxX - darkMinX + 1,
+    darkHeight: darkMaxY - darkMinY + 1
+  };
+}
+
+function pngFilterValue(filter: number, left: number, up: number, upperLeft: number): number {
+  if (filter === 0) return 0;
+  if (filter === 1) return left;
+  if (filter === 2) return up;
+  if (filter === 3) return Math.floor((left + up) / 2);
+  if (filter === 4) {
+    const estimate = left + up - upperLeft;
+    const leftDistance = Math.abs(estimate - left);
+    const upDistance = Math.abs(estimate - up);
+    const upperLeftDistance = Math.abs(estimate - upperLeft);
+    if (leftDistance <= upDistance && leftDistance <= upperLeftDistance) return left;
+    return upDistance <= upperLeftDistance ? up : upperLeft;
+  }
+  throw new Error(`Unsupported PNG filter: ${filter}`);
 }

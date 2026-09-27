@@ -10,8 +10,10 @@ import {
   readOpenCreatorConfig,
   resolveDesktopConfig,
   resolveOpenCreatorPaths,
+  resolveStorageSettings,
   resolveUiSettings,
   updateOpenCreatorConfig,
+  updateOpenCreatorStorageSettings,
   updateOpenCreatorUiSettings
 } from './index.js';
 
@@ -91,5 +93,27 @@ describe('OpenCreator config', () => {
       telemetryEnabled: false,
       telemetryInstallId
     });
+  });
+
+  it('persists project and completed output locations', () => {
+    const root = mkdtempSync(join(tmpdir(), 'opencreator-config-'));
+    tempDirs.push(root);
+    const path = join(root, 'config.toml');
+    const defaults = {
+      defaultProjectRoot: join(root, 'OpenCreator'),
+      outputRoot: join(root, 'OpenCreator', 'Exports')
+    };
+
+    expect(resolveStorageSettings(readOpenCreatorConfig(path), defaults)).toEqual(defaults);
+    updateOpenCreatorStorageSettings(path, {
+      defaultProjectRoot: join(root, 'Projects'),
+      outputRoot: join(root, 'Outputs')
+    });
+
+    expect(resolveStorageSettings(readOpenCreatorConfig(path), defaults)).toEqual({
+      defaultProjectRoot: join(root, 'Projects'),
+      outputRoot: join(root, 'Outputs')
+    });
+    expect(readFileSync(path, 'utf8')).toContain('[storage]');
   });
 });

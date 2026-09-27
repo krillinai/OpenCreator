@@ -19,7 +19,11 @@ export function createAgentContextBuilder(input: {
   const maxRecentBytes = input.maxRecentBytes ?? 8 * 1024;
   const maxStateBytes = input.maxStateBytes ?? 16 * 1024;
   return {
-    build(job: CreatorJob, selection: CreatorSelection | null = null): AgentContextEnvelope {
+    build(
+      job: CreatorJob,
+      selection: CreatorSelection | null = null,
+      focusedIssueId?: string
+    ): AgentContextEnvelope {
       const candidates = job.activities.slice(-maxRecentChanges).map(activity => ({
         revision: activity.revision,
         actor: activity.actor,
@@ -44,6 +48,13 @@ export function createAgentContextBuilder(input: {
       const selectedResultVersion = readNumber(job.state.resultVersion) ?? latestResultVersion;
       const selectedSnapshot = resultSnapshots.find(snapshot => snapshot.version === selectedResultVersion)
         ?? null;
+      const issues = (job.issues ?? []).map(issue => ({
+        ...issue,
+        technicalDetail: undefined
+      }));
+      const focusedIssue = focusedIssueId === undefined
+        ? null
+        : issues.find(issue => issue.id === focusedIssueId) ?? null;
       return {
         contractVersion: 1,
         jobId: job.id,
@@ -91,7 +102,9 @@ export function createAgentContextBuilder(input: {
         })),
         selection,
         recentChanges,
-        allowedActions: template.actions.map(action => action.id)
+        allowedActions: template.actions.map(action => action.id),
+        focusedIssue,
+        issues
       };
     }
   };
@@ -129,16 +142,9 @@ function projectStageProgress(progress: CreatorJob['stages'][number]['progress']
   providerStatus: string | null;
   phase: string | null;
 } {
-  const eventPayload = readRecord(progress.krillinEventPayload);
   return {
-    percent: readNumber(progress.percent) ?? readNumber(eventPayload?.percent),
-    providerStatus: readString(progress.krillinStatus) ?? readString(eventPayload?.status),
-    phase: readString(progress.phase) ?? readString(eventPayload?.phase)
+    percent: readNumber(progress.percent),
+    providerStatus: readString(progress.providerStatus),
+    phase: readString(progress.phase)
   };
-}
-
-function readRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }

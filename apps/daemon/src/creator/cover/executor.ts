@@ -10,6 +10,7 @@ import type {
   CreatorExecutorResult
 } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
+import { publicFactsFromFailure, publicFactsFromHttpResponse } from '../public-error-facts.js';
 import { spawnCreatorProcess } from '../process-tree.js';
 import { validateImageFile } from '../validators/image.js';
 import { withYtDlpProxy } from '../yt-dlp/args.js';
@@ -126,7 +127,9 @@ export function createCoverAnalysisExecutor(input: {
           'creator_cover_reference_missing',
           error instanceof Error
             ? `Unable to download the YouTube thumbnail: ${error.message}`
-            : 'Unable to download the YouTube thumbnail'
+            : 'Unable to download the YouTube thumbnail',
+          {},
+          publicFactsFromFailure(error, 'thumbnail')
         );
       });
       const extension = extensionForMime(thumbnail.mimeType);
@@ -242,7 +245,11 @@ async function downloadThumbnail(
     signal,
     maxResponseBytes: 20 * 1024 * 1024
   });
-  if (!response.ok) throw new Error(`Thumbnail request failed: HTTP ${response.status}`);
+  if (!response.ok) {
+    throw Object.assign(new Error(`Thumbnail request failed: HTTP ${response.status}`), {
+      publicFacts: publicFactsFromHttpResponse(response.status, 'thumbnail')
+    });
+  }
   const content = Buffer.from(await response.arrayBuffer());
   const mimeType = imageMime(response.headers.get('content-type'), content);
   return { content, mimeType };

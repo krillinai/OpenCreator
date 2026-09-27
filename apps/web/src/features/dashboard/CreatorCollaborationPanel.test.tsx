@@ -1,6 +1,6 @@
 import type { CreatorJob } from '@opencreator/protocol';
 import { useEffect } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import CreatorCollaborationPanel from './CreatorCollaborationPanel.js';
@@ -15,13 +15,38 @@ import {
   videoGenerationPanelAdapter
 } from './creator-panel-adapters.js';
 import { CreatorSessionProvider, useCreatorSession } from './creator-session-store.js';
+import { normalizePageIssue } from '../issues/page-issue-state.js';
 
 function PreflightHarness(props: { stageId: string }) {
   const session = useCreatorSession();
   useEffect(() => {
     void session.runPreflight(props.stageId).catch(() => undefined);
-  }, [props.stageId, session]);
+  }, [props.stageId, session.runPreflight]);
   return null;
+}
+
+function TimelineUpdateHarness() {
+  const session = useCreatorSession();
+  return (
+    <button type="button" onClick={() => {
+      const nextRevision = session.job.revision + 1;
+      session.applyRemoteSnapshot({
+        ...session.job,
+        revision: nextRevision,
+        updatedAt: `2026-09-07T08:00:0${nextRevision}.000Z`,
+        activities: [...session.job.activities, {
+          id: `new_activity_${nextRevision}`,
+          jobId: session.job.id,
+          revision: nextRevision,
+          actor: 'user',
+          action: 'update-settings:draft',
+          summary: '更新创作设置',
+          details: { objectId: 'prompt' },
+          createdAt: `2026-09-07T08:00:0${nextRevision}.000Z`
+        }]
+      });
+    }}>Update timeline</button>
+  );
 }
 
 describe('Short video script panel', () => {
@@ -58,6 +83,83 @@ describe('Short video script panel', () => {
 });
 
 describe('CreatorCollaborationPanel', () => {
+  it('shows a pre-job failure once and forwards questions to the real Agent without creating a job', () => {
+    const issue = normalizePageIssue(
+      'creator-launch',
+      'creator-launch.create-job',
+      new Error('internal detail'),
+      '当前无法创建火柴人视频任务。'
+    );
+    const pendingJob = { ...videoGenerationJob(), id: 'pending:project_1:stickman-video', templateId: 'stickman-video', stages: [], activities: [], issues: [] };
+    const ensureJob = vi.fn();
+    const onAskPendingIssue = vi.fn();
+    const { container } = render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          initialJob={pendingJob}
+          externalIssues={[issue, issue]}
+          ensureJob={ensureJob}
+          onAskPendingIssue={onAskPendingIssue}
+          service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+        >
+          <CreatorCollaborationPanel
+            adapter={creatorPanelAdapterFor('stickman-video')}
+            stepLabel="火柴人视频"
+            contextSummary="创作任务"
+          />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    expect(container.querySelectorAll('[data-issue-id]')).toHaveLength(1);
+    expect(screen.getByText(/当前无法创建火柴人视频任务/)).toBeInTheDocument();
+    expect(screen.queryByText(/诊断编号/)).not.toBeInTheDocument();
+    expect(container.querySelector('.issue-presenter')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: '告诉 Agent 你的要求' }), {
+      target: { value: '为什么没有创建成功？' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送给 Agent' }));
+    expect(onAskPendingIssue).toHaveBeenCalledWith(issue, '为什么没有创建成功？');
+    expect(screen.queryByText(/当前错误记录不足以判断更具体的根因/)).not.toBeInTheDocument();
+    expect(ensureJob).not.toHaveBeenCalled();
+  });
+
+  it('keeps entries in top-down order and follows new activity only while reading the latest entries', () => {
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          initialJob={videoGenerationJob()}
+          service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+        >
+          <CreatorCollaborationPanel
+            adapter={videoGenerationPanelAdapter}
+            stepLabel="生成视频"
+            contextSummary="Veo"
+          />
+          <TimelineUpdateHarness />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+    const log = screen.getByRole('log', { name: '协作时间线' });
+    expect(log.firstElementChild).toHaveClass('creator-collaboration-activity');
+    expect(log.lastElementChild).toHaveClass('creator-collaboration-stage');
+    Object.defineProperties(log, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 500 }
+    });
+
+    log.scrollTop = 0;
+    fireEvent.scroll(log);
+    fireEvent.click(screen.getByRole('button', { name: 'Update timeline' }));
+    expect(log.scrollTop).toBe(0);
+
+    log.scrollTop = 400;
+    fireEvent.scroll(log);
+    fireEvent.click(screen.getByRole('button', { name: 'Update timeline' }));
+    expect(log.scrollTop).toBe(500);
+  });
+
   it.each([
     {
       module: 'image-generation' as const,
@@ -643,7 +745,8 @@ describe('CreatorCollaborationPanel', () => {
     expect(screen.getByText('20%')).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: '生成配音进度' }))
       .toHaveAttribute('aria-valuenow', '20');
-    expect(screen.getByRole('button', { name: '终止生成配音' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '终止生成配音' }).querySelector('.lucide-square'))
+      .toHaveAttribute('fill', 'currentColor');
     expect(container.querySelectorAll('.creator-collaboration-stage')).toHaveLength(1);
   });
 

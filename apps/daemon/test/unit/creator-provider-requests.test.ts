@@ -8,6 +8,7 @@ import {
   CreatorProviderRequestLedger,
   type CreatorProviderCapabilities
 } from '../../src/creator/provider-requests.js';
+import { createCreatorIssueService } from '../../src/creator/issues.js';
 import { createCreatorRepository } from '../../src/creator/repository.js';
 import { CreatorServiceError, createCreatorService } from '../../src/creator/service.js';
 import {
@@ -45,6 +46,43 @@ function setup(path = join(tempDir, 'runtime.sqlite')) {
 }
 
 describe('creator provider request ledger', () => {
+  it('keeps unknown paid acceptance non-retryable and resolves the same issue after explicit resubmit', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-provider-ledger-'));
+    const { db, job, stage, repository } = setup();
+    const issues = createCreatorIssueService(repository);
+    const ledger = new CreatorProviderRequestLedger(repository, issues);
+    const first = ledger.registerBeforeSubmit({
+      jobId: job.id,
+      provider: 'openai-image',
+      stageRunId: stage.id,
+      scopeKey: stage.scopeKey,
+      requestKey: `${job.id}:images:shot-01`,
+      request: { prompt: 'draw' },
+      billingSideEffect: true
+    });
+    ledger.markSubmitting(first.id);
+    ledger.markUnknownRemoteAcceptance(first.id);
+
+    const uncertain = issues.list(job.id)[0]!;
+    expect(uncertain).toMatchObject({
+      source: 'provider',
+      code: 'creator_provider_resolution_required',
+      status: 'open',
+      retryable: false,
+      repairActions: [{ kind: 'focus-agent' }]
+    });
+
+    const resubmitted = ledger.confirmResubmit(first.id);
+    expect(issues.get(job.id, uncertain.id)?.status).toBe('resolving');
+    ledger.markSubmitting(resubmitted.id);
+    ledger.markSucceeded(resubmitted.id);
+    expect(issues.get(job.id, uncertain.id)).toMatchObject({
+      id: uncertain.id,
+      status: 'resolved'
+    });
+    db.close();
+  });
+
   it('blocks automatic resubmit after provider acceptance is uncertain', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-provider-ledger-'));
     const path = join(tempDir, 'runtime.sqlite');

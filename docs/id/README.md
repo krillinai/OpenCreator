@@ -82,7 +82,7 @@ Buka Dashboard untuk menerjemahkan atau mengunduh video, membuat thumbnail atau 
 </thead>
 <tbody>
 <tr><td valign="top">Penerjemahan Video</td><td valign="top">✅ Tersedia</td><td>Impor video lokal atau publik; transkripsikan dengan layanan Whisper cloud atau lokal; gunakan konteks LLM untuk segmentasi dan penyelarasan subtitel, pengelolaan istilah, dan penerjemahan; atur subtitel dwibahasa, sulih suara atau sampel suara khusus, gaya subtitel, komposisi lanskap atau potret, lalu ekspor SRT, audio, atau video</td></tr>
-<tr><td valign="top">Pengunduh Video</td><td valign="top">✅ Tersedia</td><td>Uraikan tautan publik yang didukung dari YouTube, Bilibili, dan layanan lain, periksa pilihan kualitas dan format yang tersedia, lalu unduh video atau audio untuk alur kerja berikutnya</td></tr>
+<tr><td valign="top">Pengunduh Video</td><td valign="top">✅ Tersedia</td><td>Analisis video publik individual dari YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, dan Pinterest; bandingkan format yang tersedia dan unduh video atau audio. Beberapa platform mungkin memerlukan cookie</td></tr>
 <tr><td valign="top">Pembuatan Thumbnail</td><td valign="top">✅ Tersedia</td><td>Gabungkan topik, tautan video, dan gambar referensi opsional untuk membuat dan membandingkan beberapa variasi thumbnail konten</td></tr>
 <tr><td valign="top">Pembuatan Gambar</td><td valign="top">✅ Tersedia</td><td>Buat gambar dengan GPT Image dari prompt dan gambar referensi opsional, atur rasio aspek dan jumlah hasil, lalu pratinjau dan unduh setiap gambar</td></tr>
 <tr><td valign="top">Animasi Figur Stik</td><td valign="top">Segera hadir</td><td>Kembangkan karakter, storyboard, sulih suara, dan animasi dalam alur kerja terpandu</td></tr>
@@ -254,6 +254,28 @@ Buat video AI dari prompt teks atau gambar referensi dengan Seedance. Atur model
 ### Pengunduh Video
 
 Analisis tautan video publik, bandingkan format yang tersedia, lalu unduh video atau audio langsung ke proyek.
+
+Sumber video yang didukung:
+
+<table align="center">
+  <tr>
+    <td align="center" width="96"><img src="../images/platforms/youtube.png" alt="YouTube" width="32" height="32" /><br /><strong>YouTube</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/bilibili.png" alt="Bilibili" width="32" height="32" /><br /><strong>Bilibili</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/x.png" alt="X" width="32" height="32" /><br /><strong>X</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/tiktok.png" alt="TikTok" width="32" height="32" /><br /><strong>TikTok</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/instagram.png" alt="Instagram" width="32" height="32" /><br /><strong>Instagram</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/douyin.png" alt="Douyin" width="32" height="32" /><br /><strong>Douyin</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/facebook.png" alt="Facebook" width="32" height="32" /><br /><strong>Facebook</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/xiaohongshu.png" alt="Xiaohongshu" width="32" height="32" /><br /><strong>Xiaohongshu</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/pinterest.png" alt="Pinterest" width="32" height="32" /><br /><strong>Pinterest</strong></td>
+  </tr>
+</table>
+
+Ketersediaan bergantung pada video dan wilayah; beberapa sumber mungkin memerlukan cookie platform. OpenCreator tidak mengimpor cookie peramban secara otomatis.
+
+**Catatan video Xiaohongshu:** Tempel URL publik lengkap `https://www.xiaohongshu.com/explore/<ID catatan heksadesimal 24 karakter>` dan pertahankan parameter kueri seperti `xsec_token`. Catatan berisi gambar saja tidak memiliki format video; profil dan tautan singkat `xhslink.com` belum didukung. Token kedaluwarsa atau pembatasan akses dapat menggagalkan unduhan.
+
+**Pin video Pinterest:** Tempel tautan publik `https://www.pinterest.com/pin/<ID numerik>/`. Pin berisi gambar saja, papan, dan profil tidak didukung.
 
 ![Pemilihan format Pengunduh Video OpenCreator](../images/examples/video-downloader-formats-en.png)
 

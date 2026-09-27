@@ -38,6 +38,7 @@ let turnFinished = false;
 let turnStartedAt = 0;
 let currentPrompt;
 let currentAgentMessage;
+let extraSkillRoots = [];
 
 readline.on('line', line => {
   const message = JSON.parse(line);
@@ -77,6 +78,30 @@ readline.on('line', line => {
       result: {
         data: [],
         nextCursor: null
+      }
+    });
+    return;
+  }
+
+  if (message.method === 'skills/extraRoots/set') {
+    extraSkillRoots = Array.isArray(message.params?.extraRoots)
+      ? message.params.extraRoots.filter(value => typeof value === 'string')
+      : [];
+    send({ id: message.id, result: {} });
+    return;
+  }
+
+  if (message.method === 'skills/list') {
+    send({
+      id: message.id,
+      result: {
+        data: [{
+          cwd: message.params?.cwds?.[0] ?? process.cwd(),
+          skills: [{
+            name: 'opencreator-runtime',
+            path: resolve(extraSkillRoots[0] ?? process.cwd(), 'SKILL.md')
+          }]
+        }]
       }
     });
     return;

@@ -110,6 +110,17 @@ describe('creator yt-dlp runtime routes', () => {
       error: { code: 'creator_yt_dlp_update_unavailable' }
     });
   });
+
+  it('closes the update manager before waiting for active requests', async () => {
+    const manager = managerFixture();
+    server = Fastify();
+    await registerCreatorRuntimeRoutes(server, manager);
+
+    await server.close();
+    server = undefined;
+
+    expect(manager.close).toHaveBeenCalledOnce();
+  });
 });
 
 function managerFixture(
@@ -125,6 +136,7 @@ function managerFixture(
     status: vi.fn(() => status()),
     check: vi.fn(async () => status()),
     update: vi.fn(async () => status()),
+    close: vi.fn(),
     ...patch
   };
 }

@@ -167,6 +167,9 @@ importers:
       node-gyp:
         specifier: 13.0.2
         version: 13.0.2
+      sharp:
+        specifier: 0.35.4
+        version: 0.35.4(@types/node@22.20.0)
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

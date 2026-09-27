@@ -532,6 +532,50 @@ export function migrate(db: Database.Database): void {
       UNIQUE(job_id, idempotency_key)
     );
 
+    CREATE TABLE IF NOT EXISTS creator_issues (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      diagnostic_id TEXT NOT NULL,
+      code TEXT NOT NULL,
+      source TEXT NOT NULL,
+      category TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      status TEXT NOT NULL,
+      operation TEXT,
+      stage_id TEXT,
+      stage_run_id TEXT,
+      scope_key TEXT,
+      summary_key TEXT NOT NULL,
+      summary_params_json TEXT NOT NULL DEFAULT '{}',
+      fallback_message TEXT NOT NULL,
+      public_facts_json TEXT,
+      technical_detail TEXT,
+      retryable INTEGER NOT NULL DEFAULT 0,
+      repair_actions_json TEXT NOT NULL DEFAULT '[]',
+      fingerprint TEXT NOT NULL,
+      occurrence_count INTEGER NOT NULL DEFAULT 1,
+      resolution_attempt_id TEXT,
+      association_kind TEXT,
+      association_id TEXT,
+      last_retry_result TEXT NOT NULL DEFAULT 'none',
+      last_event_kind TEXT NOT NULL DEFAULT 'occurrence',
+      occurred_at TEXT NOT NULL,
+      last_occurred_at TEXT NOT NULL,
+      resolved_at TEXT,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE,
+      UNIQUE(job_id, fingerprint)
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_issue_events (
+      id TEXT PRIMARY KEY,
+      issue_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      retry_result TEXT NOT NULL DEFAULT 'none',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(issue_id) REFERENCES creator_issues(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS codex_session_search_state (
       id INTEGER PRIMARY KEY CHECK(id = 1),
       version INTEGER NOT NULL,
@@ -619,6 +663,14 @@ export function migrate(db: Database.Database): void {
       ON creator_agent_approvals(session_id, status, requested_at ASC);
     CREATE INDEX IF NOT EXISTS idx_creator_command_receipts_job_created
       ON creator_command_receipts(job_id, created_at ASC, id ASC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_creator_issues_job_fingerprint
+      ON creator_issues(job_id, fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_creator_issues_job_status_last
+      ON creator_issues(job_id, status, last_occurred_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_creator_issues_job_last
+      ON creator_issues(job_id, last_occurred_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_creator_issue_events_issue_created
+      ON creator_issue_events(issue_id, created_at ASC, id ASC);
   `);
 
   ensureColumn(db, 'threads', 'title', 'title TEXT');
@@ -672,6 +724,7 @@ export function migrate(db: Database.Database): void {
     'preset_origin_json TEXT CHECK (preset_origin_json IS NULL OR json_valid(preset_origin_json))'
   );
   ensureColumn(db, 'creator_jobs', 'creation_fingerprint', 'creation_fingerprint TEXT');
+  ensureColumn(db, 'creator_issues', 'public_facts_json', 'public_facts_json TEXT');
   backfillCreatorCreationFingerprints(db);
   db.prepare(`
     UPDATE schedules

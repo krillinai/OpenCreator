@@ -101,7 +101,9 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.getByRole('heading', { name: '生成视频' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /项目 V/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '开始生成' })).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('The provider rejected the prompt');
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent('视频生成未完成，请检查模型服务配置后重试');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('The provider rejected the prompt')).not.toBeInTheDocument();
   });
 
   it('shows an actionable message when the selected model is not enabled', () => {
@@ -148,9 +150,10 @@ describe('VideoGenerationWorkspace', () => {
       ))
     });
 
-    expect(screen.getByRole('alert')).toHaveTextContent(
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent(
       '当前账号未开通 Seedance 2.5，请切换模型版本或前往方舟控制台开通'
     );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('offers to continue an existing upstream task after a refresh failure', () => {

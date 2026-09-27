@@ -11,7 +11,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
 import CreatorToolShell from './CreatorToolShell.js';
-import { useOptionalCreatorSession } from './creator-session-store.js';
+import {
+  captureCreatorClientFailure,
+  readCreatorArtifactText,
+  useOptionalCreatorSession
+} from './creator-session-store.js';
 
 type ScriptPlatform = 'douyin' | 'xiaohongshu' | 'wechat-channels' | 'bilibili' | 'generic';
 type ScriptTone = 'natural' | 'professional' | 'energetic' | 'storytelling';
@@ -87,20 +91,18 @@ export default function ShortVideoScriptWorkspace(props: {
     setError('');
     if (session === null || result === undefined) return;
     let active = true;
-    void session.openArtifact(result.artifact.id)
-      .then(async response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const text = await response.text();
+    void readCreatorArtifactText(
+      session,
+      result.artifact.id,
+      'short-video-script.load-result',
+      l('脚本内容加载失败，可以稍后重试或重新生成。', 'The script failed to load. Retry later or generate it again.')
+    )
+      .then(text => {
         if (active) setResultText(text);
       })
-      .catch(cause => {
-        if (active) setError(l(
-          '脚本内容加载失败，可以稍后重试或重新生成',
-          `The script failed to load: ${cause instanceof Error ? cause.message : String(cause)}`
-        ));
-      });
+      .catch(() => undefined);
     return () => { active = false; };
-  }, [l, result?.artifact.id, session?.openArtifact]);
+  }, [l, result?.artifact.id, session?.captureCreatorFailure, session?.openArtifact]);
 
   function updateTopic(value: string) {
     setTopic(value);
@@ -184,10 +186,7 @@ export default function ShortVideoScriptWorkspace(props: {
         '生成任务已提交，完成后会自动显示脚本',
         'Generation started. The script will appear automatically.'
       ));
-    } catch (caught) {
-      const value = caught as { code?: string; message?: string };
-      setError(generationError(value.code ?? null, value.message ?? null, l));
-    }
+    } catch {}
   }
 
   async function copyResult() {
@@ -195,20 +194,32 @@ export default function ShortVideoScriptWorkspace(props: {
     try {
       await navigator.clipboard.writeText(resultText);
       setNotice(l('脚本已复制到剪贴板', 'Script copied to the clipboard'));
-    } catch {
-      setError(l('复制失败，请手动选择脚本内容', 'Copy failed. Select the script manually.'));
+    } catch (cause) {
+      session?.captureCreatorFailure(
+        'short-video-script.copy-result',
+        cause,
+        l('复制失败，请手动选择脚本内容。', 'Copy failed. Select the script manually.'),
+        'client'
+      );
     }
   }
 
   function downloadResult() {
-    if (!result || !resultText) return;
-    const url = URL.createObjectURL(new Blob([resultText], { type: 'text/markdown;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = result.fileName;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    setNotice(l('脚本文件已开始下载', 'The script download has started'));
+    if (!result || !resultText || session === null) return;
+    void captureCreatorClientFailure(
+      session,
+      'short-video-script.download-result',
+      l('脚本下载失败，请稍后重试。', 'The script download failed. Try again later.'),
+      () => {
+        const url = URL.createObjectURL(new Blob([resultText], { type: 'text/markdown;charset=utf-8' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = result.fileName;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+    ).then(() => setNotice(l('脚本文件已开始下载', 'The script download has started')))
+      .catch(() => undefined);
   }
 
   async function cancelTask() {
@@ -216,10 +227,7 @@ export default function ShortVideoScriptWorkspace(props: {
     setTaskControlPending('canceling');
     try {
       await session.cancelJob();
-    } catch (caught) {
-      const value = caught as { code?: string; message?: string };
-      setError(generationError(value.code ?? null, value.message ?? null, l));
-    } finally {
+    } catch {} finally {
       setTaskControlPending(undefined);
     }
   }
@@ -229,10 +237,7 @@ export default function ShortVideoScriptWorkspace(props: {
     setTaskControlPending('resuming');
     try {
       await session.resumeJob();
-    } catch (caught) {
-      const value = caught as { code?: string; message?: string };
-      setError(generationError(value.code ?? null, value.message ?? null, l));
-    } finally {
+    } catch {} finally {
       setTaskControlPending(undefined);
     }
   }
@@ -399,12 +404,9 @@ export default function ShortVideoScriptWorkspace(props: {
           )}
         </section>
 
-        {visibleError ? (
+        {error ? (
           <div className="short-video-script-error" role="alert">
-            <span>{visibleError}</span>
-            {latestStage?.errorCode === 'creator_llm_config_missing' || session?.error?.code === 'creator_llm_config_missing'
-              ? <a href="#/settings?tab=ai-services&section=text">{l('打开文本模型设置', 'Open text model settings')}</a>
-              : null}
+            <span>{error}</span>
           </div>
         ) : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
@@ -458,7 +460,7 @@ function readString(value: CreatorJson | undefined): string {
 
 function generationError(
   code: string | null,
-  message: string | null,
+  _message: string | null,
   l: (zh: string, en: string) => string
 ): string {
   if (code === 'creator_llm_config_missing') {
@@ -470,5 +472,5 @@ function generationError(
   if (code === 'creator_stage_input_missing') {
     return l('请检查主题和脚本设置', 'Check the topic and script settings');
   }
-  return message || l('脚本生成失败，请稍后重试', 'Script generation failed. Try again later.');
+  return l('脚本生成失败，请在 Agent 区域查看诊断后重试', 'Script generation failed. Review the diagnosis in the Agent panel and retry.');
 }

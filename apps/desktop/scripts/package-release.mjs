@@ -71,6 +71,12 @@ const env = {
 
 mkdirSync(releaseDir, { recursive: true });
 mkdirSync(cacheDir, { recursive: true });
+mkdirSync(resolve(desktopDir, '.pack'), { recursive: true });
+const officialBuild = process.env.OPENCREATOR_DESKTOP_OFFICIAL_BUILD === '1';
+writeFileSync(
+  resolve(desktopDir, '.pack', 'desktop-build-profile.json'),
+  `${JSON.stringify({ officialBuild }, null, 2)}\n`
+);
 prepareElectronBuilderCache(env.ELECTRON_BUILDER_CACHE);
 rmSync(manifestPath, { force: true });
 
@@ -223,6 +229,7 @@ const manifest = {
   platform,
   arch,
   mode,
+  officialBuild,
   packageRoot,
   packageRootRelative: relative(rootDir, packageRoot),
   webBuildHash: webBuild.hash,

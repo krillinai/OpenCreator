@@ -4,6 +4,9 @@ import type {
   CreatorProviderRequest,
   CreatorProviderRequestStatus
 } from '@opencreator/protocol';
+import { isPublicErrorFacts } from '@opencreator/protocol';
+import { sanitizeIssueDetail, type CreatorIssueService } from './issues.js';
+import { publicFactsFromFailure } from './public-error-facts.js';
 import type { CreatorRepository } from './repository.js';
 
 export type CreatorProviderLookupResult =
@@ -29,7 +32,10 @@ export class CreatorProviderRequestError extends Error {
 }
 
 export class CreatorProviderRequestLedger {
-  constructor(private readonly repository: CreatorRepository) {}
+  constructor(
+    private readonly repository: CreatorRepository,
+    private readonly issueService?: CreatorIssueService
+  ) {}
 
   registerBeforeSubmit(input: {
     jobId: string;
@@ -109,24 +115,30 @@ export class CreatorProviderRequestLedger {
   }
 
   markSucceeded(id: string, resultArtifactId?: string | null): CreatorProviderRequest {
-    return this.transition(
+    const request = this.transition(
       id,
       ['submitting', 'waiting_remote'],
       'succeeded',
       { resultArtifactId: resultArtifactId ?? null }
     );
+    this.finishProviderIssue(request, 'succeeded');
+    return request;
   }
 
-  markFailed(id: string): CreatorProviderRequest {
-    return this.transition(id, ['submitting', 'waiting_remote'], 'failed');
+  markFailed(id: string, error?: unknown): CreatorProviderRequest {
+    const request = this.transition(id, ['submitting', 'waiting_remote'], 'failed');
+    if (!this.finishProviderIssue(request, 'failed', error)) this.captureProviderIssue(request, false, error);
+    return request;
   }
 
   markUnknownRemoteAcceptance(id: string): CreatorProviderRequest {
-    return this.transition(
+    const request = this.transition(
       id,
       ['submitting', 'waiting_remote'],
       'unknown_remote_acceptance'
     );
+    if (!this.finishProviderIssue(request, 'unknown')) this.captureProviderIssue(request, true);
+    return request;
   }
 
   async recover(
@@ -153,7 +165,7 @@ export class CreatorProviderRequestLedger {
       );
     }
     if (result.status === 'succeeded') {
-      return this.transition(
+      const request = this.transition(
         id,
         ['submitting', 'waiting_remote', 'unknown_remote_acceptance'],
         'succeeded',
@@ -162,17 +174,21 @@ export class CreatorProviderRequestLedger {
           resultArtifactId: result.resultArtifactId ?? null
         }
       );
+      this.finishProviderIssue(request, 'succeeded');
+      return request;
     }
-    return this.transition(
+    const request = this.transition(
       id,
       ['submitting', 'waiting_remote', 'unknown_remote_acceptance'],
       'failed',
       result.remoteTaskId === undefined ? {} : { remoteTaskId: result.remoteTaskId }
     );
+    if (!this.finishProviderIssue(request, 'failed')) this.captureProviderIssue(request, false);
+    return request;
   }
 
   confirmResubmit(id: string): CreatorProviderRequest {
-    return this.repository.transaction(() => {
+    const next = this.repository.transaction(() => {
       const current = this.transition(
         id,
         ['unknown_remote_acceptance'],
@@ -191,10 +207,33 @@ export class CreatorProviderRequestLedger {
         resubmissionOf: current.id
       });
     });
+    this.beginProviderIssue(next);
+    return next;
   }
 
   cancelScope(id: string): CreatorProviderRequest {
-    return this.transition(id, ['unknown_remote_acceptance'], 'canceled');
+    const request = this.transition(id, ['unknown_remote_acceptance'], 'canceled');
+    const openIssue = this.findProviderIssue(request, 'open');
+    if (openIssue !== undefined) {
+      const resolutionAttemptId = `cancel:${request.id}`;
+      this.issueService?.beginResolution({
+        jobId: request.jobId,
+        issueId: openIssue.id,
+        resolutionAttemptId,
+        associationKind: 'provider-request',
+        associationId: request.id,
+        stageRunId: request.stageRunId
+      });
+      this.issueService?.finishResolution({
+        jobId: request.jobId,
+        issueId: openIssue.id,
+        resolutionAttemptId,
+        result: 'succeeded'
+      });
+    } else {
+      this.finishProviderIssue(request, 'canceled');
+    }
+    return request;
   }
 
   unresolvedForStage(input: {
@@ -216,11 +255,96 @@ export class CreatorProviderRequestLedger {
 
   private toUnknown(current: CreatorProviderRequest): CreatorProviderRequest {
     if (current.status === 'unknown_remote_acceptance') return current;
-    return this.transition(
+    const request = this.transition(
       current.id,
       ['registered', 'submitting', 'waiting_remote'],
       'unknown_remote_acceptance'
     );
+    if (!this.finishProviderIssue(request, 'unknown')) this.captureProviderIssue(request, true);
+    return request;
+  }
+
+  private captureProviderIssue(
+    request: CreatorProviderRequest,
+    unknownRemoteAcceptance: boolean,
+    error?: unknown
+  ): void {
+    const stage = this.repository.getStageRun(request.stageRunId);
+    this.issueService?.capture({
+      jobId: request.jobId,
+      code: unknownRemoteAcceptance
+        ? 'creator_provider_resolution_required'
+        : 'creator_provider_request_failed',
+      source: 'provider',
+      category: 'provider',
+      operation: 'creator.retry-stage',
+      stageId: stage?.stageId,
+      stageRunId: request.stageRunId,
+      scopeKey: request.scopeKey ?? undefined,
+      fallbackMessage: unknownRemoteAcceptance
+        ? '外部服务是否已接收请求尚不明确，请先查询状态或确认后再继续。'
+        : '外部服务调用失败，可以重试或询问 Agent。',
+      publicFacts: factsForProvider(error, request.provider),
+      ...(error instanceof Error ? { technicalDetail: sanitizeIssueDetail(error.message) } : {}),
+      retryable: !unknownRemoteAcceptance,
+      repairActions: [
+        ...(!unknownRemoteAcceptance
+          ? [{
+              kind: 'retry-operation' as const,
+              operationId: 'creator.retry-stage',
+              requiresConfirmation: false,
+              risk: 'normal' as const
+            }]
+          : []),
+        { kind: 'focus-agent' as const }
+      ]
+    });
+  }
+
+  private beginProviderIssue(request: CreatorProviderRequest): void {
+    const issue = this.findProviderIssue(request, 'open');
+    if (issue === undefined) return;
+    this.issueService?.beginResolution({
+      jobId: request.jobId,
+      issueId: issue.id,
+      resolutionAttemptId: request.id,
+      associationKind: 'provider-request',
+      associationId: request.id,
+      stageRunId: request.stageRunId
+    });
+  }
+
+  private finishProviderIssue(
+    request: CreatorProviderRequest,
+    result: 'succeeded' | 'failed' | 'canceled' | 'unknown',
+    error?: unknown
+  ): boolean {
+    const issue = this.findProviderIssue(request, 'resolving');
+    if (issue === undefined) return false;
+    this.issueService?.finishResolution({
+      jobId: request.jobId,
+      issueId: issue.id,
+      resolutionAttemptId: request.id,
+      result,
+      ...(result === 'failed' && error !== undefined ? {
+        publicFacts: factsForProvider(error, request.provider),
+        ...(error instanceof Error ? { technicalDetail: sanitizeIssueDetail(error.message) } : {})
+      } : {})
+    });
+    return true;
+  }
+
+  private findProviderIssue(
+    request: CreatorProviderRequest,
+    status: 'open' | 'resolving'
+  ) {
+    const stageId = this.repository.getStageRun(request.stageRunId)?.stageId;
+    return this.issueService?.list(request.jobId).find(issue => (
+      issue.source === 'provider'
+      && issue.status === status
+      && issue.scopeKey === (request.scopeKey ?? undefined)
+      && (stageId === undefined || issue.stageId === stageId)
+    ));
   }
 
   private transition(
@@ -249,6 +373,15 @@ export class CreatorProviderRequestLedger {
     }
     return request;
   }
+}
+
+function factsForProvider(error: unknown, provider: string) {
+  const provided = typeof error === 'object' && error !== null
+    ? (error as { publicFacts?: unknown }).publicFacts
+    : undefined;
+  return isPublicErrorFacts(provided)
+    ? { ...provided, provider }
+    : publicFactsFromFailure(error, provider);
 }
 
 function hashRequest(value: Record<string, CreatorJson>): string {

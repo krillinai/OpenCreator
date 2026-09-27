@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenCreator Bug Fix"
+  short_description: "排查、确认、修复并回写 OpenCreator Bug"
+  default_prompt: "使用 $oc-bugfix 处理默认飞书文档中的 Bug，先完成排查和方案确认。"

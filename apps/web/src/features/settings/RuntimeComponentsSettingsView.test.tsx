@@ -2,6 +2,7 @@ import type { CreatorYtDlpStatus } from '@opencreator/protocol';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
+import { normalizePageIssue } from '../issues/page-issue-state.js';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { RuntimeComponentsSettingsView } from './RuntimeComponentsSettingsView.js';
 
@@ -39,7 +40,12 @@ describe('RuntimeComponentsSettingsView', () => {
         latestVersion: '2026.08.31.120000',
         updateAvailable: true
       }),
-      error: 'creator_yt_dlp_update_verification_failed'
+      issues: [normalizePageIssue(
+        'settings-runtime-components',
+        'runtime.update-yt-dlp',
+        new Error('verification failed'),
+        'yt-dlp 更新校验失败，当前版本仍可继续使用。'
+      )]
     });
 
     expect(screen.getByRole('alert')).toHaveTextContent(

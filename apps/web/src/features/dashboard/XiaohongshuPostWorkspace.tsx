@@ -1,5 +1,6 @@
 import type { CreatorArtifact, CreatorJson } from '@opencreator/protocol';
 import {
+  Check,
   Copy,
   Download,
   LoaderCircle,
@@ -10,10 +11,15 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import CreatorToolShell from './CreatorToolShell.js';
-import { useOptionalCreatorSession } from './creator-session-store.js';
+import {
+  captureCreatorClientFailure,
+  readCreatorArtifactText,
+  useOptionalCreatorSession
+} from './creator-session-store.js';
 
 type PostStyle = 'experience' | 'tutorial' | 'recommendation' | 'review';
 type PostLength = 'short' | 'medium' | 'long';
+type PostStep = 0 | 1;
 
 const styles: Array<{ value: PostStyle; zh: string; en: string }> = [
   { value: 'experience', zh: '经验分享', en: 'Experience' },
@@ -34,6 +40,11 @@ export default function XiaohongshuPostWorkspace(props: {
 }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
+  const result = useMemo(
+    () => readLatestResult(session?.job.artifacts ?? []),
+    [session?.job.artifacts]
+  );
+  const restoredStep: PostStep = result === undefined ? 0 : 1;
   const [topic, setTopic] = useState(() => readString(session?.state.topic));
   const [audience, setAudience] = useState(() => readString(session?.state.audience));
   const [style, setStyle] = useState<PostStyle>(() => readStyle(session?.state.style));
@@ -45,10 +56,8 @@ export default function XiaohongshuPostWorkspace(props: {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [taskControlPending, setTaskControlPending] = useState<'canceling' | 'resuming'>();
-  const result = useMemo(
-    () => readLatestResult(session?.job.artifacts ?? []),
-    [session?.job.artifacts]
-  );
+  const [currentStep, setCurrentStep] = useState<PostStep>(restoredStep);
+  const [furthestStep, setFurthestStep] = useState<PostStep>(restoredStep);
   const latestStage = session?.job.stages.filter(stage => stage.stageId === 'generate').at(-1);
   const generating = latestStage?.status === 'queued' || latestStage?.status === 'running';
   const runtimeError = latestStage?.status === 'failed'
@@ -79,20 +88,24 @@ export default function XiaohongshuPostWorkspace(props: {
       return;
     }
     let active = true;
-    void session.openArtifact(result.artifact.id)
-      .then(async response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const text = await response.text();
+    void readCreatorArtifactText(
+      session,
+      result.artifact.id,
+      'xiaohongshu.load-result',
+      l('帖子内容加载失败，可以稍后重试或重新生成。', 'The post failed to load. Retry later or generate it again.')
+    )
+      .then(text => {
         if (active) setResultText(text);
       })
-      .catch(cause => {
-        if (active) setError(l(
-          '帖子内容加载失败，可以稍后重试或重新生成',
-          `The post failed to load: ${cause instanceof Error ? cause.message : String(cause)}`
-        ));
-      });
+      .catch(() => undefined);
     return () => { active = false; };
-  }, [l, result?.artifact.id, session?.openArtifact]);
+  }, [l, result?.artifact.id, session?.captureCreatorFailure, session?.openArtifact]);
+
+  useEffect(() => {
+    if (result === undefined) return;
+    setCurrentStep(1);
+    setFurthestStep(1);
+  }, [result?.artifact.id]);
 
   function updateTopic(value: string) {
     setTopic(value);
@@ -153,14 +166,13 @@ export default function XiaohongshuPostWorkspace(props: {
         action: 'run-stage',
         input: { stageId: 'generate' }
       });
+      setCurrentStep(1);
+      setFurthestStep(1);
       setNotice(l(
         '生成任务已提交，完成后会自动显示帖子',
         'Generation started. The post will appear automatically.'
       ));
-    } catch (caught) {
-      const value = caught as { code?: string; message?: string };
-      setError(generationError(value.code ?? null, value.message ?? null, l));
-    }
+    } catch {}
   }
 
   async function copyResult() {
@@ -168,20 +180,32 @@ export default function XiaohongshuPostWorkspace(props: {
     try {
       await navigator.clipboard.writeText(resultText);
       setNotice(l('帖子已复制到剪贴板', 'Post copied to the clipboard'));
-    } catch {
-      setError(l('复制失败，请手动选择帖子内容', 'Copy failed. Select the post manually.'));
+    } catch (cause) {
+      session?.captureCreatorFailure(
+        'xiaohongshu.copy-result',
+        cause,
+        l('复制失败，请手动选择帖子内容。', 'Copy failed. Select the post manually.'),
+        'client'
+      );
     }
   }
 
   function downloadResult() {
-    if (!result || !resultText) return;
-    const url = URL.createObjectURL(new Blob([resultText], { type: 'text/markdown;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = result.fileName;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    setNotice(l('帖子文件已开始下载', 'The post download has started'));
+    if (!result || !resultText || session === null) return;
+    void captureCreatorClientFailure(
+      session,
+      'xiaohongshu.download-result',
+      l('帖子下载失败，请稍后重试。', 'The post download failed. Try again later.'),
+      () => {
+        const url = URL.createObjectURL(new Blob([resultText], { type: 'text/markdown;charset=utf-8' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = result.fileName;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+    ).then(() => setNotice(l('帖子文件已开始下载', 'The post download has started')))
+      .catch(() => undefined);
   }
 
   async function cancelTask() {
@@ -189,10 +213,7 @@ export default function XiaohongshuPostWorkspace(props: {
     setTaskControlPending('canceling');
     try {
       await session.cancelJob();
-    } catch (caught) {
-      const value = caught as { code?: string; message?: string };
-      setError(generationError(value.code ?? null, value.message ?? null, l));
-    } finally {
+    } catch {} finally {
       setTaskControlPending(undefined);
     }
   }
@@ -202,16 +223,14 @@ export default function XiaohongshuPostWorkspace(props: {
     setTaskControlPending('resuming');
     try {
       await session.resumeJob();
-    } catch (caught) {
-      const value = caught as { code?: string; message?: string };
-      setError(generationError(value.code ?? null, value.message ?? null, l));
-    } finally {
+    } catch {} finally {
       setTaskControlPending(undefined);
     }
   }
 
   const selectedStyle = styles.find(item => item.value === style) ?? styles[0]!;
   const selectedLength = lengths.find(item => item.value === length) ?? lengths[1]!;
+  const stepLabels = [l('创作设置', 'Post settings'), l('帖子结果', 'Post result')] as const;
   return (
     <CreatorToolShell
       title={l('小红书帖子生成器', 'Xiaohongshu Post Generator')}
@@ -221,7 +240,7 @@ export default function XiaohongshuPostWorkspace(props: {
         : generating
           ? l('正在生成帖子', 'Generating post')
           : `${l(selectedStyle.zh, selectedStyle.en)} · ${l(selectedLength.zh, selectedLength.en)}`}
-      stepLabel={generating ? l('正在生成帖子', 'Generating post') : l('小红书帖子', 'Xiaohongshu post')}
+      stepLabel={generating ? l('正在生成帖子', 'Generating post') : stepLabels[currentStep]}
       currentIssue={visibleError || undefined}
       suggestions={result
         ? [l('标题更有吸引力', 'Make the title more engaging'), l('减少营销感', 'Make it less promotional')]
@@ -237,7 +256,22 @@ export default function XiaohongshuPostWorkspace(props: {
       pageClassName="xiaohongshu-post-workspace-page"
     >
       <div className="creator-tool-stack xiaohongshu-post-stack">
-        <section className="creator-tool-panel" aria-labelledby="xiaohongshu-post-settings-title">
+        <nav className="video-translation-steps creator-tool-steps creator-tool-steps-two" aria-label={l('小红书帖子生成流程', 'Xiaohongshu post workflow')}>
+          <ol>{stepLabels.map((label, index) => {
+            const active = currentStep === index;
+            const completed = index < currentStep;
+            return (
+              <li key={label} data-active={active} data-completed={completed} data-visited={index <= furthestStep}>
+                <button type="button" disabled={index > furthestStep} aria-current={active ? 'step' : undefined} onClick={() => setCurrentStep(index as PostStep)}>
+                  <span>{completed ? <Check size={13} strokeWidth={2.2} /> : index + 1}</span>
+                  <strong>{label}</strong>
+                </button>
+              </li>
+            );
+          })}</ol>
+        </nav>
+
+        {currentStep === 0 ? <section className="creator-tool-panel" aria-labelledby="xiaohongshu-post-settings-title">
           <div className="creator-tool-panel-heading">
             <div>
               <h2 id="xiaohongshu-post-settings-title">{l('创作设置', 'Post settings')}</h2>
@@ -310,23 +344,9 @@ export default function XiaohongshuPostWorkspace(props: {
               />
             </label>
           </div>
-          <div className="creator-tool-actions">
-            <button type="button" onClick={() => void generate()} disabled={generating}>
-              {generating
-                ? <LoaderCircle className="xiaohongshu-post-spinner" size={16} strokeWidth={1.8} aria-hidden="true" />
-                : result
-                  ? <RotateCcw size={16} strokeWidth={1.8} aria-hidden="true" />
-                  : <Sparkles size={16} strokeWidth={1.8} aria-hidden="true" />}
-              {generating
-                ? l('正在生成', 'Generating')
-                : result
-                  ? l('重新生成', 'Regenerate')
-                  : l('生成帖子', 'Generate post')}
-            </button>
-          </div>
-        </section>
+        </section> : null}
 
-        <section className="creator-tool-panel xiaohongshu-post-result-panel" aria-labelledby="xiaohongshu-post-result-title">
+        {currentStep === 1 ? <section className="creator-tool-panel xiaohongshu-post-result-panel" aria-labelledby="xiaohongshu-post-result-title">
           <div className="creator-tool-panel-heading">
             <div>
               <h2 id="xiaohongshu-post-result-title">{l('帖子结果', 'Post result')}</h2>
@@ -361,17 +381,32 @@ export default function XiaohongshuPostWorkspace(props: {
               <span>{generating ? l('正在生成帖子', 'Generating post') : l('还没有生成内容', 'No post generated yet')}</span>
             </div>
           )}
-        </section>
+        </section> : null}
 
-        {visibleError ? (
+        {error ? (
           <div className="xiaohongshu-post-error" role="alert">
-            <span>{visibleError}</span>
-            {latestStage?.errorCode === 'creator_llm_config_missing' || session?.error?.code === 'creator_llm_config_missing'
-              ? <a href="#/settings?tab=ai-services&section=text">{l('打开文本模型设置', 'Open text model settings')}</a>
-              : null}
+            <span>{error}</span>
           </div>
         ) : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
+
+        <footer className="video-translation-wizard-actions xiaohongshu-post-actions">
+          <button className="video-translation-secondary-action" type="button" onClick={() => currentStep === 0 ? props.onBack() : setCurrentStep(0)}>
+            {currentStep === 0 ? l('返回', 'Back') : l('上一步', 'Back')}
+          </button>
+          {currentStep === 0 ? <button className="video-translation-primary-action" type="button" onClick={() => void generate()} disabled={generating}>
+            {generating
+              ? <LoaderCircle className="xiaohongshu-post-spinner" size={16} strokeWidth={1.8} aria-hidden="true" />
+              : result
+                ? <RotateCcw size={16} strokeWidth={1.8} aria-hidden="true" />
+                : <Sparkles size={16} strokeWidth={1.8} aria-hidden="true" />}
+            {generating
+              ? l('正在生成', 'Generating')
+              : result
+                ? l('重新生成', 'Regenerate')
+                : l('生成帖子', 'Generate post')}
+          </button> : null}
+        </footer>
       </div>
     </CreatorToolShell>
   );
@@ -411,7 +446,7 @@ function readString(value: CreatorJson | undefined): string {
 
 function generationError(
   code: string | null,
-  message: string | null,
+  _message: string | null,
   l: (zh: string, en: string) => string
 ): string {
   if (code === 'creator_llm_config_missing') {
@@ -423,5 +458,5 @@ function generationError(
   if (code === 'creator_stage_input_missing') {
     return l('请检查创作主题和生成设置', 'Check the topic and generation settings');
   }
-  return message || l('帖子生成失败，请稍后重试', 'Post generation failed. Try again later.');
+  return l('帖子生成失败，请在 Agent 区域查看诊断后重试', 'Post generation failed. Review the diagnosis in the Agent panel and retry.');
 }

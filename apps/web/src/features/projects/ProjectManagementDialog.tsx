@@ -25,7 +25,6 @@ export function ProjectManagementDialog(props: {
   unassignedThreads: ThreadResponse[];
   initialProjectId?: string;
   busy?: boolean;
-  error?: string;
   onClose(): void;
   onUpdate(projectId: string, input: UpdateProjectRequest): Promise<void>;
   onArchive(projectId: string): Promise<void>;
@@ -84,8 +83,6 @@ export function ProjectManagementDialog(props: {
             <X size={18} aria-hidden="true" />
           </button>
         </header>
-
-        {props.error ? <p className="inline-error" role="alert">{props.error}</p> : null}
 
         <div className="project-management-body">
           <section aria-labelledby="active-projects-title">

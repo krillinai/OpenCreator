@@ -3,6 +3,7 @@ import {
   type CreateImageGenerationRequest,
   type ImageGenerationAsset,
   type ImageGenerationResult,
+  type PublicErrorFacts,
   type RuntimeErrorCode
 } from '@opencreator/protocol';
 import { randomBytes } from 'node:crypto';
@@ -39,7 +40,8 @@ export class ImageGenerationError extends Error {
       | 'IMAGE_GENERATION_RESULT_NOT_FOUND'
       | 'IMAGE_GENERATION_STORAGE_FAILED'>,
     message: string,
-    readonly statusCode: number
+    readonly statusCode: number,
+    readonly publicFacts?: PublicErrorFacts
   ) {
     super(message);
     this.name = 'ImageGenerationError';
@@ -156,8 +158,8 @@ export function createImageGenerationService(input: {
 function mapProviderError(error: unknown): ImageGenerationError {
   if (error instanceof ImageGenerationProviderError) {
     return error.code === 'config_missing'
-      ? new ImageGenerationError('IMAGE_GENERATION_CONFIG_REQUIRED', error.message, 409)
-      : new ImageGenerationError('IMAGE_GENERATION_UPSTREAM_ERROR', error.message, 502);
+      ? new ImageGenerationError('IMAGE_GENERATION_CONFIG_REQUIRED', error.message, 409, error.publicFacts)
+      : new ImageGenerationError('IMAGE_GENERATION_UPSTREAM_ERROR', error.message, 502, error.publicFacts);
   }
   return new ImageGenerationError(
     'IMAGE_GENERATION_UPSTREAM_ERROR',

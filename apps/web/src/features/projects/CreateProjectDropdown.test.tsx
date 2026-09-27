@@ -26,14 +26,11 @@ describe('CreateProjectDropdown', () => {
       .not.toBeInTheDocument());
   });
 
-  it('keeps the menu open and shows the error when creation fails', async () => {
+  it('keeps the menu open without a duplicate local error when creation fails', async () => {
     const onCreateProject = vi.fn().mockResolvedValue(false);
     render(
       <LanguageProvider>
-        <CreateProjectDropdown
-          error="创建项目失败，请重试"
-          onCreate={onCreateProject}
-        />
+        <CreateProjectDropdown onCreate={onCreateProject} />
       </LanguageProvider>
     );
 
@@ -42,7 +39,7 @@ describe('CreateProjectDropdown', () => {
 
     await waitFor(() => expect(onCreateProject).toHaveBeenCalledOnce());
     expect(screen.getByRole('menu', { name: '项目类型' })).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('创建项目失败，请重试');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('supports end alignment for right-side triggers', () => {

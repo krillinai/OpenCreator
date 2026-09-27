@@ -3,7 +3,8 @@ import type {
   CreatorArtifactStatus,
   CreatorJson,
   CreatorStageRun,
-  CreatorJob
+  CreatorJob,
+  PublicErrorFacts
 } from '@opencreator/protocol';
 
 export type CreatorExecutorOutput = {
@@ -39,7 +40,8 @@ export class CreatorExecutorError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    readonly details: Record<string, CreatorJson> = {}
+    readonly details: Record<string, CreatorJson> = {},
+    readonly publicFacts?: PublicErrorFacts
   ) {
     super(message);
     this.name = 'CreatorExecutorError';

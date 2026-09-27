@@ -1,11 +1,8 @@
-import { createHash } from 'node:crypto';
 import {
-  closeSync,
-  openSync,
-  readFileSync,
-  readSync,
-  statSync
-} from 'node:fs';
+  sha256Text,
+  verifyFileIntegrityWithCache
+} from '@opencreator/config';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 
@@ -64,13 +61,30 @@ export function readKrillinRuntimeManifest(resourceRoot: string): KrillinRuntime
   return manifest;
 }
 
-export function verifyKrillinRuntimeManifest(resourceRoot: string, manifest: KrillinRuntimeManifest): void {
-  for (const resource of manifest.resources) {
-    const path = resolveInside(resourceRoot, resource.path);
-    if (!statSync(path).isFile()) throw new Error(`dependency_not_packaged: ${resource.path}`);
-    const actual = hashFile(path);
-    if (actual !== resource.sha256.toLowerCase()) throw new Error(`dependency_hash_mismatch: ${resource.path}`);
+export function verifyKrillinRuntimeManifest(
+  resourceRoot: string,
+  manifest: KrillinRuntimeManifest,
+  input: { cachePath?: string } = {}
+): { cacheHit: boolean } {
+  const root = resolve(resourceRoot);
+  const result = verifyFileIntegrityWithCache({
+    cachePath: input.cachePath,
+    identity: root,
+    fingerprint: sha256Text(JSON.stringify(manifest)),
+    files: manifest.resources.map(resource => ({
+      key: resource.path,
+      path: resolveInside(root, resource.path),
+      sha256: resource.sha256
+    }))
+  });
+  if (!result.verified) {
+    throw new Error(
+      result.reason === 'hash_mismatch'
+        ? `dependency_hash_mismatch: ${result.key}`
+        : `dependency_not_packaged: ${result.key}`
+    );
   }
+  return { cacheHit: result.cacheHit };
 }
 
 export function resolveInside(root: string, relative: string): string {
@@ -80,20 +94,4 @@ export function resolveInside(root: string, relative: string): string {
     throw new Error('resource_path_escape');
   }
   return result;
-}
-
-function hashFile(path: string): string {
-  const digest = createHash('sha256');
-  const descriptor = openSync(path, 'r');
-  const buffer = Buffer.allocUnsafe(1024 * 1024);
-  try {
-    let bytesRead: number;
-    do {
-      bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
-      if (bytesRead > 0) digest.update(buffer.subarray(0, bytesRead));
-    } while (bytesRead > 0);
-  } finally {
-    closeSync(descriptor);
-  }
-  return digest.digest('hex');
 }

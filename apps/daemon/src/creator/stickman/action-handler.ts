@@ -103,12 +103,9 @@ export function handleStickmanAction(input: {
       current.state.styleAsset,
       DEFAULT_STICKMAN_STYLE_ASSET
     );
-    const outputPreset = patch.outputPreset === 'youtube-shorts' || patch.outputPreset === 'landscape'
-      ? patch.outputPreset
-      : current.state.outputPreset;
-    const normalizedFormat = outputPreset === 'youtube-shorts'
+    const normalizedFormat = patch.outputPreset === 'youtube-shorts'
       ? stickmanOutputPresetDefaults('youtube-shorts')
-      : outputPreset === 'landscape'
+      : patch.outputPreset === 'landscape'
         ? stickmanOutputPresetDefaults('landscape')
         : {};
     const nextState: Record<string, CreatorJson> = {

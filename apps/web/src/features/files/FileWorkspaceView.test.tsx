@@ -5,6 +5,9 @@ import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmDialogProvider } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { ApiClientError } from '../../runtime/errors.js';
+import AgentDiagnosticsPanel from '../issues/AgentDiagnosticsPanel.js';
+import { PageIssueRoutingProvider } from '../issues/IssuePresenter.js';
+import { clearPageIssues } from '../issues/page-issue-hub.js';
 import { workspaceKey } from './file-view-state.js';
 import { FileWorkspaceView, type WorkspaceFileService } from './FileWorkspaceView.js';
 
@@ -17,9 +20,34 @@ class ResizeObserverMock {
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
   window.localStorage.clear();
+  clearPageIssues();
 });
 
 describe('FileWorkspaceView', () => {
+  it('routes file-open failures to the Agent panel without a local error banner', async () => {
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'notes.txt',
+          nodes: [fileNode('notes.txt', 'text')]
+        })
+      }
+    });
+    service.getMeta.mockRejectedValueOnce(new Error('private filesystem detail'));
+
+    render(
+      <PageIssueRoutingProvider>
+        <FileWorkspaceView selectedThread={createThread()} workspaceFileService={service} onClose={vi.fn()} />
+        <AgentDiagnosticsPanel onAskIssue={vi.fn()} />
+      </PageIssueRoutingProvider>
+    );
+
+    const agent = await screen.findByRole('complementary', { name: 'Agent 诊断' });
+    expect(agent).toHaveTextContent('无法打开文件，请重试。');
+    expect(agent).not.toHaveTextContent('private filesystem detail');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('没有 selected thread 时显示空态', () => {
     render(<FileWorkspaceView workspaceFileService={createService()} onClose={vi.fn()} />);
 
@@ -222,6 +250,43 @@ describe('FileWorkspaceView', () => {
 
     expect(service.listDirectory).toHaveBeenCalledWith(thread.id, 'docs');
     expect(await screen.findByRole('treeitem', { name: 'guide.md' })).toBeInTheDocument();
+  });
+
+  it('retries a failed directory load from the Agent panel', async () => {
+    const user = userEvent.setup();
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({ nodes: [directoryNode('docs', 0)] }),
+        docs: createDirectory({ path: 'docs', nodes: [fileNode('docs/guide.md', 'markdown')] })
+      }
+    });
+    let firstAttempt = true;
+    service.listDirectory.mockImplementation(async (_threadId: string, path: string) => {
+      if (path === 'docs' && firstAttempt) {
+        firstAttempt = false;
+        throw new Error('private directory detail');
+      }
+      return path === 'docs'
+        ? createDirectory({ path: 'docs', nodes: [fileNode('docs/guide.md', 'markdown')] })
+        : createDirectory({ nodes: [directoryNode('docs', 0)] });
+    });
+
+    render(
+      <PageIssueRoutingProvider>
+        <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
+        <AgentDiagnosticsPanel onAskIssue={vi.fn()} />
+      </PageIssueRoutingProvider>
+    );
+    await expandFileTree(user);
+    await user.click(await screen.findByRole('treeitem', { name: 'docs' }));
+
+    const agent = await screen.findByRole('complementary', { name: 'Agent 诊断' });
+    expect(agent).toHaveTextContent('无法加载目录，请重试。');
+    await user.click(within(agent).getByRole('button', { name: '重试' }));
+
+    expect(await screen.findByRole('treeitem', { name: 'guide.md' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Agent 诊断' })).not.toBeInTheDocument());
   });
 
   it('选择文件更新 selectedPath 时保留已经展开的目录', async () => {
@@ -787,20 +852,23 @@ describe('FileWorkspaceView', () => {
     await user.keyboard('A');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
-    const alert = await screen.findByRole('alert');
-    expect(within(alert).getByText('文件内容与最新版本冲突。')).toBeInTheDocument();
+    const issue = await screen.findByRole('alert');
+    expect(issue).toHaveTextContent('文件已在其他位置更新，请确认是否覆盖。');
+    expect(issue).not.toHaveTextContent(/诊断编号：OC-/);
+    const conflictStatus = screen.getByRole('group', { name: '处理文件冲突' });
+    expect(conflictStatus).not.toBeNull();
 
     const metaCallsBeforeReload = service.getMeta.mock.calls.length;
     const textCallsBeforeReload = service.openText.mock.calls.length;
-    await user.click(within(alert).getByRole('button', { name: '重新加载' }));
+    await user.click(within(conflictStatus as HTMLElement).getByRole('button', { name: '重新加载' }));
     await waitFor(() => expect(service.getMeta.mock.calls.length).toBe(metaCallsBeforeReload + 1));
     await waitFor(() => expect(service.openText.mock.calls.length).toBe(textCallsBeforeReload + 1));
 
     await user.click(await openFileEditor(user, 'notes.txt'));
     await user.keyboard('B');
     await user.click(screen.getByRole('button', { name: '保存' }));
-    const conflictAlert = await screen.findByRole('alert');
-    await user.click(within(conflictAlert).getByRole('button', { name: '覆盖保存' }));
+    const conflict = screen.getByRole('group', { name: '处理文件冲突' });
+    await user.click(within(conflict as HTMLElement).getByRole('button', { name: '覆盖保存' }));
 
     await waitFor(() => {
       expect(service.saveText).toHaveBeenLastCalledWith({
@@ -815,10 +883,11 @@ describe('FileWorkspaceView', () => {
     await user.click(await openFileEditor(user, 'notes.txt'));
     await user.keyboard('C');
     await user.click(screen.getByRole('button', { name: '保存' }));
-    const closeAlert = await screen.findByRole('alert');
-    await user.click(within(closeAlert).getByRole('button', { name: '取消' }));
+    const closeConflict = screen.getByRole('group', { name: '处理文件冲突' });
+    await user.click(within(closeConflict as HTMLElement).getByRole('button', { name: '取消' }));
 
-    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('group', { name: '处理文件冲突' })).not.toBeInTheDocument());
+    expect(screen.getByRole('alert')).toHaveTextContent('文件已在其他位置更新，请确认是否覆盖。');
   });
 
   it('read-only thread 显示只读提示且不能保存', async () => {

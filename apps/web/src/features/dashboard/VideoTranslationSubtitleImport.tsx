@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
-import { useOptionalCreatorSession } from './creator-session-store.js';
+import {
+  captureCreatorClientFailure,
+  useOptionalCreatorSession
+} from './creator-session-store.js';
 
 export function VideoTranslationSubtitleImport(props: { sourceLanguage: string; targetLanguage: string; disabled: boolean }) {
   const l = useLocalizedCopy();
@@ -14,22 +17,30 @@ export function VideoTranslationSubtitleImport(props: { sourceLanguage: string; 
 
   async function importFile(file: File) {
     if (session === null) return;
+    if (!/\.srt$/i.test(file.name) || file.size > 512 * 1024) {
+      setError(l('请选择不超过 512 KiB 的 UTF-8 SRT 文件', 'Choose a UTF-8 SRT file up to 512 KiB'));
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      if (!/\.srt$/i.test(file.name) || file.size > 512 * 1024) throw new Error(l('请选择不超过 512 KiB 的 UTF-8 SRT 文件', 'Choose a UTF-8 SRT file up to 512 KiB'));
-      const contentBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(',')[1]!);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
+      const contentBase64 = await captureCreatorClientFailure(
+        session,
+        'creator.read-subtitle-file',
+        l('字幕文件读取失败，请检查文件后重试。', 'The subtitle file could not be read. Check the file and try again.'),
+        () => new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result).split(',')[1]!);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        })
+      );
       await session.applyAction({ action: 'import-subtitle', input: {
         fileName: file.name, contentBase64, kind,
         language: kind === 'source_subtitle' ? props.sourceLanguage : props.targetLanguage
       } });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+    } catch {
+      // The session records runtime and file-read failures in the shared Agent panel.
     } finally {
       setBusy(false);
     }

@@ -11,8 +11,7 @@ export type FileEditorPaneProps = {
   objectUrl?: string;
   dirty?: boolean;
   saving?: boolean;
-  loadError?: string;
-  saveError?: string;
+  loading?: boolean;
   mode?: FileEditorMode;
   toolbar?: 'inline' | 'hidden';
   htmlPreviewResources?: HtmlPreviewResources;
@@ -20,6 +19,8 @@ export type FileEditorPaneProps = {
   onChange?(value: string): void;
   onSave?(): void;
   onModeChange?(mode: FileEditorMode): void;
+  onPreviewError?(error: unknown): void;
+  onPreviewReady?(): void;
 };
 
 export type FileEditorMode = 'edit' | 'preview';
@@ -29,7 +30,6 @@ export function FileEditorPane(props: FileEditorPaneProps) {
   const [uncontrolledMode, setUncontrolledMode] = useState<FileEditorMode>(
     () => defaultModeForMeta(props.meta)
   );
-  const errors = [props.loadError, props.saveError].filter((error): error is string => error !== undefined);
   const toolbar = props.toolbar ?? 'inline';
   const defaultMode = useMemo(() => defaultModeForMeta(meta), [
     meta?.editable,
@@ -111,13 +111,7 @@ export function FileEditorPane(props: FileEditorPaneProps) {
         </header>
       ) : null}
 
-      {errors.length === 0 ? null : (
-        <div className="file-error-bar" role="status">
-          {errors.map((error) => (
-            <span key={error}>{error}</span>
-          ))}
-        </div>
-      )}
+      {props.loading ? <div className="file-loading-bar" role="status">正在加载文件...</div> : null}
 
       {renderContent({
         meta,
@@ -126,6 +120,8 @@ export function FileEditorPane(props: FileEditorPaneProps) {
         objectUrl: props.objectUrl,
         htmlPreviewResources: props.htmlPreviewResources,
         onOpenExternal: props.onOpenExternal,
+        onPreviewError: props.onPreviewError,
+        onPreviewReady: props.onPreviewReady,
         onChange: props.onChange,
         onSave: props.onSave
       })}
@@ -140,6 +136,8 @@ type RenderContentArgs = {
   objectUrl?: string;
   htmlPreviewResources?: HtmlPreviewResources;
   onOpenExternal?: (url: string) => void;
+  onPreviewError?: (error: unknown) => void;
+  onPreviewReady?: () => void;
   onChange?: (value: string) => void;
   onSave?: () => void;
 };
@@ -171,7 +169,9 @@ function renderContent(args: RenderContentArgs) {
         args.meta,
         args.content,
         args.htmlPreviewResources,
-        args.onOpenExternal
+        args.onOpenExternal,
+        args.onPreviewError,
+        args.onPreviewReady
       );
     }
 
@@ -194,7 +194,9 @@ function renderTextPreview(
   meta: WorkspaceFileMeta,
   content: string,
   htmlPreviewResources?: HtmlPreviewResources,
-  onOpenExternal?: (url: string) => void
+  onOpenExternal?: (url: string) => void,
+  onPreviewError?: (error: unknown) => void,
+  onPreviewReady?: () => void
 ) {
   if (meta.kind === 'html') {
     return (
@@ -204,6 +206,8 @@ function renderTextPreview(
         content={content}
         resources={htmlPreviewResources}
         onOpenExternal={onOpenExternal}
+        onError={onPreviewError}
+        onReady={onPreviewReady}
       />
     );
   }

@@ -53,6 +53,11 @@ describe('XiaohongshuPostWorkspace', () => {
       </LanguageProvider>
     );
 
+    const workflow = screen.getByRole('navigation', { name: '小红书帖子生成流程' });
+    expect(screen.getByRole('button', { name: /创作设置/ })).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('button', { name: /帖子结果/ })).toBeDisabled();
+    expect(screen.queryByRole('heading', { name: '帖子结果' })).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByRole('textbox', { name: '小红书帖子主题或素材' }), {
       target: { value: '分享第一次参与开源项目的过程' }
     });
@@ -64,6 +69,8 @@ describe('XiaohongshuPostWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成帖子' }));
 
     expect(await screen.findByRole('textbox', { name: '生成的小红书帖子' })).toHaveValue(markdown);
+    expect(workflow).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /帖子结果/ })).toHaveAttribute('aria-current', 'step');
     expect(openArtifact).toHaveBeenCalledWith('xiaohongshu_job', 'xiaohongshu_post_v1');
     expect(applyAction).toHaveBeenLastCalledWith(
       'xiaohongshu_job',
@@ -82,6 +89,10 @@ describe('XiaohongshuPostWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '复制帖子' }));
     await waitFor(() => expect(copy).toHaveBeenCalledWith(markdown));
     expect(screen.getByText('帖子已复制到剪贴板')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '上一步' }));
+    expect(screen.getByRole('heading', { name: '创作设置' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新生成' })).toBeInTheDocument();
   });
 
   it('uses settings updated through the collaboration session', async () => {
@@ -212,6 +223,7 @@ describe('XiaohongshuPostWorkspace', () => {
         </LanguageProvider>
       );
 
+      expect(screen.getByRole('button', { name: /帖子结果/ })).toHaveAttribute('aria-current', 'step');
       expect(await screen.findByRole('textbox', { name: '生成的小红书帖子' }))
         .toHaveValue('# 可下载的帖子\n');
       fireEvent.click(screen.getByRole('button', { name: '下载 Markdown' }));

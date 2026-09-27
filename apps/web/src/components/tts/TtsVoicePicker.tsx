@@ -9,6 +9,8 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { IssueList } from '../../features/issues/IssuePresenter.js';
+import { usePageIssueState } from '../../features/issues/page-issue-state.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import NativeSelect from '../forms/NativeSelect.js';
@@ -28,9 +30,9 @@ export function TtsVoicePicker(props: {
 }) {
   const l = useLocalizedCopy();
   const allowCustomVoice = props.allowCustomVoice ?? props.provider === 'volcengine';
+  const pageIssues = usePageIssueState('tts-voice');
   const [voices, setVoices] = useState<CreatorTtsVoice[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [previewing, setPreviewing] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -44,22 +46,27 @@ export function TtsVoicePicker(props: {
     let active = true;
     if (props.service === null || props.provider === 'edge-tts') {
       setVoices([]);
-      setError('');
+      pageIssues.resolveOperation('tts.load-voices');
       return () => {
         active = false;
       };
     }
     setLoading(true);
-    setError('');
     void props.service.getTtsVoices(props.provider, props.model)
       .then(response => {
         if (!active) return;
         setVoices(response.voices);
+        pageIssues.resolveOperation('tts.load-voices');
       })
-      .catch(() => {
+      .catch(cause => {
         if (active) {
           setVoices([]);
-          setError(l('无法加载音色列表', 'Could not load voices'));
+          pageIssues.captureOperationFailure(
+            'tts.load-voices',
+            cause,
+            l('无法加载音色列表，请检查服务配置和网络后重试。', 'Could not load voices. Check the service settings and network, then retry.'),
+            { retryable: true }
+          );
         }
       })
       .finally(() => {
@@ -68,7 +75,15 @@ export function TtsVoicePicker(props: {
     return () => {
       active = false;
     };
-  }, [props.model, props.provider, props.service, reloadToken]);
+  }, [
+    l,
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.model,
+    props.provider,
+    props.service,
+    reloadToken
+  ]);
 
   useEffect(() => () => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
@@ -127,7 +142,6 @@ export function TtsVoicePicker(props: {
       || previewing
     ) return;
     setPreviewing(true);
-    setError('');
     try {
       const response = await props.service.previewTtsVoice({
         provider: props.provider,
@@ -142,8 +156,14 @@ export function TtsVoicePicker(props: {
       audio.src = url;
       await audio.play();
       setPlaying(true);
-    } catch {
-      setError(l('音色试听失败，请检查 API Key 和网络', 'Voice preview failed. Check the API key and network.'));
+      pageIssues.resolveOperation('tts.preview-voice');
+    } catch (cause) {
+      pageIssues.captureOperationFailure(
+        'tts.preview-voice',
+        cause,
+        l('音色试听失败，请检查 API Key 和网络后重试。', 'Voice preview failed. Check the API key and network, then retry.'),
+        { retryable: true }
+      );
     } finally {
       setPreviewing(false);
     }
@@ -253,7 +273,17 @@ export function TtsVoicePicker(props: {
           )}
         </small>
       ) : null}
-      {error ? <small className="tts-voice-picker-error" role="alert">{error}</small> : null}
+      <IssueList
+        issues={pageIssues.issues}
+        actions={{
+          retryOperations: {
+            'tts.load-voices': () => setReloadToken(current => current + 1),
+            'tts.preview-voice': preview
+          }
+        }}
+        onDismiss={pageIssues.dismissIssue}
+        compact
+      />
     </div>
   );
 }

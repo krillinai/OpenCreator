@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyWindowAction,
+  closeWindowForQuit,
+  contentWindowBounds,
   DebouncedWindowStateWriter,
   nativeWindowBackgroundColor,
-  nativeWindowChromeOptions
+  nativeWindowChromeOptions,
+  youtubeEmbedRequestHeaders
 } from '../src/main/window-manager.js';
 
 describe('Window state debounce', () => {
@@ -25,6 +28,62 @@ describe('Window state debounce', () => {
 });
 
 describe('Native window chrome', () => {
+  it('identifies only YouTube embed navigations from the desktop app', () => {
+    const requestHeaders = { Accept: 'text/html' };
+    expect(youtubeEmbedRequestHeaders({
+      url: 'https://www.youtube-nocookie.com/embed/M7lc1UVf-VE',
+      resourceType: 'subFrame',
+      requestHeaders
+    })).toEqual({ ...requestHeaders, Referer: 'https://github.com/krillinai/OpenCreator/' });
+    for (const [url, resourceType] of [
+      ['https://www.youtube-nocookie.com/embed/M7lc1UVf-VE', 'mainFrame'],
+      ['https://www.youtube-nocookie.com/youtubei/v1/player', 'xhr'],
+      ['https://example.com/embed/M7lc1UVf-VE', 'subFrame']
+    ]) {
+      expect(youtubeEmbedRequestHeaders({ url: url!, resourceType: resourceType!, requestHeaders }))
+        .toBe(requestHeaders);
+    }
+  });
+
+  it.each(['win32', 'darwin'] as const)(
+    'hides and destroys the renderer immediately while quitting on %s',
+    () => {
+      const window = {
+        destroy: vi.fn(),
+        hide: vi.fn(),
+        isDestroyed: vi.fn(() => false)
+      };
+
+      closeWindowForQuit(window);
+
+      expect(window.hide).toHaveBeenCalledOnce();
+      expect(window.destroy).toHaveBeenCalledOnce();
+      expect(window.hide.mock.invocationCallOrder[0]).toBeLessThan(
+        window.destroy.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER
+      );
+    }
+  );
+
+  it('does nothing when the renderer is already destroyed', () => {
+    const window = {
+      destroy: vi.fn(),
+      hide: vi.fn(),
+      isDestroyed: vi.fn(() => true)
+    };
+
+    closeWindowForQuit(window);
+
+    expect(window.hide).not.toHaveBeenCalled();
+    expect(window.destroy).not.toHaveBeenCalled();
+  });
+
+  it('persists outer position with content viewport dimensions', () => {
+    expect(contentWindowBounds({
+      getBounds: () => ({ x: 40, y: 60, width: 993, height: 719 }),
+      getContentBounds: () => ({ x: 47, y: 92, width: 980, height: 680 })
+    })).toEqual({ x: 40, y: 60, width: 980, height: 680 });
+  });
+
   it('keeps close behavior and toggles native minimize and zoom actions', () => {
     const window = {
       close: vi.fn(),

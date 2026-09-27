@@ -3,7 +3,6 @@ import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import sharp from 'sharp';
 import {
   stickmanCanvasForRatio,
   type CreatorArtifact
@@ -12,6 +11,7 @@ import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { validateMediaFile } from '../validators/media.js';
 import { stickmanMediaValidationSchema, stickmanTimelineSchema } from './contracts.js';
+import { loadSharp } from './sharp-loader.js';
 
 type MediaProbe = typeof validateMediaFile;
 type FrameSample = {
@@ -153,6 +153,7 @@ async function sampleVideoFrames(
     Math.max(0, duration - Math.min(0.2, duration / 4))
   ];
   const result: FrameSample[] = [];
+  const sharp = await loadSharp();
   for (const [position, timestampSeconds] of timestamps.entries()) {
     const path = join(workdir, `frame-${position + 1}.png`);
     await execFileAsync(ffmpegPath, [

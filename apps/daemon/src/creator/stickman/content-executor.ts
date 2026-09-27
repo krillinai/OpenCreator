@@ -1,6 +1,5 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import sharp from 'sharp';
 import { z } from 'zod';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import type { CreatorArtifact, CreatorJson } from '@opencreator/protocol';
@@ -27,6 +26,7 @@ import {
   type ResolvedVisualAssetFile,
   type StickmanVisualAssetRegistry
 } from './visual-assets.js';
+import { loadSharp } from './sharp-loader.js';
 
 type CompleteJson = (input: {
   stageId: string;
@@ -664,6 +664,7 @@ async function styleAssets(
     );
   }
   const content = await readFile(primaryCharacter.path);
+  const sharp = await loadSharp();
   const dimensions = await sharp(content).metadata();
   if (!dimensions.width || !dimensions.height) {
     throw new CreatorExecutorError(

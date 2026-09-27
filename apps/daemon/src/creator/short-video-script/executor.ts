@@ -5,12 +5,13 @@ import { z } from 'zod';
 import type { CreatorJson } from '@opencreator/protocol';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import {
-  creatorServiceErrorMessage,
+  creatorServiceErrorInfo,
   fetchCreatorService,
   openAiCompatibleEndpoint
 } from '../../creator-services/upstream-fetch.js';
 import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
+import { publicFactsFromFailure } from '../public-error-facts.js';
 
 const scriptRequestSchema = z.object({
   topic: z.string().trim().min(1).max(5_000),
@@ -100,9 +101,12 @@ export function createShortVideoScriptExecutor(input: {
           ...(input.fetchImpl === undefined ? {} : { fetchImpl: input.fetchImpl })
         });
         if (!response.ok) {
+          const failure = await creatorServiceErrorInfo(response, 'Script generation', 'llm');
           throw new CreatorExecutorError(
             'creator_llm_upstream_error',
-            await creatorServiceErrorMessage(response, 'Script generation')
+            failure.message,
+            {},
+            failure.publicFacts
           );
         }
         const payload = chatCompletionSchema.parse(await response.json() as unknown);
@@ -155,7 +159,9 @@ export function createShortVideoScriptExecutor(input: {
         if (error instanceof CreatorExecutorError) throw error;
         throw new CreatorExecutorError(
           'creator_llm_upstream_error',
-          error instanceof Error ? error.message : 'Script generation failed'
+          'Script generation failed',
+          {},
+          publicFactsFromFailure(error, 'llm')
         );
       }
     }

@@ -82,7 +82,7 @@ Dashboard에서 동영상을 번역하거나 다운로드하고, 썸네일 또�
 </thead>
 <tbody>
 <tr><td valign="top">동영상 번역</td><td valign="top">✅ 사용 가능</td><td>로컬 또는 공개 동영상을 불러오고 클라우드나 로컬 Whisper 서비스로 음성을 텍스트로 변환합니다. LLM 컨텍스트를 활용해 자막 분할, 정렬, 용어 처리, 번역을 수행하고, 이중 언어 자막, 더빙 또는 사용자 지정 음성 샘플, 자막 스타일, 가로·세로 구성을 설정한 뒤 SRT, 오디오 또는 동영상으로 내보낼 수 있습니다</td></tr>
-<tr><td valign="top">동영상 다운로드</td><td valign="top">✅ 사용 가능</td><td>YouTube, Bilibili 등 지원되는 공개 링크를 분석하고 이용 가능한 화질과 형식을 확인한 뒤 후속 작업에 사용할 동영상 또는 오디오를 다운로드할 수 있습니다</td></tr>
+<tr><td valign="top">동영상 다운로드</td><td valign="top">✅ 사용 가능</td><td>YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, Pinterest의 개별 공개 동영상을 분석하고 사용 가능한 형식을 비교해 동영상 또는 오디오를 다운로드합니다. 일부 플랫폼에는 쿠키가 필요할 수 있습니다</td></tr>
 <tr><td valign="top">썸네일 생성</td><td valign="top">✅ 사용 가능</td><td>주제, 동영상 링크, 선택적 참조 이미지를 조합해 여러 콘텐츠 썸네일 시안을 생성하고 비교할 수 있습니다</td></tr>
 <tr><td valign="top">이미지 생성</td><td valign="top">✅ 사용 가능</td><td>프롬프트와 선택적 참조 이미지로 GPT Image를 사용해 이미지를 생성하고, 화면 비율과 출력 수를 설정한 뒤 각 이미지를 미리 보고 다운로드할 수 있습니다</td></tr>
 <tr><td valign="top">스틱 피겨 애니메이션</td><td valign="top">출시 예정</td><td>안내형 워크플로에서 캐릭터, 스토리보드, 음성 해설, 애니메이션을 제작합니다</td></tr>
@@ -254,6 +254,28 @@ Seedance를 사용해 텍스트 프롬프트 또는 참조 이미지에서 AI �
 ### 비디오 다운로드
 
 공개 동영상 링크를 분석하고 사용 가능한 형식을 비교한 뒤 비디오 또는 오디오를 프로젝트로 직접 다운로드합니다.
+
+지원하는 동영상 플랫폼:
+
+<table align="center">
+  <tr>
+    <td align="center" width="96"><img src="../images/platforms/youtube.png" alt="YouTube" width="32" height="32" /><br /><strong>YouTube</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/bilibili.png" alt="Bilibili" width="32" height="32" /><br /><strong>Bilibili</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/x.png" alt="X" width="32" height="32" /><br /><strong>X</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/tiktok.png" alt="TikTok" width="32" height="32" /><br /><strong>TikTok</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/instagram.png" alt="Instagram" width="32" height="32" /><br /><strong>Instagram</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/douyin.png" alt="Douyin" width="32" height="32" /><br /><strong>Douyin</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/facebook.png" alt="Facebook" width="32" height="32" /><br /><strong>Facebook</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/xiaohongshu.png" alt="Xiaohongshu" width="32" height="32" /><br /><strong>Xiaohongshu</strong></td>
+    <td align="center" width="96"><img src="../images/platforms/pinterest.png" alt="Pinterest" width="32" height="32" /><br /><strong>Pinterest</strong></td>
+  </tr>
+</table>
+
+이용 가능 여부는 동영상과 지역에 따라 다르며 일부 플랫폼에는 쿠키가 필요할 수 있습니다. OpenCreator는 브라우저 쿠키를 자동으로 가져오지 않습니다.
+
+**Xiaohongshu 동영상 게시물:** 공개 `https://www.xiaohongshu.com/explore/<24자리 16진수 게시물 ID>` 전체 URL을 붙여넣고 `xsec_token` 등의 쿼리 매개변수를 유지하세요. 이미지만 있는 게시물에는 동영상 형식이 없으며 프로필과 `xhslink.com` 단축 링크는 지원하지 않습니다. 만료된 토큰이나 접근 제한으로 다운로드가 실패할 수 있습니다.
+
+**Pinterest 동영상 Pin:** 공개 `https://www.pinterest.com/pin/<숫자 ID>/` 링크를 붙여넣으세요. 이미지만 있는 Pin, 보드 및 프로필은 지원하지 않습니다.
 
 ![OpenCreator 비디오 다운로더 형식 선택](../images/examples/video-downloader-formats-en.png)
 

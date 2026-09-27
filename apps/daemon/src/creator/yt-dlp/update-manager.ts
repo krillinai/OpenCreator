@@ -63,6 +63,7 @@ export type YtDlpUpdateManager = {
   status(): CreatorYtDlpStatus;
   check(input?: { force?: boolean }): Promise<CreatorYtDlpStatus>;
   update(): Promise<CreatorYtDlpStatus>;
+  close(): void;
 };
 
 export class YtDlpUpdateError extends Error {
@@ -104,6 +105,7 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
   private readonly versionsRoot: string;
   private readonly now: () => Date;
   private readonly checkIntervalMs: number;
+  private readonly lifecycleController = new AbortController();
   private state: UpdateState = { version: 1 };
   private activeRuntime: YtDlpRuntime | undefined;
   private checkPending: Promise<CreatorYtDlpStatus> | undefined;
@@ -182,6 +184,10 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
       this.updatePending = undefined;
     });
     return this.updatePending;
+  }
+
+  close(): void {
+    this.lifecycleController.abort();
   }
 
   private async performCheck(): Promise<CreatorYtDlpStatus> {
@@ -293,6 +299,7 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
       proxy: await this.input.readProxy(),
       timeoutMs: CHECK_TIMEOUT_MS,
       maxBytes: MAX_RELEASE_RESPONSE_BYTES,
+      signal: this.lifecycleController.signal,
       fetchImpl: this.input.fetchImpl,
       headers: {
         Accept: 'application/vnd.github+json',
@@ -314,6 +321,7 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
         proxy: await this.input.readProxy(),
         timeoutMs: DOWNLOAD_TIMEOUT_MS,
         maxBytes: MAX_YT_DLP_BYTES,
+        signal: this.lifecycleController.signal,
         fetchImpl: this.input.fetchImpl,
         headers: {
           Accept: 'application/octet-stream',
@@ -417,11 +425,15 @@ async function fetchWithLimit(input: {
   proxy: string;
   timeoutMs: number;
   maxBytes: number;
+  signal: AbortSignal;
   headers: Record<string, string>;
   fetchImpl?: typeof fetch;
 }): Promise<{ ok: boolean; status: number; body: Buffer }> {
   let endpoint = new URL(input.url);
-  const signal = AbortSignal.timeout(input.timeoutMs);
+  const signal = AbortSignal.any([
+    input.signal,
+    AbortSignal.timeout(input.timeoutMs)
+  ]);
   for (let redirectCount = 0; ; redirectCount += 1) {
     const response = await fetchCreatorService({
       endpoint,

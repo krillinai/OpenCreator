@@ -23,6 +23,28 @@ describe('image generation API', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
+  it('returns a safe upstream code and HTTP status without exposing provider text', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.openai.apiKey = 'sk-image-test';
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      error: { code: 'rate_limit_exceeded', message: 'secret=private provider payload' }
+    }), { status: 429 }));
+    await registerImageGenerationRoutes(server, createImageGenerationService({
+      dataDir, configStore: createConfigStore(config), fetchImpl: fetchImpl as typeof fetch
+    }));
+
+    const response = await server.inject({
+      method: 'POST', url: '/image-generation/results',
+      payload: { prompt: 'A portrait', provider: 'openai', size: '1024x1024', quality: 'medium', count: 1 }
+    });
+    expect(response.statusCode).toBe(502);
+    expect(response.json().error).toMatchObject({
+      code: 'IMAGE_GENERATION_UPSTREAM_ERROR',
+      publicFacts: { kind: 'rate-limited', provider: 'openai', httpStatus: 429, upstreamCode: 'rate_limit_exceeded' }
+    });
+    expect(JSON.stringify(response.json().error)).not.toContain('private');
+  });
+
   it('generates, stores, and serves OpenAI-compatible images', async () => {
     const config = createDefaultCreatorServicesConfig();
     config.image.openai.apiKey = 'sk-image-test';

@@ -181,6 +181,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
     };
     this.emit('state', this.currentState);
     const settings = this.input.settings.read();
+    const resolutionStartedAt = Date.now();
     let resolutionDiagnostics: CodexResolutionDiagnostics | undefined;
     let resolvedEnvironment: ResolvedCodexEnvironment | undefined;
     try {
@@ -233,7 +234,8 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
     }
     this.input.logger.info('Resolved Codex CLI', {
       codexBin: resolvedEnvironment.codexBin,
-      source: resolvedEnvironment.source
+      source: resolvedEnvironment.source,
+      durationMs: Date.now() - resolutionStartedAt
     });
     this.resolvedEnvironment = resolvedEnvironment;
     const fingerprint = environmentFingerprint(resolvedEnvironment);
@@ -315,6 +317,8 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
       appHome: this.input.appHome,
       codexBin: environment.codexBin,
       codexHome: environment.codexHome,
+      codexVersion: environment.version,
+      codexCommit: environment.commit,
       dataDir: this.input.dataDir,
       creatorRuntimeRoot: this.input.creatorRuntimeRoot,
       stickmanRuntimeRoot: this.input.stickmanRuntimeRoot,

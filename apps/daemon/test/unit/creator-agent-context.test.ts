@@ -102,8 +102,8 @@ function job(): CreatorJob {
         inputFingerprint: null,
         progress: {
           percent: 100,
-          krillinStatus: 'succeeded',
-          krillinEventPayload: { phase: 'finalizing' }
+          providerStatus: 'succeeded',
+          phase: 'finalizing'
         },
         errorCode: null,
         errorMessage: null,

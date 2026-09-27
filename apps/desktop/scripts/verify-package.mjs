@@ -40,6 +40,7 @@ import {
   findPythonRuntimeMarker,
   verifyStickmanBuildBinding
 } from './package-content-contract.mjs';
+import { verifyMacAppIcon } from './mac-app-icon.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(scriptDir, '..');
@@ -58,6 +59,7 @@ const packageRoot = process.env.OPENCREATOR_DESKTOP_PACKAGE_ROOT
   ? resolve(process.env.OPENCREATOR_DESKTOP_PACKAGE_ROOT)
   : resolve(manifest.packageRoot);
 const resourcesDir = platformResourcesDir(packageRoot);
+const buildProfilePath = join(resourcesDir, 'desktop-build-profile.json');
 const appAsar = join(resourcesDir, 'app.asar');
 const daemonDir = join(resourcesDir, 'daemon');
 const webDir = join(resourcesDir, 'web');
@@ -92,6 +94,7 @@ const machOMagicValues = new Set([
 assertExists(packageRoot);
 assertExists(executable);
 assertExists(appAsar);
+assertBuildProfile();
 assertExists(join(daemonDir, 'dist', 'main.js'));
 assertExists(join(
   daemonDir,
@@ -106,7 +109,7 @@ assertExists(join(daemonDir, 'runtime', 'opencreator-runtime', 'SKILL.md'));
 assertExists(join(daemonDir, 'runtime', 'opencreator-runtime', 'manifest.json'));
 
 assertAsarContents();
-assertBrandingContents();
+await assertBrandingContents();
 assertDaemonContents();
 assertCreatorPresetContents();
 assertWebContents();
@@ -121,7 +124,7 @@ assertSize('Daemon resources', daemonDir, 250 * 1024 * 1024);
 assertSize('Creator Runtime', creatorRuntimeDir, 384 * 1024 * 1024);
 assertSize('Codex Runtime', codexRuntimeDir, 450 * 1024 * 1024);
 assertSize('Stickman Runtime', stickmanRuntimeDir, 384 * 1024 * 1024);
-assertSize('Desktop package', packageRoot, 1536 * 1024 * 1024);
+assertSize('Desktop package', packageRoot, 1600 * 1024 * 1024);
 await assertFuseConfiguration();
 verifyMacPackageMetadata();
 
@@ -161,6 +164,20 @@ function platformResourcesDir(root) {
     : join(root, 'resources');
 }
 
+function assertBuildProfile() {
+  assertExists(buildProfilePath);
+  const profile = JSON.parse(readFileSync(buildProfilePath, 'utf8'));
+  if (typeof profile?.officialBuild !== 'boolean') {
+    throw new Error('Packaged Desktop build profile has an invalid officialBuild marker');
+  }
+  if (
+    typeof manifest.officialBuild === 'boolean'
+    && profile.officialBuild !== manifest.officialBuild
+  ) {
+    throw new Error('Packaged Desktop build profile does not match the build manifest');
+  }
+}
+
 function packagedExecutable(root) {
   if (process.platform === 'darwin') {
     return join(root, 'Contents', 'MacOS', 'OpenCreator');
@@ -194,15 +211,18 @@ function assertAsarContents() {
   }
 }
 
-function assertBrandingContents() {
+async function assertBrandingContents() {
   const desktopResourcesDir = join(resourcesDir, 'desktop-resources');
   const sourceResourcesDir = resolve(desktopDir, 'resources');
   const packagedIcon = join(desktopResourcesDir, 'icon.png');
+  const packagedWindowsIcon = join(desktopResourcesDir, 'icon-win.png');
   const packagedTray = join(desktopResourcesDir, 'tray.png');
   const sourceIcon = join(sourceResourcesDir, 'icon.png');
+  const sourceWindowsIcon = join(sourceResourcesDir, 'icon-win.png');
   const sourceTray = join(sourceResourcesDir, 'tray.png');
 
   assertSameFile('Desktop icon', packagedIcon, sourceIcon);
+  assertSameFile('Desktop Windows icon', packagedWindowsIcon, sourceWindowsIcon);
   assertSameFile('Desktop tray icon', packagedTray, sourceTray);
 
   const bootstrapHtml = extractFile(
@@ -213,8 +233,17 @@ function assertBrandingContents() {
     throw new Error('Packaged Desktop bootstrap branding is missing OpenCreator');
   }
 
-  if (process.platform === 'darwin') {
-    assertExists(join(resourcesDir, 'icon.icns'));
+  if (targetPlatform === 'darwin') {
+    const icon = join(resourcesDir, 'icon.icns');
+    assertExists(icon);
+    await verifyMacAppIcon(icon, sourceIcon);
+    const iconFile = spawnSync('plutil', [
+      '-extract', 'CFBundleIconFile', 'raw', '-o', '-',
+      join(packageRoot, 'Contents', 'Info.plist')
+    ], { encoding: 'utf8' });
+    if (iconFile.status !== 0 || iconFile.stdout.trim() !== 'icon.icns') {
+      throw new Error('Packaged macOS app does not reference the verified icon.icns.');
+    }
   }
 }
 

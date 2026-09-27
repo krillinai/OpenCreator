@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { NotificationSettings } from '../../services/notification-service.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 import './task-center.css';
 
 type TaskService = {
@@ -61,8 +63,8 @@ export function TaskCenter(props: {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string>();
   const [resolvingIds, setResolvingIds] = useState<Set<string>>(() => new Set());
+  const pageIssues = usePageIssueState('tasks');
 
   useEffect(() => {
     void loadTasks(true);
@@ -71,12 +73,11 @@ export function TaskCenter(props: {
   async function loadTasks(reset: boolean) {
     if (props.service === null) {
       setTasks([]);
-      setError('本地运行内核未连接');
+      pageIssues.captureOperationFailure('tasks.load', new Error('runtime_unavailable'), '本地运行内核未连接');
       return;
     }
     if (reset) setLoading(true);
     else setLoadingMore(true);
-    setError(undefined);
     try {
       const response = await props.service.list({
         status: filter,
@@ -86,8 +87,9 @@ export function TaskCenter(props: {
       setTasks(current => reset ? response.tasks : mergeTasks(current, response.tasks));
       setCursor(response.nextCursor);
       setHasMore(response.hasMore);
+      pageIssues.resolveOperation('tasks.load');
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '无法加载任务');
+      pageIssues.captureOperationFailure('tasks.load', loadError, '无法加载任务，请重试。', { retryable: true });
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -104,7 +106,6 @@ export function TaskCenter(props: {
       return;
     }
     setResolvingIds(current => new Set(current).add(task.id));
-    setError(undefined);
     try {
       const response = decision === 'approve'
         ? await props.approvalService.approve(approval.id)
@@ -120,7 +121,7 @@ export function TaskCenter(props: {
       )));
       await loadTasks(true);
     } catch (approvalError) {
-      setError(approvalError instanceof Error ? approvalError.message : '审批操作失败');
+      pageIssues.captureOperationFailure('tasks.approval', approvalError, '审批操作未完成，请重试。');
     } finally {
       setResolvingIds(current => {
         const next = new Set(current);
@@ -132,12 +133,11 @@ export function TaskCenter(props: {
 
   async function pauseSchedule(scheduleId: string) {
     if (props.onPauseSchedule === undefined) return;
-    setError(undefined);
     try {
       await props.onPauseSchedule(scheduleId);
       await loadTasks(true);
     } catch (pauseError) {
-      setError(pauseError instanceof Error ? pauseError.message : '无法暂停任务');
+      pageIssues.captureOperationFailure('tasks.pause-schedule', pauseError, '无法暂停任务，请重试。');
     }
   }
 
@@ -196,7 +196,11 @@ export function TaskCenter(props: {
           ))}
         </div>
 
-        {error ? <p className="task-center__error" role="alert">{error}</p> : null}
+        <IssueList
+          issues={pageIssues.issues}
+          actions={{ retryOperations: { 'tasks.load': () => loadTasks(true) } }}
+          onDismiss={pageIssues.dismissIssue}
+        />
         {loading ? (
           <div className="task-center__state" role="status">
             <LoaderCircle className="task-center__spin" size={22} />

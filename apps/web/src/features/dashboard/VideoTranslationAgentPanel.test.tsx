@@ -92,7 +92,7 @@ describe('VideoTranslationAgentPanel', () => {
     ));
   });
 
-  it('Agent 提交失败时保留输入，并在发送框旁显示真实错误', async () => {
+  it('Agent 提交失败时保留输入，并在共享时间线显示安全诊断', async () => {
     const runAgentTurn = vi.fn(async () => {
       throw new Error('Creator Agent is not ready');
     });
@@ -105,7 +105,8 @@ describe('VideoTranslationAgentPanel', () => {
     fireEvent.change(composer, { target: { value: '合成横屏视频' } });
     fireEvent.click(screen.getByRole('button', { name: '发送给 Agent' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Creator Agent is not ready');
+    expect(await screen.findByText('Agent 未能完成诊断，请查看问题详情后重试。')).toBeInTheDocument();
+    expect(screen.queryByText('Creator Agent is not ready')).not.toBeInTheDocument();
     expect(composer).toHaveValue('合成横屏视频');
   });
 

@@ -16,7 +16,6 @@ export default function CreatorResultVersionMenu(props: {
 }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
-  const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   const snapshots = readCreatorResultSnapshots(session?.job.state.resultSnapshots);
@@ -31,7 +30,6 @@ export default function CreatorResultVersionMenu(props: {
     if (pendingRef.current) return;
     pendingRef.current = true;
     setPending(true);
-    setError('');
     try {
       if (session && snapshots.some(snapshot => snapshot.version === version)) {
         await session.applyAction({ action: 'select-result-version', input: { version } });
@@ -39,7 +37,7 @@ export default function CreatorResultVersionMenu(props: {
       props.onVersionChange(version);
       setHistoryOpen(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      session?.captureCreatorFailure('creator.select-result-version', cause, l('无法切换项目版本，请稍后重试。', 'Could not switch project versions. Try again later.'));
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -97,7 +95,6 @@ export default function CreatorResultVersionMenu(props: {
         </div>
       ) : null}
       {stale ? <small role="status">{l('包含过期结果', 'Contains stale results')}</small> : null}
-      {error ? <small role="alert">{error}</small> : null}
     </div>
   );
 }

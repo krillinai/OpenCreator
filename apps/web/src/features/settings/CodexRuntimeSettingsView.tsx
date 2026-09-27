@@ -3,6 +3,8 @@ import { KeyRound, LoaderCircle, Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { ConnectionService } from '../../services/connection-service.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 export type CodexRuntimeSettingsService = Pick<ConnectionService,
   | 'getCodexProvider'
@@ -19,8 +21,9 @@ export function CodexRuntimeSettingsView(props: {
   const [apiKey, setApiKey] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [reloadToken, setReloadToken] = useState(0);
+  const pageIssues = usePageIssueState('settings-codex-runtime');
 
   useEffect(() => {
     let canceled = false;
@@ -31,7 +34,6 @@ export function CodexRuntimeSettingsView(props: {
     }
 
     setLoading(true);
-    setError(undefined);
     void props.service.getCodexProvider()
       .then(next => {
         if (canceled) return;
@@ -39,20 +41,32 @@ export function CodexRuntimeSettingsView(props: {
         setBaseUrl(next.baseUrl);
         setModel(next.model);
         setApiKey('');
+        pageIssues.resolveOperation('settings.codex.load');
       })
       .catch(cause => {
-        if (!canceled) setError(messageOf(cause));
+        if (!canceled) pageIssues.captureOperationFailure(
+          'settings.codex.load',
+          cause,
+          l('无法读取 Codex Agent 配置，请重试。', 'Could not load Codex Agent configuration. Try again.'),
+          { retryable: true }
+        );
       })
       .finally(() => {
         if (!canceled) setLoading(false);
       });
     return () => { canceled = true; };
-  }, [props.connected, props.service]);
+  }, [
+    l,
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.connected,
+    props.service,
+    reloadToken
+  ]);
 
   async function saveProvider() {
     if (props.service === null) return;
     setBusy(true);
-    setError(undefined);
     setNotice(undefined);
     try {
       const next = await props.service.updateCodexProvider({
@@ -64,12 +78,18 @@ export function CodexRuntimeSettingsView(props: {
       setBaseUrl(next.baseUrl);
       setModel(next.model);
       setApiKey('');
+      pageIssues.resolveOperation('settings.codex.save');
       setNotice(l(
         'Codex Agent 配置已保存。',
         'Codex Agent configuration saved.'
       ));
     } catch (cause) {
-      setError(messageOf(cause));
+      pageIssues.captureOperationFailure(
+        'settings.codex.save',
+        cause,
+        l('Codex Agent 配置未保存，请检查配置后重试。', 'Codex Agent configuration was not saved. Check the settings and retry.'),
+        { retryable: true }
+      );
     } finally {
       setBusy(false);
     }
@@ -186,11 +206,14 @@ export function CodexRuntimeSettingsView(props: {
       )}
 
       {notice === undefined ? null : <p className="settings-notice" role="status">{notice}</p>}
-      {error === undefined ? null : <p className="settings-error" role="alert">{error}</p>}
+      <IssueList
+        issues={pageIssues.issues}
+        actions={{ retryOperations: {
+          'settings.codex.load': () => setReloadToken(value => value + 1),
+          'settings.codex.save': saveProvider
+        } }}
+        onDismiss={pageIssues.dismissIssue}
+      />
     </section>
   );
-}
-
-function messageOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

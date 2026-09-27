@@ -84,7 +84,7 @@ Open the Dashboard to write articles, Xiaohongshu posts, or short-video scripts;
 </thead>
 <tbody>
 <tr><td valign="top">Video Translation</td><td valign="top">✅ Available</td><td>Import local or public videos; transcribe with cloud or local Whisper services; use LLM context for subtitle segmentation, alignment, terminology, and translation; configure bilingual subtitles, dubbing or a custom voice sample, subtitle styles, landscape or portrait composition, and export SRT, audio, or video</td></tr>
-<tr><td valign="top">Video Downloader</td><td valign="top">✅ Available</td><td>Parse YouTube, Bilibili, and other supported public links, inspect available quality and format options, and download video or audio for later workflows</td></tr>
+<tr><td valign="top">Video Downloader</td><td valign="top">✅ Available</td><td>Analyze individual public videos from YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, and Pinterest; compare available formats and download video or audio. Some sources may require platform cookies</td></tr>
 <tr><td valign="top">Thumbnail Generator</td><td valign="top">✅ Available</td><td>Combine a topic, video link, and optional reference image to generate and compare multiple content-thumbnail variations</td></tr>
 <tr><td valign="top">Image Generation</td><td valign="top">✅ Available</td><td>Generate with GPT Image from a prompt and optional reference image, configure the aspect ratio and output count, then preview and download individual images</td></tr>
 <tr><td valign="top">Article Writer</td><td valign="top">✅ Available</td><td>Turn a topic, links, videos, or source documents into editable topic options, an outline, and a complete article; add generated images and export Markdown, HTML, or PDF</td></tr>
@@ -260,6 +260,28 @@ Generate an AI video from a text prompt or reference image with Seedance. Config
 
 Analyze a public video link, compare the available formats, and download video or audio directly to the project.
 
+Supported video sources:
+
+<table align="center">
+  <tr>
+    <td align="center" width="96"><img src="./docs/images/platforms/youtube.png" alt="YouTube" width="32" height="32" /><br /><strong>YouTube</strong></td>
+    <td align="center" width="96"><img src="./docs/images/platforms/bilibili.png" alt="Bilibili" width="32" height="32" /><br /><strong>Bilibili</strong></td>
+    <td align="center" width="96"><img src="./docs/images/platforms/x.png" alt="X" width="32" height="32" /><br /><strong>X</strong></td>
+    <td align="center" width="96"><img src="./docs/images/platforms/tiktok.png" alt="TikTok" width="32" height="32" /><br /><strong>TikTok</strong></td>
+    <td align="center" width="96"><img src="./docs/images/platforms/instagram.png" alt="Instagram" width="32" height="32" /><br /><strong>Instagram</strong></td>
+    <td align="center" width="96"><img src="./docs/images/platforms/douyin.png" alt="Douyin" width="32" height="32" /><br /><strong>Douyin</strong></td>
+    <td align="center" width="96"><img src="./docs/images/platforms/facebook.png" alt="Facebook" width="32" height="32" /><br /><strong>Facebook</strong></td>
+    <td align="center" width="96"><img src="./docs/images/platforms/xiaohongshu.png" alt="Xiaohongshu" width="32" height="32" /><br /><strong>Xiaohongshu</strong></td>
+    <td align="center" width="96"><img src="./docs/images/platforms/pinterest.png" alt="Pinterest" width="32" height="32" /><br /><strong>Pinterest</strong></td>
+  </tr>
+</table>
+
+Availability varies by video and region; some sources may require platform cookies.
+
+**Xiaohongshu video notes:** Paste the complete public `https://www.xiaohongshu.com/explore/<24-character hex note ID>` URL, including `xsec_token` and other query parameters when present. Image-only notes have no video formats; profile pages and `xhslink.com` share links are not supported yet. Recognizing a link does not guarantee download: expired tokens, access restrictions, or platform changes may prevent it. OpenCreator does not automatically import browser cookies.
+
+**Pinterest video Pins:** Paste a public `https://www.pinterest.com/pin/<numeric ID>/` link. Image-only Pins have no downloadable video formats; boards and profiles are not supported.
+
 ![OpenCreator Video Downloader format selection](./docs/images/examples/video-downloader-formats-en.png)
 
 ### Stick Figure Animation
@@ -301,7 +323,7 @@ pnpm web:dev
 
 Open `http://127.0.0.1:19861/`. The development server starts the local daemon on demand and injects a temporary Runtime token through a same-origin proxy, so no connection token needs to be copied manually.
 
-On first launch, the Runtime prepares a default project. The composer is ready as soon as the connection completes. To work on the daemon only:
+On first launch, the Runtime prepares a default project and checks local Codex settings. Confirm an existing ChatGPT sign-in or API key to use local Codex, or select a provider and enter its model, endpoint, and API key. The composer is ready after setup. To work on the daemon only:
 
 ```bash
 pnpm daemon:dev

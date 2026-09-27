@@ -111,11 +111,6 @@ export function SkillMarketCard({
         {actionButton}
       </div>}
 
-      {item.operationError ? (
-        <p className="skill-market-inline-error" role="alert">
-          {item.operationError}
-        </p>
-      ) : null}
     </article>
   );
 }

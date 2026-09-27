@@ -20,6 +20,8 @@ open-design-main/
 .codex/*
 !.codex/skills/
 .codex/skills/*
+!.codex/skills/oc-bugfix/
+!.codex/skills/oc-bugfix/**
 !.codex/skills/oc-deploy/
 !.codex/skills/oc-deploy/**
 !.codex/skills/oc-pr/

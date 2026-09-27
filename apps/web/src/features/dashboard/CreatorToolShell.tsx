@@ -4,6 +4,7 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import CreatorCollaborationPanel, {
   type CreatorPanelQuickAction
 } from './CreatorCollaborationPanel.js';
+import CreatorResizableLayout from './CreatorResizableLayout.js';
 import { creatorPanelAdapterFor } from './creator-panel-adapters.js';
 import { useOptionalCreatorSession } from './creator-session-store.js';
 
@@ -39,8 +40,9 @@ export default function CreatorToolShell(props: {
 
   return (
     <main className={`creator-workspace-page${props.pageClassName ? ` ${props.pageClassName}` : ''}`}>
-      <div className="creator-workspace-layout">
-        <section className="creator-workspace-main" aria-label={`${props.title} ${l('操作区', 'workspace')}`}>
+      <CreatorResizableLayout
+        className="creator-workspace-layout"
+        workspace={<section className="creator-workspace-main" aria-label={`${props.title} ${l('操作区', 'workspace')}`}>
           <header className={`creator-workspace-header${props.titleIcon === undefined ? '' : ' has-title-icon'}`}>
             <button type="button" onClick={props.onBack} aria-label={l('返回', 'Back')}>
               <ArrowLeft size={18} strokeWidth={1.8} aria-hidden="true" />
@@ -54,9 +56,8 @@ export default function CreatorToolShell(props: {
             </div>
           </header>
           <div className={`creator-workspace-content${props.contentClassName ? ` ${props.contentClassName}` : ''}`}>{props.children}</div>
-        </section>
-
-        <CreatorCollaborationPanel
+        </section>}
+        agentPanel={<CreatorCollaborationPanel
           adapter={adapter}
           stepLabel={props.stepLabel ?? props.title}
           contextSummary={props.context}
@@ -66,8 +67,8 @@ export default function CreatorToolShell(props: {
           onCancelTask={props.onCancelTask}
           onResumeTask={props.onResumeTask}
           taskControlPending={props.taskControlPending}
-        />
-      </div>
+        />}
+      />
     </main>
   );
 }

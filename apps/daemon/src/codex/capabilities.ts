@@ -65,12 +65,78 @@ export type CollectCodexCapabilityMatrixInput = {
 };
 
 export const STARTUP_CAPABILITY_TIMEOUT_MS = 500;
+export const BUNDLED_CODEX_VERSION = '0.149.0';
+export const BUNDLED_CODEX_COMMIT = '758ef40f50c1a458425c7cfbf1eb12cbc07af0b0';
 
 export type CodexVersionProbeResult = {
   ready: boolean;
   version: string;
   warning?: string;
 };
+
+export function resolveBundledCodexStartupSnapshot(input: {
+  mode?: string;
+  version?: string;
+  commit?: string;
+  checkedAt?: string;
+}): {
+  version: string;
+  capabilities: RuntimeCapabilityMatrix;
+} | undefined {
+  if (
+    input.mode !== 'bundled'
+    || input.version !== BUNDLED_CODEX_VERSION
+    || input.commit !== BUNDLED_CODEX_COMMIT
+  ) {
+    return undefined;
+  }
+  const version = `codex-cli ${BUNDLED_CODEX_VERSION}`;
+  return {
+    version,
+    capabilities: {
+      codexVersion: version,
+      checkedAt: input.checkedAt ?? new Date().toISOString(),
+      execJson: true,
+      execStdinPrompt: true,
+      execProfile: true,
+      execCwd: true,
+      execSandbox: true,
+      execSkipGitRepoCheck: true,
+      resumeJson: true,
+      resumeByThreadId: true,
+      resumeLast: true,
+      resumeModelOverride: true,
+      resumeConfigOverride: true,
+      resumeCwdOverride: false,
+      resumeProfileOverride: false,
+      resumeSandboxOverride: false,
+      execImages: true,
+      resumeImages: true,
+      resumeContextContinuityVerified: false,
+      appServer: true,
+      appServerApprovals: true,
+      mcpList: true,
+      mcpGet: true,
+      mcpAdd: true,
+      mcpRemove: true,
+      mcpLogin: true,
+      mcpLogout: true,
+      mcpAddEnv: true,
+      mcpAddUrl: true,
+      mcpAddBearerTokenEnvVar: true,
+      mcpAddOAuth: true,
+      mcpRuntimeDiscoveryVerified: false,
+      mcpRuntimeBehaviorVerified: false,
+      skillsScan: false,
+      skillsInstall: false,
+      skillsDelete: false,
+      skillsGlobalWrite: false,
+      skillsRuntimeDiscoveryVerified: false,
+      skillsRuntimeBehaviorVerified: false,
+      warnings: []
+    }
+  };
+}
 
 export async function probeCodexVersionAsync(input: {
   codexBin: string;

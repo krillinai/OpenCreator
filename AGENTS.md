@@ -22,6 +22,13 @@
   - 执行相关集成测试、构建、服务重启和健康检查。
   - 只有任务涉及 Desktop 或交付包时才执行 Desktop 构建、打包及一致性门禁。
 
+### Web 快速验证路径
+
+- 只修改 `apps/web` 中的页面、模板 Workspace、样式或局部前端状态，且未触及 Host Bridge、Desktop capability、Preload/IPC、Daemon/Runtime、协议、持久化或构建资源时，以相关 Web 定向测试、`@opencreator/web` typecheck 和必要的浏览器交互验证为完成标准。
+- 上述纯 Web 改动通过验证后即可交付。默认不运行生产构建、Browser/Desktop 双上下文一致性规格、`desktop:package` 或 packaged App E2E；不能仅因 Desktop 复用同一份 Web 产物而升级验证。
+- 只有改动依赖平台 capability、响应式结果可能受 Electron 内容视口影响，或用户明确要求对比 Web/Desktop 时，才增加 Browser/Desktop 双上下文规格。双上下文规格通过后，仍不因该规格本身自动升级到实际 App 打包。
+- 只有触及 `apps/desktop`、Host Bridge、Preload/IPC、窗口或系统原生能力、Daemon 启动与代理、打包资源/脚本，或任务目标是 Desktop 交付、候选验证或发布时，才执行实际 App 打包和 packaged App E2E。
+
 ### 服务操作
 
 - 前端源码在正在运行的 Vite 开发服务下能够热更新时，不得仅为使页面生效而重启 Web 服务。
@@ -64,7 +71,7 @@
 - 铁律：OpenCreator 以 `apps/web` 作为唯一的前端实现和主要开发环境，Desktop 必须直接使用同一套 Web 前端构建产物，不得维护第二套页面、组件、样式或通用交互逻辑。
 - 铁律：在相同业务数据、相同用户偏好和相同前端内容区尺寸下，Web 与 Desktop 的通用界面、文案、布局、状态、交互结果和 Runtime 请求必须一致。
 - “一致”指通用产品能力一致，不要求浏览器模拟操作系统窗口、系统目录选择器、菜单栏、托盘和原生通知等系统能力。
-- 不能因为 Web 和 Desktop 共用 React 代码就默认二者已经一致；一致性必须通过自动化测试和实际打包 App 验证。
+- 不能因为 Web 和 Desktop 共用 React 代码就默认平台边界已经一致。纯共享 Web 改动按“Web 快速验证路径”验证；涉及 Desktop 边界或交付包时才要求实际打包 App 验证。
 
 ### 通用能力铁律
 
@@ -102,9 +109,9 @@
 - 打包校验必须比较 App 内嵌 Web 资源与本次 Web 构建产物；不一致时必须终止打包。
 - 不得通过手工复制、替换 App 内资源或跳过 Web 构建来制作可交付 App。
 
-### 必须执行的一致性测试
+### 分级一致性测试
 
-以下测试是相关功能完成前的强制门禁，不是可选建议：
+明确影响 Web/Desktop 通用行为或平台 capability 时，按实际影响选择以下自动化测试，不得因纯 Web 局部改动默认执行整组：
 
 1. 使用同一个 Fake Daemon、相同项目、相同会话、相同本地偏好和相同内容视口，分别以 Browser Bridge 和 Desktop Bridge 渲染应用。
 2. 对比首页、项目选择器、创建项目、设置页、会话输入区和文件工作区的通用可见文案、按钮、状态、关键尺寸和操作结果。
@@ -112,12 +119,14 @@
 4. 验证 Web 首次启动会自动获得默认项目，输入框立即可用。
 5. 验证 Browser Bridge 下不显示目录选择、目录更换、窗口关闭等不可用的 Desktop 原生入口。
 6. 验证 Desktop Bridge 下原生入口真实调用对应 Bridge 能力，不得只验证按钮存在。
+实际 App 打包仅在“Web 快速验证路径”的升级条件命中时执行，并必须完成：
+
 7. 运行实际打包 App E2E，验证 Preload Bridge、`opencreator-app://` 页面、Runtime 代理、默认项目、核心输入流程和原生能力。
 8. 校验 `apps/web/dist` 与 App 内嵌 Web 目录文件列表和内容哈希完全一致。
 
 ### 修改时的强制判断
 
-- 修改 `apps/web` 页面、状态、Service、Host Bridge、Daemon 项目逻辑、Desktop Preload、窗口逻辑、协议代理或打包脚本时，必须判断是否影响 Web/Desktop 一致性。
+- 修改 `apps/web` 页面、状态、Service、Host Bridge、Daemon 项目逻辑、Desktop Preload、窗口逻辑、协议代理或打包脚本时，必须先按“Web 快速验证路径”判断验证等级，不得把普通 Web 修改自动视为 Desktop 打包任务。
 - 新功能开发前必须先归类：
   - 通用产品能力：只实现一次，由 Web 和 Daemon 共用。
   - 系统原生能力：通过 capability 隔离，并提供平台专属测试。
@@ -127,6 +136,7 @@
 
 ### 完成声明门禁
 
-- 未通过类型检查、相关单元测试、Web/Desktop 一致性测试和实际打包 App 验证时，不得声称相关功能已经完成、两端已经一致或可以发布。
+- 纯 Web 改动通过相关 Web 定向测试、typecheck 和必要的浏览器验证后，可以声明该改动完成，但不得据此声明实际 Desktop 包或发布候选已验证。
+- 命中 Desktop 打包升级条件时，未通过相关测试、实际打包 App 验证和资源哈希校验，不得声称 Desktop 功能完成、两端已经一致或可以发布。
 - 如果当前环境无法运行其中某项验证，必须明确说明未验证内容、原因和残余风险。
 - 发现 Web 与 Desktop 通用行为回归、App 嵌入旧 Web 产物、无效平台入口或首次启动状态不一致时，必须阻止发布，不得降级为普通提示。

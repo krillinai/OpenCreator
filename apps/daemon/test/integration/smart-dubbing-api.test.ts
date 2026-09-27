@@ -154,4 +154,23 @@ describe('smart dubbing API', () => {
     expect(unsupported.statusCode).toBe(409);
     expect(unsupported.json().error.code).toBe('SMART_DUBBING_PROVIDER_UNSUPPORTED');
   });
+
+  it('passes safe TTS failure facts to the Agent-facing API response', async () => {
+    const synthesize = vi.fn(async () => {
+      throw new KrillinTtsServiceError('creator_tts_upstream_error', 'TTS failed', 502, {
+        kind: 'unauthorized', provider: 'aliyun', httpStatus: 403, upstreamCode: 'PERMISSION_DENIED'
+      });
+    });
+    await registerSmartDubbingRoutes(server, createSmartDubbingService({
+      dataDir, ttsService: { synthesize }
+    }));
+    const response = await server.inject({
+      method: 'POST', url: '/smart-dubbing/results',
+      payload: { text: 'Ready to speak', voice: 'Cherry', style: 'natural', speed: 1, format: 'mp3' }
+    });
+    expect(response.json().error).toMatchObject({
+      code: 'SMART_DUBBING_UPSTREAM_ERROR',
+      publicFacts: { kind: 'unauthorized', provider: 'aliyun', httpStatus: 403, upstreamCode: 'PERMISSION_DENIED' }
+    });
+  });
 });

@@ -86,9 +86,14 @@ describe('useRuntimeDependencies', () => {
       await result.current.updateYtDlp().catch(() => undefined);
     });
 
-    expect(result.current.error).toContain(
-      'creator_yt_dlp_update_download_failed'
-    );
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.issues).toHaveLength(1);
+    expect(result.current.issues?.[0]).toMatchObject({
+      code: 'creator_yt_dlp_update_download_failed',
+      operation: 'runtime.update-yt-dlp',
+      fallbackMessage: '运行组件更新失败，请检查网络和磁盘空间后重试。'
+    });
+    expect(result.current.issues?.[0]?.diagnosticId).toMatch(/^OC-/);
   });
 });
 

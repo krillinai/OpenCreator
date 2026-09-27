@@ -193,7 +193,10 @@ async function handleAppServer() {
     if (message.method === 'account/read') {
       send({
         id: message.id,
-        result: { account: null, requiresOpenaiAuth: true }
+        result: process.env.OPENCREATOR_E2E_FAKE_CODEX_SIGNED_OUT === '1'
+          || process.env.OPENCREATOR_E2E_FAKE_CODEX_CUSTOM_PROVIDER === '1'
+          ? { account: null, requiresOpenaiAuth: process.env.OPENCREATOR_E2E_FAKE_CODEX_CUSTOM_PROVIDER !== '1' }
+          : { account: { type: 'apiKey' }, requiresOpenaiAuth: false }
       });
       continue;
     }
@@ -202,10 +205,19 @@ async function handleAppServer() {
       send({
         id: message.id,
         result: {
-          config: {
-            model: 'gpt-5',
-            openai_base_url: ''
-          },
+          config: process.env.OPENCREATOR_E2E_FAKE_CODEX_CUSTOM_PROVIDER === '1'
+            ? {
+                model: 'custom-model',
+                model_provider: 'gateway',
+                model_providers: {
+                  gateway: {
+                    base_url: 'https://gateway.example.test/v1',
+                    experimental_bearer_token: 'provider-secret',
+                    requires_openai_auth: false
+                  }
+                }
+              }
+            : { model: 'gpt-5', openai_base_url: '' },
           layers: []
         }
       });

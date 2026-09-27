@@ -7,6 +7,7 @@ import type { SettingsStore } from './settings-store.js';
 const DEFAULT_TELEMETRY_URL = 'https://admin.clawee.work/api/v1/public/desktop-usage';
 const ACTIVE_INTERVAL_MS = 60_000;
 const REPORT_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const REPORT_TIMEOUT_MS = 5_000;
 
 type TelemetryDay = {
   date: string;
@@ -35,7 +36,7 @@ export function startDesktopTelemetry(input: {
   settings: SettingsStore;
   logger: DesktopLogger;
   appVersion: string;
-  isPackaged: boolean;
+  isOfficialBuild: boolean;
   isWindowActive(): boolean;
   endpointOverride?: string;
   platform?: NodeJS.Platform;
@@ -48,11 +49,12 @@ export function startDesktopTelemetry(input: {
 }): DesktopTelemetryController {
   const now = input.now ?? (() => new Date());
   const store = createTelemetryStore(input.path, input.persistence);
-  const endpoint = resolveTelemetryEndpoint(input.endpointOverride, input.isPackaged);
+  const endpoint = resolveTelemetryEndpoint(input.endpointOverride, input.isOfficialBuild);
   const fetchImpl = input.fetchImpl ?? fetch;
   let launchRecorded = false;
   let stopped = false;
   let reportQueue = Promise.resolve();
+  let activeReport: AbortController | undefined;
 
   const installId = () => {
     const existing = input.settings.read().telemetryInstallId;
@@ -67,10 +69,15 @@ export function startDesktopTelemetry(input: {
     store.incrementLaunch(usageDate(now()));
   };
   const sendReports = async () => {
-    if (!input.settings.read().telemetryEnabled || endpoint === undefined) return;
+    if (stopped || !input.settings.read().telemetryEnabled || endpoint === undefined) return;
     const currentInstallId = installId();
     const today = usageDate(now());
     for (const day of store.readDays(today)) {
+      if (stopped) return;
+      const controller = new AbortController();
+      activeReport = controller;
+      const timeout = setTimeout(() => controller.abort(), REPORT_TIMEOUT_MS);
+      timeout.unref();
       try {
         const response = await fetchImpl(endpoint, {
           method: 'POST',
@@ -87,7 +94,7 @@ export function startDesktopTelemetry(input: {
             operating_system: input.platform ?? process.platform,
             architecture: input.architecture ?? process.arch
           }),
-          signal: AbortSignal.timeout(5_000)
+          signal: controller.signal
         });
         if (!response.ok) {
           input.logger.warnRateLimited(
@@ -100,6 +107,7 @@ export function startDesktopTelemetry(input: {
         }
         store.removeReportedHistory(day.date, today);
       } catch (error) {
+        if (stopped) return;
         input.logger.warnRateLimited(
           'desktop-telemetry-report',
           'Desktop telemetry report failed',
@@ -107,6 +115,9 @@ export function startDesktopTelemetry(input: {
           REPORT_INTERVAL_MS
         );
         return;
+      } finally {
+        clearTimeout(timeout);
+        if (activeReport === controller) activeReport = undefined;
       }
     }
   };
@@ -140,22 +151,23 @@ export function startDesktopTelemetry(input: {
       if (!stopped) {
         stopped = true;
         clearTimers();
+        activeReport?.abort();
       }
-      await reportNow();
     },
     dispose() {
       if (stopped) return;
       stopped = true;
       clearTimers();
+      activeReport?.abort();
     }
   };
 }
 
 export function resolveTelemetryEndpoint(
   override: string | undefined,
-  isPackaged: boolean
+  isOfficialBuild: boolean
 ): string | undefined {
-  const value = override?.trim() || (isPackaged ? DEFAULT_TELEMETRY_URL : '');
+  const value = override?.trim() || (isOfficialBuild ? DEFAULT_TELEMETRY_URL : '');
   if (value === '') return undefined;
   try {
     const url = new URL(value);

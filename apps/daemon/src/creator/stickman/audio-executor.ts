@@ -189,7 +189,7 @@ async function synthesizeSegment(
       }
     };
   } catch (error) {
-    input.ledger.markFailed(ledger.id);
+    input.ledger.markFailed(ledger.id, error);
     if (error instanceof CreatorExecutorError) throw error;
     if (hasErrorCode(error)) {
       throw new CreatorExecutorError(error.code, error.message);

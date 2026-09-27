@@ -8,6 +8,8 @@ import { LoaderCircle, Search } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { OpenCreatorProject } from '../projects/project-model.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 import './search-view.css';
 
 export type SearchViewService = {
@@ -38,6 +40,8 @@ export function SearchView(props: {
   const [query, setQuery] = useState('');
   const [activeResultIndex, setActiveResultIndex] = useState(-1);
   const [state, setState] = useState<SearchState>(emptySearchState);
+  const [retryKey, setRetryKey] = useState(0);
+  const pageIssues = usePageIssueState('search');
   const requestGenerationRef = useRef(0);
   const normalizedQuery = query.trim();
   const recentThreads = props.recentThreads.slice(0, RECENT_CONVERSATION_LIMIT);
@@ -74,8 +78,9 @@ export function SearchView(props: {
               ? {}
               : { nextCursor: response.nextCursor }),
           });
+          pageIssues.resolveOperation('search.query');
         })
-        .catch(() => {
+        .catch(cause => {
           if (generation !== requestGenerationRef.current) return;
           setState({
             results: [],
@@ -84,11 +89,12 @@ export function SearchView(props: {
             hasMore: false,
             error: l('无法搜索会话', 'Could not search conversations'),
           });
+          pageIssues.captureOperationFailure('search.query', cause, l('无法搜索会话，请重试。', 'Could not search conversations. Try again.'), { retryable: true });
         });
     }, SEARCH_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timeout);
-  }, [l, normalizedQuery, props.connected, props.service]);
+  }, [l, normalizedQuery, props.connected, props.service, retryKey]);
 
   async function loadMore() {
     if (
@@ -115,13 +121,15 @@ export function SearchView(props: {
         hasMore: response.hasMore,
         nextCursor: response.nextCursor,
       }));
-    } catch {
+      pageIssues.resolveOperation('search.load-more');
+    } catch (cause) {
       if (generation !== requestGenerationRef.current) return;
       setState(current => ({
         ...current,
         loadingMore: false,
         error: l('无法加载更多搜索结果', 'Could not load more search results'),
       }));
+      pageIssues.captureOperationFailure('search.load-more', cause, l('无法加载更多搜索结果，请重试。', 'Could not load more search results. Try again.'), { retryable: true });
     }
   }
 
@@ -169,6 +177,16 @@ export function SearchView(props: {
           ) : null}
         </label>
 
+        <IssueList
+          issues={pageIssues.issues}
+          actions={{ retryOperations: {
+            'search.query': () => setRetryKey(value => value + 1),
+            'search.load-more': loadMore
+          } }}
+          onDismiss={pageIssues.dismissIssue}
+          compact
+        />
+
         <div className="search-view__body">
           {!props.connected ? (
             <SearchStatus title={l('连接本地服务后可以搜索会话', 'Connect the local service to search conversations')} />
@@ -191,7 +209,7 @@ export function SearchView(props: {
               </ConversationSection>
             )
           ) : state.error !== undefined ? (
-            <SearchStatus title={state.error} alert />
+            <SearchStatus title={l('当前没有可显示的搜索结果', 'No search results to display')} />
           ) : state.loading ? (
             <SearchStatus title={l('正在搜索', 'Searching')} loading />
           ) : state.results.length === 0 ? (

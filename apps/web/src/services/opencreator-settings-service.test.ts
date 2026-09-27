@@ -31,10 +31,16 @@ describe('OpenCreator settings service', () => {
 
     await service.getUiSettings();
     await service.updateUiSettings({ colorMode: 'light' });
+    await service.getStorageSettings();
+    await service.updateStorageSettings({ outputRoot: '/tmp/exports' });
 
     expect(get).toHaveBeenCalledWith('/settings/ui');
     expect(patch).toHaveBeenCalledWith('/settings/ui', {
       colorMode: 'light'
+    });
+    expect(get).toHaveBeenCalledWith('/settings/storage');
+    expect(patch).toHaveBeenCalledWith('/settings/storage', {
+      outputRoot: '/tmp/exports'
     });
   });
 });

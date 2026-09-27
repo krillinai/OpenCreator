@@ -14,9 +14,18 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parse, stringify } from '@iarna/toml';
 import type {
+  OpenCreatorStorageSettings,
   OpenCreatorUiSettings,
+  UpdateOpenCreatorStorageSettingsRequest,
   UpdateOpenCreatorUiSettingsRequest
 } from '@opencreator/protocol';
+
+export {
+  sha256Text,
+  verifyFileIntegrityWithCache,
+  type FileIntegrityVerificationResult,
+  type IntegrityFile
+} from './file-integrity-cache.js';
 
 export type OpenCreatorPaths = {
   root: string;
@@ -56,6 +65,7 @@ export type OpenCreatorRuntimeConfig = {
 export type OpenCreatorConfigDocument = {
   version: number;
   ui?: OpenCreatorUiSettings;
+  storage?: OpenCreatorStorageSettings;
   desktop?: OpenCreatorDesktopConfig;
   runtime?: OpenCreatorRuntimeConfig;
   creatorServices?: Record<string, unknown>;
@@ -65,6 +75,7 @@ export type OpenCreatorConfigSnapshot = {
   document: OpenCreatorConfigDocument;
   configured: {
     ui: boolean;
+    storage: boolean;
     desktop: boolean;
     runtime: boolean;
     creatorServices: boolean;
@@ -140,6 +151,16 @@ export function updateOpenCreatorUiSettings(
   }));
 }
 
+export function updateOpenCreatorStorageSettings(
+  path: string,
+  patch: UpdateOpenCreatorStorageSettingsRequest
+): OpenCreatorConfigSnapshot {
+  return updateOpenCreatorConfig(path, document => ({
+    ...document,
+    storage: normalizeStorageSettings({ ...document.storage, ...patch })
+  }));
+}
+
 function readOpenCreatorConfigUnlocked(path: string): OpenCreatorConfigSnapshot {
   if (!existsSync(path)) return snapshot({ version: 1 });
   const source = readFileSync(path, 'utf8');
@@ -155,6 +176,9 @@ function normalizeDocument(value: unknown): OpenCreatorConfigDocument {
       ? source.version
       : 1,
     ...(isRecord(source.ui) ? { ui: normalizeUiSettings(source.ui) } : {}),
+    ...(isRecord(source.storage)
+      ? { storage: normalizeStorageSettings(source.storage) }
+      : {}),
     ...(isRecord(source.desktop)
       ? { desktop: normalizeDesktopConfig(source.desktop) }
       : {}),
@@ -176,6 +200,9 @@ function snapshot(document: OpenCreatorConfigDocument): OpenCreatorConfigSnapsho
       ...(document.ui === undefined
         ? {}
         : { ui: normalizeUiSettings(document.ui) }),
+      ...(document.storage === undefined
+        ? {}
+        : { storage: normalizeStorageSettings(document.storage) }),
       ...(document.desktop === undefined
         ? {}
         : { desktop: normalizeDesktopConfig(document.desktop) }),
@@ -188,6 +215,7 @@ function snapshot(document: OpenCreatorConfigDocument): OpenCreatorConfigSnapsho
     },
     configured: {
       ui: document.ui !== undefined,
+      storage: document.storage !== undefined,
       desktop: document.desktop !== undefined,
       runtime: document.runtime !== undefined,
       creatorServices: document.creatorServices !== undefined
@@ -197,6 +225,30 @@ function snapshot(document: OpenCreatorConfigDocument): OpenCreatorConfigSnapsho
 
 export function resolveUiSettings(snapshot: OpenCreatorConfigSnapshot): OpenCreatorUiSettings {
   return normalizeUiSettings(snapshot.document.ui ?? defaultUiSettings);
+}
+
+export function resolveStorageSettings(
+  snapshot: OpenCreatorConfigSnapshot,
+  defaults: OpenCreatorStorageSettings
+): OpenCreatorStorageSettings {
+  return normalizeStorageSettings(snapshot.document.storage ?? defaults, defaults);
+}
+
+function normalizeStorageSettings(
+  value: unknown,
+  defaults?: OpenCreatorStorageSettings
+): OpenCreatorStorageSettings {
+  const source = isRecord(value) ? value : {};
+  const defaultProjectRoot = nonEmptyString(
+    source.defaultProjectRoot ?? source.default_project_root
+  ) ?? defaults?.defaultProjectRoot ?? '';
+  const outputRoot = nonEmptyString(source.outputRoot ?? source.output_root)
+    ?? defaults?.outputRoot
+    ?? '';
+  return {
+    defaultProjectRoot: resolve(defaultProjectRoot),
+    outputRoot: resolve(outputRoot)
+  };
 }
 
 export function resolveDesktopConfig(
@@ -310,6 +362,9 @@ function writeConfigFile(path: string, document: OpenCreatorConfigDocument): voi
   const serializable = {
     version: document.version,
     ...(document.ui === undefined ? {} : { ui: serializeUi(document.ui) }),
+    ...(document.storage === undefined
+      ? {}
+      : { storage: serializeStorage(document.storage) }),
     ...(document.desktop === undefined
       ? {}
       : { desktop: serializeDesktop(document.desktop) }),
@@ -323,6 +378,13 @@ function writeConfigFile(path: string, document: OpenCreatorConfigDocument): voi
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, stringify(serializable as any), { mode: 0o600 });
   renameSync(temporary, path);
+}
+
+function serializeStorage(value: OpenCreatorStorageSettings): Record<string, unknown> {
+  return {
+    default_project_root: value.defaultProjectRoot,
+    output_root: value.outputRoot
+  };
 }
 
 function serializeUi(value: OpenCreatorUiSettings): Record<string, unknown> {

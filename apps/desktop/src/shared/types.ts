@@ -99,6 +99,8 @@ export type DesktopHostNotification = {
   approvalId?: string;
 };
 
+export type DirectorySelectionPurpose = 'project' | 'default-project-root' | 'output-root';
+
 export type DesktopApi = {
   kind: 'desktop';
   windowChrome?: DesktopWindowChrome;
@@ -111,7 +113,7 @@ export type DesktopApi = {
   subscribeBootstrapState(listener: (state: DesktopBootstrapState) => void): () => void;
   retryBootstrap(): Promise<DesktopHostResult>;
   selectCodexPath(): Promise<DesktopHostResult>;
-  selectProjectDirectory(): Promise<string | null>;
+  selectProjectDirectory(purpose?: DirectorySelectionPurpose): Promise<string | null>;
   resolveDroppedFilePath(file: File): string | null;
   restartRuntime(): Promise<DesktopHostResult>;
   reloadWorkspace(): Promise<DesktopHostResult>;

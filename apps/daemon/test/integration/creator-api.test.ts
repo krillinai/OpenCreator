@@ -308,7 +308,23 @@ describe('creator api', () => {
       locale: 'en-US',
       catalogHash: expect.stringMatching(/^[a-f0-9]{64}$/)
     });
-    expect(catalog.json().presets).toContainEqual(expect.objectContaining({
+    const imagePreset = catalog.json().presets.find(
+      (preset: { module: string }) => preset.module === 'image-generation'
+    );
+    expect(imagePreset).toMatchObject({
+      module: 'image-generation',
+      id: expect.any(String),
+      version: expect.any(Number),
+      title: expect.any(String),
+      coverUrl: expect.stringMatching(/^\/creator-presets\/[a-f0-9]{64}\.(?:jpg|png|webp)$/),
+      prompt: expect.any(String),
+      tags: expect.any(Array),
+      highlights: expect.any(Array)
+    });
+    const infographicPreset = catalog.json().presets.find(
+      (preset: { id: string }) => preset.id === 'exploded-food-infographic'
+    );
+    expect(infographicPreset).toMatchObject({
       module: 'image-generation',
       id: 'exploded-food-infographic',
       version: 1,
@@ -322,7 +338,7 @@ describe('creator api', () => {
         { text: 'High quality', colors: [] },
         { text: '2 images', colors: [] }
       ]
-    }));
+    });
     const fullPreviewPreset = catalog.json().presets.find(
       (preset: { id: string }) => preset.id === 'y2k-streetwear-mobile-landing-page'
     );
@@ -367,8 +383,8 @@ describe('creator api', () => {
       projectId: 'project_preset_api',
       preset: {
         module: 'image-generation',
-        id: 'exploded-food-infographic',
-        version: 1
+        id: imagePreset.id,
+        version: imagePreset.version
       },
       locale: 'en-US',
       creationKey: 'api-preset-creation'
@@ -380,13 +396,13 @@ describe('creator api', () => {
       status: 'draft',
       presetOrigin: {
         module: 'image-generation',
-        id: 'exploded-food-infographic',
-        version: 1,
+        id: imagePreset.id,
+        version: imagePreset.version,
         locale: 'en-US',
-        title: 'Exploded Food Infographic'
+        title: imagePreset.title
       },
       state: {
-        prompt: expect.stringContaining('Create a hyper-realistic exploded vertical infographic'),
+        prompt: imagePreset.prompt,
         provider: 'codex-native'
       },
       stages: []
@@ -832,6 +848,86 @@ describe('creator api', () => {
     expect(replayed.map(frame => frame.id)).toContain('snapshot:2');
     expect(replayed.some(frame => frame.id.startsWith('activity:'))).toBe(true);
     expect(new Set(replayed.map(frame => frame.id)).size).toBe(replayed.length);
+  });
+
+  it('reports one sanitized client issue through response snapshot list stats and SSE', async () => {
+    await setupServer();
+    const created = await request('POST', '/creator/jobs', {
+      projectId: 'project_issue_api',
+      templateId: 'video-translation',
+      creationKey: 'creator-issue-api'
+    });
+    const job = created.json().job;
+    const reportBody = {
+      clientIssueId: 'local:issue-api',
+      code: 'creator_client_preview_failed',
+      source: 'client',
+      operation: 'creator.preview-artifact',
+      fallbackMessage: 'Authorization: Bearer secret C:\\Users\\Mayn\\private.mp4'
+    };
+    const first = await request('POST', `/creator/jobs/${job.id}/issues/report`, reportBody);
+    const repeated = await request('POST', `/creator/jobs/${job.id}/issues/report`, reportBody);
+
+    expect(first.statusCode).toBe(201);
+    expect(repeated.statusCode).toBe(201);
+    expect(repeated.json().issue).toMatchObject({
+      id: first.json().issue.id,
+      occurrenceCount: 2,
+      source: 'client',
+      status: 'open'
+    });
+    expect(JSON.stringify(repeated.json())).not.toContain('secret');
+    expect(JSON.stringify(repeated.json())).not.toContain('Mayn');
+
+    const snapshot = await request('GET', `/creator/jobs/${job.id}`);
+    const listed = await request('GET', `/creator/jobs/${job.id}/issues?limit=1`);
+    expect(snapshot.json().job.issues).toEqual([
+      expect.objectContaining({ id: first.json().issue.id })
+    ]);
+    expect(listed.json()).toMatchObject({
+      issues: [expect.objectContaining({ id: first.json().issue.id })],
+      events: [expect.objectContaining({ issueId: first.json().issue.id })],
+      nextCursor: expect.any(String)
+    });
+
+    const occurredAt = Date.parse(first.json().issue.occurredAt);
+    const from = new Date(occurredAt - 60_000).toISOString();
+    const to = new Date(occurredAt + 60_000).toISOString();
+    const stats = await request(
+      'GET',
+      `/creator/jobs/${job.id}/issues/stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    );
+    expect(Object.keys(stats.json())).toEqual(['jobId', 'from', 'to', 'rows']);
+    expect(stats.json().rows).toEqual([{
+      code: 'creator_client_preview_failed',
+      source: 'client',
+      status: 'open',
+      retryResult: 'none',
+      count: 1
+    }]);
+    expect(Object.keys(stats.json().rows[0])).toEqual([
+      'code', 'source', 'status', 'retryResult', 'count'
+    ]);
+
+    const forged = await request('POST', `/creator/jobs/${job.id}/issues/report`, {
+      ...reportBody,
+      repairActions: [{ kind: 'retry-operation', risk: 'paid' }]
+    });
+    const foreign = await request('POST', '/creator/jobs/missing-job/issues/report', reportBody);
+    expect(forged.statusCode).toBe(400);
+    expect(foreign.statusCode).toBe(404);
+
+    await server!.listen({ host: '127.0.0.1', port: 0 });
+    const address = server!.server.address();
+    if (address === null || typeof address === 'string') throw new Error('Server address is unavailable');
+    const frames = await readSseFrames(
+      `http://127.0.0.1:${address.port}/creator/jobs/${job.id}/events?cursor=${encodeURIComponent('snapshot:0')}`,
+      1
+    );
+    const issueFrame = frames.find(frame => frame.event === 'issue_changed');
+    expect(issueFrame?.data).toMatchObject({
+      payload: { issue: { id: first.json().issue.id, occurrenceCount: 2 } }
+    });
   });
 });
 

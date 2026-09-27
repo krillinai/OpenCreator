@@ -5,7 +5,22 @@ import { HtmlPreview, resolveWorkspacePreviewPath } from './HtmlPreview.js';
 
 describe('HtmlPreview', () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('reports a preview failure to the Agent channel without a local alert', async () => {
+    const failure = new Error('preview renderer failed');
+    const onError = vi.fn();
+    vi.spyOn(DOMParser.prototype, 'parseFromString').mockImplementationOnce(() => {
+      throw failure;
+    });
+
+    render(<HtmlPreview name="broken.html" path="broken.html" content="<main>test</main>" onError={onError} />);
+
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
+    expect(screen.getByRole('status')).toHaveTextContent('预览暂不可用');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('removes user scripts and navigational content while allowing only the preview runtime', async () => {

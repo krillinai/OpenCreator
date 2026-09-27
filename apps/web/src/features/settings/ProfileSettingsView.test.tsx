@@ -104,9 +104,10 @@ describe('ProfileSettingsView', () => {
 
     await user.click(screen.getByRole('button', { name: '删除 review' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'CODEX_PROFILE_IN_USE：仍被 1 个会话和 1 个计划任务使用'
-    );
+    const issue = await screen.findByRole('alert');
+    expect(issue).toHaveTextContent('无法删除 Profile，请检查占用情况后重试。');
+    expect(issue).not.toHaveTextContent(/诊断编号：OC-/);
+    expect(issue).not.toHaveTextContent('Profile is still referenced');
     expect(screen.getByRole('heading', { name: 'review' })).toBeInTheDocument();
   });
 

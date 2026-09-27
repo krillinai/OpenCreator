@@ -24,7 +24,10 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
-import { useOptionalCreatorSession } from './creator-session-store.js';
+import {
+  createCreatorArtifactObjectUrl,
+  useOptionalCreatorSession
+} from './creator-session-store.js';
 
 type DubbingStep = 0 | 1 | 2;
 
@@ -125,7 +128,15 @@ export default function SmartDubbingWorkspace(props: {
         setVoice(readString(session?.state.voiceCode) || selectedConfig.defaultVoiceId);
         setVoiceName(readString(session?.state.voiceName) || selectedConfig.defaultVoiceId);
       })
-      .catch(() => setError(l('无法读取配音服务配置', 'Could not load TTS settings')));
+      .catch(cause => {
+        if (!active) return;
+        session?.captureCreatorFailure(
+          'smart-dubbing.load-service-config',
+          cause,
+          l('无法读取配音服务配置，请稍后重试。', 'Could not load TTS settings. Try again later.'),
+          'client'
+        );
+      });
     return () => { active = false; };
   }, [props.creatorServicesService, session?.job.id]);
 
@@ -139,23 +150,22 @@ export default function SmartDubbingWorkspace(props: {
     }
     let active = true;
     let objectUrl = '';
-    void session.openArtifact(result.artifact.id)
-      .then(async response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        objectUrl = URL.createObjectURL(await response.blob());
+    void createCreatorArtifactObjectUrl(
+      session,
+      result.artifact.id,
+      'smart-dubbing.load-audio-preview',
+      l('配音音频加载失败，可以稍后重试或重新生成。', 'Dubbing audio failed to load. Retry later or generate it again.')
+    )
+      .then(url => {
+        objectUrl = url;
         if (active) setAudioUrl(objectUrl);
       })
-      .catch(cause => {
-        if (active) setError(l(
-          '配音音频加载失败，可以稍后重试或重新生成',
-          `Dubbing audio failed to load: ${cause instanceof Error ? cause.message : String(cause)}`
-        ));
-      });
+      .catch(() => undefined);
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [l, result?.artifact.id, session?.openArtifact]);
+  }, [l, result?.artifact.id, session?.captureCreatorFailure, session?.openArtifact]);
 
   useEffect(() => {
     if (result !== undefined && !generating) {
@@ -253,9 +263,7 @@ export default function SmartDubbingWorkspace(props: {
         input: { stageId: 'tts' }
       });
       setNotice(l('配音任务已提交，完成后会自动显示音频', 'Dubbing started. The audio will appear automatically.'));
-    } catch (caught) {
-      setError(formatGenerationError(caught, l));
-    }
+    } catch {}
   }
 
   function download() {
@@ -272,9 +280,7 @@ export default function SmartDubbingWorkspace(props: {
     setTaskControlPending('canceling');
     try {
       await session.cancelJob();
-    } catch (caught) {
-      setError(formatGenerationError(caught, l));
-    } finally {
+    } catch {} finally {
       setTaskControlPending(undefined);
     }
   }
@@ -284,9 +290,7 @@ export default function SmartDubbingWorkspace(props: {
     setTaskControlPending('resuming');
     try {
       await session.resumeJob();
-    } catch (caught) {
-      setError(formatGenerationError(caught, l));
-    } finally {
+    } catch {} finally {
       setTaskControlPending(undefined);
     }
   }
@@ -497,9 +501,9 @@ export default function SmartDubbingWorkspace(props: {
               {summary}
             </div>
           ) : null}
-          {visibleError ? (
+          {error ? (
             <div className="creator-tool-error smart-dubbing-error" role="alert">
-              <span>{visibleError}</span>
+              <span>{error}</span>
               {settingsHref ? (
                 <a href={settingsHref}>{l('打开配音服务设置', 'Open voice service settings')}</a>
               ) : null}
@@ -576,12 +580,7 @@ function formatGenerationError(error: unknown, l: (zh: string, en: string) => st
   ) {
     return l('配音服务请求失败，请检查服务配置和网络后重试', 'The dubbing request failed. Check the service configuration and network, then retry.');
   }
-  const message = typeof error === 'object' && error !== null && 'message' in error
-    ? String((error as { message?: unknown }).message ?? '')
-    : error instanceof Error
-      ? error.message
-      : '';
-  return message || l('配音生成失败，请稍后重试', 'Dubbing generation failed. Try again later.');
+  return l('配音生成失败，请在 Agent 区域查看诊断后重试', 'Dubbing generation failed. Review the diagnosis in the Agent panel and retry.');
 }
 
 function readStep(value: CreatorJson | undefined, fallback: DubbingStep): DubbingStep {

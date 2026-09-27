@@ -8,6 +8,7 @@ import type {
   CodexSkillMarketInstallRecordResponse,
   ConversationSearchResult,
   CreatorJob,
+  OpenCreatorIssue,
   CreatorPresetSummary,
   CreateMemoryRequest,
   CreateThreadRequest,
@@ -86,6 +87,10 @@ import {
   type ComposerSlashCommand
 } from '../features/runs/Composer.js';
 import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
+import { IssueList, PageIssueRoutingProvider } from '../features/issues/IssuePresenter.js';
+import AgentDiagnosticsPanel from '../features/issues/AgentDiagnosticsPanel.js';
+import { buildIssueAgentPrompt } from '../features/issues/issue-catalog.js';
+import { usePageIssueState } from '../features/issues/page-issue-state.js';
 import { createScheduleTaskSummaries } from '../features/schedules/schedule-task-model.js';
 import {
   getRunCancelState,
@@ -107,6 +112,13 @@ import type {
   DefaultPermissionPreference,
   RuntimeStatus
 } from '../features/settings/OpenCreatorSettingsView.js';
+import {
+  confirmAgentSetup,
+  isAgentSetupConfirmed,
+  StartupAgentSetup,
+  type AgentSetupSnapshot
+} from '../features/settings/StartupAgentSetup.js';
+import { useLocalizedCopy } from '../i18n/useLocalizedCopy.js';
 import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
 import { OpenCreatorSidebar } from '../features/shell/OpenCreatorSidebar.js';
 import {
@@ -281,12 +293,15 @@ export function AppController(props: AppControllerProps) {
     setPreference: setLanguagePreference,
     t
   } = useAppLanguage();
+  const appIssues = usePageIssueState('app-controller');
+  const l = useLocalizedCopy();
   const persistedNavigation = useMemo(readPersistedNavigation, []);
   const initialState = useMemo(
     () => createInitialState(props.route, persistedNavigation),
     []
   );
   const [state, dispatch] = useReducer(reduceAppState, initialState);
+  const [pendingIssueInquiry, setPendingIssueInquiry] = useState<string | null>(null);
   const [runRegistry, dispatchRunRegistry] = useReducer(
     runRegistryReducer,
     initialRunRegistryState
@@ -341,6 +356,8 @@ export function AppController(props: AppControllerProps) {
     status: 'disconnected',
     message: '正在等待本地服务'
   });
+  const [agentSetup, setAgentSetup] = useState<'checking' | 'ready' | 'needed' | 'skipped'>('checking');
+  const [agentSetupSnapshot, setAgentSetupSnapshot] = useState<AgentSetupSnapshot>();
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
   const [runAttachmentsById, setRunAttachmentsById] = useState<Record<string, AttachmentResponse[] | undefined>>({});
   const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
@@ -368,13 +385,6 @@ export function AppController(props: AppControllerProps) {
   const [pendingComposerFocusRequestId, setPendingComposerFocusRequestId] = useState<number>();
   const [homeSkillPromptHint, setHomeSkillPromptHint] = useState<string>();
   const [creatorSkillLaunch, setCreatorSkillLaunch] = useState<CreatorSkillLaunch>();
-  useEffect(() => {
-    if (threadConfigUpdateError === undefined) return;
-    const timeoutId = window.setTimeout(() => {
-      setThreadConfigUpdateError(undefined);
-    }, 4200);
-    return () => window.clearTimeout(timeoutId);
-  }, [threadConfigUpdateError]);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
   const [pendingRunStartsById, setPendingRunStartsById] = useState<PendingRunStartsById>({});
@@ -392,6 +402,38 @@ export function AppController(props: AppControllerProps) {
   const [immersiveWorkspace, setImmersiveWorkspace] = useState(false);
   const [defaultPermission, setDefaultPermission] = useState(readDefaultPermissionPreference);
   const [defaultPermissionSyncError, setDefaultPermissionSyncError] = useState<string>();
+  const appIssueSignalsRef = useRef<Record<string, string | undefined>>({});
+  useEffect(() => {
+    const signals = [
+      ['app.load-files', treeLoadError, '无法加载文件列表，请重试。'],
+      ['app.project-operation', projectLoadError, '项目操作未完成，请查看诊断后重试。'],
+      ['app.thread-operation', threadLoadError, '会话操作未完成，请查看诊断后重试。'],
+      ['app.load-thread-history', threadHistoryLoadError, '无法加载会话历史，请重试。'],
+      ['app.update-thread-config', threadConfigUpdateError, '会话配置未更新，请重试。'],
+      ['app.load-skill-market', skillMarketLoadError, '无法加载技能市场，请重试。'],
+      ['app.mutate-skill-market', skillMarketOperation?.error, '技能安装或更新未完成，请重试。'],
+      ['app.use-skill', skillMarketUseError?.error, '无法使用该技能，请重试。'],
+      ['app.sync-default-permission', defaultPermissionSyncError, '默认权限同步失败，重新打开相关会话后会重试。']
+    ] as const;
+    for (const [operationId, error, fallback] of signals) {
+      if (appIssueSignalsRef.current[operationId] === error) continue;
+      appIssueSignalsRef.current[operationId] = error;
+      if (error === undefined) appIssues.resolveOperation(operationId);
+      else appIssues.captureOperationFailure(operationId, new Error(error), fallback);
+    }
+  }, [
+    appIssues.captureOperationFailure,
+    appIssues.resolveOperation,
+    defaultPermissionSyncError,
+    projectLoadError,
+    skillMarketLoadError,
+    skillMarketOperation?.error,
+    skillMarketUseError?.error,
+    threadConfigUpdateError,
+    threadHistoryLoadError,
+    threadLoadError,
+    treeLoadError
+  ]);
   const [colorMode, setColorMode] = useState(readColorModePreference);
   const [accentColor, setAccentColor] = useState(readAccentColorPreference);
   const [customAccentColor, setCustomAccentColor] = useState(
@@ -1249,6 +1291,22 @@ export function AppController(props: AppControllerProps) {
       canceled = true;
     };
   }, [connectionService]);
+
+  useEffect(() => {
+    if (connectionState.status !== 'connected' || connectionService === null || agentSetup !== 'checking') return;
+    let canceled = false;
+    void Promise.all([
+      connectionService.getCodexReadiness(), connectionService.getCodexProvider()
+    ]).then(([readiness, provider]) => {
+      if (canceled) return;
+      const snapshot = { readiness, provider };
+      setAgentSetupSnapshot(snapshot);
+      setAgentSetup(isAgentSetupConfirmed(snapshot) ? 'ready' : 'needed');
+    }).catch(() => {
+      if (!canceled) setAgentSetup('needed');
+    });
+    return () => { canceled = true; };
+  }, [agentSetup, connectionService, connectionState.status]);
 
   const availabilityProbeStatus = connectionState.status === 'connected'
     ? connectionState.codexStatus.availabilityProbe?.status
@@ -2186,10 +2244,16 @@ export function AppController(props: AppControllerProps) {
         ? await approvalService.approve(id)
         : await approvalService.reject(id);
       replaceApproval(response);
+      appIssues.resolveOperation(`app.approval:${id}`);
     } catch (error) {
+      appIssues.captureOperationFailure(
+        `app.approval:${id}`,
+        error,
+        '审批操作未完成，请查看诊断后重试。'
+      );
       setApprovalErrors(previous => ({
         ...previous,
-        [id]: error instanceof Error ? error.message : '审批操作失败'
+        [id]: '审批操作未完成，请重试。'
       }));
     } finally {
       setResolvingApprovalIds(previous => {
@@ -2285,7 +2349,12 @@ export function AppController(props: AppControllerProps) {
     applyColorMode(mode);
     writeColorModePreference(mode);
     void openCreatorSettingsService?.updateUiSettings({ colorMode: mode })
-      .catch(() => undefined);
+      .then(() => appIssues.resolveOperation('app.save-color-mode'))
+      .catch(cause => appIssues.captureOperationFailure(
+        'app.save-color-mode',
+        cause,
+        '外观设置未同步到本地 Runtime，请重试。'
+      ));
   }
 
   function handleAccentColorChange(color: AccentColor) {
@@ -2293,7 +2362,12 @@ export function AppController(props: AppControllerProps) {
     applyAccentColor(color, customAccentColor);
     writeAccentColorPreference(color);
     void openCreatorSettingsService?.updateUiSettings({ accentColor: color })
-      .catch(() => undefined);
+      .then(() => appIssues.resolveOperation('app.save-accent-color'))
+      .catch(cause => appIssues.captureOperationFailure(
+        'app.save-accent-color',
+        cause,
+        '强调色设置未同步到本地 Runtime，请重试。'
+      ));
   }
 
   function handleCustomAccentColorChange(color: string) {
@@ -2307,7 +2381,12 @@ export function AppController(props: AppControllerProps) {
     void openCreatorSettingsService?.updateUiSettings({
       accentColor: 'custom',
       customAccentColor: normalized
-    }).catch(() => undefined);
+    }).then(() => appIssues.resolveOperation('app.save-accent-color'))
+      .catch(cause => appIssues.captureOperationFailure(
+        'app.save-accent-color',
+        cause,
+        '强调色设置未同步到本地 Runtime，请重试。'
+      ));
   }
 
   function handleDefaultPermissionChange(permission: DefaultPermissionPreference) {
@@ -2424,6 +2503,20 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
+  function askAgentAboutIssue(issue: OpenCreatorIssue, question: string) {
+    const prompt = buildIssueAgentPrompt(issue, question, language === 'en-US' ? 'en-US' : 'zh-CN');
+    startNewConversation();
+    setPendingIssueInquiry(prompt);
+  }
+
+  useEffect(() => {
+    if (pendingIssueInquiry === null || state.activeView !== 'conversation') return;
+    const prompt = pendingIssueInquiry;
+    setPendingIssueInquiry(null);
+    if (connectionState.status === 'connected') void submitPrompt(prompt);
+    else queueComposerPrompt(prompt, undefined);
+  }, [connectionState.status, pendingIssueInquiry, queueComposerPrompt, state.activeView]);
+
   function startCreatorTool(text: string) {
     startNewConversation();
     queueComposerPrompt(text, undefined);
@@ -2480,7 +2573,7 @@ export function AppController(props: AppControllerProps) {
     ) return;
     projectDirectoryDialogInFlightRef.current = true;
     try {
-      const path = await selectDirectory();
+      const path = await selectDirectory('project');
       if (path === null) return;
       await registerProjectDirectory(path);
     } catch (error) {
@@ -2685,7 +2778,7 @@ export function AppController(props: AppControllerProps) {
 
   async function replaceManagedProjectDirectory(projectId: string) {
     if (projectService === null || hostBridge.selectProjectDirectory === undefined) return;
-    const cwd = await hostBridge.selectProjectDirectory();
+    const cwd = await hostBridge.selectProjectDirectory('project');
     if (cwd === null) return;
     setProjectMutationBusy(true);
     try {
@@ -4166,11 +4259,14 @@ export function AppController(props: AppControllerProps) {
   )
     || selectedPendingRunStart !== undefined
     || selectedRunsLoading
-    || connectionState.status !== 'connected';
+    || connectionState.status !== 'connected'
+    || agentSetup === 'skipped';
   const composerDisabledReason = connectionState.status !== 'connected'
     ? t('conversation.connectingRuntime')
+    : agentSetup === 'skipped'
+      ? l('请先配置 Agent 模型服务', 'Configure the Agent model service first')
     : projectLoadError !== undefined
-      ? projectLoadError
+      ? t('conversation.checkingTask')
       : conversationNeedsProject && currentProject === undefined
         ? t('conversation.addProjectFirst')
         : currentRunCanceling
@@ -4375,15 +4471,6 @@ export function AppController(props: AppControllerProps) {
       ) : null}
       {showCreatorHome ? null : (
         <div className="conversation-body">
-          {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
-          {projectLoadError ? <p className="inline-error">{projectLoadError}</p> : null}
-          {threadLoadError ? <p className="inline-error">{threadLoadError}</p> : null}
-          {threadHistoryLoadError ? <p className="inline-error">{threadHistoryLoadError}</p> : null}
-          {threadConfigUpdateError ? (
-            <div className="conversation-toast" role="alert">
-              {threadConfigUpdateError}
-            </div>
-          ) : null}
           {showConversationEmptyState ? null : (
             <Timeline
               ref={timelineRef}
@@ -4466,6 +4553,14 @@ export function AppController(props: AppControllerProps) {
               onDismiss={() => setPendingMemorySuggestion(undefined)}
             />
           ) : null}
+          {agentSetup === 'skipped' ? (
+            <div className="startup-agent-banner" role="status">
+              {l('Agent 尚未配置，暂时无法发送任务。', 'Agent is not configured; you cannot send tasks yet.')}
+              <button type="button" onClick={() => setAgentSetup('needed')}>
+                {l('配置 Agent', 'Set up Agent')}
+              </button>
+            </div>
+          ) : null}
           {conversationComposer}
           {showConversationEmptyState ? creatorDashboard : null}
         </div>
@@ -4535,9 +4630,11 @@ export function AppController(props: AppControllerProps) {
       creatorService={creatorService}
       runtimeDependencies={runtimeDependencies}
       creatorServicesService={creatorServicesService}
+      videoMetadataService={videoMetadataService}
       workspace={props.route.view === 'workbench' ? props.route.tool : undefined}
       jobId={props.route.view === 'workbench' ? props.route.jobId : undefined}
       onJobCreated={rememberCreatorJob}
+      onAskIssue={askAgentAboutIssue}
       onCreateProject={
         projectService === null
           ? undefined
@@ -4637,6 +4734,8 @@ export function AppController(props: AppControllerProps) {
       onAccentColorChange={handleAccentColorChange}
       customAccentColor={customAccentColor}
       onCustomAccentColorChange={handleCustomAccentColorChange}
+      storageSettingsService={openCreatorSettingsService}
+      onSelectStorageDirectory={hostBridge.selectProjectDirectory}
       desktopCloseBehavior={desktopCloseBehavior}
       onDesktopCloseBehaviorChange={(behavior: 'hide' | 'quit') => {
         const update = hostBridge.updateDesktopPreferences;
@@ -4644,8 +4743,18 @@ export function AppController(props: AppControllerProps) {
         const previous = desktopCloseBehavior;
         setDesktopCloseBehavior(behavior);
         void update({ closeBehavior: behavior })
-          .then(preferences => setDesktopCloseBehavior(preferences.closeBehavior))
-          .catch(() => setDesktopCloseBehavior(previous));
+          .then(preferences => {
+            setDesktopCloseBehavior(preferences.closeBehavior);
+            appIssues.resolveOperation('app.save-desktop-close-behavior');
+          })
+          .catch(cause => {
+            setDesktopCloseBehavior(previous);
+            appIssues.captureOperationFailure(
+              'app.save-desktop-close-behavior',
+              cause,
+              '窗口关闭行为未保存，请重试。'
+            );
+          });
       }}
       desktopTelemetryEnabled={desktopTelemetryEnabled}
       onDesktopTelemetryEnabledChange={(enabled: boolean) => {
@@ -4654,8 +4763,18 @@ export function AppController(props: AppControllerProps) {
         const previous = desktopTelemetryEnabled;
         setDesktopTelemetryEnabled(enabled);
         void update({ telemetryEnabled: enabled })
-          .then(preferences => setDesktopTelemetryEnabled(preferences.telemetryEnabled))
-          .catch(() => setDesktopTelemetryEnabled(previous));
+          .then(preferences => {
+            setDesktopTelemetryEnabled(preferences.telemetryEnabled);
+            appIssues.resolveOperation('app.save-desktop-telemetry');
+          })
+          .catch(cause => {
+            setDesktopTelemetryEnabled(previous);
+            appIssues.captureOperationFailure(
+              'app.save-desktop-telemetry',
+              cause,
+              '诊断数据偏好未保存，请重试。'
+            );
+          });
       }}
       profileService={profileService}
       profileData={codexProfiles}
@@ -4663,6 +4782,8 @@ export function AppController(props: AppControllerProps) {
       cleanupService={cleanupService}
       creatorServicesService={creatorServicesService}
       codexRuntimeService={connectionService}
+      agentSetupNeeded={agentSetup === 'skipped'}
+      onOpenAgentSetup={() => setAgentSetup('needed')}
       memoryService={memoryService}
       memoryProjects={memoryProjectOptions}
       memoryThreads={memoryThreadOptions}
@@ -4699,9 +4820,7 @@ export function AppController(props: AppControllerProps) {
       skills={codexSkills}
       installRecords={skillMarketInstallRecords}
       loading={skillMarketLoading}
-      loadError={skillMarketLoadError}
-      operation={skillMarketOperation}
-      useError={skillMarketUseError}
+      operation={skillMarketOperation?.error === undefined ? skillMarketOperation : undefined}
       projects={projects}
       currentProjectId={currentProject?.id ?? ''}
       onInstall={skillId => void installMarketSkill(skillId)}
@@ -4715,7 +4834,7 @@ export function AppController(props: AppControllerProps) {
   );
 
   return (
-    <div
+    <PageIssueRoutingProvider><div
       className="app-drop-shell"
       data-integrated-title-bar={
         integratedTitleBar?.integratedTitleBar === true ? 'true' : undefined
@@ -4743,7 +4862,7 @@ export function AppController(props: AppControllerProps) {
         }
         aria-live="polite"
       />
-      <AppLayout
+      {agentSetup === 'needed' ? null : <AppLayout
       sidebar={
         <OpenCreatorSidebar
           projects={projects}
@@ -4798,9 +4917,16 @@ export function AppController(props: AppControllerProps) {
         useIntegratedConversationTitleBar ? conversationHeader : undefined
       }
       main={(
-        <Suspense fallback={<PageLoading />}>
-          {main}
-        </Suspense>
+        <>
+          <IssueList
+            issues={appIssues.issues}
+            onDismiss={appIssues.dismissIssue}
+            compact
+          />
+          <Suspense fallback={<PageLoading />}>
+            {main}
+          </Suspense>
+        </>
       )}
       detail={detailPanel}
       detailOpen={detailPanel !== null && state.activeView === 'conversation'}
@@ -4809,7 +4935,25 @@ export function AppController(props: AppControllerProps) {
       mobileSidebarOpen={mobileSidebarOpen}
       onOpenMobileSidebar={openMobileSidebar}
       onCloseMobileSidebar={dismissMobileSidebar}
-      />
+      />}
+      {agentSetup === 'checking' && connectionState.status === 'connected' ? (
+        <main className="startup-agent-setup" role="status">
+          {l('正在检查 Agent 配置…', 'Checking Agent configuration…')}
+        </main>
+      ) : null}
+      {agentSetup === 'needed' && connectionService !== null ? (
+        <StartupAgentSetup
+          service={connectionService}
+          initialSnapshot={agentSetupSnapshot}
+          onReady={snapshot => {
+            confirmAgentSetup(snapshot);
+            setAgentSetupSnapshot(snapshot);
+            setAgentSetup('ready');
+            startNewConversation({ destination: 'home' });
+          }}
+          onSkip={() => setAgentSetup('skipped')}
+        />
+      ) : null}
       {projectDropActive ? (
         <div className="project-drop-overlay" role="status" aria-live="polite">
           <FolderInput aria-hidden="true" size={30} />
@@ -4823,7 +4967,6 @@ export function AppController(props: AppControllerProps) {
         unassignedThreads={unassignedThreads}
         initialProjectId={projectManagementProjectId}
         busy={projectMutationBusy}
-        error={projectManagementOpen ? projectLoadError : undefined}
         onClose={() => {
           setProjectManagementOpen(false);
           setProjectManagementProjectId(undefined);
@@ -4854,7 +4997,11 @@ export function AppController(props: AppControllerProps) {
               }
         }
       />
-    </div>
+      <AgentDiagnosticsPanel
+        hiddenCreatorIssues={immersiveWorkspace && props.route.view === 'workbench' && props.route.jobId === undefined}
+        onAskIssue={askAgentAboutIssue}
+      />
+    </div></PageIssueRoutingProvider>
   );
 
   function createDetailPanel() {

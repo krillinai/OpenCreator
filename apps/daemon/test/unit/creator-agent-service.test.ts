@@ -6,8 +6,12 @@ import type { AppServerApprovalDecision } from '../../src/codex/app-server-host-
 import { createCreatorAgentService } from '../../src/creator/agent/agent-service.js';
 import { createAgentContextBuilder } from '../../src/creator/agent/context-builder.js';
 import { createCreatorAgentRepository } from '../../src/creator/agent/repository.js';
-import type { AgentRuntimeAdapter } from '../../src/creator/agent/runtime-adapter.js';
+import type {
+  AgentRuntimeAdapter,
+  AgentRuntimeTurnInput
+} from '../../src/creator/agent/runtime-adapter.js';
 import { createCreatorCommandDispatcher } from '../../src/creator/command-dispatcher.js';
+import { createCreatorIssueService } from '../../src/creator/issues.js';
 import { createCreatorRepository } from '../../src/creator/repository.js';
 import { createCreatorService } from '../../src/creator/service.js';
 import { createDefaultCreatorTemplateRegistry } from '../../src/creator/templates/registry.js';
@@ -21,6 +25,39 @@ afterEach(() => {
 });
 
 describe('creator agent service', () => {
+  it('focuses one authoritative issue and rejects a foreign issue before invoking runtime', async () => {
+    const observedContexts: Array<{ focusedIssue: { id: string } | null }> = [];
+    const runTurn = vi.fn(async (input: AgentRuntimeTurnInput) => {
+      observedContexts.push(input.context as { focusedIssue: { id: string } | null });
+      return { content: '已确认事实\n可能原因\n下一步' };
+    });
+    const fixture = setup({ id: 'fake-focused-issue', available: true, runTurn });
+    const first = fixture.issues.capture({
+      jobId: fixture.jobId,
+      code: 'creator_first_failure',
+      source: 'stage'
+    });
+    const second = fixture.issues.capture({
+      jobId: fixture.jobId,
+      code: 'creator_second_failure',
+      source: 'provider'
+    });
+
+    await fixture.agent.runTurn(fixture.jobId, {
+      message: '为什么失败？',
+      focusedIssueId: second.id
+    });
+    expect(observedContexts[0]?.focusedIssue?.id).toBe(second.id);
+    expect(observedContexts[0]?.focusedIssue?.id).not.toBe(first.id);
+
+    await expect(fixture.agent.runTurn(fixture.jobId, {
+      message: '分析外部问题',
+      focusedIssueId: 'creator_issue_from_another_job'
+    })).rejects.toMatchObject({ code: 'creator_issue_not_found' });
+    expect(runTurn).toHaveBeenCalledTimes(1);
+    fixture.db.close();
+  });
+
   it('creates and updates the Creator Thread with the requested access level', async () => {
     let turnNumber = 0;
     const runtime: AgentRuntimeAdapter = {
@@ -392,6 +429,7 @@ function setup(runtime: AgentRuntimeAdapter) {
     repository,
     receipts: agentRepository
   });
+  const issues = createCreatorIssueService(repository);
   const threads = threadFixture();
   const agent = createCreatorAgentService({
     creator,
@@ -399,9 +437,10 @@ function setup(runtime: AgentRuntimeAdapter) {
     repository: agentRepository,
     threads,
     contextBuilder: createAgentContextBuilder({ templates }),
-    runtime
+    runtime,
+    issueService: issues
   });
-  return { db, jobId: job.id, agent, threads };
+  return { db, jobId: job.id, agent, threads, issues };
 }
 
 function approvalRuntime(

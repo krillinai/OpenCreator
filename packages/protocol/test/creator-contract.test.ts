@@ -93,8 +93,47 @@ describe('creator protocol contract', () => {
       'stage_progress',
       'agent_turn_changed',
       'agent_item_changed',
-      'agent_approval_changed'
+      'agent_approval_changed',
+      'issue_changed'
     ]);
+  });
+
+  it('accepts a safe issue envelope and rejects unknown repair action kinds', async () => {
+    const protocol = await import('../src/index.js');
+    const issue = {
+      id: 'issue-1',
+      diagnosticId: 'OC-12345678',
+      code: 'creator_upload_failed',
+      scope: { kind: 'creator-job', jobId: 'job-1' },
+      source: 'upload',
+      category: 'execution',
+      severity: 'error',
+      status: 'open',
+      operation: 'creator.upload-source',
+      summaryKey: 'issue.upload_failed',
+      summaryParams: { fileType: 'video' },
+      fallbackMessage: 'Upload failed.',
+      retryable: true,
+      repairActions: [{
+        kind: 'retry-operation',
+        operationId: 'creator.upload-source',
+        requiresConfirmation: false,
+        risk: 'normal'
+      }],
+      fingerprint: 'sha256-demo',
+      occurrenceCount: 1,
+      occurredAt: '2026-09-23T00:00:00.000Z',
+      lastOccurredAt: '2026-09-23T00:00:00.000Z',
+      futureField: 'allowed'
+    };
+
+    expect(protocol.isOpenCreatorIssue(issue)).toBe(true);
+    expect(protocol.isOpenCreatorIssue({
+      ...issue,
+      repairActions: [{ kind: 'shell-command', command: 'rm -rf' }]
+    })).toBe(false);
+    expect(protocol.isOpenCreatorIssue({ ...issue, source: 'executor-private' })).toBe(false);
+    expect(protocol.issueRetryResults).toContain('interrupted');
   });
 
   it('freezes the persistent agent state machine and rejects unknown states', async () => {

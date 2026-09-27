@@ -4,6 +4,23 @@ import type {
   CreatorJson
 } from '@opencreator/protocol';
 import type { ZodType } from 'zod';
+import type { CreatorArtifact, CreatorJob, CreatorStageRun } from '@opencreator/protocol';
+import type { CreatorExecutorOutput } from '../executor.js';
+
+export type CreatorOutputValidationFinding = {
+  code: string;
+  severity: 'warning' | 'blocking';
+  message: string;
+  evidence: Record<string, CreatorJson>;
+};
+
+export type CreatorStageOutputValidator = (input: {
+  job: CreatorJob;
+  stage: CreatorTemplateStage;
+  stageRun: CreatorStageRun;
+  inputArtifacts: CreatorArtifact[];
+  candidateOutputs: CreatorExecutorOutput[];
+}) => CreatorOutputValidationFinding[] | Promise<CreatorOutputValidationFinding[]>;
 
 export type CreatorTemplateStage = {
   id: string;
@@ -15,6 +32,7 @@ export type CreatorTemplateStage = {
   jobCompletionPolicy?: 'complete' | 'continue';
   invalidateDependentArtifacts?: boolean;
   replaceOutputArtifactsInScope?: boolean;
+  outputValidators?: CreatorStageOutputValidator[];
   allowedJobStatuses: CreatorJobStatus[];
   inputArtifacts: Array<{
     kind: string;

@@ -20,7 +20,7 @@ import type {
 import { CreatorExecutorError } from '../executor.js';
 import { spawnCreatorProcess } from '../process-tree.js';
 import { createKrillinCreatorServicesCapabilities } from './capabilities.js';
-import { openPromise, type ZipFile } from 'yauzl';
+import type { ZipFile } from 'yauzl';
 
 const whisperKitRelease = {
   executable: {
@@ -470,6 +470,7 @@ async function extractWhisperCppExecutableArchive(
   const extracted = new Set<string>();
   let zip: ZipFile | undefined;
   try {
+    const { openPromise } = await import('yauzl');
     zip = await openPromise(archive, {
       autoClose: true,
       decodeStrings: true,

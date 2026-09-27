@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   copyFile,
   mkdir,
@@ -17,6 +16,7 @@ import sharp from 'sharp';
 import { ZodError } from 'zod';
 import { creatorPresetModuleDefinitions, getCreatorPresetModuleDefinition } from './module-schemas.js';
 import { creatorPresetSourceManifestSchema, validatePresetPublicFields } from './schema.js';
+import { canonicalJson, sha256 } from './hash.js';
 import type {
   CompiledCreatorPreset,
   CreatorPresetBuildManifest,
@@ -246,13 +246,7 @@ export async function compileCreatorPresets(
   }
 }
 
-export function canonicalJson(value: unknown): string {
-  return JSON.stringify(sortJson(value));
-}
-
-export function sha256(value: string | Buffer): string {
-  return createHash('sha256').update(value).digest('hex');
-}
+export { canonicalJson, sha256 } from './hash.js';
 
 async function findTemplateManifests(sourceRoot: string): Promise<Array<{
   file: string;
@@ -751,16 +745,6 @@ async function syncTree(root: string): Promise<void> {
   } finally {
     await directory.close();
   }
-}
-
-function sortJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJson);
-  if (value === null || typeof value !== 'object') return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, child]) => [key, sortJson(child)])
-  );
 }
 
 function detectedImageExtension(bytes: Buffer): '.png' | '.jpg' | '.webp' | undefined {

@@ -30,7 +30,7 @@ pnpm desktop:package
 
 1. Node.js 22。
 2. pnpm 9.15.0。
-3. macOS 签名与公证环境提供 `codesign`、`notarytool` 和 `stapler`；普通本机未签名打包不依赖完整 Xcode。
+3. macOS 打包机使用完整 Xcode 26 或更新版本，以编译明暗外观一致的应用图标；签名与公证环境还需提供 `codesign`、`notarytool` 和 `stapler`。
 4. Windows 构建机允许执行 PowerShell 和 NSIS 打包工具。
 5. 仓库全量测试、类型检查和构建通过。
 6. 打包脚本会删除目标架构旧目录，并要求构建后只找到一个 fresh package root。
@@ -39,7 +39,7 @@ pnpm desktop:package
 9. OSV Scanner 2.3.8 扫描发布源码无未解释漏洞。
 10. `.github/workflows/desktop-release.yml` 通过 actionlint。
 
-Desktop 使用 `resources/icon.png` 作为各平台统一的应用图标源。Electron Builder 在 macOS 包内生成 `icon.icns`，包校验同时检查正式 PNG 资源与生成后的 macOS 图标存在。
+Desktop 使用 `resources/icon.png` 作为各平台统一的应用图标源。macOS 打包时从同一张 PNG 生成白底黑色图形的明暗两种相同外观，编译到 `Assets.car` 并通过 `CFBundleIconName` 引用；Electron Builder 生成的 `icon.icns` 保留为旧版 macOS 的回退资源。包校验会检查 PNG、两种外观的一致性和 App 的图标引用。
 
 ## 3. 版本与标签
 

@@ -2,6 +2,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { generateCoverBrief } from '../../src/creator/cover/analyzer.js';
 
 describe('creator cover analyzer', () => {
+  it('keeps provider HTTP facts without leaking response text', async () => {
+    const request = generateCoverBrief({
+      baseUrl: 'https://example.com/v1', apiKey: 'test-key', model: 'text-model', proxy: '',
+      metadata: { id: 'video-1', title: 'A title' },
+      userPrompt: '', language: 'en-US', headlineOverride: '', subheadlineOverride: '',
+      signal: new AbortController().signal,
+      fetchImpl: vi.fn(async () => new Response(JSON.stringify({
+        error: { code: 'rate_limit_exceeded', message: 'api_key=private' }
+      }), { status: 429 }))
+    });
+    await expect(request).rejects.toMatchObject({
+      publicFacts: { kind: 'rate-limited', provider: 'llm', httpStatus: 429, upstreamCode: 'rate_limit_exceeded' }
+    });
+    await expect(request).rejects.not.toThrow('private');
+  });
+
   it('generates copy only in the requested language and preserves overrides', async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const request = JSON.parse(String(init?.body)) as {

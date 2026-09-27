@@ -5,12 +5,13 @@ import { z } from 'zod';
 import type { CreatorJson } from '@opencreator/protocol';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import {
-  creatorServiceErrorMessage,
+  creatorServiceErrorInfo,
   fetchCreatorService,
   openAiCompatibleEndpoint
 } from '../../creator-services/upstream-fetch.js';
 import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
+import { publicFactsFromFailure } from '../public-error-facts.js';
 
 const XIAOHONGSHU_TITLE_MAX_LENGTH = 20;
 const XIAOHONGSHU_BODY_MAX_LENGTH = 1_000;
@@ -63,9 +64,12 @@ export function createXiaohongshuPostExecutor(input: {
           ...(input.fetchImpl === undefined ? {} : { fetchImpl: input.fetchImpl })
         });
         if (!response.ok) {
+          const failure = await creatorServiceErrorInfo(response, 'Post generation', 'llm');
           throw new CreatorExecutorError(
             'creator_llm_upstream_error',
-            await creatorServiceErrorMessage(response, 'Post generation')
+            failure.message,
+            {},
+            failure.publicFacts
           );
         }
         const payload = await response.json() as {
@@ -115,7 +119,9 @@ export function createXiaohongshuPostExecutor(input: {
         if (error instanceof CreatorExecutorError) throw error;
         throw new CreatorExecutorError(
           'creator_llm_upstream_error',
-          error instanceof Error ? error.message : 'Post generation failed'
+          'Post generation failed',
+          {},
+          publicFactsFromFailure(error, 'llm')
         );
       }
     }

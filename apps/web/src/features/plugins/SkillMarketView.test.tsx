@@ -564,7 +564,7 @@ describe('SkillMarketView', () => {
     expect(action).toHaveAccessibleDescription('技能安装状态未知');
   });
 
-  it('operation error 显示在对应卡片与详情中且按钮可重试', async () => {
+  it('operation error 不在卡片与详情重复展示且按钮可重试', async () => {
     const user = userEvent.setup();
     const onInstall = vi.fn();
     renderSkillMarket({
@@ -578,20 +578,20 @@ describe('SkillMarketView', () => {
 
     await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     const card = getSkillCard('frontend-slides');
-    expect(within(card).getByText('安装失败，请重试')).toBeInTheDocument();
+    expect(within(card).queryByText('安装失败，请重试')).not.toBeInTheDocument();
 
     await user.click(within(card).getByRole('button', { name: '安装' }));
     expect(onInstall).toHaveBeenCalledWith('frontend-slides');
 
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('安装失败，请重试')).toBeInTheDocument();
+    expect(within(dialog).queryByText('安装失败，请重试')).not.toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: '安装' }));
     expect(onInstall).toHaveBeenCalledTimes(2);
   });
 
-  it('use error 只显示在对应 Skill 详情中并可重试使用', async () => {
+  it('use error 不在 Skill 页面重复展示且可重试使用', async () => {
     const user = userEvent.setup();
     const onUse = vi.fn();
     renderSkillMarket({
@@ -607,11 +607,11 @@ describe('SkillMarketView', () => {
       onUse,
     });
 
-    expect(screen.getByText('使用失败：启动失败，请重试')).toBeInTheDocument();
+    expect(screen.queryByText('使用失败：启动失败，请重试')).not.toBeInTheDocument();
     await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const frontendDialog = screen.getByRole('dialog');
-    expect(within(frontendDialog).getByText('使用失败：启动失败，请重试')).toBeInTheDocument();
+    expect(within(frontendDialog).queryByText('使用失败：启动失败，请重试')).not.toBeInTheDocument();
     await user.click(within(frontendDialog).getByRole('button', { name: '使用' }));
     const projectDialog = screen.getByRole('dialog', { name: '选择使用项目' });
     await user.click(within(projectDialog).getByRole('button', { name: '在 content-design' }));
@@ -800,14 +800,14 @@ describe('SkillMarketView', () => {
     expect(within(dialog).getByAltText('zarazhangrui')).toBeInTheDocument();
   });
 
-  it('loading 和 loadError 作为 banner 显示且不替换目录', async () => {
+  it('loading 保持原样且 loadError 不在目录内重复展示', async () => {
     const user = userEvent.setup();
     const { rerender } = renderSkillMarket({ loading: true });
     expect(screen.getByRole('status')).toHaveTextContent('正在加载技能目录');
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
 
     rerender(<SkillMarketView {...createProps({ loadError: '目录加载失败' })} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('目录加载失败');
+    expect(screen.queryByText('目录加载失败')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
 
     rerender(<SkillMarketView {...createProps({ catalogOverride: [] })} />);

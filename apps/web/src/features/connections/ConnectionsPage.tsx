@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
-import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
+import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import {
   McpEditor,
   type McpCapabilities,
@@ -25,6 +25,8 @@ import {
 } from '../settings/McpSettingsView.js';
 import '../settings/settings-management.css';
 import './connections.css';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 type ConnectionFilter = 'all' | 'enabled' | 'disabled';
 
@@ -41,11 +43,11 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
   const confirm = useConfirmDialog();
   const [data, setData] = useState(props.mcpData);
   const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string>();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ConnectionFilter>('all');
   const [busyKey, setBusyKey] = useState<string>();
   const [editorOpen, setEditorOpen] = useState(false);
+  const pageIssues = usePageIssueState('connections');
 
   useEffect(() => {
     setData(props.mcpData);
@@ -55,7 +57,6 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
     if (!props.connected || props.mcpService === null) {
       setData(undefined);
       setLoading(false);
-      setLoadError(undefined);
       setBusyKey(undefined);
       return;
     }
@@ -74,17 +75,15 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
   async function loadConnections(isCanceled: () => boolean = () => false) {
     if (props.mcpService === null) return;
     setLoading(true);
-    setLoadError(undefined);
     try {
       const response = await props.mcpService.listServers();
-      if (!isCanceled()) updateData(response);
+      if (!isCanceled()) {
+        updateData(response);
+        pageIssues.resolveOperation('connections.load');
+      }
     } catch (error) {
       if (!isCanceled()) {
-        setLoadError(formatConnectionError(
-          error,
-          l('无法加载 Codex MCP', 'Could not load Codex MCP servers'),
-          l
-        ));
+        pageIssues.captureOperationFailure('connections.load', error, l('无法加载 MCP 连接，请重试。', 'Could not load MCP connections. Try again.'), { retryable: true });
       }
     } finally {
       if (!isCanceled()) setLoading(false);
@@ -155,7 +154,6 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
     if (action !== 'remove' && !await confirmGlobalWrite()) return;
 
     setBusyKey(server.name);
-    setLoadError(undefined);
     try {
       const confirmed = data?.requiresWriteConfirmation === true;
       if (action === 'enable' || action === 'disable') {
@@ -172,12 +170,9 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
         await props.mcpService.removeServer(server.name, confirmed);
       }
       await loadConnections();
+      pageIssues.resolveOperation('connections.action');
     } catch (error) {
-      setLoadError(formatConnectionError(
-        error,
-        `${l('无法更新', 'Could not update')} ${server.name}`,
-        l
-      ));
+      pageIssues.captureOperationFailure('connections.action', error, l('MCP 操作未完成，请重试。', 'The MCP operation did not complete. Try again.'));
     } finally {
       setBusyKey(undefined);
     }
@@ -245,11 +240,12 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
           </div>
         </header>
 
-        {loadError !== undefined ? (
-          <div className="connections-banner connections-banner--error" role="alert">
-            {loadError}
-          </div>
-        ) : null}
+        <IssueList
+          issues={pageIssues.issues}
+          actions={{ retryOperations: { 'connections.load': () => loadConnections() } }}
+          onDismiss={pageIssues.dismissIssue}
+        />
+
 
         {editorOpen ? (
           <McpEditor
@@ -272,13 +268,10 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
                     : {})
                 });
                 await loadConnections();
+                pageIssues.resolveOperation('connections.save');
                 setEditorOpen(false);
               } catch (error) {
-                setLoadError(formatConnectionError(
-                  error,
-                  l('无法新增 MCP', 'Could not add the MCP server'),
-                  l
-                ));
+                pageIssues.captureOperationFailure('connections.save', error, l('MCP 配置保存失败，请重试。', 'Could not save the MCP configuration. Try again.'));
               }
             }}
           />
@@ -470,23 +463,4 @@ function matchesFilter(
   if (filter === 'enabled') return server.enabled;
   if (filter === 'disabled') return !server.enabled;
   return true;
-}
-
-function formatConnectionError(
-  error: unknown,
-  fallback: string,
-  l: LocalizeCopy
-): string {
-  if (typeof error === 'object' && error !== null && 'code' in error) {
-    const code = (error as { code?: unknown }).code;
-    if (code === 'MCP_WRITE_CONFIRMATION_REQUIRED') {
-      return l(
-        '需要确认修改全局 CODEX_HOME',
-        'Confirm changes to the global CODEX_HOME'
-      );
-    }
-  }
-  return error instanceof Error && error.message.trim().length > 0
-    ? error.message
-    : fallback;
 }

@@ -8,7 +8,6 @@ import {
   ExternalLink,
   Maximize2,
   Play,
-  RefreshCw,
   Search,
   WandSparkles,
   UserRound,
@@ -25,6 +24,8 @@ import {
 import { createPortal } from 'react-dom';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import type { CreatorWorkspace } from '../dashboard/creator-workspace.js';
+import { IssueList } from '../issues/IssuePresenter.js';
+import { usePageIssueState } from '../issues/page-issue-state.js';
 
 export type CreatorSkill = {
   id: string;
@@ -167,7 +168,7 @@ export function CreatorDashboard(props: {
   const tagsMeasureRef = useRef<HTMLDivElement>(null);
   const moreTagsButtonRef = useRef<HTMLButtonElement>(null);
   const busyIdentitiesRef = useRef(new Set<string>());
-  const [actionError, setActionError] = useState<string>();
+  const pageIssues = usePageIssueState('creator-launch');
   const presets = props.presets ?? [];
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const categoryPresets = useMemo(() => {
@@ -262,6 +263,26 @@ export function CreatorDashboard(props: {
     setPreviewOpen(false);
     window.setTimeout(() => previewTriggerRef.current?.focus(), 0);
   }, []);
+  useEffect(() => {
+    if (props.error === undefined) {
+      pageIssues.resolveOperation('creator-launch.load-presets');
+      return;
+    }
+    pageIssues.captureOperationFailure(
+      'creator-launch.load-presets',
+      new Error(props.error),
+      language === 'en-US'
+        ? 'Could not load creator templates. Check the Runtime connection and retry.'
+        : '无法加载创作模板，请检查 Runtime 连接后重试。',
+      { retryable: props.onRetry !== undefined }
+    );
+  }, [
+    language,
+    pageIssues.captureOperationFailure,
+    pageIssues.resolveOperation,
+    props.error,
+    props.onRetry
+  ]);
   const updatePromptOverflow = useCallback(() => {
     const prompt = promptRef.current;
     if (prompt === null) return;
@@ -326,7 +347,6 @@ export function CreatorDashboard(props: {
     setMoreTagsOpen(false);
     setQuery('');
     setSearchOpen(false);
-    setActionError(undefined);
   }
 
   async function selectPreset(preset: CreatorPresetSummary) {
@@ -334,9 +354,9 @@ export function CreatorDashboard(props: {
     if (busyIdentitiesRef.current.has(identity)) return;
     busyIdentitiesRef.current.add(identity);
     setBusyIdentities(new Set(busyIdentitiesRef.current));
-    setActionError(undefined);
     try {
       await props.onSelectPreset?.(preset);
+      pageIssues.resolveOperation('creator-launch.select-preset');
       const storedRecentPresetIds = readRecentPresetIds();
       const nextRecentPresetIds = [
         identity,
@@ -345,7 +365,14 @@ export function CreatorDashboard(props: {
       writeRecentPresetIds(nextRecentPresetIds);
       setRecentPresetIds(nextRecentPresetIds);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      pageIssues.captureOperationFailure(
+        'creator-launch.select-preset',
+        error,
+        language === 'en-US'
+          ? 'Could not start this template. Check the diagnosis and retry.'
+          : '无法启动此模板，请查看诊断后重试。',
+        { retryable: true }
+      );
     } finally {
       busyIdentitiesRef.current.delete(identity);
       setBusyIdentities(new Set(busyIdentitiesRef.current));
@@ -366,13 +393,14 @@ export function CreatorDashboard(props: {
           <div className="creator-template-detail-heading">
             <h1>{selectedPreset.title}</h1>
             <p>{selectedPreset.description}</p>
+            <span>{moduleLabel(selectedPreset.module, language === 'zh-CN' ? 'zh-CN' : 'en-US')}</span>
           </div>
           <div className="creator-template-detail-actions">
             <button className="creator-template-use-button" type="button" disabled={busy} aria-busy={busy} onClick={() => void selectPreset(selectedPreset)}>
               <WandSparkles size={17} aria-hidden="true" />
               {busy ? (language === 'en-US' ? 'Creating...' : '正在创建...') : (language === 'en-US' ? 'Use this template' : '使用此模板')}
             </button>
-            <button type="button" className="creator-template-back" aria-label={language === 'en-US' ? 'Back to templates' : '返回模板列表'} title={language === 'en-US' ? 'Back to templates' : '返回模板列表'} onClick={() => { setSelectedPresetIdentity(undefined); setActionError(undefined); }}>
+            <button type="button" className="creator-template-back" aria-label={language === 'en-US' ? 'Back to templates' : '返回模板列表'} title={language === 'en-US' ? 'Back to templates' : '返回模板列表'} onClick={() => { setPreviewOpen(false); setSelectedPresetIdentity(undefined); }}>
               <X size={18} aria-hidden="true" />
             </button>
           </div>
@@ -522,9 +550,15 @@ export function CreatorDashboard(props: {
               </p>
             ) : null}
 
-            {actionError ? (
-              <p className="creator-template-action-error" role="alert">{actionError}</p>
-            ) : null}
+            <IssueList
+              issues={pageIssues.issues}
+              actions={{ retryOperations: {
+                'creator-launch.load-presets': () => props.onRetry?.(),
+                'creator-launch.select-preset': () => selectPreset(selectedPreset)
+              } }}
+              onDismiss={pageIssues.dismissIssue}
+              compact
+            />
 
           </aside>
         </div>
@@ -749,17 +783,14 @@ export function CreatorDashboard(props: {
             ))}
           </div>
         ) : null}
-        {props.error ? (
-          <div className="creator-template-error" role="alert">
-            <span>{props.error}</span>
-            <button type="button" onClick={props.onRetry}>
-              <RefreshCw size={15} aria-hidden="true" />
-              {language === 'en-US' ? 'Retry' : '重试'}
-            </button>
-          </div>
-        ) : null}
-        {actionError && selectedPreset === undefined ? (
-          <p className="creator-template-action-error" role="alert">{actionError}</p>
+        {selectedPreset === undefined ? (
+          <IssueList
+            issues={pageIssues.issues}
+            actions={{ retryOperations: {
+              'creator-launch.load-presets': () => props.onRetry?.()
+            } }}
+            onDismiss={pageIssues.dismissIssue}
+          />
         ) : null}
 
         {!props.loading && !props.error ? (
@@ -775,7 +806,6 @@ export function CreatorDashboard(props: {
                   onClick={() => {
                     setPreviewOpen(false);
                     setSelectedPresetIdentity(identity);
-                    setActionError(undefined);
                   }}
                   aria-label={language === 'en-US'
                     ? `View ${preset.title} template details`

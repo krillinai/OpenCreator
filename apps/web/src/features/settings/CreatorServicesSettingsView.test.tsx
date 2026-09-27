@@ -135,9 +135,11 @@ describe('CreatorServicesSettingsView', () => {
     await screen.findByRole('heading', { name: 'AI 服务' });
     await user.click(screen.getByRole('button', { name: '保存配置' }));
 
-    expect(await screen.findByText(
-      '创作服务保存失败：Base URL 必须是有效的 HTTP 或 HTTPS 地址'
-    )).toBeInTheDocument();
+    const issue = await screen.findByRole('alert');
+    expect(issue).toHaveTextContent('模型服务保存失败，请检查标出的字段后重试。');
+    expect(issue).not.toHaveTextContent(/诊断编号：OC-/);
+    expect(issue).not.toHaveTextContent('Base URL 必须是有效的 HTTP 或 HTTPS 地址');
+    expect(screen.getByLabelText('Base URL')).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('shows configured credentials without loading their secret values', async () => {

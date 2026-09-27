@@ -1,4 +1,7 @@
-import { createHash } from 'node:crypto';
+import {
+  sha256Text,
+  verifyFileIntegrityWithCache
+} from '@opencreator/config';
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
@@ -150,7 +153,8 @@ function resolveBundled(input: {
   if (!existsSync(manifestPath)) {
     throw failure('codex_runtime_missing', `内置 Codex Runtime 清单不存在：${manifestPath}`, input.diagnostics);
   }
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+  const manifestSource = readFileSync(manifestPath, 'utf8');
+  const manifest = JSON.parse(manifestSource) as Record<string, unknown>;
   if (
     manifest.version !== BUNDLED_VERSION
     || manifest.commit !== BUNDLED_COMMIT
@@ -173,7 +177,17 @@ function resolveBundled(input: {
   if (!existsSync(codexBin) || lstatSync(codexBin).isSymbolicLink() || !statSync(codexBin).isFile()) {
     throw failure('codex_runtime_missing', `内置 Codex 主程序不存在：${codexBin}`, input.diagnostics);
   }
-  if (hashFile(codexBin) !== expectedHash) {
+  const verification = verifyFileIntegrityWithCache({
+    cachePath: join(input.userDataDir, 'runtime-verification', 'codex.json'),
+    identity: runtimeRoot,
+    fingerprint: sha256Text(manifestSource),
+    files: [{
+      key: relativePath,
+      path: codexBin,
+      sha256: expectedHash
+    }]
+  });
+  if (!verification.verified) {
     throw failure('codex_runtime_hash_mismatch', '内置 Codex 主程序哈希校验失败', input.diagnostics);
   }
   const codexHome = join(input.userDataDir, 'runtime', 'codex');
@@ -283,10 +297,6 @@ function failure(
   diagnostics: CodexResolutionDiagnostics
 ): CodexResolutionError {
   return new CodexResolutionError(code, message, { ...diagnostics, errorCode: code, message });
-}
-
-function hashFile(path: string): string {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

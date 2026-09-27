@@ -1,8 +1,10 @@
 import {
   defaultVideoGenerationModels,
+  safePublicErrorCode,
   videoGenerationDurations,
   videoGenerationSizes,
   type CreateVideoGenerationRequest,
+  type PublicErrorFacts,
   type RuntimeErrorCode,
   type VideoGenerationProvider,
   type VideoGenerationResult,
@@ -17,10 +19,11 @@ import { createKlingAuthorization } from '../creator-services/kling-auth.js';
 import {
   appendEndpointPath,
   creatorProviderEndpoint,
-  creatorServiceErrorMessage,
+  creatorServiceErrorInfo,
   fetchCreatorService,
   isRecord
 } from '../creator-services/upstream-fetch.js';
+import { publicFactsFromFailure } from '../creator/public-error-facts.js';
 
 const MAX_PROMPT_LENGTH = 4_000;
 const MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -63,7 +66,8 @@ export class VideoGenerationError extends Error {
       | 'VIDEO_GENERATION_NOT_READY'
       | 'VIDEO_GENERATION_STORAGE_FAILED'>,
     message: string,
-    readonly statusCode: number
+    readonly statusCode: number,
+    readonly publicFacts?: PublicErrorFacts
   ) {
     super(message);
     this.name = 'VideoGenerationError';
@@ -125,16 +129,19 @@ export function createVideoGenerationService(input: {
         maxResponseBytes: MAX_VIDEO_BYTES,
         fetchImpl: input.fetchImpl
       });
-    } catch {
-      throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'The generated video could not be downloaded', 502);
+    } catch (error) {
+      throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'The generated video could not be downloaded', 502,
+        publicFactsFromFailure(error, stored.result.provider, { timedOut: operation.signal.aborted && options.signal?.aborted !== true }));
     } finally {
       operation.cleanup();
     }
     if (!response.ok) {
+      const failure = await creatorServiceErrorInfo(response, 'Video download', stored.result.provider);
       throw new VideoGenerationError(
         'VIDEO_GENERATION_UPSTREAM_ERROR',
-        await creatorServiceErrorMessage(response, 'Video download'),
-        502
+        failure.message,
+        502,
+        failure.publicFacts
       );
     }
     const content = Buffer.from(await response.arrayBuffer());
@@ -173,7 +180,8 @@ export function createVideoGenerationService(input: {
         remote = await createRemoteVideoJob(request, config, operation.signal, input.fetchImpl);
       } catch (error) {
         if (error instanceof VideoGenerationError) throw error;
-        throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'The video generation provider could not be reached', 502);
+        throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'The video generation provider could not be reached', 502,
+          publicFactsFromFailure(error, request.provider, { timedOut: operation.signal.aborted && options.signal?.aborted !== true }));
       } finally {
         operation.cleanup();
       }
@@ -225,7 +233,8 @@ export function createVideoGenerationService(input: {
         remote = await refreshRemoteVideoJob(stored, config, operation.signal, input.fetchImpl);
       } catch (error) {
         if (error instanceof VideoGenerationError) throw error;
-        throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'The video generation status could not be refreshed', 502);
+        throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'The video generation status could not be refreshed', 502,
+          publicFactsFromFailure(error, stored.result.provider, { timedOut: operation.signal.aborted && options.signal?.aborted !== true }));
       } finally {
         operation.cleanup();
       }
@@ -345,7 +354,7 @@ async function refreshRemoteVideoJob(
     endpoint = appendEndpointPath(seedanceVideoEndpoint(settings.baseUrl), stored.upstreamId);
     headers = { Authorization: `Bearer ${settings.apiKey}` };
   }
-  const payload = await requestVideoJson({ endpoint, method: 'GET', headers, config, signal, fetchImpl });
+  const payload = await requestVideoJson({ endpoint, method: 'GET', headers, config, signal, fetchImpl, provider });
   return normalizeRemoteVideoJob(provider, stored.upstreamId, stored.result.model, payload);
 }
 
@@ -374,6 +383,7 @@ async function createSeedanceVideoJob(
     });
   }
   const payload = await requestVideoJson({
+    provider: 'seedance',
     endpoint: seedanceVideoEndpoint(settings.baseUrl),
     method: 'POST',
     headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' },
@@ -409,6 +419,7 @@ async function createKlingVideoJob(
     defaultVideoGenerationModels.kling
   );
   const payload = await requestVideoJson({
+    provider: 'kling',
     endpoint: klingVideoEndpoint(settings.baseUrl, request.referenceImage !== undefined),
     method: 'POST',
     headers: {
@@ -455,6 +466,7 @@ async function createVeoVideoJob(
     } : {})
   };
   const payload = await requestVideoJson({
+    provider: 'veo',
     endpoint: creatorProviderEndpoint(
       settings.baseUrl,
       'https://generativelanguage.googleapis.com/v1beta',
@@ -480,6 +492,7 @@ async function createVeoVideoJob(
 }
 
 async function requestVideoJson(input: {
+  provider: VideoGenerationProvider;
   endpoint: URL;
   method: 'GET' | 'POST';
   headers: Record<string, string>;
@@ -499,10 +512,12 @@ async function requestVideoJson(input: {
     fetchImpl: input.fetchImpl
   });
   if (!response.ok) {
+    const failure = await creatorServiceErrorInfo(response, 'Video generation', input.provider);
     throw new VideoGenerationError(
       'VIDEO_GENERATION_UPSTREAM_ERROR',
-      await creatorServiceErrorMessage(response, 'Video generation'),
-      502
+      failure.message,
+      502,
+      failure.publicFacts
     );
   }
   const payload = await response.json() as unknown;
@@ -675,11 +690,11 @@ function readProgress(
 }
 
 function readJobError(payload: Record<string, unknown>): string {
-  if (typeof payload.error === 'string') return payload.error.slice(0, 500);
-  if (isRecord(payload.error) && typeof payload.error.message === 'string') return payload.error.message.slice(0, 500);
-  const klingMessage = readString(payload, ['data', 'task_status_msg']);
-  if (klingMessage) return klingMessage.slice(0, 500);
-  return 'Video generation failed';
+  const code = isRecord(payload.error) ? payload.error.code : undefined;
+  const safeCode = safePublicErrorCode(code);
+  return safeCode !== undefined
+    ? `Video generation failed (upstream code: ${safeCode})`
+    : 'Video generation failed; the provider did not return a safe error code';
 }
 
 function validateRequest(request: CreateVideoGenerationRequest) {
