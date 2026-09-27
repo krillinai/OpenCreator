@@ -58,13 +58,15 @@ describe('image generation API', () => {
       images: [{ index: 0, mime: 'image/png', size: image.length }]
     });
     expect(String(fetchImpl.mock.calls[0]?.[0])).toBe('https://images.example.test/v1/images/generations');
-    expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toMatchObject({
+    const requestBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(requestBody).toMatchObject({
       model: 'gpt-image-1',
       prompt: 'A quiet studio portrait',
       size: '1024x1024',
       quality: 'high',
       n: 1
     });
+    expect(requestBody).not.toHaveProperty('async');
 
     const content = await server.inject({
       method: 'GET',
@@ -147,6 +149,118 @@ describe('image generation API', () => {
 
     expect(String(fetchImpl.mock.calls[0]?.[0]))
       .toBe('https://images.example.test/draw/v1/images/generations');
+  });
+
+  it('submits and polls a RightCodes image task without a second generation request', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.openai.apiKey = 'sk-image-test';
+    config.image.openai.baseUrl = 'https://www.rightapi.ai/draw/v1';
+    config.image.openai.model = 'gpt-image-2';
+    const image = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('rightcodes-image')
+    ]);
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(
+      String(url).endsWith('/images/generations')
+        ? { task_id: 'task_123', status: 'processing' }
+        : { data: [{ b64_json: image.toString('base64') }] }
+    ), { status: 200 }));
+
+    const result = await generateImageContents({
+      prompt: 'Original Bilibili-style cover',
+      provider: 'openai',
+      size: '1536x1024',
+      quality: 'medium',
+      count: 1
+    }, config, { fetchImpl: fetchImpl as typeof fetch });
+
+    expect(result.contents[0]?.content).toEqual(image);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String(fetchImpl.mock.calls[0]?.[0]))
+      .toBe('https://www.rightapi.ai/draw/v1/images/generations');
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toMatchObject({
+      model: 'gpt-image-2', async: true, n: 1
+    });
+    expect(String(fetchImpl.mock.calls[1]?.[0]))
+      .toBe('https://www.rightapi.ai/v1/tasks/task_123');
+    expect(fetchImpl.mock.calls[1]?.[1]?.headers)
+      .toMatchObject({ Authorization: 'Bearer sk-image-test' });
+  });
+
+  it('retains the RightCodes task ID when an asynchronous image task fails', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.openai.apiKey = 'sk-image-test';
+    config.image.openai.baseUrl = 'https://www.rightapi.ai/draw/v1';
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(
+      String(url).endsWith('/images/generations')
+        ? { task_id: 'task_failed', status: 'processing' }
+        : { task_id: 'task_failed', status: 'failed', error: { message: 'upstream failed' } }
+    ), { status: 200 }));
+
+    await expect(generateImageContents({
+      prompt: 'Cover', provider: 'openai', size: '1024x1024', quality: 'medium', count: 1
+    }, config, { fetchImpl: fetchImpl as typeof fetch }))
+      .rejects.toThrow('RightCodes task task_failed failed: upstream failed');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps polling the same RightCodes task while it is in progress', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.openai.apiKey = 'sk-image-test';
+    config.image.openai.baseUrl = 'https://www.rightapi.ai/draw/v1';
+    const image = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('completed-image')
+    ]);
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ task_id: 'task_pending', status: 'processing' })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ task_id: 'task_pending', status: 'in_progress' })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ b64_json: image.toString('base64') }] })));
+
+    const result = await generateImageContents({
+      prompt: 'Cover', provider: 'openai', size: '1024x1024', quality: 'medium', count: 1
+    }, config, { fetchImpl: fetchImpl as typeof fetch });
+
+    expect(result.contents[0]?.content).toEqual(image);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toBe('https://www.rightapi.ai/v1/tasks/task_pending');
+    expect(String(fetchImpl.mock.calls[2]?.[0])).toBe('https://www.rightapi.ai/v1/tasks/task_pending');
+  });
+
+  it('continues polling an accepted RightCodes task after a transient status connection failure', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.openai.apiKey = 'sk-image-test';
+    config.image.openai.baseUrl = 'https://www.rightapi.ai/draw/v1';
+    const image = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('recovered-image')
+    ]);
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ task_id: 'task_recover', status: 'processing' })))
+      .mockRejectedValueOnce(new Error('connection closed'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ b64_json: image.toString('base64') }] })));
+
+    const result = await generateImageContents({
+      prompt: 'Cover', provider: 'openai', size: '1024x1024', quality: 'medium', count: 1
+    }, config, { fetchImpl: fetchImpl as typeof fetch });
+
+    expect(result.contents[0]?.content).toEqual(image);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toBe('https://www.rightapi.ai/v1/tasks/task_recover');
+    expect(String(fetchImpl.mock.calls[2]?.[0])).toBe('https://www.rightapi.ai/v1/tasks/task_recover');
+  });
+
+  it('reports uncertain acceptance when the RightCodes submission response is lost', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.openai.apiKey = 'sk-image-test';
+    config.image.openai.baseUrl = 'https://www.rightapi.ai/draw/v1';
+    const fetchImpl = vi.fn().mockRejectedValueOnce(new Error('connection closed'));
+
+    await expect(generateImageContents({
+      prompt: 'Cover', provider: 'openai', size: '1024x1024', quality: 'medium', count: 1
+    }, config, { fetchImpl: fetchImpl as typeof fetch }))
+      .rejects.toThrow('RightCodes image submission returned no response; upstream acceptance and billing are unknown');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('uses the configured Jimeng Ark image model', async () => {

@@ -25,7 +25,7 @@ const styles: Record<Exclude<CoverStyleId, 'custom'>, CoverStyleDefinition> = {
       'Psychology and cognition editorial thumbnail style.',
       'Use restrained deep green, blue-gray, white, and a small coral accent with calm, intelligent contrast.',
       'Typography should be clear, thoughtful, and authoritative rather than sensational.',
-      'Use balanced negative space and preserve the reference image subject instead of adding generic psychology symbols.'
+      'Use balanced negative space and keep the subject grounded in the supplied content instead of adding generic psychology symbols.'
     ].join(' ')
   },
   'wealth-platinum-red': {
@@ -34,7 +34,7 @@ const styles: Record<Exclude<CoverStyleId, 'custom'>, CoverStyleDefinition> = {
       'Premium wealth and finance thumbnail style.',
       'Use clean white, platinum, charcoal, and strong red accents with polished commercial lighting.',
       'Typography should feel premium and decisive; emphasize numbers and key financial terms in red.',
-      'Do not add money, luxury objects, charts, or financial symbols unless they are supported by the reference or supplied text.'
+      'Do not add money, luxury objects, charts, or financial symbols unless they are supported by the supplied content.'
     ].join(' ')
   },
   'bilibili-red-blue-white': {
@@ -43,7 +43,7 @@ const styles: Record<Exclude<CoverStyleId, 'custom'>, CoverStyleDefinition> = {
       'High-energy Chinese video-platform thumbnail style using red, bright blue, white, and dark outlines.',
       'Use bold integrated display typography, strong hierarchy, compact composition, and highly readable key phrases at small sizes.',
       'The result should feel youthful and polished without becoming cluttered.',
-      'Preserve the reference image subject and use color blocking and typography to create energy.'
+      'Keep the subject grounded in the supplied content and use color blocking and typography to create energy.'
     ].join(' ')
   }
 };
@@ -75,7 +75,7 @@ export function coverStyleInstructions(
   return [
     'Use the custom thumbnail style supplied by the user.',
     custom || 'Create a polished, high-contrast editorial video thumbnail.',
-    'Treat the custom instructions as visual styling only. Preserve the reference subject and render the required text exactly.'
+    'Treat the custom instructions as visual styling only. Keep the subject grounded in the supplied content and render the required text exactly.'
   ].join(' ');
 }
 

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "bilingual-interview",
+  "version": 1,
+  "module": "video-translation",
+  "runtimeTemplate": {
+    "id": "video-translation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": true,
+  "sortOrder": 40,
+  "title": {
+    "zh-CN": "英语访谈双语字幕",
+    "en-US": "Bilingual Interview Subtitles"
+  },
+  "description": {
+    "zh-CN": "英语转中文双语字幕与横屏合成。示例为 The Economist 访谈片段的人工校订译制；使用模板时请提供有权使用的视频。",
+    "en-US": "English-to-Chinese subtitles and landscape render. The Economist clip has manually reviewed captions; bring a video you can use."
+  },
+  "cover": "cover.jpg",
+  "previewVideo": "example.mp4",
+  "tags": ["translation", "bilingual", "subtitles", "video"],
+  "defaults": {
+    "sourceLanguage": "en",
+    "targetLanguage": "zh_cn",
+    "preferPlatformCaptions": true,
+    "bilingual": true,
+    "subtitlePosition": "top",
+    "subtitleStyle": {
+      "fontPreset": "sans",
+      "fontWeight": "bold",
+      "fontSize": "large",
+      "primaryColor": "#FFFFFF",
+      "secondaryColor": "#F5C75E",
+      "outlineColor": "#000000",
+      "outlineWidth": 3,
+      "shadow": {
+        "enabled": true,
+        "color": "#000000",
+        "opacity": 0.6,
+        "offsetX": 1.5,
+        "offsetY": 1.5,
+        "blur": 0.5
+      }
+    },
+    "dubbing": false,
+    "voiceCode": "",
+    "voiceName": "",
+    "composeVideo": true,
+    "videoFormat": "horizontal",
+    "verticalTitle": "",
+    "verticalSubtitle": ""
+  }
+}

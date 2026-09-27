@@ -203,6 +203,28 @@ describe('creator image executor', () => {
     }
   });
 
+  it('does not ask for a reference image when generating a prompt-only cover', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'creator-cover-prompt-only-'));
+    const generate = vi.fn(async () => ({
+      model: 'gpt-image-test',
+      contents: [{ content: png('cover'), mime: 'image/png' as const }]
+    }));
+    const executor = createImageExecutor({
+      configStore: { read: async () => createDefaultCreatorServicesConfig() },
+      generate: generate as never
+    });
+
+    await executor.run(stageInput({
+      sourceType: 'prompt',
+      coverStyle: 'psychology',
+      coverHeadline: '你为什么总是想太多？'
+    }, { templateId: 'cover', templateVersion: 2 }));
+
+    const prompt = (generate.mock.calls as unknown as Array<[{ prompt: string }]>)[0]![0].prompt;
+    expect(prompt).toContain('Headline: "你为什么总是想太多？"');
+    expect(prompt).not.toMatch(/REFERENCE IMAGE|reference image|reference subject/i);
+  });
+
   it('normalizes cover artifacts to the exact selected ratio', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'creator-cover-normalize-'));
     const normalizeCoverImage = vi.fn(async (input: {

@@ -48,10 +48,11 @@ type FacetOption = {
   en: string;
   tags: string[];
   modules?: CreatorRuntimeWorkspace[];
+  excludeTags?: string[];
 };
 
 const videoTagOptions: FacetOption[] = [
-  { id: 'translation', zh: '视频翻译', en: 'Video Translation', tags: [], modules: ['video-translation'] },
+  { id: 'translation', zh: '视频翻译', en: 'Video Translation', tags: [], modules: ['video-translation'], excludeTags: ['dubbing'] },
   { id: 'stickman-animation', zh: '火柴人动画', en: 'Stick Figure Animation', tags: ['stickman-video', 'stick-figure-animation', '火柴人动画', 'Stick figure animation'] },
   { id: 'short-film', zh: '电影短片', en: 'Cinematic Shorts', tags: ['cinematic', 'Cinematic', 'mystery', 'Mystery'] },
   { id: 'vlog', zh: '生活 Vlog', en: 'Lifestyle Vlogs', tags: ['dv', 'DV', 'ugc', 'UGC'] },
@@ -76,7 +77,7 @@ const videoTagOptions: FacetOption[] = [
   { id: 'food-video', zh: '美食料理', en: 'Food / Cooking', tags: ['cooking', 'Cooking'] },
   { id: 'product-video', zh: '产品特写', en: 'Product Close-ups', tags: ['advertising', 'Advertising', 'jewelry', 'Jewelry'] },
   { id: 'camera-video', zh: '镜头运动', en: 'Camera Motion', tags: ['camera-motion', 'Camera motion', 'rack-focus', 'Rack focus', 'drone-orbit', 'Drone orbit', 'dolly-zoom', 'Dolly zoom', 'crane-up', 'Crane up', 'pan-right', 'Pan right', 'aerial', 'Aerial'] },
-  { id: 'dubbing', zh: '视频配音', en: 'Video Dubbing', tags: [], modules: ['smart-dubbing'] },
+  { id: 'dubbing', zh: '视频配音', en: 'Video Dubbing', tags: ['dubbing'], modules: ['smart-dubbing'] },
   { id: 'download', zh: '视频下载', en: 'Video Downloads', tags: [], modules: ['video-download'] }
 ];
 
@@ -84,7 +85,7 @@ const imageTagOptions: FacetOption[] = [
   { id: 'image-portrait', zh: '人像写真', en: 'Portraits', tags: ['人像摄影', 'Portrait photography', 'portrait', 'Portrait'] },
   { id: 'image-social', zh: '社交帖子', en: 'Social Posts', tags: ['社交媒体', 'Social media', 'social', 'Social'] },
   { id: 'image-infographic', zh: '信息图解', en: 'Infographics', tags: ['信息图表', 'Infographics', '教育科普', 'Educational content'] },
-  { id: 'image-thumbnail', zh: '视频封面', en: 'Video Thumbnails', tags: ['视频缩略图', 'Video thumbnails', 'youtube', 'YouTube', 'cover', 'Cover'] },
+  { id: 'image-thumbnail', zh: '视频封面', en: 'Video Thumbnails', tags: ['视频缩略图', 'Video thumbnails', 'youtube', 'YouTube', 'cover', 'Cover'], modules: ['cover-generator'] },
   { id: 'image-storyboard', zh: '故事分镜', en: 'Storyboards', tags: ['storyboard', 'Storyboard'] },
   { id: 'image-ad', zh: '品牌广告', en: 'Brand Ads', tags: ['商业广告', 'Commercial advertising', 'advertising', 'Advertising'] },
   { id: 'image-ecommerce', zh: '电商主图', en: 'E-commerce', tags: ['电商视觉', 'E-commerce visuals', 'ecommerce', 'E-commerce'] },
@@ -380,7 +381,9 @@ export function CreatorDashboard(props: {
         <div className="creator-template-detail-layout">
           <section
             className="creator-template-outcome"
-            aria-label={language === 'en-US' ? 'Example result' : '示例图片'}
+            aria-label={selectedPreset.previewVideoUrl === undefined
+              ? (language === 'en-US' ? 'Template preview' : '模板预览')
+              : (language === 'en-US' ? 'Example video' : '示例视频')}
           >
             {selectedPreset.previewVideoUrl === undefined ? (
               <button
@@ -388,9 +391,9 @@ export function CreatorDashboard(props: {
                 type="button"
                 className="creator-template-outcome-media"
                 aria-label={language === 'en-US'
-                  ? `View full ${selectedPreset.title} result`
-                  : `全屏查看${selectedPreset.title}完整作品`}
-                title={language === 'en-US' ? 'View full result' : '查看完整作品'}
+                  ? `Enlarge ${selectedPreset.title} template preview`
+                  : `放大${selectedPreset.title}模板预览`}
+                title={language === 'en-US' ? 'Enlarge template preview' : '放大模板预览'}
                 onClick={() => setPreviewOpen(true)}
               >
                 <img src={previewUrl} alt={selectedPreset.title} />
@@ -538,9 +541,13 @@ export function CreatorDashboard(props: {
               className="creator-template-preview-dialog"
               role="dialog"
               aria-modal="true"
-              aria-label={language === 'en-US'
-                ? `${selectedPreset.title} full result`
-                : `${selectedPreset.title}完整作品`}
+              aria-label={selectedPreset.previewVideoUrl === undefined
+                ? (language === 'en-US'
+                  ? `${selectedPreset.title} template preview`
+                  : `${selectedPreset.title}模板预览`)
+                : (language === 'en-US'
+                  ? `${selectedPreset.title} full result`
+                  : `${selectedPreset.title}完整作品`)}
             >
               {selectedPreset.previewVideoUrl === undefined ? (
                 <img src={previewUrl} alt={selectedPreset.title} />
@@ -873,8 +880,10 @@ function categoryLabel(
 }
 
 function matchesFacet(preset: CreatorPresetSummary, option: FacetOption): boolean {
+  const tags = preset.tagIds ?? preset.tags;
+  if (option.excludeTags?.some(tag => tags.includes(tag))) return false;
   return option.modules?.includes(preset.module) === true
-    || (preset.tagIds ?? preset.tags).some(tag => option.tags.includes(tag));
+    || tags.some(tag => option.tags.includes(tag));
 }
 
 function fitTagCount(widths: number[], availableWidth: number, gap: number): number {

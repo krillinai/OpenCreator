@@ -252,6 +252,24 @@ describe('creator preset compiler', () => {
     );
   });
 
+  it('allows a one-minute translation example without relaxing other modules', async () => {
+    const fixture = setup();
+    const preset = copyOfficialPreset({
+      sourceRoot: fixture.sourceRoot,
+      module: 'video-translation',
+      sourceId: 'bilingual-interview'
+    });
+    writeFileSync(join(preset, 'example.mp4'), createMinimalMp4(61));
+    await expect(validateCreatorPresets(fixture)).resolves.toMatchObject({
+      presets: [expect.objectContaining({ module: 'video-translation' })]
+    });
+
+    writeFileSync(join(preset, 'example.mp4'), createMinimalMp4(66));
+    await expect(validateCreatorPresets(fixture)).rejects.toThrow(
+      'previewVideo: duration exceeds 65 seconds'
+    );
+  });
+
   it('compiles the English video translation locale with Runtime language ids', async () => {
     const fixture = setup();
     copyOfficialPreset({

@@ -21,6 +21,7 @@ import {
 const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 120 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 180_000;
+const RIGHT_CODES_REQUEST_TIMEOUT_MS = 600_000;
 
 export type GeneratedImageContent = {
   content: Buffer;
@@ -71,7 +72,13 @@ export async function generateImageContents(
     ?? (options.referenceImage === undefined ? [] : [options.referenceImage]);
   const capabilities = imageGenerationCapabilities(request.provider);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const rightCodes = request.provider === 'openai'
+    && referenceImages.length === 0
+    && isRightCodesDrawEndpoint(openAiImageEndpoint(config.image.openai.baseUrl, 'generations'));
+  const timeout = setTimeout(
+    () => controller.abort(),
+    rightCodes ? RIGHT_CODES_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS
+  );
   const abort = () => controller.abort(options.signal?.reason);
   timeout.unref();
   if (options.signal?.aborted) abort();
@@ -169,6 +176,7 @@ async function generateOpenAiImages(
     provider.baseUrl,
     referenceImages.length === 0 ? 'generations' : 'edits'
   );
+  const rightCodes = isRightCodesDrawEndpoint(endpoint);
   const multipart = referenceImages.length === 0
     ? undefined
     : createImageEditBody({
@@ -179,32 +187,48 @@ async function generateOpenAiImages(
         count: request.count,
         images: referenceImages
       });
-  const response = await fetchCreatorService({
-    endpoint,
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${provider.apiKey}`,
-      'Content-Type': multipart?.contentType ?? 'application/json'
-    },
-    body: multipart?.body ?? JSON.stringify({
-        model,
-        prompt: request.prompt.trim(),
-        size: request.size,
-        ...(request.provider === 'jimeng' ? {} : { quality: request.quality }),
-        n: request.count
-      }),
-    proxy: config.proxy.trim(),
-    signal,
-    maxResponseBytes: MAX_RESPONSE_BYTES,
-    fetchImpl
-  });
+  let response: Response;
+  try {
+    response = await fetchCreatorService({
+      endpoint,
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${provider.apiKey}`,
+        'Content-Type': multipart?.contentType ?? 'application/json'
+      },
+      body: multipart?.body ?? JSON.stringify({
+          model,
+          prompt: request.prompt.trim(),
+          size: request.size,
+          ...(request.provider === 'jimeng' ? {} : { quality: request.quality }),
+          n: request.count,
+          ...(rightCodes ? { async: true } : {})
+        }),
+      proxy: config.proxy.trim(),
+      signal,
+      maxResponseBytes: MAX_RESPONSE_BYTES,
+      fetchImpl
+    });
+  } catch (error) {
+    if (!rightCodes || signal.aborted) throw error;
+    throw new ImageGenerationProviderError(
+      'upstream_error',
+      'RightCodes image submission returned no response; upstream acceptance and billing are unknown'
+    );
+  }
   if (!response.ok) {
     throw new ImageGenerationProviderError(
       'upstream_error',
       await creatorServiceErrorMessage(response, 'Image generation')
     );
   }
-  const contents = await readGeneratedImages(await response.json() as unknown, {
+  const payload = await response.json() as unknown;
+  const completed = rightCodes
+    ? await resolveRightCodesImageTask(payload, {
+        endpoint, apiKey: provider.apiKey, proxy: config.proxy.trim(), signal, fetchImpl
+      })
+    : payload;
+  const contents = await readGeneratedImages(completed, {
     apiKey: provider.apiKey,
     authOrigin: endpoint.origin,
     proxy: config.proxy.trim(),
@@ -212,6 +236,76 @@ async function generateOpenAiImages(
     fetchImpl
   });
   return { model, contents };
+}
+
+function isRightCodesDrawEndpoint(endpoint: URL): boolean {
+  return (endpoint.hostname === 'www.rightapi.ai' || endpoint.hostname === 'rightapi.ai')
+    && endpoint.pathname === '/draw/v1/images/generations';
+}
+
+async function resolveRightCodesImageTask(
+  payload: unknown,
+  input: {
+    endpoint: URL;
+    apiKey: string;
+    proxy: string;
+    signal: AbortSignal;
+    fetchImpl?: typeof fetch;
+  }
+): Promise<unknown> {
+  if (isRecord(payload) && Array.isArray(payload.data)) return payload;
+  const taskId = readNestedString(payload, ['task_id']);
+  if (!taskId) {
+    throw new ImageGenerationProviderError('upstream_error', 'RightCodes did not return an image or task ID');
+  }
+  const taskUrl = new URL(`/v1/tasks/${encodeURIComponent(taskId)}`, input.endpoint.origin);
+  let shouldWait = false;
+  for (;;) {
+    if (shouldWait) {
+      try {
+        await waitForRetry(input.signal);
+      } catch {
+        throw new ImageGenerationProviderError('upstream_error', `RightCodes task ${taskId} is still processing`);
+      }
+    }
+    let response: Response;
+    try {
+      response = await fetchCreatorService({
+        endpoint: taskUrl,
+        method: 'GET',
+        headers: { Authorization: `Bearer ${input.apiKey}` },
+        proxy: input.proxy,
+        signal: input.signal,
+        maxResponseBytes: MAX_RESPONSE_BYTES,
+        fetchImpl: input.fetchImpl
+      });
+    } catch {
+      if (input.signal.aborted) {
+        throw new ImageGenerationProviderError('upstream_error', `RightCodes task ${taskId} is still processing`);
+      }
+      shouldWait = true;
+      continue;
+    }
+    if (!response.ok) {
+      throw new ImageGenerationProviderError(
+        'upstream_error',
+        `${await creatorServiceErrorMessage(response, 'RightCodes task')} (task ${taskId})`
+      );
+    }
+    const result = await response.json() as unknown;
+    if (isRecord(result) && Array.isArray(result.data)) return result;
+    const status = readNestedString(result, ['status']);
+    if (status === 'failed') {
+      throw new ImageGenerationProviderError(
+        'upstream_error',
+        `RightCodes task ${taskId} failed: ${readNestedString(result, ['error', 'message']) ?? 'unknown error'}`
+      );
+    }
+    if (status !== 'queued' && status !== 'in_progress' && status !== 'processing') {
+      throw new ImageGenerationProviderError('upstream_error', `RightCodes task ${taskId} returned no image`);
+    }
+    shouldWait = true;
+  }
 }
 
 async function generateGeminiImages(

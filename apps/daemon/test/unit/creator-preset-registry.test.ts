@@ -41,7 +41,7 @@ function setup() {
 }
 
 describe('creator preset registry', () => {
-  it('excludes development samples and functional shortcuts from the product catalog', async () => {
+  it('publishes restored creator templates while excluding withdrawn and development samples', async () => {
     const catalog = await validateCreatorPresets({ sourceRoot: officialPresetRoot });
     const registry = createCreatorPresetRegistry({
       catalog,
@@ -54,13 +54,17 @@ describe('creator preset registry', () => {
       'video-generation/cinematic-story',
       'video-generation/product-ad',
       'video-generation/vertical-social',
-      'cover-generator/bilibili-red-blue-white',
       'cover-generator/personal-growth',
+      'cover-generator/bilibili-red-blue-white',
       'cover-generator/psychology',
       'cover-generator/wealth-platinum-red',
+      'video-download/source-video-archive',
       'smart-dubbing/calm-narration',
+      'smart-dubbing/knowledge-narration',
       'smart-dubbing/professional-news',
-      'smart-dubbing/warm-storytelling',
+      'smart-dubbing/warm-storytelling'
+    ];
+    const restored = [
       'video-translation/vertical-knowledge',
       'video-translation/bilibili-bilingual',
       'video-translation/youtube-dubbed',
@@ -73,12 +77,50 @@ describe('creator preset registry', () => {
       ));
       expect(identities).toEqual(expect.arrayContaining([
         'image-generation/exploded-food-infographic',
-        'video-generation/aerial-pullback-rise-reveal'
+        'video-generation/aerial-pullback-rise-reveal',
+        'video-translation/bilingual-interview'
       ]));
+      expect(identities).toEqual(expect.arrayContaining(restored));
+      expect(registry.listPublished(locale)
+        .filter(preset => preset.module === 'video-download')
+        .map(preset => preset.id).sort()).toEqual([
+          'audio-download',
+          'highest-quality-video'
+        ]);
+      expect(registry.listPublished(locale).find(preset => preset.id === 'highest-quality-video')?.title)
+        .toBe(locale === 'zh-CN' ? '高清视频下载' : 'HD Video Download');
+      expect(registry.listPublished(locale).find(preset => preset.id === 'vertical-knowledge')?.title)
+        .toBe(locale === 'zh-CN' ? '竖屏视频切片' : 'Vertical Video Clips');
       for (const identity of removed) expect(identities).not.toContain(identity);
     }
     const sourceIdentities = catalog.presets.map(preset => `${preset.module}/${preset.id}`);
+    expect(sourceIdentities).toEqual(expect.arrayContaining(restored));
     for (const identity of removed) expect(sourceIdentities).not.toContain(identity);
+    expect(catalog.presets.find(preset => preset.id === 'bilingual-interview')?.defaults)
+      .toMatchObject({
+        sourceLanguage: 'en',
+        targetLanguage: 'zh_cn',
+        bilingual: true,
+        subtitlePosition: 'top',
+        subtitleStyle: {
+          fontSize: 'large',
+          primaryColor: '#FFFFFF',
+          secondaryColor: '#F5C75E',
+          outlineWidth: 3
+        },
+        composeVideo: true,
+        dubbing: false
+      });
+    expect(registry.listPublished('zh-CN').find(preset => preset.id === 'bilingual-interview')?.previewVideoUrl)
+      .toMatch(/^\/creator-presets\/[a-f0-9]{64}\.mp4$/);
+    expect(catalog.presets.find(preset => preset.id === 'highest-quality-video')?.defaults)
+      .toMatchObject({ mediaType: 'video' });
+    expect(catalog.presets.find(preset => preset.id === 'audio-download')?.defaults)
+      .toMatchObject({ mediaType: 'audio' });
+    expect(catalog.presets.find(preset => preset.id === 'audio-download')?.cover.sha256)
+      .not.toBe(catalog.presets.find(preset => preset.id === 'highest-quality-video')?.cover.sha256);
+    expect(catalog.presets.find(preset => preset.id === 'youtube-dubbed'))
+      .toMatchObject({ module: 'video-translation', defaults: { dubbing: true, composeVideo: true } });
   });
 
   it('localizes identifier and source-language tags while preserving unknown tags', () => {

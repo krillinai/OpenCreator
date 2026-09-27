@@ -352,10 +352,7 @@ function coverGenerationPrompt(
           'Use the attached user-provided image as the primary subject and composition reference.',
           'Preserve its recognizable subject and important visual relationships while adapting the complete thumbnail to the selected style.'
         ].join('\n')
-      : [
-          'REFERENCE IMAGE:',
-          'No reference image is attached. Follow the supplied content direction without adding unsupported claims.'
-        ].join('\n');
+      : '';
   const exactText = headline
     ? [
         'EXACT COVER TEXT:',
@@ -392,7 +389,9 @@ function coverGenerationPrompt(
       style === 'custom' && customStyle
         ? 'Keep text clear of the main subject, preserve any headline line layout explicitly requested in the custom style, otherwise use at most two headline lines, and make any subheadline visibly secondary.'
         : 'Keep text clear of the main subject, use at most two headline lines, and make any subheadline visibly secondary.',
-      'Integrate typography, reference subject, color, lighting, and composition into one coherent final image.',
+      referenceKind === undefined
+        ? 'Integrate typography, the supplied subject, color, lighting, and composition into one coherent final image.'
+        : 'Integrate typography, reference subject, color, lighting, and composition into one coherent final image.',
       additional
     ].filter(Boolean).join('\n\n'),
     details: {

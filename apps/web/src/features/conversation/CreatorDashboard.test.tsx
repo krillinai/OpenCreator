@@ -168,7 +168,7 @@ describe('CreatorDashboard', () => {
     expect(onSelectPreset).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'B站双语精翻' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '成果预览' })).not.toBeInTheDocument();
-    const previewTrigger = screen.getByRole('button', { name: '全屏查看B站双语精翻完整作品' });
+    const previewTrigger = screen.getByRole('button', { name: '放大B站双语精翻模板预览' });
     expect(previewTrigger.querySelector('img'))
       .toHaveAttribute('src', `/creator-presets/${'d'.repeat(64)}.webp`);
     expect(screen.getByText('英文视频翻译为简体中文。')).toBeInTheDocument();
@@ -196,7 +196,7 @@ describe('CreatorDashboard', () => {
     }));
 
     const trigger = screen.getByRole('button', {
-      name: '全屏查看电商商品主图增强版完整作品'
+      name: '放大电商商品主图增强版模板预览'
     });
     expect(screen.getByText('@example_author')).toBeInTheDocument();
     expect(document.querySelector('.creator-template-author-avatar img'))
@@ -214,13 +214,13 @@ describe('CreatorDashboard', () => {
       .toHaveAttribute('src', `/creator-presets/${'f'.repeat(64)}.webp`);
     fireEvent.click(trigger);
 
-    const dialog = screen.getByRole('dialog', { name: '电商商品主图增强版完整作品' });
+    const dialog = screen.getByRole('dialog', { name: '电商商品主图增强版模板预览' });
     expect(dialog.querySelector('img'))
       .toHaveAttribute('src', `/creator-presets/${'f'.repeat(64)}.webp`);
     expect(screen.getByRole('button', { name: '关闭预览' })).toHaveFocus();
 
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByRole('dialog', { name: '电商商品主图增强版完整作品' }))
+    expect(screen.queryByRole('dialog', { name: '电商商品主图增强版模板预览' }))
       .not.toBeInTheDocument();
     await waitFor(() => expect(trigger).toHaveFocus());
   });
@@ -282,6 +282,29 @@ describe('CreatorDashboard', () => {
       .toBeInTheDocument();
     expect(screen.getByRole('button', { name: '查看个人成长封面模板详情' }))
       .toBeInTheDocument();
+  });
+
+  it('shows only the remaining published cover-generator preset under video thumbnails', () => {
+    const covers = [
+      { id: 'images-go-hard-thumbnail', title: 'Images Go Hard 动作电影缩略图', tagIds: ['youtube', 'cover'] }
+    ].map(({ id, title, tagIds }) => ({
+      ...presets[5]!, id, title, tags: tagIds, tagIds
+    }));
+    const unrelated = { ...presets[1]!, tags: ['product'], tagIds: ['product'] };
+    render(<CreatorDashboard presets={[...covers, unrelated]} />);
+
+    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
+    fireEvent.click(screen.getByRole('button', { name: '视频封面' }));
+
+    for (const cover of covers) {
+      expect(screen.getByRole('button', { name: `查看${cover.title}模板详情` }))
+        .toHaveAttribute('data-preset-id', `cover-generator/${cover.id}/1`);
+    }
+    for (const id of ['bilibili-red-blue-white', 'psychology', 'wealth-platinum-red']) {
+      expect(document.querySelector(`[data-preset-id="cover-generator/${id}/1"]`)).toBeNull();
+    }
+    expect(screen.queryByRole('button', { name: '查看电商商品主图增强版模板详情' }))
+      .not.toBeInTheDocument();
   });
 
   it('omits tag filters on Recent, Recommended and All while keeping search available', () => {
@@ -618,6 +641,26 @@ describe('CreatorDashboard', () => {
     expect(screen.getByRole('tab', { name: 'Video Creation' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: 'View City and Nature Camera template details' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'View Anime Action template details' })).not.toBeInTheDocument();
+  });
+
+  it('shows video dubbing under its own filter without changing the video translation runtime', () => {
+    const dubbed = {
+      ...presets[0]!,
+      id: 'youtube-dubbed',
+      title: 'YouTube 中文配音',
+      tags: ['YouTube', '翻译', '配音'],
+      tagIds: ['youtube', 'translation', 'dubbing']
+    };
+    render(<CreatorDashboard presets={[presets[0]!, dubbed]} />);
+    fireEvent.click(screen.getByRole('tab', { name: '视频创作' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '视频配音' }));
+    expect(screen.getByRole('button', { name: '查看YouTube 中文配音模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看B站双语精翻模板详情' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '视频翻译' }));
+    expect(screen.getByRole('button', { name: '查看B站双语精翻模板详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '查看YouTube 中文配音模板详情' })).not.toBeInTheDocument();
   });
 
   it('highlights replaceable prompt variables without styling section headings', () => {

@@ -41,6 +41,7 @@ const MAX_PREVIEW_SIZE = 4 * 1024 * 1024;
 const MAX_AUTHOR_AVATAR_SIZE = 512 * 1024;
 const MAX_PREVIEW_VIDEO_SIZE = 8 * 1024 * 1024;
 const MAX_PREVIEW_VIDEO_DURATION_SECONDS = 10;
+const MAX_TRANSLATION_PREVIEW_VIDEO_DURATION_SECONDS = 65;
 const MAX_PREVIEW_VIDEO_TOTAL_SIZE = 20 * 1024 * 1024;
 
 export async function validateCreatorPresets(
@@ -87,7 +88,10 @@ export async function validateCreatorPresets(
           sourceRoot,
           entry.directory,
           manifest.previewVideo,
-          entry.relativeFile
+          entry.relativeFile,
+          manifest.module === 'video-translation'
+            ? MAX_TRANSLATION_PREVIEW_VIDEO_DURATION_SECONDS
+            : MAX_PREVIEW_VIDEO_DURATION_SECONDS
         );
     if (previewVideo !== undefined) {
       previewVideoTotalSize += previewVideo.size;
@@ -460,7 +464,8 @@ async function validatePreviewVideo(
   sourceRoot: string,
   directory: string,
   videoPath: string,
-  relativeFile: string
+  relativeFile: string,
+  maxDurationSeconds: number
 ): Promise<ValidatedVideoResource> {
   const resource = await validateRegularResource({
     sourceRoot,
@@ -478,9 +483,9 @@ async function validatePreviewVideo(
     throw new Error(`${relativeFile}.previewVideo: video contents do not match MP4`);
   }
   const duration = readMp4Duration(bytes);
-  if (duration !== undefined && duration > MAX_PREVIEW_VIDEO_DURATION_SECONDS) {
+  if (duration !== undefined && duration > maxDurationSeconds) {
     throw new Error(
-      `${relativeFile}.previewVideo: duration exceeds ${MAX_PREVIEW_VIDEO_DURATION_SECONDS} seconds`
+      `${relativeFile}.previewVideo: duration exceeds ${maxDurationSeconds} seconds`
     );
   }
   return {
