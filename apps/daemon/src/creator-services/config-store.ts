@@ -70,6 +70,8 @@ const imageConfigDefault = creatorServicesDefaults.image;
 const videoConfigDefault = creatorServicesDefaults.video;
 const llmConfigSchema = openAiCompatibleSchema.extend({
   jsonMode: z.boolean(),
+  timeoutSeconds: z.number().int().min(1).max(600).default(120),
+  providerId: boundedString(64).optional(),
   source: z.enum(['codex', 'custom']).optional()
 }).strict().transform(value => ({
   ...value,
@@ -441,7 +443,9 @@ export function retainCreatorServicesCredentials(
   current: CreatorServicesConfig
 ): CreatorServicesConfig {
   const merged = structuredClone(next);
-  retainBlank(() => merged.llm.apiKey, value => { merged.llm.apiKey = value; }, current.llm.apiKey);
+  if (merged.llm.providerId === current.llm.providerId && merged.llm.baseUrl === current.llm.baseUrl) {
+    retainBlank(() => merged.llm.apiKey, value => { merged.llm.apiKey = value; }, current.llm.apiKey);
+  }
   retainBlank(
     () => merged.transcription.openai.apiKey,
     value => { merged.transcription.openai.apiKey = value; },

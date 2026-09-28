@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"krillin-ai/config"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,7 +18,11 @@ type Client struct {
 }
 
 func NewClient(baseUrl, apiKey, proxyAddr string) *Client {
-	return newClient(baseUrl, apiKey, proxyAddr, defaultRequestTimeout)
+	timeout := defaultRequestTimeout
+	if config.Conf.Llm.TimeoutSeconds > 0 {
+		timeout = time.Duration(config.Conf.Llm.TimeoutSeconds) * time.Second
+	}
+	return newClient(baseUrl, apiKey, proxyAddr, timeout)
 }
 
 func newClient(baseUrl, apiKey, proxyAddr string, requestTimeout time.Duration) *Client {

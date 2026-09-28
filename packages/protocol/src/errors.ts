@@ -2,6 +2,7 @@ import type { OpenCreatorIssue, PublicErrorFacts } from './issues.js';
 
 export type RuntimeErrorCode =
   | 'VALIDATION_FAILED'
+  | 'LLM_CONNECTION_FAILED'
   | 'UNAUTHORIZED'
   | 'RUN_NOT_FOUND'
   | 'RUN_ALREADY_TERMINAL'

@@ -25,22 +25,30 @@ func (c *Client) ChatCompletionContext(ctx context.Context, query string) (strin
 	}
 	var responseFormat *openai.ChatCompletionResponseFormat
 
+	messages := []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: query}}
+	isHyMT2 := config.Conf.Llm.Provider == "hy-mt2" || strings.Contains(strings.ToLower(config.Conf.Llm.Model), "hy-mt2")
+	if !isHyMT2 {
+		messages = append([]openai.ChatCompletionMessage{{
+			Role:    openai.ChatMessageRoleSystem,
+			Content: "You are an assistant that helps with subtitle translation.",
+		}}, messages...)
+	}
 	req := openai.ChatCompletionRequest{
-		Model: config.Conf.Llm.Model,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: "You are an assistant that helps with subtitle translation.",
-			},
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: query,
-			},
-		},
+		Model:          config.Conf.Llm.Model,
+		Messages:       messages,
 		Temperature:    0.9,
 		Stream:         true,
 		MaxTokens:      8192,
 		ResponseFormat: responseFormat,
+	}
+	if isHyMT2 {
+		req.Temperature = 0.7
+		req.MaxTokens = 4096
+		if strings.Contains(strings.ToLower(config.Conf.Llm.Model), "30b-a3b") {
+			req.TopP = 1.0
+		} else {
+			req.TopP = 0.6
+		}
 	}
 
 	stream, err := c.client.CreateChatCompletionStream(ctx, req)

@@ -121,6 +121,28 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.getByText('配置已安全保存')).toBeInTheDocument();
   });
 
+  it('configures and tests a self-hosted Hy-MT2 model without requiring an API key', async () => {
+    const user = userEvent.setup();
+    const service = createService();
+    render(<CreatorServicesSettingsView connected service={service} modelService={createModelService()} />);
+    await screen.findByRole('heading', { name: 'AI 服务' });
+    await user.selectOptions(screen.getByLabelText('供应商'), 'hy-mt2');
+    expect(screen.getByText(/自行部署的本地 Hy-MT2/)).toBeInTheDocument();
+    expect(screen.getByText('本地服务由您自行部署，请测试连接')).toBeInTheDocument();
+    expect(screen.getByLabelText('Base URL')).toHaveValue('http://127.0.0.1:8000/v1');
+    await user.clear(screen.getByLabelText('请求超时（秒）'));
+    await user.type(screen.getByLabelText('请求超时（秒）'), '30');
+    await user.click(screen.getByRole('button', { name: '测试连接' }));
+    await waitFor(() => expect(service.testLlmConnection).toHaveBeenCalledWith({
+      baseUrl: 'http://127.0.0.1:8000/v1', model: 'tencent/Hy-MT2-1.8B', apiKey: '', timeoutSeconds: 30
+    }));
+    expect(await screen.findByText('连接成功，模型可用')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => expect(service.saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+      llm: expect.objectContaining({ source: 'custom', providerId: 'hy-mt2', model: 'tencent/Hy-MT2-1.8B', timeoutSeconds: 30 })
+    })));
+  });
+
   it('shows validation errors beside the invalid model fields', async () => {
     const user = userEvent.setup();
     const modelService = createModelService();
@@ -530,6 +552,7 @@ function createService(
     getCapabilities: vi.fn(async () => structuredClone(capabilities)),
     getConfig: vi.fn(async () => ({ config: structuredClone(config), configuredCredentials })),
     saveConfig: vi.fn(async next => ({ config: structuredClone(next), configuredCredentials })),
+    testLlmConnection: vi.fn(async () => new Response(JSON.stringify({ connected: true }), { status: 200 })),
     resetConfig: vi.fn(async () => ({ config: createDefaultCreatorServicesConfig(), configuredCredentials: [] })),
     testTranscriptionConnection: vi.fn(async () => ({ connected: true, model: 'sensevoice', models: ['sensevoice'], capabilities: ['audio.transcriptions'] })),
     getTtsVoices: vi.fn(async (provider: CreatorTtsProvider) => ({
