@@ -190,10 +190,12 @@ export function CreatorSessionProvider(props: {
   const localIssuesRef = useRef(localIssues);
   const capturedIssueByCauseRef = useRef(new WeakMap<object, OpenCreatorIssue>());
   const captureFailureRef = useRef<CreatorSessionContextValue['captureCreatorFailure'] | null>(null);
+  const onPreJobFailureRef = useRef(props.onPreJobFailure);
   confirmedRef.current = confirmedJob;
   draftRef.current = draft;
   dirtyRef.current = dirtyFields;
   localIssuesRef.current = localIssues;
+  onPreJobFailureRef.current = props.onPreJobFailure;
 
   const ensurePersistedJob = useCallback((): Promise<CreatorJob> => {
     if (!isPendingCreatorJob(confirmedRef.current)) {
@@ -386,7 +388,7 @@ export function CreatorSessionProvider(props: {
     if (confirmedRef.current.id.startsWith('pending:')) {
       const pageIssue = normalizePageIssue('creator-launch', operation, cause, fallbackMessage);
       if (causeObject !== undefined) capturedIssueByCauseRef.current.set(causeObject, pageIssue);
-      props.onPreJobFailure?.(operation, cause, fallbackMessage);
+      onPreJobFailureRef.current?.(operation, cause, fallbackMessage);
       return pageIssue;
     }
     const candidate = (cause as { issue?: unknown } | null)?.issue;
@@ -428,7 +430,7 @@ export function CreatorSessionProvider(props: {
     });
     reportLocalIssue(issue);
     return issue;
-  }, [acceptAuthoritativeIssue, props.onPreJobFailure, reportLocalIssue]);
+  }, [acceptAuthoritativeIssue, reportLocalIssue]);
   captureFailureRef.current = captureCreatorFailure;
 
   const focusIssue = useCallback((issue: OpenCreatorIssue | null) => {

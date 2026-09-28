@@ -471,25 +471,33 @@ describe('VideoTranslationWorkspace task controls', () => {
       artifacts: [source, subtitle]
     });
     const openArtifact = vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' })));
-    const view = render(
+    const service = { applyAction: vi.fn(), runAgentTurn: vi.fn(), openArtifact } as never;
+    const renderWorkspace = (onPreJobFailure: () => void) => (
       <LanguageProvider initialPreference="zh-CN">
         <CreatorSessionProvider
           initialJob={currentJob}
-          service={{
-            applyAction: vi.fn(),
-            runAgentTurn: vi.fn(),
-            openArtifact
-          } as never}
+          service={service}
+          onPreJobFailure={onPreJobFailure}
         >
           <VideoTranslationWorkspace onBack={vi.fn()} />
         </CreatorSessionProvider>
       </LanguageProvider>
     );
+    const view = render(renderWorkspace(vi.fn()));
 
     try {
       expect(await screen.findByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
       await waitFor(() => expect(openArtifact).toHaveBeenCalledWith('job_control', source.id));
       expect(createObjectURL).toHaveBeenCalledOnce();
+      const resultVideo = await screen.findByLabelText('原视频预览');
+      expect(resultVideo).toHaveAttribute('src', 'blob:source-video-preview');
+      fireEvent.timeUpdate(resultVideo, { target: { currentTime: 0.5 } });
+      expect(screen.getByRole('region', { name: '成果预览' })).toHaveTextContent('同步字幕');
+      view.rerender(renderWorkspace(vi.fn()));
+      expect(openArtifact).toHaveBeenCalledTimes(1);
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('原视频预览')).toBe(resultVideo);
 
       fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
       expect(await screen.findByLabelText('横屏字幕视频预览')).toHaveAttribute(
@@ -838,21 +846,11 @@ describe('VideoTranslationWorkspace task controls', () => {
 
     expect(await screen.findByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '项目 V1' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '作品' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '成果' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('target-subtitle-v1.srt')).toBeInTheDocument();
     expect(screen.queryByText('正在基于 V1 调整')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: '配音' }));
-    await waitFor(() => expect(applyAction).toHaveBeenCalledWith(
-      'job_control',
-      expect.objectContaining({
-        input: expect.objectContaining({
-          patch: expect.objectContaining({ resultTab: 'voice' })
-        })
-      })
-    ));
-    expect(screen.getByRole('tab', { name: '配音' })).toHaveAttribute('aria-selected', 'true');
-
+    expect(within(screen.getByRole('tablist', { name: '产出物类型' })).getAllByRole('tab')).toHaveLength(3);
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     await waitFor(() => expect(applyAction).toHaveBeenCalledWith(
       'job_control',

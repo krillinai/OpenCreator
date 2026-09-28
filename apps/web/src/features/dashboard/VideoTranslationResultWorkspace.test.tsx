@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import VideoTranslationResultWorkspace from './VideoTranslationResultWorkspace.js';
 
@@ -39,9 +39,9 @@ const baseProps = {
 };
 
 describe('VideoTranslationResultWorkspace', () => {
-  it('shows subtitle-only output in an always-visible outputs tab', () => {
+  it('shows subtitle-only output in an always-visible results tab', () => {
     const onExport = vi.fn();
-    render(
+    const { container } = render(
       <VideoTranslationResultWorkspace
         {...baseProps}
         activeTab="video"
@@ -49,10 +49,15 @@ describe('VideoTranslationResultWorkspace', () => {
       />
     );
 
-    expect(screen.getByRole('tab', { name: '作品' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('heading', { name: '作品' })).toBeInTheDocument();
-    expect(screen.getByText('项目 V1 · 1 个文件')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '成果' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('heading', { name: '成果' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
+    expect(container.querySelector('.video-result-heading-summary')).toHaveTextContent('（1个字幕文件）');
     expect(screen.getByText('horizontal.srt')).toBeInTheDocument();
+    const subtitleFiles = container.querySelector<HTMLElement>('[data-result-file-type="subtitles"]')!;
+    subtitleFiles.scrollIntoView = vi.fn();
+    fireEvent.click(screen.getByRole('button', { name: '1个字幕文件' }));
+    expect(subtitleFiles.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
     fireEvent.click(screen.getByRole('button', { name: '下载横屏字幕' }));
     expect(onExport).toHaveBeenCalledWith('subtitles', 'subtitle-horizontal-v1');
   });
@@ -82,11 +87,29 @@ describe('VideoTranslationResultWorkspace', () => {
       'blob:http://localhost/translated-video'
     );
     expect(screen.queryByTitle('YouTube 视频预览')).not.toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: '预览画幅' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '下载横屏成片' }));
     expect(onExport).toHaveBeenCalledWith('video', 'horizontal-video-v1');
   });
 
-  it('shows horizontal and vertical videos together in one project version', () => {
+  it('does not offer a video format switch for horizontal and vertical subtitles alone', () => {
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="video"
+        sourceVideoPreview={{ artifactId: 'source-v1', src: 'blob:http://localhost/source', source: true }}
+        subtitleOutputs={[
+          baseProps.subtitleOutputs[0]!,
+          { ...baseProps.subtitleOutputs[0]!, artifactId: 'subtitle-vertical-v1', variant: 'vertical' }
+        ]}
+      />
+    );
+
+    expect(screen.getByLabelText('原视频预览')).toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: '预览画幅' })).not.toBeInTheDocument();
+  });
+
+  it('switches the large player between horizontal and vertical videos while keeping both downloads', () => {
     const onExport = vi.fn();
     render(
       <VideoTranslationResultWorkspace
@@ -113,16 +136,123 @@ describe('VideoTranslationResultWorkspace', () => {
       />
     );
 
-    expect(screen.getByRole('heading', { name: '横屏成片' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '竖屏成片' })).toBeInTheDocument();
+    expect(screen.getByText('横屏成片', { selector: '.video-result-player-tag' })).toBeInTheDocument();
     expect(screen.getByLabelText('横屏成片预览').parentElement).toHaveAttribute('data-ratio', '16:9');
+    expect(screen.getByRole('region', { name: '成果预览' }).parentElement).toHaveAttribute('data-orientation', 'landscape');
+    expect(screen.getByRole('radio', { name: '横屏' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('radio', { name: '竖屏' }));
+    expect(screen.getByText('竖屏成片', { selector: '.video-result-player-tag' })).toBeInTheDocument();
     expect(screen.getByLabelText('竖屏成片预览').parentElement).toHaveAttribute('data-ratio', '9:16');
-    expect(screen.queryByRole('radiogroup', { name: '成片画幅' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '成果预览' }).parentElement).toHaveAttribute('data-orientation', 'portrait');
+    expect(screen.queryByLabelText('横屏成片预览')).not.toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: '预览画幅' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '下载横屏成片' }));
     fireEvent.click(screen.getByRole('button', { name: '下载竖屏成片' }));
     expect(onExport).toHaveBeenNthCalledWith(1, 'video', 'horizontal-video-v2');
     expect(onExport).toHaveBeenNthCalledWith(2, 'video', 'vertical-video-v2');
+  });
+
+  it('previews the source video with synchronized subtitles and optional dubbing when there is no rendered video', () => {
+    const { container } = render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="video"
+        sourceVideoPreview={{
+          artifactId: 'source-video-v1',
+          src: 'blob:http://localhost/source-video',
+          source: true
+        }}
+        voiceOutput={{
+          artifactId: 'dubbed-audio-v1',
+          artifactVersion: 1,
+          src: 'blob:http://localhost/dubbed-audio'
+        }}
+      />
+    );
+
+    const video = screen.getByLabelText('原视频预览');
+    expect(video).toHaveAttribute('src', 'blob:http://localhost/source-video');
+    expect(screen.getByText('原视频', { selector: '.video-result-player-tag' })).toBeInTheDocument();
+    fireEvent.play(video);
+    expect(screen.queryByText('原视频', { selector: '.video-result-player-tag' })).not.toBeInTheDocument();
+    fireEvent.pause(video);
+    expect(screen.getByText('原视频', { selector: '.video-result-player-tag' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '成果预览' }).parentElement).toHaveAttribute('data-orientation', 'landscape');
+    expect(screen.getByLabelText('目标语言配音试听')).toHaveAttribute('src', 'blob:http://localhost/dubbed-audio');
+    expect(screen.getByText('horizontal.srt')).toBeInTheDocument();
+    fireEvent.timeUpdate(video, { target: { currentTime: 0.5 } });
+    expect(container.querySelector('.video-result-subtitle-overlay')).toHaveTextContent('真实字幕');
+  });
+
+  it('uses the source video dimensions to place resources beside a portrait player', () => {
+    const { container } = render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="video"
+        sourceVideoPreview={{ artifactId: 'portrait-source', src: 'blob:http://localhost/portrait-source', source: true }}
+      />
+    );
+
+    const video = screen.getByLabelText('原视频预览');
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 900 },
+      videoHeight: { configurable: true, value: 1200 }
+    });
+    fireEvent.loadedMetadata(video);
+    expect(container.querySelector('.video-result-showcase')).toHaveAttribute('data-orientation', 'portrait');
+    expect(video.parentElement).toHaveAttribute('data-ratio', '9:16');
+    expect(video.parentElement).toHaveStyle({ aspectRatio: '900 / 1200' });
+  });
+
+  it('hides the source label when an embedded YouTube player reports playback', () => {
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="video"
+        sourceUrl="https://www.youtube.com/watch?v=source-preview"
+      />
+    );
+    const player = screen.getByTitle('原视频预览') as HTMLIFrameElement;
+    expect(player).toHaveAttribute('src', 'https://www.youtube-nocookie.com/embed/source-preview?enablejsapi=1');
+    expect(screen.getByText('原视频', { selector: '.video-result-player-tag' })).toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        source: player.contentWindow,
+        origin: 'https://www.youtube-nocookie.com',
+        data: JSON.stringify({ event: 'onStateChange', info: 1 })
+      }));
+    });
+    expect(screen.queryByText('原视频', { selector: '.video-result-player-tag' })).not.toBeInTheDocument();
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', {
+        source: player.contentWindow,
+        origin: 'https://www.youtube-nocookie.com',
+        data: JSON.stringify({ event: 'onStateChange', info: 2 })
+      }));
+    });
+    expect(screen.getByText('原视频', { selector: '.video-result-player-tag' })).toBeInTheDocument();
+  });
+
+  it('fits the landscape player above the visible result files in a short window', () => {
+    const { container } = render(
+      <VideoTranslationResultWorkspace {...baseProps} activeTab="video" />
+    );
+    const pane = container.querySelector<HTMLElement>('.video-result-showcase-pane')!;
+    const frame = container.querySelector<HTMLElement>('.video-result-player-frame')!;
+    const media = container.querySelector<HTMLElement>('.video-result-showcase-media')!;
+    const showcase = container.querySelector<HTMLElement>('.video-result-showcase')!;
+    const files = container.querySelector<HTMLElement>('.video-result-showcase-files')!;
+    pane.style.paddingBottom = '22px';
+    pane.getBoundingClientRect = () => ({ bottom: 580 } as DOMRect);
+    frame.getBoundingClientRect = () => ({ top: 294, bottom: 724 } as DOMRect);
+    showcase.getBoundingClientRect = () => ({ width: 800 } as DOMRect);
+    files.getBoundingClientRect = () => ({ top: 748 } as DOMRect);
+    Object.defineProperty(media, 'clientWidth', { value: 700 });
+
+    fireEvent.resize(window);
+
+    expect(frame).toHaveStyle({ width: '277px' });
   });
 
   it('switches between horizontal and vertical subtitles with horizontal selected by default', () => {
@@ -221,7 +351,7 @@ describe('VideoTranslationResultWorkspace', () => {
       />
     );
 
-    expect(screen.getByText('项目 V1 · 1 条字幕 · 已保存 · 只读')).toBeInTheDocument();
+    expect(screen.getByText('（1条字幕，已保存，只读）')).toBeInTheDocument();
     expect(screen.getByRole('list', { name: '横屏字幕内容' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '横屏字幕' })).not.toBeInTheDocument();
   });
@@ -427,19 +557,21 @@ describe('VideoTranslationResultWorkspace', () => {
       .toHaveAttribute('data-active', 'true');
   });
 
-  it('previews and downloads a generated dubbing artifact', () => {
+  it('previews dubbing in task settings and downloads it from results', () => {
     const onExport = vi.fn();
-    render(
+    const voiceOutput = {
+      artifactId: 'dubbed-audio-v2',
+      artifactVersion: 2,
+      fileName: 'target-dubbing-v2.wav',
+      src: 'blob:http://localhost/dubbed-audio'
+    };
+    const { rerender } = render(
       <VideoTranslationResultWorkspace
         {...baseProps}
-        activeTab="voice"
+        activeTab="settings"
+        dubbing
         hasVoiceArtifact
-        voiceOutput={{
-          artifactId: 'dubbed-audio-v2',
-          artifactVersion: 2,
-          fileName: 'target-dubbing-v2.wav',
-          src: 'blob:http://localhost/dubbed-audio'
-        }}
+        voiceOutput={voiceOutput}
         onExport={onExport}
       />
     );
@@ -450,6 +582,18 @@ describe('VideoTranslationResultWorkspace', () => {
     );
     expect(screen.getByLabelText('目标语言配音试听')).toHaveAttribute('preload', 'metadata');
     expect(screen.getByText('target-dubbing-v2.wav')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '下载配音文件' })).not.toBeInTheDocument();
+    rerender(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="video"
+        dubbing
+        hasVoiceArtifact
+        voiceOutput={voiceOutput}
+        onExport={onExport}
+      />
+    );
+    expect(screen.getByLabelText('目标语言配音试听')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '下载配音文件' }));
     expect(onExport).toHaveBeenCalledWith('voice', 'dubbed-audio-v2');
   });
@@ -459,7 +603,7 @@ describe('VideoTranslationResultWorkspace', () => {
     const { rerender } = render(
       <VideoTranslationResultWorkspace
         {...baseProps}
-        activeTab="voice"
+        activeTab="settings"
         hasVoiceArtifact
         voiceOutput={{
           artifactId: 'dubbed-audio-v2',
@@ -474,7 +618,7 @@ describe('VideoTranslationResultWorkspace', () => {
     rerender(
       <VideoTranslationResultWorkspace
         {...baseProps}
-        activeTab="voice"
+        activeTab="settings"
         hasVoiceArtifact
         voiceOutput={{
           artifactId: 'dubbed-audio-v2',
@@ -508,6 +652,7 @@ describe('VideoTranslationResultWorkspace', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     expect(onTabChange).toHaveBeenCalledWith('settings');
+    expect(screen.queryByRole('tab', { name: '配音' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /项目 V1/ }));
     fireEvent.click(screen.getByRole('menuitem', { name: /项目 V2/ }));

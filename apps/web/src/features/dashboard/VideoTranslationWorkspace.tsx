@@ -2086,6 +2086,7 @@ export default function VideoTranslationWorkspace(props: {
   const openArtifact = creatorSession?.openArtifact;
   const previewArtifacts = [...new Map([
     ...selectedVideoEntries.map(({ artifact }) => artifact),
+    ...(selectedSourceVideoArtifact === undefined ? [] : [selectedSourceVideoArtifact]),
     ...Object.values(subtitleVideoArtifacts).filter((artifact): artifact is CreatorArtifact => artifact !== undefined)
   ].map(artifact => [artifact.id, artifact])).values()];
   const selectedVideoArtifactIds = previewArtifacts.map(artifact => artifact.id).join('|');
@@ -2140,7 +2141,7 @@ export default function VideoTranslationWorkspace(props: {
   const selectedVoiceArtifactId = selectedVoiceArtifact?.id;
   useEffect(() => {
     if (
-      resultTab !== 'voice'
+      (resultTab !== 'settings' && (resultTab !== 'video' || selectedVideoEntries.length > 0))
       || selectedVoiceArtifactId === undefined
       || openArtifact === undefined
     ) {
@@ -2175,7 +2176,7 @@ export default function VideoTranslationWorkspace(props: {
       canceled = true;
       if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
     };
-  }, [creatorSession?.captureCreatorFailure, l, openArtifact, resultTab, selectedVoiceArtifactId, voicePreviewReload]);
+  }, [creatorSession?.captureCreatorFailure, l, openArtifact, resultTab, selectedVideoEntries.length, selectedVoiceArtifactId, voicePreviewReload]);
   const selectedResultSource = selectedResult?.source;
   const selectedSubtitleCues = selectedResult?.subtitleCues ?? [];
   const horizontalSubtitleDraftKey = subtitleDraftKey(resultVersion, 'horizontal');
@@ -2206,6 +2207,22 @@ export default function VideoTranslationWorkspace(props: {
       previewError: preview?.error
     };
   });
+  const sourceVideoPreview: SubtitleVideoPreview | undefined = selectedSourceVideoArtifact === undefined
+    ? undefined
+    : {
+        artifactId: selectedSourceVideoArtifact.id,
+        src: videoPreviews[selectedSourceVideoArtifact.id]?.src,
+        previewLoading: videoPreviews[selectedSourceVideoArtifact.id]?.loading ?? openArtifact !== undefined,
+        previewError: videoPreviews[selectedSourceVideoArtifact.id]?.error,
+        source: true
+      };
+  const selectedSourceVideoDimensions = videoDimensionsFromUnknown(
+    selectedSourceVideoArtifact?.metadata.width,
+    selectedSourceVideoArtifact?.metadata.height
+  );
+  const selectedSourcePortrait = selectedSourceVideoDimensions === undefined
+    ? sourceIsPortrait
+    : selectedSourceVideoDimensions.height > selectedSourceVideoDimensions.width;
   const subtitleOutputs: SubtitleResultOutput[] = subtitleResultVariantOrder.flatMap(variant => {
     const artifact = selectedSubtitleArtifacts[variant];
     if (artifact === undefined) return [];
@@ -2287,10 +2304,10 @@ export default function VideoTranslationWorkspace(props: {
       : l('横屏字幕', 'Horizontal subtitles');
   const agentContextSummary = workspacePhase === 'result'
     ? `${resultTab === 'video'
-      ? l('作品', 'Works')
+      ? l('成果', 'Results')
       : resultTab === 'subtitles'
         ? selectedSubtitleContextLabel
-        : ({ voice: l('配音', 'Dubbing'), settings: l('任务设置', 'Task settings') } as const)[resultTab]} V${resultVersion}`
+        : l('任务设置', 'Task settings')} V${resultVersion}`
     : currentStep === 0
       ? sourceName
       : currentStep === 1
@@ -2960,6 +2977,9 @@ export default function VideoTranslationWorkspace(props: {
               dubbing={selectedResultSettings?.dubbing ?? false}
               hasVoiceArtifact={hasVoiceArtifact}
               videoOutputs={videoOutputs}
+              sourceVideoPreview={sourceVideoPreview}
+              sourceUrl={selectedResultSource?.sourceType === 'url' ? selectedResultSource.videoUrl : undefined}
+              sourcePortrait={selectedSourcePortrait}
               subtitleOutputs={subtitleOutputs}
               subtitleVideoPreviews={subtitleVideoPreviews}
               voiceOutput={voiceOutput}

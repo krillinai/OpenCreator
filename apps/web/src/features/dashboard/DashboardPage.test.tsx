@@ -934,7 +934,7 @@ describe('DashboardPage', () => {
 
     expect(onSelectPrompt).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '作品' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '成果' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('项目 V1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
     expect(screen.getByRole('button', { name: '保存横屏字幕' })).toBeDisabled();
@@ -1278,8 +1278,8 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     await startVideoTranslation();
 
-    fireEvent.click(screen.getByRole('tab', { name: '配音' }));
-    fireEvent.click(screen.getByRole('button', { name: '开启配音并生成新版本' }));
+    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    fireEvent.click(screen.getByRole('button', { name: '调整设置' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('switch', { name: '生成目标语言配音' }));
@@ -1291,14 +1291,14 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认生成 V2' }));
 
     expect(await screen.findByRole('button', { name: '项目 V2' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: '配音' }));
-    expect(screen.getByText('配音文件已生成')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    expect(screen.getByRole('heading', { name: '配音试听' })).toBeInTheDocument();
     expect(screen.getByText('目标语言配音-V2.wav')).toBeInTheDocument();
     expect(await screen.findByLabelText('目标语言配音试听')).toHaveAttribute(
       'src',
       'blob:video-translation-dubbing'
     );
-    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
 
     rendered.unmount();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:video-translation-dubbing');

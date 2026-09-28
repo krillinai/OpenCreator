@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState
 } from 'react';
@@ -8,7 +9,6 @@ import {
   Download,
   FileAudio,
   FileVideo,
-  Mic2,
   PackageOpen,
   RotateCcw,
   Save,
@@ -16,10 +16,12 @@ import {
 } from 'lucide-react';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
+import { parseVideoSource } from './VideoSourcePreview.js';
 
-export type VideoTranslationResultTab = 'video' | 'subtitles' | 'voice' | 'settings';
+export type VideoTranslationResultTab = 'video' | 'subtitles' | 'settings';
 export type VideoResultVariant = 'horizontal' | 'vertical' | 'dubbed';
 export type SubtitleResultVariant = 'horizontal' | 'vertical';
+type ResultFileType = 'video' | 'subtitles' | 'voice';
 
 export type SubtitleCue = {
   id: number;
@@ -76,9 +78,8 @@ const resultTabs: Array<{
   label: string;
   icon: typeof FileVideo;
 }> = [
-  { value: 'video', label: '作品', icon: PackageOpen },
+  { value: 'video', label: '成果', icon: PackageOpen },
   { value: 'subtitles', label: '字幕', icon: Captions },
-  { value: 'voice', label: '配音', icon: Mic2 },
   { value: 'settings', label: '任务设置', icon: Settings2 }
 ];
 
@@ -92,6 +93,9 @@ export default function VideoTranslationResultWorkspace(props: {
   dubbing: boolean;
   hasVoiceArtifact: boolean;
   videoOutputs: VideoResultOutput[];
+  sourceVideoPreview?: SubtitleVideoPreview;
+  sourceUrl?: string;
+  sourcePortrait?: boolean;
   subtitleOutputs: SubtitleResultOutput[];
   subtitleVideoPreviews: Partial<Record<SubtitleResultVariant, SubtitleVideoPreview>>;
   voiceOutput?: VoiceResultOutput;
@@ -119,6 +123,14 @@ export default function VideoTranslationResultWorkspace(props: {
   const availableSubtitleVariantKey = availableSubtitleVariants.join('|');
   const [selectedSubtitleVariant, setSelectedSubtitleVariant] = useState<SubtitleResultVariant>('horizontal');
   const [subtitlePlaybackTime, setSubtitlePlaybackTime] = useState(0);
+  const [selectedResultVariant, setSelectedResultVariant] = useState<VideoResultVariant>('horizontal');
+  const [resultPlaybackTime, setResultPlaybackTime] = useState(0);
+  const [resultPlaying, setResultPlaying] = useState(false);
+  const [measuredSource, setMeasuredSource] = useState<{ src: string; width: number; height: number }>();
+  const [resultPreviewWidth, setResultPreviewWidth] = useState<number>();
+  const resultPaneRef = useRef<HTMLDivElement>(null);
+  const resultPlayerRef = useRef<HTMLDivElement>(null);
+  const resultEmbedRef = useRef<HTMLIFrameElement>(null);
   const subtitleVideoRef = useRef<HTMLVideoElement>(null);
   const subtitleCueRefs = useRef(new Map<number, HTMLElement>());
   const activeSubtitleVariant = availableSubtitleVariants.includes(selectedSubtitleVariant)
@@ -147,6 +159,48 @@ export default function VideoTranslationResultWorkspace(props: {
   const generatedArtifactCount = props.videoOutputs.length
     + props.subtitleOutputs.length
     + (props.voiceOutput === undefined ? 0 : 1);
+  const activeVideoOutput = props.videoOutputs.find(output => output.variant === selectedResultVariant)
+    ?? props.videoOutputs[0];
+  const activeResultVariant = activeVideoOutput?.variant ?? selectedResultVariant;
+  const activeResultSubtitle = props.subtitleOutputs.find(output => output.variant === (activeResultVariant === 'vertical' ? 'vertical' : 'horizontal'))
+    ?? props.subtitleOutputs[0];
+  const source = parseVideoSource(props.sourceUrl ?? '');
+  const sourceVideoSrc = props.sourceVideoPreview?.src
+    ?? (!props.sourceVideoPreview?.previewLoading && source.kind === 'direct' ? source.url : undefined);
+  const hasResultVideo = activeVideoOutput?.src !== undefined
+    || (activeVideoOutput === undefined && sourceVideoSrc !== undefined);
+  const hasSourceEmbed = activeVideoOutput === undefined && !props.sourceVideoPreview?.previewLoading
+    && (source.kind === 'youtube' || source.kind === 'bilibili');
+  const sourceIsPortrait = sourceVideoSrc !== undefined && measuredSource?.src === sourceVideoSrc
+    ? measuredSource.height > measuredSource.width
+    : props.sourcePortrait === true;
+  const resultIsPortrait = activeVideoOutput?.variant === 'vertical'
+    || (activeVideoOutput === undefined && sourceIsPortrait);
+  const resultAspectRatio = activeVideoOutput === undefined && measuredSource !== undefined && measuredSource.src === sourceVideoSrc
+    ? measuredSource.width / measuredSource.height
+    : resultIsPortrait ? 9 / 16 : 16 / 9;
+  const resultCues = activeVideoOutput === undefined
+    ? activeResultSubtitle?.cues.filter(cue => (
+      resultPlaybackTime >= subtitleTimestampSeconds(cue.start)
+      && resultPlaybackTime < subtitleTimestampSeconds(cue.end)
+    )) ?? []
+    : [];
+  const hasBothVideoFormats = props.videoOutputs.some(output => output.variant === 'horizontal')
+    && props.videoOutputs.some(output => output.variant === 'vertical');
+  const resultFileSummaries: Array<{ type: ResultFileType; label: string }> = [
+    ...(props.videoOutputs.length > 0 ? [{
+      type: 'video' as const,
+      label: l(`${props.videoOutputs.length}个成片`, `${props.videoOutputs.length} video(s)`)
+    }] : []),
+    ...(props.subtitleOutputs.length > 0 ? [{
+      type: 'subtitles' as const,
+      label: l(`${props.subtitleOutputs.length}个字幕文件`, `${props.subtitleOutputs.length} subtitle file(s)`)
+    }] : []),
+    ...(props.voiceOutput !== undefined ? [{
+      type: 'voice' as const,
+      label: l('1个配音文件', '1 dubbing file')
+    }] : [])
+  ];
 
   useEffect(() => {
     setSelectedSubtitleVariant(availableSubtitleVariants.includes('horizontal')
@@ -157,6 +211,76 @@ export default function VideoTranslationResultWorkspace(props: {
   useEffect(() => {
     setSubtitlePlaybackTime(0);
   }, [activeSubtitleVariant, activeSubtitleVideo?.src, props.version]);
+
+  useEffect(() => {
+    setSelectedResultVariant(props.videoOutputs[0]?.variant ?? (props.sourcePortrait ? 'vertical' : 'horizontal'));
+    setResultPlaybackTime(0);
+  }, [props.version]);
+
+  useEffect(() => {
+    setResultPlaybackTime(0);
+    setResultPlaying(false);
+  }, [activeResultVariant, activeVideoOutput?.src, sourceVideoSrc, props.sourceUrl]);
+
+  // YouTube embeds report playback through the IFrame API rather than HTML media events.
+  useEffect(() => {
+    if (props.activeTab !== 'video' || activeVideoOutput !== undefined || source.kind !== 'youtube') return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== resultEmbedRef.current?.contentWindow
+        || event.origin !== 'https://www.youtube-nocookie.com') return;
+      let data: unknown = event.data;
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch { return; }
+      }
+      if (data === null || typeof data !== 'object') return;
+      const message = data as { event?: string; info?: number | { playerState?: number } };
+      const state = message.event === 'onStateChange' && typeof message.info === 'number'
+        ? message.info
+        : message.event === 'infoDelivery' && typeof message.info === 'object'
+          ? message.info?.playerState
+          : undefined;
+      if (state !== undefined) setResultPlaying(state === 1);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [props.activeTab, activeVideoOutput, source.kind]);
+
+  useLayoutEffect(() => {
+    if (props.activeTab !== 'video') return;
+    const pane = resultPaneRef.current;
+    const frame = resultPlayerRef.current;
+    const media = frame?.parentElement;
+    const showcase = media?.parentElement;
+    const files = showcase?.querySelector('.video-result-showcase-files');
+    if (pane === null || frame === null || media == null || showcase == null || files == null) return;
+
+    const measure = () => {
+      const filesBelow = !resultIsPortrait || showcase.getBoundingClientRect().width <= 760;
+      const filePeek = generatedArtifactCount > 0 && filesBelow ? 84 : 0;
+      const paneBottom = pane.getBoundingClientRect().bottom
+        - (Number.parseFloat(getComputedStyle(pane).paddingBottom) || 0);
+      const frameRect = frame.getBoundingClientRect();
+      const postFrameHeight = filesBelow
+        ? files.getBoundingClientRect().top - frameRect.bottom
+        : 0;
+      const availableHeight = paneBottom - frameRect.top - postFrameHeight - filePeek;
+      const width = Math.max(1, Math.floor(Math.min(
+        media.clientWidth,
+        resultIsPortrait ? 400 : Number.POSITIVE_INFINITY,
+        availableHeight * resultAspectRatio
+      )));
+      setResultPreviewWidth(current => current === width ? current : width);
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(pane);
+    observer?.observe(media);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [props.activeTab, generatedArtifactCount, resultAspectRatio, resultIsPortrait]);
 
   useEffect(() => {
     if (activeSubtitleCues.length === 0) return;
@@ -170,8 +294,13 @@ export default function VideoTranslationResultWorkspace(props: {
     setSubtitlePlaybackTime(start);
   };
 
+  const scrollToResultFiles = (type: ResultFileType) => {
+    resultPaneRef.current?.querySelector(`[data-result-file-type="${type}"]`)
+      ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
-    <section className="video-result-workspace" aria-label={l('视频翻译项目产出', 'Video translation project outputs')}>
+    <section className="video-result-workspace video-translation-result-workspace" aria-label={l('视频翻译项目产出', 'Video translation project outputs')}>
       <div className="video-result-toolbar">
         <div className="video-result-tabs" role="tablist" aria-label={l('产出物类型', 'Output types')}>
           {resultTabs.map(tab => {
@@ -184,7 +313,7 @@ export default function VideoTranslationResultWorkspace(props: {
                 key={tab.value}
                 onClick={() => props.onTabChange(tab.value)}
               >
-                <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
+                <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
                 {localizeResultTab(tab.label, l)}
                 {tab.value === 'subtitles' && hasSubtitleDrafts ? (
                   <span className="video-result-unsaved" aria-label={l('有未保存的字幕修改', 'Unsaved subtitle changes')} />
@@ -204,154 +333,236 @@ export default function VideoTranslationResultWorkspace(props: {
       {props.notice ? <p className="video-result-notice" role="status">{props.notice}</p> : null}
 
       {props.activeTab === 'video' ? (
-        <div className="video-result-pane">
-          <header className="video-result-pane-heading">
-            <div>
-              <h2>{l('作品', 'Works')}</h2>
-              <p>{l(
-                `项目 V${props.version} · ${generatedArtifactCount} 个文件`,
-                `Project V${props.version} · ${generatedArtifactCount} file(s)`
-              )}</p>
+        <div className="video-result-pane video-result-showcase-pane" ref={resultPaneRef}>
+          <header className="video-result-pane-heading video-result-compact-heading">
+            <div className="video-result-heading-line">
+              <h2>{l('成果', 'Results')}</h2>
+              <span className="video-result-heading-summary">
+                {l('（', '(')}{resultFileSummaries.length > 0 ? resultFileSummaries.map((item, index) => (
+                  <span key={item.type}>
+                    {index > 0 ? l('，', ', ') : null}
+                    <button type="button" onClick={() => scrollToResultFiles(item.type)}>{item.label}</button>
+                  </span>
+                )) : l('暂无文件', 'No files')}{l('）', ')')}
+              </span>
             </div>
+            {hasBothVideoFormats ? (
+              <div className="video-result-subtitle-variants" role="radiogroup" aria-label={l('预览画幅', 'Preview format')}>
+                {(['horizontal', 'vertical'] as const).map(variant => (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={activeResultVariant === variant}
+                    key={variant}
+                    onClick={() => setSelectedResultVariant(variant)}
+                  >
+                    {variant === 'vertical' ? l('竖屏', 'Vertical') : l('横屏', 'Horizontal')}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </header>
-          {generatedArtifactCount > 0 ? (
-            <div className="video-result-generated-sections">
-              {props.videoOutputs.length > 0 ? (
-                <section className="video-result-generated-section">
-                  <h3>{l('成片', 'Videos')}</h3>
-                  <div className="video-result-video-grid">
-                    {props.videoOutputs.map(output => {
-                      const artifactLabel = videoVariantArtifactLabel(output.variant, l);
-                      return (
-                        <section className="video-result-output-column" data-variant={output.variant} key={output.artifactId}>
-                          <div className="video-result-output-heading">
-                            <div>
-                              <h3>{artifactLabel}</h3>
-                              <small>{videoVariantFormatLabel(output.variant, l)} · {l('子项', 'Item')} V{output.artifactVersion}</small>
-                            </div>
-                          </div>
-                          <div className="video-result-player-frame" data-ratio={output.variant === 'vertical' ? '9:16' : '16:9'}>
-                            {output.src !== undefined ? (
-                              <video
-                                className="video-result-player"
-                                src={output.src}
-                                controls
-                                preload="metadata"
-                                aria-label={l(`${artifactLabel}预览`, `${artifactLabel} preview`)}
-                              />
-                            ) : (
-                              <div className="video-result-player-status" role="status">
-                                {output.previewLoading
-                                  ? l(`正在加载${artifactLabel}...`, `Loading ${artifactLabel}...`)
-                                  : output.previewError ?? l('成片预览暂时不可用，可直接下载文件。', 'Video preview is unavailable. You can still download the file.')}
-                              </div>
-                            )}
-                          </div>
-                          <div className="video-result-file-row">
-                            <span aria-hidden="true"><FileVideo size={19} strokeWidth={1.7} /></span>
-                            <div>
-                              <strong>{output.fileName ?? `${artifactLabel}-${props.targetLanguage}-V${props.version}.mp4`}</strong>
-                              <small>
-                                {l('子项', 'Item')} V{output.artifactVersion}
-                                {' · '}{l('项目', 'Project')} V{props.version}
-                              </small>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => props.onExport('video', output.artifactId)}
-                              aria-label={l(`下载${artifactLabel}`, `Download ${artifactLabel}`)}
-                              title={l(`下载${artifactLabel}`, `Download ${artifactLabel}`)}
-                            >
-                              <Download size={16} strokeWidth={1.8} aria-hidden="true" />
-                            </button>
-                          </div>
-                        </section>
-                      );
-                    })}
+          <div className="video-result-showcase" data-orientation={resultIsPortrait ? 'portrait' : 'landscape'}>
+            <section className="video-result-showcase-media" aria-label={l('成果预览', 'Result preview')}>
+              <div
+                className="video-result-player-frame"
+                ref={resultPlayerRef}
+                data-ratio={resultIsPortrait ? '9:16' : '16:9'}
+                style={{
+                  width: resultPreviewWidth === undefined ? undefined : `${resultPreviewWidth}px`,
+                  aspectRatio: activeVideoOutput === undefined && measuredSource !== undefined && measuredSource.src === sourceVideoSrc
+                    ? `${measuredSource.width} / ${measuredSource.height}`
+                    : undefined
+                }}
+              >
+                {hasResultVideo ? (
+                  <>
+                    <video
+                      className="video-result-player"
+                      key={activeVideoOutput?.artifactId ?? sourceVideoSrc}
+                      src={activeVideoOutput?.src ?? sourceVideoSrc}
+                      controls
+                      preload="metadata"
+                      onLoadedMetadata={event => {
+                        if (activeVideoOutput === undefined && sourceVideoSrc !== undefined
+                          && event.currentTarget.videoWidth > 0 && event.currentTarget.videoHeight > 0) {
+                          setMeasuredSource({
+                            src: sourceVideoSrc,
+                            width: event.currentTarget.videoWidth,
+                            height: event.currentTarget.videoHeight
+                          });
+                        }
+                      }}
+                      onSeeked={event => setResultPlaybackTime(event.currentTarget.currentTime)}
+                      onTimeUpdate={event => setResultPlaybackTime(event.currentTarget.currentTime)}
+                      onPlay={() => setResultPlaying(true)}
+                      onPause={() => setResultPlaying(false)}
+                      onEnded={() => setResultPlaying(false)}
+                      aria-label={activeVideoOutput === undefined
+                        ? l('原视频预览', 'Source video preview')
+                        : l(
+                            `${videoVariantArtifactLabel(activeVideoOutput.variant, l)}预览`,
+                            `${videoVariantArtifactLabel(activeVideoOutput.variant, l)} preview`
+                          )}
+                    />
+                    {resultCues.length > 0 ? (
+                      <div className="video-result-subtitle-overlay" aria-hidden="true">
+                        {resultCues.map(cue => (
+                          <span key={cue.id}>{subtitleCueDisplayText(cue, activeResultSubtitle?.translationPosition)}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                ) : hasSourceEmbed && (source.kind === 'youtube' || source.kind === 'bilibili') ? (
+                  <iframe
+                    className="video-result-source-embed"
+                    ref={resultEmbedRef}
+                    src={source.kind === 'youtube' ? `${source.embedUrl}?enablejsapi=1` : source.embedUrl}
+                    title={l('原视频预览', 'Source video preview')}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    allowFullScreen
+                    onLoad={event => {
+                      if (source.kind !== 'youtube') return;
+                      const player = event.currentTarget.contentWindow;
+                      player?.postMessage(JSON.stringify({ event: 'listening' }), 'https://www.youtube-nocookie.com');
+                      player?.postMessage(JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onStateChange'] }), 'https://www.youtube-nocookie.com');
+                    }}
+                  />
+                ) : (
+                  <div className="video-result-player-status" role="status">
+                    {activeVideoOutput?.previewLoading || props.sourceVideoPreview?.previewLoading
+                      ? l('正在加载视频...', 'Loading video...')
+                      : activeVideoOutput?.previewError ?? props.sourceVideoPreview?.previewError
+                        ?? l('当前版本没有可预览的视频', 'No video preview is available for this version')}
                   </div>
-                </section>
+                )}
+                {!resultPlaying && (hasResultVideo || hasSourceEmbed) ? (
+                  <span className="video-result-player-tag">
+                    {activeVideoOutput === undefined
+                      ? l('原视频', 'Source video')
+                      : videoVariantArtifactLabel(activeVideoOutput.variant, l)}
+                  </span>
+                ) : null}
+              </div>
+              {activeVideoOutput === undefined && props.voiceOutput !== undefined ? (
+                <div className="video-result-source-audio">
+                  <h4>{l('配音试听', 'Dubbing preview')}</h4>
+                  {props.voiceOutput.src !== undefined ? (
+                    <audio controls preload="metadata" src={props.voiceOutput.src} aria-label={l('目标语言配音试听', 'Target-language dubbing preview')} />
+                  ) : (
+                    <div className="video-result-audio-status" role="status">
+                      <span>{props.voiceOutput.previewLoading
+                        ? l('正在加载配音...', 'Loading dubbing...')
+                        : props.voiceOutput.previewError ?? l('配音试听暂时不可用', 'Dubbing preview is unavailable')}</span>
+                      {!props.voiceOutput.previewLoading && props.voiceOutput.previewError !== undefined ? (
+                        <button type="button" onClick={props.onReloadVoice}>
+                          <RotateCcw size={15} strokeWidth={1.8} aria-hidden="true" />
+                          {l('重新加载配音', 'Reload dubbing')}
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
               ) : null}
+            </section>
 
-              {props.subtitleOutputs.length > 0 ? (
-                <section className="video-result-generated-section">
-                  <h3>{l('字幕', 'Subtitles')}</h3>
-                  <div className="video-result-generated-file-grid">
-                    {props.subtitleOutputs.map(output => {
-                      const variantLabel = subtitleVariantLabel(output.variant, l);
-                      return (
-                        <div className="video-result-file-row" key={output.artifactId}>
-                          <span aria-hidden="true"><Captions size={19} strokeWidth={1.7} /></span>
+            <section className="video-result-showcase-files" aria-label={l('成果文件', 'Result files')}>
+              {generatedArtifactCount > 0 ? (
+                <div className="video-result-generated-sections">
+                  {props.videoOutputs.length > 0 ? (
+                    <div className="video-result-generated-section" data-result-file-type="video">
+                      <h3>{l('成片', 'Videos')}</h3>
+                      <div className="video-result-generated-file-grid">
+                        {props.videoOutputs.map(output => {
+                          const artifactLabel = videoVariantArtifactLabel(output.variant, l);
+                          return (
+                            <div className="video-result-file-row" key={output.artifactId}>
+                              <span aria-hidden="true"><FileVideo size={19} strokeWidth={1.7} /></span>
+                              <div>
+                                <strong>{output.fileName ?? `${artifactLabel}-${props.targetLanguage}-V${props.version}.mp4`}</strong>
+                                <small>{l('子项', 'Item')} V{output.artifactVersion} · {l('项目', 'Project')} V{props.version}</small>
+                              </div>
+                              <button type="button" onClick={() => props.onExport('video', output.artifactId)}
+                                aria-label={l(`下载${artifactLabel}`, `Download ${artifactLabel}`)}
+                                title={l(`下载${artifactLabel}`, `Download ${artifactLabel}`)}>
+                                <Download size={16} strokeWidth={1.8} aria-hidden="true" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                  {props.subtitleOutputs.length > 0 ? (
+                    <div className="video-result-generated-section" data-result-file-type="subtitles">
+                      <h3>{l('字幕', 'Subtitles')}</h3>
+                      <div className="video-result-generated-file-grid">
+                        {props.subtitleOutputs.map(output => {
+                          const variantLabel = subtitleVariantLabel(output.variant, l);
+                          return (
+                            <div className="video-result-file-row" key={output.artifactId}>
+                              <span aria-hidden="true"><Captions size={19} strokeWidth={1.7} /></span>
+                              <div>
+                                <strong>{output.fileName ?? `${variantLabel}-V${props.version}.srt`}</strong>
+                                <small>{variantLabel} · {l('子项', 'Item')} V{output.artifactVersion}</small>
+                              </div>
+                              <button type="button" onClick={() => props.onExport('subtitles', output.artifactId)}
+                                aria-label={l(`下载${variantLabel}`, `Download ${variantLabel}`)}
+                                title={l(`下载${variantLabel}`, `Download ${variantLabel}`)}>
+                                <Download size={16} strokeWidth={1.8} aria-hidden="true" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                  {props.voiceOutput !== undefined ? (
+                    <div className="video-result-generated-section" data-result-file-type="voice">
+                      <h3>{l('配音', 'Dubbing')}</h3>
+                      <div className="video-result-generated-file-grid">
+                        <div className="video-result-file-row">
+                          <span aria-hidden="true"><FileAudio size={19} strokeWidth={1.7} /></span>
                           <div>
-                            <strong>{output.fileName ?? `${variantLabel}-V${props.version}.srt`}</strong>
-                            <small>
-                              {variantLabel} · {l('子项', 'Item')} V{output.artifactVersion}
-                            </small>
+                            <strong>{props.voiceOutput.fileName ?? `${l('目标语言配音', 'Target-language-dubbing')}-V${props.version}.wav`}</strong>
+                            <small>{l('配音', 'Dubbing')} V{props.voiceOutput.artifactVersion} · {l('项目', 'Project')} V{props.version}</small>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => props.onExport('subtitles', output.artifactId)}
-                            aria-label={l(`下载${variantLabel}`, `Download ${variantLabel}`)}
-                            title={l(`下载${variantLabel}`, `Download ${variantLabel}`)}
-                          >
+                          <button type="button" onClick={() => props.onExport('voice', props.voiceOutput?.artifactId)}
+                            aria-label={l('下载配音文件', 'Download dubbing file')}
+                            title={l('下载配音文件', 'Download dubbing file')}>
                             <Download size={16} strokeWidth={1.8} aria-hidden="true" />
                           </button>
                         </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              ) : null}
-
-              {props.voiceOutput !== undefined ? (
-                <section className="video-result-generated-section">
-                  <h3>{l('配音', 'Dubbing')}</h3>
-                  <div className="video-result-generated-file-grid">
-                    <div className="video-result-file-row">
-                      <span aria-hidden="true"><FileAudio size={19} strokeWidth={1.7} /></span>
-                      <div>
-                        <strong>{props.voiceOutput.fileName ?? `${l('目标语言配音', 'Target-language-dubbing')}-V${props.version}.wav`}</strong>
-                        <small>
-                          {l('配音', 'Dubbing')} V{props.voiceOutput.artifactVersion}
-                          {' · '}{l('项目', 'Project')} V{props.version}
-                        </small>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => props.onExport('voice', props.voiceOutput?.artifactId)}
-                        aria-label={l('下载配音文件', 'Download dubbing file')}
-                        title={l('下载配音文件', 'Download dubbing file')}
-                      >
-                        <Download size={16} strokeWidth={1.8} aria-hidden="true" />
-                      </button>
                     </div>
-                  </div>
-                </section>
-              ) : null}
-            </div>
-          ) : (
-            <div className="video-result-empty">
-              <PackageOpen size={26} strokeWidth={1.5} aria-hidden="true" />
-              <strong>{l('当前项目版本没有作品', 'This project version has no works')}</strong>
-            </div>
-          )}
+                  ) : null}
+                </div>
+              ) : (
+                <div className="video-result-empty">
+                  <PackageOpen size={26} strokeWidth={1.5} aria-hidden="true" />
+                  <strong>{l('当前项目版本没有成果文件', 'This project version has no result files')}</strong>
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       ) : null}
 
       {props.activeTab === 'subtitles' ? (
         <div className="video-result-pane video-result-subtitle-pane">
-          <header className="video-result-pane-heading">
-            <div>
+          <header className="video-result-pane-heading video-result-compact-heading">
+            <div className="video-result-heading-line">
               <h2>{l('字幕', 'Subtitles')}</h2>
-              <p>
-                {l('项目', 'Project')} V{props.version}
-                {' · '}{activeSubtitleOutput?.cues.length ?? 0} {l('条字幕', 'subtitles')}
+              <span className="video-result-heading-summary">
+                {l('（', '(')}{activeSubtitleOutput?.cues.length ?? 0}{l('条字幕', ' subtitles')}
                 {activeSubtitleOutput === undefined
                   ? ''
-                  : ` · ${activeSubtitleDirty
+                  : `${l('，', ', ')}${activeSubtitleDirty
                     ? l('有未保存修改', 'Unsaved changes')
                     : l('已保存', 'Saved')}`}
-                {activeSubtitleOutput?.readOnly ? ` · ${l('只读', 'Read only')}` : ''}
-              </p>
+                {activeSubtitleOutput?.readOnly ? `${l('，', ', ')}${l('只读', 'Read only')}` : ''}{l('）', ')')}
+              </span>
             </div>
             <div className="video-result-pane-actions">
               {availableSubtitleVariants.length > 1 ? (
@@ -528,69 +739,6 @@ export default function VideoTranslationResultWorkspace(props: {
         </div>
       ) : null}
 
-      {props.activeTab === 'voice' ? (
-        <div className="video-result-pane">
-          <header className="video-result-pane-heading">
-            <div>
-              <h2>{l('目标语言配音', 'Target-language dubbing')}</h2>
-              <p>{props.hasVoiceArtifact ? l('配音文件已生成', 'Dubbing file generated') : l('当前版本未生成配音', 'No dubbing was generated for this version')}</p>
-            </div>
-          </header>
-          {props.hasVoiceArtifact && props.voiceOutput !== undefined ? (
-            <div className="video-result-voice-output">
-              <div className="video-result-audio-preview">
-                {props.voiceOutput.src !== undefined ? (
-                  <audio
-                    controls
-                    preload="metadata"
-                    src={props.voiceOutput.src}
-                    aria-label={l('目标语言配音试听', 'Target-language dubbing preview')}
-                  />
-                ) : (
-                  <div className="video-result-audio-status" role="status">
-                    <span>
-                      {props.voiceOutput.previewLoading
-                        ? l('正在加载配音...', 'Loading dubbing...')
-                        : props.voiceOutput.previewError ?? l('配音试听暂时不可用，可直接下载文件。', 'Dubbing preview is unavailable. You can still download the file.')}
-                    </span>
-                    {!props.voiceOutput.previewLoading && props.voiceOutput.previewError !== undefined ? (
-                      <button type="button" onClick={props.onReloadVoice}>
-                        <RotateCcw size={15} strokeWidth={1.8} aria-hidden="true" />
-                        {l('重新加载配音', 'Reload dubbing')}
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-              <div className="video-result-file-row">
-                <span aria-hidden="true"><FileAudio size={19} strokeWidth={1.7} /></span>
-                <div>
-                  <strong>{props.voiceOutput.fileName ?? `${l('目标语言配音', 'Target-language-dubbing')}-V${props.version}.wav`}</strong>
-                  <small>
-                    {l('配音', 'Dubbing')} V{props.voiceOutput.artifactVersion}
-                    {' · '}{l('项目', 'Project')} V{props.version}
-                  </small>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => props.onExport('voice', props.voiceOutput?.artifactId)}
-                  aria-label={l('下载配音文件', 'Download dubbing file')}
-                  title={l('下载配音文件', 'Download dubbing file')}
-                >
-                  <Download size={16} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="video-result-empty">
-              <FileAudio size={26} strokeWidth={1.5} aria-hidden="true" />
-              <strong>{l('这个版本没有配音文件', 'This version has no dubbing file')}</strong>
-              <button type="button" onClick={props.onAdjustSettings}>{l('开启配音并生成新版本', 'Enable dubbing and generate a new version')}</button>
-            </div>
-          )}
-        </div>
-      ) : null}
-
       {props.activeTab === 'settings' ? (
         <div className="video-result-pane">
           <header className="video-result-pane-heading">
@@ -612,6 +760,42 @@ export default function VideoTranslationResultWorkspace(props: {
               <dd>{props.subtitleOutputs.length} {l('个文件', 'files')} · {subtitleCueCount} {l('条字幕', 'subtitles')}</dd>
             </div>
           </dl>
+          {props.dubbing || props.hasVoiceArtifact ? (
+            <section className="video-result-dubbing">
+              <h3>{l('配音试听', 'Dubbing preview')}</h3>
+              {props.voiceOutput !== undefined ? (
+                <div className="video-result-voice-output">
+                  <div className="video-result-audio-preview">
+                    {props.voiceOutput.src !== undefined ? (
+                      <audio
+                        controls
+                        preload="metadata"
+                        src={props.voiceOutput.src}
+                        aria-label={l('目标语言配音试听', 'Target-language dubbing preview')}
+                      />
+                    ) : (
+                      <div className="video-result-audio-status" role="status">
+                        <span>
+                          {props.voiceOutput.previewLoading
+                            ? l('正在加载配音...', 'Loading dubbing...')
+                            : props.voiceOutput.previewError ?? l('配音试听暂时不可用，可在成果页下载文件。', 'Dubbing preview is unavailable. Download the file from Results.')}
+                        </span>
+                        {!props.voiceOutput.previewLoading && props.voiceOutput.previewError !== undefined ? (
+                          <button type="button" onClick={props.onReloadVoice}>
+                            <RotateCcw size={15} strokeWidth={1.8} aria-hidden="true" />
+                            {l('重新加载配音', 'Reload dubbing')}
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                  <p>{props.voiceOutput.fileName ?? `${l('目标语言配音', 'Target-language-dubbing')}-V${props.version}.wav`}</p>
+                </div>
+              ) : (
+                <p>{l('当前版本未生成配音', 'No dubbing was generated for this version')}</p>
+              )}
+            </section>
+          ) : null}
         </div>
       ) : null}
 
@@ -680,9 +864,8 @@ function subtitleCueDisplayText(
 
 function localizeResultTab(label: string, l: LocalizeCopy): string {
   const labels: Record<string, string> = {
-    '作品': 'Works',
+    '成果': 'Results',
     '字幕': 'Subtitles',
-    '配音': 'Dubbing',
     '任务设置': 'Task settings'
   };
   return l(label, labels[label] ?? label);
