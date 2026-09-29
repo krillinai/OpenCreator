@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "faithful-vintage-portrait-restoration",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 200,
+  "title": {
+    "zh-CN": "老照片人像保真修复",
+    "en-US": "Faithful Vintage Portrait Restoration"
+  },
+  "description": {
+    "zh-CN": "以一张有人物的旧照或低清照片作为参考图，提升人像画质，同时要求保留人物身份、表情、脸型和背景。适合以人物为主体、需要尽量忠于原图的照片修复场景。 来源案例仅作视觉参考，生成效果尚未在本模板中复测。",
+    "en-US": "Faithful Vintage Portrait Restoration. The source example is a visual reference, not a verified output of this preset."
+  },
+  "cover": "cover.jpg",
+  "preview": "preview.jpg",
+  "author": {
+    "name": "@一枚卓子（创意来源：aliailab）",
+    "url": "https://www.douyin.com/video/7631071260739646650"
+  },
+  "tags": [
+    "图片转绘",
+    "怀旧",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "提升肖像画质，同时严格保持人物身份和准确的面部几何结构。不要改变人物的表情或脸型。只允许细微修整面部细节，不得使人物变得不像本人。参考图的背景必须完全相同：不得替换、改动、添加新物体或改变布局。环境看起来必须与原图一致。重新制作后的图像应如同使用 Sony A1 相机和 85mm f1.4 镜头拍摄，拍摄参数为 f1.6、ISO 100、1/200 秒快门。"
+    },
+    "en-US": {
+      "prompt": "Enhance the portrait while strictly preserving the subject's identity with accurate facial geometry. Do not change their expression or face shape. Only allow subtle feature cleanup without altering who they are. Keep the exact same background from the reference image. No replacements, no changes, no new objects, no layout shifts. The environment must look identical. The image must be recreated as if it was shot on a Sony A1, using an 85mm f1.4 lens, at f1.6, ISO 100, 1/200 shutter speed"
+    }
+  }
+}

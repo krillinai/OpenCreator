@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "food-splash-freeze-frame",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 200,
+  "title": {
+    "zh-CN": "手持美食飞溅定格",
+    "en-US": "Food Splash Freeze Frame"
+  },
+  "description": {
+    "zh-CN": "仅增强镜头前的手持食物或饮品，形成超写实食材腾空飞溅的高速摄影效果。 来源案例仅作视觉参考，生成效果尚未在本模板中复测。",
+    "en-US": "Food Splash Freeze Frame. The source example is a visual reference, not a verified output of this preset."
+  },
+  "cover": "cover.jpg",
+  "preview": "preview.jpg",
+  "author": {
+    "name": "数字生命卡兹克 (@Khazix0918)",
+    "url": "https://x.com/Khazix0918/status/2104401048324743646"
+  },
+  "tags": [
+    "美食摄影",
+    "高速定格",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "保持图片完全不变，仅以人物手持怼在镜头前的食物或饮品为中心，制造超写实的腾空飞溅瞬间。根据原有内容自然表现：固体翻腾散开，液体形成舒展的飞溅弧面与细小液滴，配料随之悬浮。动势从容器内部向上、向外并朝镜头展开，突出近大远小的透视与扑面而来的冲击感。保持容器完整，不添加无关食材，不遮挡人物面部。材质、光线与阴影融入原照片，呈现高速摄影定格般的清晰细节与广告质感，避免卡通感。"
+    },
+    "en-US": {
+      "prompt": "Keep the image otherwise unchanged. Center the edit only on the food or drink the person is holding close to the lens, creating an ultra-realistic midair splash frozen in time. Respond naturally to the actual contents: solids tumble and scatter; liquids form broad splash arcs and fine droplets, with the existing ingredients suspended around them. Let the motion burst upward and outward from the container toward the camera, emphasizing near-to-far perspective and an immediate sense of impact. Keep the container intact, add no unrelated ingredients and do not obscure the person's face. Match the original photo's materials, lighting and shadows, with sharp high-speed-photography detail and advertising polish. Avoid a cartoon look."
+    }
+  }
+}

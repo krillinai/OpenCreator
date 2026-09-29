@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "sketch-to-real-stop-motion-cooking",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 200,
+  "title": {
+    "zh-CN": "手绘变实物定格料理",
+    "en-US": "Sketch-to-Real Stop-Motion Cooking"
+  },
+  "description": {
+    "zh-CN": "以铅笔草图变为真实食材的机制制作混合现实料理短片。 来源案例仅作视觉参考，生成效果尚未在本模板中复测。",
+    "en-US": "Sketch-to-Real Stop-Motion Cooking. The source example is a visual reference, not a verified output of this preset."
+  },
+  "cover": "cover.jpg",
+  "preview": "preview.jpg",
+  "previewVideo": "example.mp4",
+  "author": {
+    "name": "@NoorAI / YouMind",
+    "url": "https://x.com/noorwithwifi/status/2087821976270450985"
+  },
+  "tags": [
+    "定格动画",
+    "横屏",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1280x720",
+    "duration": 10
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "创作一段简短、令人赏心悦目的混合现实定格动画：[DRAWN OBJECT/SKETCH]（手绘物件或草图）无缝变成 [REAL INGREDIENT/OBJECT]（真实食材或物件）。一人在 [SURFACE]（表面）上使用智能手机和彩色铅笔，逐个画出物品，然后让每件草图通过流畅、无缝的变形魔法般地成为实物。展示将 [INGREDIENTS]（食材）加入 [CONTAINER]（容器），接着进行 [COOKING/BLENDING/PREPARATION ACTION]（烹饪、搅拌或准备动作），然后装盘到 [DISH]（餐具）中。结尾由画作者画出 [TOPPINGS/FINAL DETAILS]（配料或最终细节），这些内容立即变成真实食物，形成鲜艳且摆盘美观的 [FINAL DISH]（最终菜品）。使用写实纹理、自然的手部动作、令人满足的定格节奏、整洁构图、柔和光线，以及铅笔画与真实物体之间的无缝转场。"
+    },
+    "en-US": {
+      "prompt": "Create a short, visually satisfying mixed-reality stop-motion video where [DRAWN OBJECT/SKETCH] seamlessly transforms into [REAL INGREDIENT/OBJECT]. A person uses a smartphone and colored pencil on a [SURFACE], sketching each item before it magically becomes real through smooth, seamless transformations. Show [INGREDIENTS] being added to [CONTAINER], then [COOKING/BLENDING/PREPARATION ACTION], followed by serving into [DISH]. Finish with the artist sketching [TOPPINGS/FINAL DETAILS], which instantly materialize into real food, creating a vibrant, aesthetically arranged [FINAL DISH]. Use realistic textures, natural hand movements, satisfying stop-motion timing, clean composition, soft lighting, and seamless transitions between pencil drawings and real objects."
+    }
+  }
+}

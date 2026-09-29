@@ -7,6 +7,16 @@ import {
   getCreatorSkillPromptHint
 } from './CreatorDashboard.js';
 
+vi.mock('./creator-template-visibility-运营上下架.json', () => ({
+  default: { archived: [] }
+}));
+vi.mock('./creator-template-featured-运营加精.json', () => ({
+  default: { featured: [], excluded: [] }
+}));
+vi.mock('./creator-template-order-运营排序.json', () => ({
+  default: { recommended: [], all: [], video: [], image: [] }
+}));
+
 const presets: CreatorPresetSummary[] = [{
   module: 'video-translation',
   id: 'bilibili-bilingual',

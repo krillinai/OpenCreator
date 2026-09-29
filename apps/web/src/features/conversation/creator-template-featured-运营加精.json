@@ -1,0 +1,17 @@
+{
+  "featured": [
+    "image-generation/desert-car-wash-documentary-photo",
+    "image-generation/miniature-city-map-travel-poster",
+    "image-generation/polaroid-clay-travel-portrait",
+    "image-generation/rio-travel-ticket-paper-diorama-poster",
+    "image-generation/vintage-city-travel-collage-portrait",
+    "video-download/audio-download",
+    "video-generation/aerial-pullback-rise-reveal",
+    "video-translation/vertical-knowledge"
+  ],
+  "excluded": [
+    "image-generation/rubber-stamp-travel-field-notes",
+    "video-generation/recipe-infographic-cooking-sequence",
+    "video-translation/bilingual-interview"
+  ]
+}

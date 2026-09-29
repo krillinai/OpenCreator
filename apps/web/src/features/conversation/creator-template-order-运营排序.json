@@ -1,0 +1,970 @@
+{
+  "recommended": [
+    {
+      "preset": "image-generation/felt-country-miniature-world",
+      "order": 1
+    },
+    {
+      "preset": "image-generation/rio-travel-ticket-paper-diorama-poster",
+      "order": 2
+    },
+    {
+      "preset": "image-generation/miniature-city-map-travel-poster",
+      "order": 3
+    },
+    {
+      "preset": "image-generation/wuhan-breakfast-food-map-infographic",
+      "order": 4
+    },
+    {
+      "preset": "image-generation/polaroid-clay-travel-portrait",
+      "order": 5
+    },
+    {
+      "preset": "image-generation/vintage-city-travel-collage-portrait",
+      "order": 6
+    },
+    {
+      "preset": "video-generation/retro-illustration-micro-motion",
+      "order": 7
+    },
+    {
+      "preset": "image-generation/real-person-die-cut-sticker-poster",
+      "order": 8
+    },
+    {
+      "preset": "image-generation/french-new-wave-torn-paper-poster",
+      "order": 9
+    },
+    {
+      "preset": "image-generation/graded-english-magazine-reading-page",
+      "order": 10
+    },
+    {
+      "preset": "image-generation/desert-car-wash-documentary-photo",
+      "order": 11
+    },
+    {
+      "preset": "video-generation/cliffside-roller-skating",
+      "order": 12
+    },
+    {
+      "preset": "video-generation/aerial-pullback-rise-reveal",
+      "order": 13
+    },
+    {
+      "preset": "video-generation/cinematic-roller-skating-action",
+      "order": 14
+    },
+    {
+      "preset": "video-generation/dolly-zoom-space-warp",
+      "order": 15
+    },
+    {
+      "preset": "cover-generator/images-go-hard-thumbnail",
+      "order": 16
+    },
+    {
+      "preset": "video-translation/vertical-knowledge",
+      "order": 17
+    },
+    {
+      "preset": "video-translation/youtube-dubbed",
+      "order": 18
+    },
+    {
+      "preset": "video-download/audio-download",
+      "order": 19
+    },
+    {
+      "preset": "video-download/highest-quality-video",
+      "order": 20
+    }
+  ],
+  "all": [
+    {
+      "preset": "image-generation/retro-halftone-illustration",
+      "order": 1
+    },
+    {
+      "preset": "image-generation/felt-country-miniature-world",
+      "order": 2
+    },
+    {
+      "preset": "image-generation/miniature-city-map-travel-poster",
+      "order": 3
+    },
+    {
+      "preset": "image-generation/paper-relief-neighborhood-grid",
+      "order": 4
+    },
+    {
+      "preset": "image-generation/inplace-landmark-travel-sticker",
+      "order": 5
+    },
+    {
+      "preset": "image-generation/vintage-city-travel-collage-portrait",
+      "order": 6
+    },
+    {
+      "preset": "image-generation/polaroid-clay-travel-portrait",
+      "order": 7
+    },
+    {
+      "preset": "image-generation/french-new-wave-torn-paper-poster",
+      "order": 8
+    },
+    {
+      "preset": "video-generation/real-person-sticker-poster-motion",
+      "order": 9
+    },
+    {
+      "preset": "image-generation/desert-car-wash-documentary-photo",
+      "order": 10
+    },
+    {
+      "preset": "image-generation/cooking-sketch-illustration-story",
+      "order": 11
+    },
+    {
+      "preset": "image-generation/pear-tart-storyboard",
+      "order": 12
+    },
+    {
+      "preset": "image-generation/fifteen-step-photorealistic-recipe",
+      "order": 13
+    },
+    {
+      "preset": "video-generation/recipe-infographic-cooking-sequence",
+      "order": 14
+    },
+    {
+      "preset": "video-generation/khachapuri-overhead-cooking",
+      "order": 15
+    },
+    {
+      "preset": "video-generation/sketch-to-real-stop-motion-cooking",
+      "order": 16
+    },
+    {
+      "preset": "image-generation/handwritten-photo-annotations",
+      "order": 17
+    },
+    {
+      "preset": "image-generation/object-word-doodle-overlay",
+      "order": 18
+    },
+    {
+      "preset": "image-generation/food-splash-freeze-frame",
+      "order": 19
+    },
+    {
+      "preset": "video-generation/rack-focus-foreground-background",
+      "order": 20
+    },
+    {
+      "preset": "image-generation/rio-travel-ticket-paper-diorama-poster",
+      "order": 21
+    },
+    {
+      "preset": "video-generation/fixed-point-pan-right-reveal",
+      "order": 22
+    },
+    {
+      "preset": "image-generation/y2k-virtual-try-on-game-ui",
+      "order": 23
+    },
+    {
+      "preset": "image-generation/watercolor-travel-postcard",
+      "order": 24
+    },
+    {
+      "preset": "image-generation/rubber-stamp-travel-field-notes",
+      "order": 25
+    },
+    {
+      "preset": "image-generation/wuhan-vintage-map-poster",
+      "order": 26
+    },
+    {
+      "preset": "image-generation/acrylic-hand-painted-split-poster",
+      "order": 27
+    },
+    {
+      "preset": "image-generation/half-photo-half-crayon-memory-card",
+      "order": 28
+    },
+    {
+      "preset": "image-generation/bento-food-packaging-concept",
+      "order": 29
+    },
+    {
+      "preset": "image-generation/split-canvas-editorial-art-poster",
+      "order": 30
+    },
+    {
+      "preset": "video-generation/vertical-crane-reveal",
+      "order": 31
+    },
+    {
+      "preset": "video-generation/drone-orbit-subject",
+      "order": 32
+    },
+    {
+      "preset": "video-generation/cinematic-shaolin-action",
+      "order": 33
+    },
+    {
+      "preset": "image-generation/y2k-streetwear-mobile-landing-page",
+      "order": 34
+    },
+    {
+      "preset": "image-generation/duotone-studio-commercial-portrait",
+      "order": 35
+    },
+    {
+      "preset": "image-generation/minimal-conceptual-line-art-poster",
+      "order": 36
+    },
+    {
+      "preset": "image-generation/graded-english-magazine-reading-page",
+      "order": 37
+    },
+    {
+      "preset": "image-generation/football-player-stats-doodle-poster",
+      "order": 38
+    },
+    {
+      "preset": "image-generation/playful-ceramic-ecommerce-hero",
+      "order": 39
+    },
+    {
+      "preset": "image-generation/street-scroll-backdrop-fashion-editorial",
+      "order": 40
+    },
+    {
+      "preset": "image-generation/watercolor-editorial-illustration-poster",
+      "order": 41
+    },
+    {
+      "preset": "image-generation/isometric-miniature-kitchen",
+      "order": 42
+    },
+    {
+      "preset": "image-generation/real-person-die-cut-sticker-poster",
+      "order": 43
+    },
+    {
+      "preset": "video-generation/retro-illustration-micro-motion",
+      "order": 44
+    },
+    {
+      "preset": "image-generation/croissant-baking-storyboard",
+      "order": 45
+    },
+    {
+      "preset": "image-generation/four-panel-milkshake-recipe",
+      "order": 46
+    },
+    {
+      "preset": "image-generation/six-panel-miniature-beverage-ad",
+      "order": 47
+    },
+    {
+      "preset": "video-generation/japanese-influencer-get-ready-ugc",
+      "order": 48
+    },
+    {
+      "preset": "video-generation/bedroom-falling-book-catch",
+      "order": 49
+    },
+    {
+      "preset": "image-generation/portrait-lighting-scheme-grid",
+      "order": 50
+    },
+    {
+      "preset": "image-generation/animated-campus-world-reference-board",
+      "order": 51
+    },
+    {
+      "preset": "video-generation/watercolor-sketch-parkour-chase",
+      "order": 52
+    },
+    {
+      "preset": "image-generation/four-city-minimal-travel-poster-series",
+      "order": 53
+    },
+    {
+      "preset": "image-generation/wuhan-breakfast-food-map-infographic",
+      "order": 54
+    },
+    {
+      "preset": "video-generation/beach-stone-stop-motion",
+      "order": 55
+    },
+    {
+      "preset": "image-generation/faithful-vintage-portrait-restoration",
+      "order": 56
+    },
+    {
+      "preset": "video-generation/bioluminescent-lighthouse-keeper",
+      "order": 57
+    },
+    {
+      "preset": "video-generation/cliffside-roller-skating",
+      "order": 58
+    },
+    {
+      "preset": "video-generation/dolly-zoom-space-warp",
+      "order": 59
+    },
+    {
+      "preset": "video-generation/aerial-pullback-rise-reveal",
+      "order": 60
+    },
+    {
+      "preset": "video-generation/sci-fi-motorcycle-action",
+      "order": 61
+    },
+    {
+      "preset": "cover-generator/images-go-hard-thumbnail",
+      "order": 62
+    },
+    {
+      "preset": "image-generation/tech-product-review-thumbnail",
+      "order": 63
+    },
+    {
+      "preset": "image-generation/city-corner-3d-billboard-photography",
+      "order": 64
+    },
+    {
+      "preset": "image-generation/solar-terms-editorial-visual",
+      "order": 65
+    },
+    {
+      "preset": "image-generation/vintage-scientific-botanical-poster",
+      "order": 66
+    },
+    {
+      "preset": "video-generation/wildflower-seasons-macro-timelapse",
+      "order": 67
+    },
+    {
+      "preset": "image-generation/coastal-poster",
+      "order": 68
+    },
+    {
+      "preset": "video-generation/first-person-dragon-rider",
+      "order": 69
+    },
+    {
+      "preset": "image-generation/architecture-photo-concept-sketch-diptych",
+      "order": 70
+    },
+    {
+      "preset": "video-generation/brutalist-courtyard-martial-arts",
+      "order": 71
+    },
+    {
+      "preset": "video-generation/anime-skateboard-chase-nyc",
+      "order": 72
+    },
+    {
+      "preset": "video-generation/cinematic-roller-skating-action",
+      "order": 73
+    },
+    {
+      "preset": "image-generation/travel-souvenir-enamel-pin",
+      "order": 74
+    },
+    {
+      "preset": "image-generation/hand-torn-paper-poster",
+      "order": 75
+    },
+    {
+      "preset": "video-generation/nyc-parkour-web-swing",
+      "order": 76
+    },
+    {
+      "preset": "image-generation/futuristic-biophilic-atrium",
+      "order": 77
+    },
+    {
+      "preset": "video-generation/rainforest-mysterious-light",
+      "order": 78
+    },
+    {
+      "preset": "image-generation/minimal-abstract-geometric-deconstruction-poster",
+      "order": 79
+    },
+    {
+      "preset": "video-generation/seoul-sunday-dv-home-video",
+      "order": 80
+    },
+    {
+      "preset": "image-generation/grimm-fairy-tale-woodcut-poster",
+      "order": 81
+    },
+    {
+      "preset": "image-generation/ink-double-exposure-portrait-poster",
+      "order": 82
+    },
+    {
+      "preset": "image-generation/berry-smoothie-commercial-photo",
+      "order": 83
+    },
+    {
+      "preset": "image-generation/exploded-food-infographic",
+      "order": 84
+    },
+    {
+      "preset": "image-generation/beverage-food-marketing-hero",
+      "order": 85
+    },
+    {
+      "preset": "image-generation/botanical-soda",
+      "order": 86
+    },
+    {
+      "preset": "image-generation/deep-sea-freediving-adventure-photo",
+      "order": 87
+    },
+    {
+      "preset": "image-generation/modern-art-event-flyer",
+      "order": 88
+    },
+    {
+      "preset": "image-generation/cinematic-action-rpg-screenshot",
+      "order": 89
+    },
+    {
+      "preset": "image-generation/social-media-giveaway-banner",
+      "order": 90
+    },
+    {
+      "preset": "image-generation/inside-box-farm-ad-poster",
+      "order": 91
+    },
+    {
+      "preset": "image-generation/boutique-ecommerce-product-flatlay-grid",
+      "order": 92
+    },
+    {
+      "preset": "image-generation/concept-sofa-development-board",
+      "order": 93
+    },
+    {
+      "preset": "image-generation/blue-white-dunhuang-embroidery-quadriptych",
+      "order": 94
+    },
+    {
+      "preset": "image-generation/haute-couture-fashion-magazine-cover",
+      "order": 95
+    },
+    {
+      "preset": "image-generation/botanical-plate",
+      "order": 96
+    },
+    {
+      "preset": "image-generation/same-face-twelve-hairstyles",
+      "order": 97
+    },
+    {
+      "preset": "video-generation/luxury-jewelry-unboxing",
+      "order": 98
+    },
+    {
+      "preset": "image-generation/luxury-mechanical-watch-technical-guide",
+      "order": 99
+    },
+    {
+      "preset": "image-generation/reflective-ski-gear-landing-page",
+      "order": 100
+    },
+    {
+      "preset": "image-generation/consistent-interior-multiview-grid",
+      "order": 101
+    },
+    {
+      "preset": "image-generation/vr-headset-exploded-interface-diagram",
+      "order": 102
+    },
+    {
+      "preset": "image-generation/chinese-luxury-beauty-poster",
+      "order": 103
+    },
+    {
+      "preset": "image-generation/premium-food-commercial-storyboard",
+      "order": 104
+    },
+    {
+      "preset": "image-generation/weekly-outfit-infographic",
+      "order": 105
+    },
+    {
+      "preset": "video-translation/bilingual-interview",
+      "order": 106
+    },
+    {
+      "preset": "video-translation/youtube-dubbed",
+      "order": 107
+    },
+    {
+      "preset": "video-translation/vertical-knowledge",
+      "order": 108
+    },
+    {
+      "preset": "video-download/audio-download",
+      "order": 109
+    },
+    {
+      "preset": "video-download/highest-quality-video",
+      "order": 110
+    }
+  ],
+  "video": [
+    {
+      "preset": "video-generation/sketch-to-real-stop-motion-cooking",
+      "order": 1
+    },
+    {
+      "preset": "video-generation/khachapuri-overhead-cooking",
+      "order": 2
+    },
+    {
+      "preset": "video-generation/recipe-infographic-cooking-sequence",
+      "order": 3
+    },
+    {
+      "preset": "video-generation/seoul-sunday-dv-home-video",
+      "order": 4
+    },
+    {
+      "preset": "video-generation/rack-focus-foreground-background",
+      "order": 5
+    },
+    {
+      "preset": "video-generation/fixed-point-pan-right-reveal",
+      "order": 6
+    },
+    {
+      "preset": "video-generation/bioluminescent-lighthouse-keeper",
+      "order": 7
+    },
+    {
+      "preset": "video-generation/cliffside-roller-skating",
+      "order": 8
+    },
+    {
+      "preset": "video-generation/cinematic-roller-skating-action",
+      "order": 9
+    },
+    {
+      "preset": "video-generation/drone-orbit-subject",
+      "order": 10
+    },
+    {
+      "preset": "video-generation/vertical-crane-reveal",
+      "order": 11
+    },
+    {
+      "preset": "video-generation/cinematic-shaolin-action",
+      "order": 12
+    },
+    {
+      "preset": "video-generation/aerial-pullback-rise-reveal",
+      "order": 13
+    },
+    {
+      "preset": "video-generation/dolly-zoom-space-warp",
+      "order": 14
+    },
+    {
+      "preset": "video-generation/beach-stone-stop-motion",
+      "order": 15
+    },
+    {
+      "preset": "video-generation/first-person-dragon-rider",
+      "order": 16
+    },
+    {
+      "preset": "video-generation/wildflower-seasons-macro-timelapse",
+      "order": 17
+    },
+    {
+      "preset": "video-generation/sci-fi-motorcycle-action",
+      "order": 18
+    },
+    {
+      "preset": "video-generation/rainforest-mysterious-light",
+      "order": 19
+    },
+    {
+      "preset": "video-generation/bedroom-falling-book-catch",
+      "order": 20
+    },
+    {
+      "preset": "video-generation/brutalist-courtyard-martial-arts",
+      "order": 21
+    },
+    {
+      "preset": "video-generation/japanese-influencer-get-ready-ugc",
+      "order": 22
+    },
+    {
+      "preset": "video-generation/retro-illustration-micro-motion",
+      "order": 23
+    },
+    {
+      "preset": "video-generation/real-person-sticker-poster-motion",
+      "order": 24
+    },
+    {
+      "preset": "video-generation/nyc-parkour-web-swing",
+      "order": 25
+    },
+    {
+      "preset": "video-generation/luxury-jewelry-unboxing",
+      "order": 26
+    },
+    {
+      "preset": "video-generation/watercolor-sketch-parkour-chase",
+      "order": 27
+    },
+    {
+      "preset": "video-generation/anime-skateboard-chase-nyc",
+      "order": 28
+    },
+    {
+      "preset": "video-translation/bilingual-interview",
+      "order": 29
+    },
+    {
+      "preset": "video-translation/youtube-dubbed",
+      "order": 30
+    },
+    {
+      "preset": "video-translation/vertical-knowledge",
+      "order": 31
+    },
+    {
+      "preset": "video-download/audio-download",
+      "order": 32
+    },
+    {
+      "preset": "video-download/highest-quality-video",
+      "order": 33
+    }
+  ],
+  "image": [
+    {
+      "preset": "image-generation/felt-country-miniature-world",
+      "order": 1
+    },
+    {
+      "preset": "image-generation/miniature-city-map-travel-poster",
+      "order": 2
+    },
+    {
+      "preset": "image-generation/paper-relief-neighborhood-grid",
+      "order": 3
+    },
+    {
+      "preset": "image-generation/rio-travel-ticket-paper-diorama-poster",
+      "order": 4
+    },
+    {
+      "preset": "image-generation/polaroid-clay-travel-portrait",
+      "order": 5
+    },
+    {
+      "preset": "image-generation/real-person-die-cut-sticker-poster",
+      "order": 6
+    },
+    {
+      "preset": "image-generation/vintage-city-travel-collage-portrait",
+      "order": 7
+    },
+    {
+      "preset": "image-generation/french-new-wave-torn-paper-poster",
+      "order": 8
+    },
+    {
+      "preset": "image-generation/desert-car-wash-documentary-photo",
+      "order": 9
+    },
+    {
+      "preset": "image-generation/inplace-landmark-travel-sticker",
+      "order": 10
+    },
+    {
+      "preset": "image-generation/rubber-stamp-travel-field-notes",
+      "order": 11
+    },
+    {
+      "preset": "image-generation/watercolor-travel-postcard",
+      "order": 12
+    },
+    {
+      "preset": "image-generation/playful-ceramic-ecommerce-hero",
+      "order": 13
+    },
+    {
+      "preset": "image-generation/isometric-miniature-kitchen",
+      "order": 14
+    },
+    {
+      "preset": "image-generation/retro-halftone-illustration",
+      "order": 15
+    },
+    {
+      "preset": "image-generation/graded-english-magazine-reading-page",
+      "order": 16
+    },
+    {
+      "preset": "image-generation/hand-torn-paper-poster",
+      "order": 17
+    },
+    {
+      "preset": "image-generation/y2k-virtual-try-on-game-ui",
+      "order": 18
+    },
+    {
+      "preset": "image-generation/object-word-doodle-overlay",
+      "order": 19
+    },
+    {
+      "preset": "image-generation/handwritten-photo-annotations",
+      "order": 20
+    },
+    {
+      "preset": "image-generation/food-splash-freeze-frame",
+      "order": 21
+    },
+    {
+      "preset": "image-generation/cooking-sketch-illustration-story",
+      "order": 22
+    },
+    {
+      "preset": "image-generation/fifteen-step-photorealistic-recipe",
+      "order": 23
+    },
+    {
+      "preset": "image-generation/pear-tart-storyboard",
+      "order": 24
+    },
+    {
+      "preset": "image-generation/four-panel-milkshake-recipe",
+      "order": 25
+    },
+    {
+      "preset": "image-generation/croissant-baking-storyboard",
+      "order": 26
+    },
+    {
+      "preset": "image-generation/berry-smoothie-commercial-photo",
+      "order": 27
+    },
+    {
+      "preset": "image-generation/exploded-food-infographic",
+      "order": 28
+    },
+    {
+      "preset": "image-generation/six-panel-miniature-beverage-ad",
+      "order": 29
+    },
+    {
+      "preset": "image-generation/coastal-poster",
+      "order": 30
+    },
+    {
+      "preset": "image-generation/botanical-soda",
+      "order": 31
+    },
+    {
+      "preset": "image-generation/botanical-plate",
+      "order": 32
+    },
+    {
+      "preset": "image-generation/split-canvas-editorial-art-poster",
+      "order": 33
+    },
+    {
+      "preset": "image-generation/four-city-minimal-travel-poster-series",
+      "order": 34
+    },
+    {
+      "preset": "image-generation/y2k-streetwear-mobile-landing-page",
+      "order": 35
+    },
+    {
+      "preset": "image-generation/duotone-studio-commercial-portrait",
+      "order": 36
+    },
+    {
+      "preset": "image-generation/football-player-stats-doodle-poster",
+      "order": 37
+    },
+    {
+      "preset": "image-generation/street-scroll-backdrop-fashion-editorial",
+      "order": 38
+    },
+    {
+      "preset": "image-generation/faithful-vintage-portrait-restoration",
+      "order": 39
+    },
+    {
+      "preset": "image-generation/acrylic-hand-painted-split-poster",
+      "order": 40
+    },
+    {
+      "preset": "image-generation/minimal-conceptual-line-art-poster",
+      "order": 41
+    },
+    {
+      "preset": "image-generation/watercolor-editorial-illustration-poster",
+      "order": 42
+    },
+    {
+      "preset": "image-generation/blue-white-dunhuang-embroidery-quadriptych",
+      "order": 43
+    },
+    {
+      "preset": "image-generation/travel-souvenir-enamel-pin",
+      "order": 44
+    },
+    {
+      "preset": "image-generation/wuhan-breakfast-food-map-infographic",
+      "order": 45
+    },
+    {
+      "preset": "image-generation/wuhan-vintage-map-poster",
+      "order": 46
+    },
+    {
+      "preset": "image-generation/solar-terms-editorial-visual",
+      "order": 47
+    },
+    {
+      "preset": "image-generation/vintage-scientific-botanical-poster",
+      "order": 48
+    },
+    {
+      "preset": "image-generation/half-photo-half-crayon-memory-card",
+      "order": 49
+    },
+    {
+      "preset": "image-generation/portrait-lighting-scheme-grid",
+      "order": 50
+    },
+    {
+      "preset": "image-generation/animated-campus-world-reference-board",
+      "order": 51
+    },
+    {
+      "preset": "image-generation/bento-food-packaging-concept",
+      "order": 52
+    },
+    {
+      "preset": "image-generation/tech-product-review-thumbnail",
+      "order": 53
+    },
+    {
+      "preset": "cover-generator/images-go-hard-thumbnail",
+      "order": 54
+    },
+    {
+      "preset": "image-generation/city-corner-3d-billboard-photography",
+      "order": 55
+    },
+    {
+      "preset": "image-generation/grimm-fairy-tale-woodcut-poster",
+      "order": 56
+    },
+    {
+      "preset": "image-generation/inside-box-farm-ad-poster",
+      "order": 57
+    },
+    {
+      "preset": "image-generation/ink-double-exposure-portrait-poster",
+      "order": 58
+    },
+    {
+      "preset": "image-generation/deep-sea-freediving-adventure-photo",
+      "order": 59
+    },
+    {
+      "preset": "image-generation/cinematic-action-rpg-screenshot",
+      "order": 60
+    },
+    {
+      "preset": "image-generation/futuristic-biophilic-atrium",
+      "order": 61
+    },
+    {
+      "preset": "image-generation/modern-art-event-flyer",
+      "order": 62
+    },
+    {
+      "preset": "image-generation/minimal-abstract-geometric-deconstruction-poster",
+      "order": 63
+    },
+    {
+      "preset": "image-generation/architecture-photo-concept-sketch-diptych",
+      "order": 64
+    },
+    {
+      "preset": "image-generation/reflective-ski-gear-landing-page",
+      "order": 65
+    },
+    {
+      "preset": "image-generation/vr-headset-exploded-interface-diagram",
+      "order": 66
+    },
+    {
+      "preset": "image-generation/concept-sofa-development-board",
+      "order": 67
+    },
+    {
+      "preset": "image-generation/social-media-giveaway-banner",
+      "order": 68
+    },
+    {
+      "preset": "image-generation/chinese-luxury-beauty-poster",
+      "order": 69
+    },
+    {
+      "preset": "image-generation/luxury-mechanical-watch-technical-guide",
+      "order": 70
+    },
+    {
+      "preset": "image-generation/boutique-ecommerce-product-flatlay-grid",
+      "order": 71
+    },
+    {
+      "preset": "image-generation/beverage-food-marketing-hero",
+      "order": 72
+    },
+    {
+      "preset": "image-generation/haute-couture-fashion-magazine-cover",
+      "order": 73
+    },
+    {
+      "preset": "image-generation/premium-food-commercial-storyboard",
+      "order": 74
+    },
+    {
+      "preset": "image-generation/same-face-twelve-hairstyles",
+      "order": 75
+    },
+    {
+      "preset": "image-generation/consistent-interior-multiview-grid",
+      "order": 76
+    },
+    {
+      "preset": "image-generation/weekly-outfit-infographic",
+      "order": 77
+    }
+  ]
+}

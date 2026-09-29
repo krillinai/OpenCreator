@@ -26,6 +26,9 @@ import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import type { CreatorWorkspace } from '../dashboard/creator-workspace.js';
 import { IssueList } from '../issues/IssuePresenter.js';
 import { usePageIssueState } from '../issues/page-issue-state.js';
+import { orderCreatorPresets } from './creator-template-order.js';
+import operatorVisibility from './creator-template-visibility-运营上下架.json' with { type: 'json' };
+import operatorFeatured from './creator-template-featured-运营加精.json' with { type: 'json' };
 
 export type CreatorSkill = {
   id: string;
@@ -134,6 +137,16 @@ const imageModules = new Set<CreatorRuntimeWorkspace>([
 ]);
 const recentPresetStorageKey = 'opencreator.creator-presets.recent.v1';
 const recentPresetLimit = 12;
+const archivedPresetIds = new Set<string>(operatorVisibility.archived);
+const featuredPresetIds = new Set<string>(operatorFeatured.featured);
+const excludedFeaturedPresetIds = new Set<string>(operatorFeatured.excluded);
+
+function isFeaturedPreset(preset: CreatorPresetSummary): boolean {
+  const key = `${preset.module}/${preset.id}`;
+  return featuredPresetIds.has(key) || (
+    !excludedFeaturedPresetIds.has(key) && preset.featured
+  );
+}
 
 export function CreatorDashboard(props: {
   presets?: CreatorPresetSummary[];
@@ -169,7 +182,9 @@ export function CreatorDashboard(props: {
   const moreTagsButtonRef = useRef<HTMLButtonElement>(null);
   const busyIdentitiesRef = useRef(new Set<string>());
   const pageIssues = usePageIssueState('creator-launch');
-  const presets = props.presets ?? [];
+  const presets = (props.presets ?? []).filter(preset => (
+    !archivedPresetIds.has(`${preset.module}/${preset.id}`)
+  ));
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const categoryPresets = useMemo(() => {
     if (category === 'recent') {
@@ -179,10 +194,12 @@ export function CreatorDashboard(props: {
         return preset === undefined ? [] : [preset];
       });
     }
-    if (category === 'recommended') return presets.filter(preset => preset.featured);
-    if (category === 'all') return presets;
+    if (category === 'recommended') {
+      return orderCreatorPresets(presets.filter(isFeaturedPreset), category);
+    }
+    if (category === 'all') return orderCreatorPresets(presets, category);
     const modules = category === 'video' ? videoModules : imageModules;
-    return presets.filter(preset => modules.has(preset.module));
+    return orderCreatorPresets(presets.filter(preset => modules.has(preset.module)), category);
   }, [category, presets, recentPresetIds]);
   const categoryTagOptions = category === 'video'
     ? videoTagOptions

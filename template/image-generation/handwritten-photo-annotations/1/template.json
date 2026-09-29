@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "handwritten-photo-annotations",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 200,
+  "title": {
+    "zh-CN": "生活照片手写涂鸦注释",
+    "en-US": "Handwritten Photo Annotations"
+  },
+  "description": {
+    "zh-CN": "在生活照片留白处添加白色手写标题、短句和少量箭头星星，保留实景质感。 来源案例仅作视觉参考，生成效果尚未在本模板中复测。",
+    "en-US": "Handwritten Photo Annotations. The source example is a visual reference, not a verified output of this preset."
+  },
+  "cover": "cover.jpg",
+  "preview": "preview.jpg",
+  "author": {
+    "name": "数字生命卡兹克 (@Khazix0918)",
+    "url": "https://x.com/Khazix0918/status/2104401048324743646"
+  },
+  "tags": [
+    "手写排版",
+    "照片注释",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "为照片添加ins风手绘涂鸦排版，保留原照片内容、构图与真实质感。根据画面内容，在空白处添加醒目的白色手写标题和一句简短俏皮的文案，笔画圆润、略带不规则感。搭配少量手绘箭头、星星、闪光、弧线与呼应主题的小图案，以白色为主、其他颜色做点缀。文字与涂鸦自然穿插，活泼随性、疏朗有留白，像亲手记录的生活照片。避开人物面部与重要主体，不堆满装饰，不将照片转成插画，不添加水印。"
+    },
+    "en-US": {
+      "prompt": "Add Instagram-style hand-drawn doodle typography to the photograph while preserving its original content, composition and realistic texture. Based on what the picture actually shows, place a prominent white handwritten title and one short playful line in available negative space, using rounded and slightly irregular strokes. Add just a few hand-drawn arrows, stars, sparkles, curved lines and small subject-related motifs, mostly in white with restrained color accents. Let the writing and doodles weave naturally through the photograph, lively and casual yet spacious, like a personal record of everyday life. Avoid faces and important subjects; do not fill every space, turn the photograph into an illustration or add a watermark."
+    }
+  }
+}

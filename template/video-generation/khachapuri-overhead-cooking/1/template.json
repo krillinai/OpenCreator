@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "khachapuri-overhead-cooking",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 200,
+  "title": {
+    "zh-CN": "哈恰普里俯拍烹饪",
+    "en-US": "Overhead Khachapuri Cooking"
+  },
+  "description": {
+    "zh-CN": "用固定俯拍和物体状态连续性展示哈恰普里的完整制作步骤。 来源案例仅作视觉参考，生成效果尚未在本模板中复测。",
+    "en-US": "Overhead Khachapuri Cooking. The source example is a visual reference, not a verified output of this preset."
+  },
+  "cover": "cover.jpg",
+  "preview": "preview.jpg",
+  "previewVideo": "example.mp4",
+  "author": {
+    "name": "@999 / YouMind",
+    "url": "https://x.com/999shinobi/status/2102142574848798798"
+  },
+  "tags": [
+    "固定镜头",
+    "横屏",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1280x720",
+    "duration": 10
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "创作一段 10 秒、16:9、照片级写实的哈恰普里烹饪视频，严格按照下列顺序拍摄。镜头固定在正上方 90°，桌面为哑光黑色；从头到尾是同一双戴黑手套的男性双手。只用硬切，不要魔法效果或跳过步骤：0.0–0.7 秒，将原料对称摆放，双手拿起面团；0.7–1.5 秒，将面团擀成椭圆形；1.5–2.2 秒，将两侧长边向内卷起；2.2–2.8 秒，将两端捏合成船形；2.8–3.6 秒，均匀填入碎奶酪；3.6–4.2 秒，将生哈恰普里放在黑色烤盘上；4.2–5.0 秒，清楚地将生哈恰普里推入烤箱；5.0–5.8 秒，烤箱内的快速写实延时镜头：面团膨胀变金黄，奶酪融化并冒泡；5.8–6.5 秒，双手取出烤好的哈恰普里；6.5–7.3 秒，直接向中央打入一枚鸡蛋；7.3–8.0 秒，重新放回烤箱，短暂延时：蛋清略微凝固，蛋黄仍可流动；8.0–8.6 秒，取出成品，放到黑色桌面上；8.6–9.2 秒，在蛋黄旁加入小块黄油，黄油开始融化；9.2–10.0 秒，双手退出画面，以金黄色哈恰普里的主视觉镜头收尾，呈现融化的奶酪、光亮可流动的蛋黄和正在融化的黄油。每一个后续镜头都必须接续上一个镜头中食物的准确状态；手部动作快速、精确且真实。镜头不得移动，食材不得悬浮、瞬移、瞬间煮熟、消失或复制。"
+    },
+    "en-US": {
+      "prompt": "Create a 10-second 16:9 photorealistic khachapuri cooking video exactly in sequence, static 90° top-down camera, matte-black table, same male hands in black gloves, hard cuts only, no magic or skipped steps: 0.0-0.7 ingredients symmetrically arranged, hands take dough -> 0.7-1.5 roll dough into an oval -> 1.5-2.2 roll long edges inward -> 2.2-2.8 pinch both ends into a boat -> 2.8-3.6 evenly fill with grated cheese -> 3.6-4.2 place raw khachapuri on black baking tray -> 4.2-5.0 visibly slide the raw khachapuri into the oven -> 5.0-5.8 fast realistic timelapse inside oven: dough rises and turns golden, cheese melts and bubbles -> 5.8-6.5 hands remove baked khachapuri -> 6.5-7.3 crack one egg directly into the center -> 7.3-8.0 return to oven, short timelapse: egg white sets slightly while yolk stays runny -> 8.0-8.6 remove finished khachapuri and place on black table -> 8.6-9.2 add butter cubes beside yolk, butter starts melting -> 9.2-10.0 hands exit, hero shot of golden khachapuri with melted cheese, glossy runny yolk and melting butter. Every next shot must continue from the exact food state of the previous shot; fast precise realistic hand movements, no camera movement, no levitation, teleportation, instant cooking, disappearing or duplicated ingredients."
+    }
+  }
+}

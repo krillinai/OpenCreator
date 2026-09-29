@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "botanical-soda",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 200,
+  "title": {
+    "zh-CN": "植物汽水商业静物",
+    "en-US": "Botanical Soda Product Still Life"
+  },
+  "description": {
+    "zh-CN": "用光线、冷凝水和水果切片突出饮品材质。 来源案例仅作视觉参考，生成效果尚未在本模板中复测。",
+    "en-US": "Botanical Soda Product Still Life. The source example is a visual reference, not a verified output of this preset."
+  },
+  "cover": "cover.jpg",
+  "preview": "preview.webp",
+  "tags": [
+    "食品饮料",
+    "产品视觉",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1024",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "为名为 MIRA 的虚构植物汽水拍摄一张精致的商业静物照片。在鲜亮的海绿色桌面上放置一只无品牌标识的透明玻璃瓶，瓶中盛有淡珊瑚色液体；搭配瓶身冷凝水、切开的红宝石色葡萄柚和一枝带叶的植物茎。午后偏晚时分的定向阳光照射，形成清晰的焦散阴影。采用留白充足的高端饮料广告构图，材质明亮而可信。不要人物、可见文字、品牌标志、拼贴或样机边框。画面为正方形。"
+    },
+    "en-US": {
+      "prompt": "A polished commercial still-life photograph for a fictional botanical soda called MIRA. One clear unbranded glass bottle with pale coral liquid on a vivid sea-green tabletop, condensation, sliced ruby grapefruit and a single leafy stem, directional late afternoon sunlight, sharp caustic shadows, premium beverage advertising composition with generous negative space, bright believable materials. No people, no visible words, no brand logos, no collage or mockup frame. Square image."
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "wildflower-seasons-macro-timelapse",
+  "version": 1,
+  "module": "video-generation",
+  "runtimeTemplate": {
+    "id": "video-generation",
+    "version": 1
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 200,
+  "title": {
+    "zh-CN": "野花四季微距延时",
+    "en-US": "Wildflower Seasons Macro Time-Lapse"
+  },
+  "description": {
+    "zh-CN": "固定一株野花，以微距延时展示盛放、枯萎、结霜和凋零。 来源案例仅作视觉参考，生成效果尚未在本模板中复测。",
+    "en-US": "Wildflower Seasons Macro Time-Lapse. The source example is a visual reference, not a verified output of this preset."
+  },
+  "cover": "cover.jpg",
+  "preview": "preview.jpg",
+  "previewVideo": "example.mp4",
+  "author": {
+    "name": "@Mr Das / YouMind",
+    "url": "https://x.com/MrDasOnX/status/2096453993371422748"
+  },
+  "tags": [
+    "横屏",
+    "文生视频",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1280x720",
+    "duration": 10
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "{\n  \"duration\": \"10 秒\",\n  \"aspect_ratio\": \"16:9\",\n  \"fps\": 24,\n  \"style\": \"电影级写实风格，微距延时摄影，国家地理级视觉保真度，浅景深\",\n  \"prompt\": \"一段持续 10 秒的微距延时摄影，焦点集中在从深色苔藓土壤中生长出的一朵孤傲、灿烂的野花上，捕捉四季流转以唤起无常之感。0:00–0:03，金色的春日晨光照亮了在繁茂花丛中绽放的花瓣，上面挂着晶莹的露珠。0:03–0:06，阳光增强为盛夏的暖阳，随后迅速转变为秋日的琥珀色；花瓣变得干燥、卷曲，呈现出浓郁的酒红色和赭石色。0:06–0:08，在寒冷的暮色下，精致的结晶霜和轻雪覆盖了枯萎的花朵。0:08–0:10，一阵冬风将干枯的花瓣和雪尘吹散到空中，露出空旷、宁静的土壤。在最终场景（0:08–0:10）中，优雅、极简的衬线字体平滑地淡入画面中心，显示“Everything is temporary…”，字体呈温暖、半透明的灰白色，带有轻微的模糊和柔和的光晕，随后淡出至黑色。\",\n  \"lighting\": \"动态光影，从金色的晨曦轮廓光平滑过渡到清脆的盛夏日光、忧郁的秋日阴天以及寒冷的冬日暮光。\",\n  \"camera\": \"85mm 微距镜头，f/2.8，缓慢的环形轨道移动并伴随轻微的推镜头，从花朵盛开到最终文字淡出，始终保持焦点居中。\",\n  \"text_overlay\": {\n    \"text\": \"Everything is temporary…\",\n    \"timestamp\": \"0:08 - 0:10\",\n    \"font_style\": \"极简、优雅的衬线字体，柔和发光的灰白色，带有细微的胶片颗粒质感，平滑的淡入淡出效果\",\n    \"placement\": \"屏幕中心\"\n  },\n  \"audio_cues\": \"柔和的鸟鸣声过渡到干叶的沙沙声，轻柔的冬风呼啸声，以及在最终文字出现时背景中深沉、渐弱的环境钢琴和弦。\"\n}"
+    },
+    "en-US": {
+      "prompt": "{\n  \"duration\": \"10s\",\n  \"aspect_ratio\": \"16:9\",\n  \"fps\": 24,\n  \"style\": \"Cinematic realism, time-lapse macro cinematography, National Geographic visual fidelity, shallow depth of field\",\n  \"prompt\": \"A continuous 10-second macro time-lapse centered on a solitary, radiant wild flower growing from dark mossy soil, capturing the passage of four seasons to evoke impermanence. At 0:00–0:03, golden morning spring sunlight illuminates vivid petals unfurling in lush bloom with glistening dewdrops. At 0:03–0:06, the sunlight intensifies into high summer warmth before rapidly shifting into autumn amber; the petals dry, curl, and develop rich burgundy-ochre hues. At 0:06–0:08, delicate crystalline frost and light snow creep over the wilting blossom under cold twilight. At 0:08–0:10, a winter gust scatters the dried petals and snow dust into the air, revealing empty, quiet soil. In the final scene (0:08–0:10), elegant, minimalist serif typography fades smoothly into center frame reading: 'Everything is temporary…' in warm, translucent off-white with subtle blur and gentle light bleed before fading to black.\",\n  \"lighting\": \"Dynamic lighting shifting fluidly from golden dawn rim lighting to crisp midsummer daylight, moody autumnal overcast, and cold crystalline winter twilight.\",\n  \"camera\": \"Macro 85mm lens, f/2.8, slow circular orbit with subtle push-in, keeping focus centered through the bloom to the final text fade.\",\n  \"text_overlay\": {\n    \"text\": \"Everything is temporary…\",\n    \"timestamp\": \"0:08 - 0:10\",\n    \"font_style\": \"Minimalist, elegant serif, soft glowing off-white, subtle film-grain texture, smooth fade-in and fade-out\",\n    \"placement\": \"Center screen\"\n  },\n  \"audio_cues\": \"Gentle ambient birdsong transitioning into the rustle of dry leaves, howling soft winter wind, and a deep, fading ambient piano chord beneath the final text.\"\n}"
+    }
+  }
+}

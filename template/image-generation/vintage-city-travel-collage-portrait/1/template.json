@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "vintage-city-travel-collage-portrait",
+  "version": 1,
+  "module": "image-generation",
+  "runtimeTemplate": {
+    "id": "image-generation",
+    "version": 2
+  },
+  "status": "published",
+  "featured": false,
+  "sortOrder": 200,
+  "title": {
+    "zh-CN": "人物城市旅行拼贴海报",
+    "en-US": "Vintage City Travel Collage Portrait"
+  },
+  "description": {
+    "zh-CN": "围绕上传人物与指定城市，制作带地标、美食、地图、票据和邮戳的复古旅行拼贴海报。预览为自制示意，未用原帖照片编辑复测。 来源案例仅作视觉参考，生成效果尚未在本模板中复测。",
+    "en-US": "Vintage City Travel Collage Portrait. The source example is a visual reference, not a verified output of this preset."
+  },
+  "cover": "cover.jpg",
+  "preview": "preview.jpg",
+  "author": {
+    "name": "数字生命卡兹克 (@Khazix0918)",
+    "url": "https://x.com/Khazix0918/status/2104401048324743646"
+  },
+  "tags": [
+    "人物海报",
+    "撕纸拼贴",
+    "reference-template"
+  ],
+  "defaults": {
+    "prompt": "",
+    "size": "1024x1536",
+    "quality": "high",
+    "candidateCount": 2
+  },
+  "defaultsByLocale": {
+    "zh-CN": {
+      "prompt": "以有权使用的参考照片中的人物为主角，创作「{cityName}」主题复古旅行拼贴海报，保留人物的五官辨识度、自然神态和真实肤色。用醒目的「{cityNameEn}」复古粗体标题，搭配该城市真实而可辨识的地标、街景、美食、地图轮廓、虚构票据和邮戳，结合撕纸边缘、细腻印刷颗粒与少量不涉及事实陈述的手写短句，构图丰富、层次清晰。以中性米白纸底搭配从城市景象提取的蓝绿和砖红，适度减少黄调，保留复古纸感但不让人物泛黄。只输出海报平面图，不要实体海报模型、真实品牌标识、未经证实的到访日期或水印。"
+    },
+    "en-US": {
+      "prompt": "Using a portrait you have the right to use, make its person the protagonist of a vintage travel collage poster for {cityName}. Preserve their recognizable facial features, natural expression and realistic skin tone. Feature the bold vintage title '{cityNameEn}' alongside genuine recognizable landmarks, streets, food and map silhouettes of the city, plus fictional tickets and postmarks. Combine torn-paper edges, fine print grain and a few handwritten phrases that make no factual claims. Build a rich but clear layered composition on neutral off-white paper, with blue-green and brick-red accents sampled from the city scene. Reduce yellow cast while retaining a tactile vintage feel and natural skin. Output only the flat poster design, not a physical poster mockup, real brand marks, an unverified visit date or watermark."
+    }
+  }
+}
