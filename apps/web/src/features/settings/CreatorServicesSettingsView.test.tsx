@@ -127,8 +127,7 @@ describe('CreatorServicesSettingsView', () => {
     render(<CreatorServicesSettingsView connected service={service} modelService={createModelService()} />);
     await screen.findByRole('heading', { name: 'AI 服务' });
     await user.selectOptions(screen.getByLabelText('供应商'), 'hy-mt2');
-    expect(screen.getByText(/自行部署的本地 Hy-MT2/)).toBeInTheDocument();
-    expect(screen.getByText('本地服务由您自行部署，请测试连接')).toBeInTheDocument();
+    expect(screen.getByText('您自行部署的本地 Hy-MT2 服务，请测试连接')).toBeInTheDocument();
     expect(screen.getByLabelText('Base URL')).toHaveValue('http://127.0.0.1:8000/v1');
     await user.clear(screen.getByLabelText('请求超时（秒）'));
     await user.type(screen.getByLabelText('请求超时（秒）'), '30');

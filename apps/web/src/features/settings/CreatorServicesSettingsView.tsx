@@ -587,11 +587,6 @@ function TextModelSettings(props: SettingsGroupProps & {
               : l(`已连接本机 Codex · ${props.provider.model || 'Runtime'}`, `Local Codex connected · ${props.provider.model || 'Runtime'}`)}
           </p>
         )}
-        {props.mode === 'custom' && props.providerId === 'hy-mt2' ? (
-          <p className="creator-services-inline-note is-wide">
-            {l('使用您自行部署的本地 Hy-MT2 OpenAI 兼容服务；API Key 可留空。', 'Use your self-hosted local Hy-MT2 OpenAI-compatible service. The API key is optional.')}
-          </p>
-        ) : null}
         {props.mode === 'custom' ? <TextField
           id="llm-timeout-seconds"
           label={l('请求超时（秒）', 'Request timeout (seconds)')}
@@ -627,7 +622,7 @@ function TextModelSettings(props: SettingsGroupProps & {
           <span className={selectedModeAvailable ? '' : 'is-warning'}>
             <TextTaskStatusIcon size={15} aria-hidden="true" />
             {props.mode === 'custom' && props.providerId === 'hy-mt2'
-              ? l('本地服务由您自行部署，请测试连接', 'Deploy the local service and test the connection')
+              ? l('您自行部署的本地 Hy-MT2 服务，请测试连接', 'Self-hosted Hy-MT2; test the connection')
               : textTasksAvailable
               ? l('文本任务可用', 'Text tasks ready')
               : props.mode === 'codex'
