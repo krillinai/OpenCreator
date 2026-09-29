@@ -218,6 +218,37 @@ describe('CreatorServicesConfigStore', () => {
     expect(retained.video).toEqual(current.video);
   });
 
+  it('retains a legacy LLM credential when the redacted settings are saved unchanged', () => {
+    const current = createDefaultCreatorServicesConfig();
+    current.llm.baseUrl = 'https://legacy.example.test/v1';
+    current.llm.model = 'legacy-model';
+    current.llm.apiKey = 'legacy-secret';
+    const presented = presentCreatorServicesConfig(current);
+    presented.config.llm.providerId = 'openai';
+
+    const retained = retainCreatorServicesCredentials(presented.config, current);
+    expect(retained.llm.apiKey).toBe('legacy-secret');
+  });
+
+  it('does not reuse a legacy LLM credential after changing the endpoint or model', () => {
+    const current = createDefaultCreatorServicesConfig();
+    current.llm.baseUrl = 'https://legacy.example.test/v1';
+    current.llm.model = 'legacy-model';
+    current.llm.apiKey = 'legacy-secret';
+    const presented = presentCreatorServicesConfig(current);
+
+    const changedEndpoint = structuredClone(presented.config);
+    changedEndpoint.llm.providerId = 'hy-mt2';
+    changedEndpoint.llm.baseUrl = 'http://127.0.0.1:8000/v1';
+    changedEndpoint.llm.model = 'tencent/Hy-MT2-1.8B';
+    expect(retainCreatorServicesCredentials(changedEndpoint, current).llm.apiKey).toBe('');
+
+    const changedModel = structuredClone(presented.config);
+    changedModel.llm.providerId = 'openai';
+    changedModel.llm.model = 'new-model';
+    expect(retainCreatorServicesCredentials(changedModel, current).llm.apiKey).toBe('');
+  });
+
   it('redacts and retains the simplified TTS provider credentials', () => {
     const current = createDefaultCreatorServicesConfig();
     current.tts.openai.apiKey = 'tts-openai';

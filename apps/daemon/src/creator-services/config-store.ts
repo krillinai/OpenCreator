@@ -443,7 +443,12 @@ export function retainCreatorServicesCredentials(
   current: CreatorServicesConfig
 ): CreatorServicesConfig {
   const merged = structuredClone(next);
-  if (merged.llm.providerId === current.llm.providerId && merged.llm.baseUrl === current.llm.baseUrl) {
+  const sameLlmEndpoint = merged.llm.baseUrl === current.llm.baseUrl;
+  const sameLlmProvider = merged.llm.providerId === current.llm.providerId;
+  const unchangedLegacyLlm = current.llm.providerId === undefined
+    && sameLlmEndpoint
+    && merged.llm.model === current.llm.model;
+  if (sameLlmEndpoint && (sameLlmProvider || unchangedLegacyLlm)) {
     retainBlank(() => merged.llm.apiKey, value => { merged.llm.apiKey = value; }, current.llm.apiKey);
   }
   retainBlank(
