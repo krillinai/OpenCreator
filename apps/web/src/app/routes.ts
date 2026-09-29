@@ -30,7 +30,7 @@ export type AppRoute =
     }
   | { view: 'files'; threadId?: string; path?: string };
 
-export type AiServicesSection = 'text' | 'transcription' | 'tts' | 'image' | 'video';
+export type AiServicesSection = 'text' | 'transcription' | 'tts' | 'image' | 'video' | 'publishing';
 export type SettingsRouteTab = 'ai-services' | 'local-components';
 
 export function parseRoute(hash: string): AppRoute {
@@ -176,6 +176,7 @@ function parseAiServicesSection(value: string | null): AiServicesSection | undef
     || value === 'tts'
     || value === 'image'
     || value === 'video'
+    || value === 'publishing'
     ? value
     : undefined;
 }

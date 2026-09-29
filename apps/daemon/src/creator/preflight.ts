@@ -293,6 +293,13 @@ function checkProviderConfig(
   if (stage.executor === 'smart-dubbing') needs.add('tts');
   if (stage.executor === 'stickman-audio' && stage.id === 'narration') needs.add('tts');
   if (stage.executor === 'stickman-image') needs.add('image');
+  if (stage.executor === 'upload-post-publish') {
+    const uploadPost = config.publishing.uploadPost;
+    if (!uploadPost.apiKey.trim() || !uploadPost.profile.trim()) add('blocked', {
+      id: 'publishing', title: '发布服务配置不完整', message: '请补全 Upload-Post 的 API Key 和 Profile。', executionMode: 'remote'
+    }, { label: '打开发布设置', deepLink: '#/settings?tab=ai-services&section=publishing' });
+    else add('ready', { id: 'publishing', title: '发布服务', message: `Upload-Post / ${uploadPost.profile} 已配置。`, executionMode: 'remote' });
+  }
 
   if (needs.has('llm')) {
     if (config.llm.source === 'codex' && stage.executor === 'krillinai') {
@@ -417,7 +424,7 @@ function readVideoProvider(job: CreatorJob, config: CreatorServicesConfig): Crea
   return value === 'seedance' || value === 'kling' || value === 'veo' ? value : config.video.provider;
 }
 function executionMode(stage: CreatorTemplateStage, job: CreatorJob): CreatorPreflightExecutionMode {
-  if (stage.executor === 'image' || stage.executor === 'video' || stage.executor === 'smart-dubbing' || stage.executor === 'stickman-image') return 'remote';
+  if (stage.executor === 'image' || stage.executor === 'video' || stage.executor === 'smart-dubbing' || stage.executor === 'stickman-image' || stage.executor === 'upload-post-publish') return 'remote';
   if (
     stage.executor === 'cover-analysis'
     || (stage.executor === 'clip')

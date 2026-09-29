@@ -31,13 +31,18 @@ import {
   Volume2,
   X
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
+import {
+  StickmanSocialPublishPanel,
+  type PublishingConfigurationStatus,
+  type SocialPublishSettings
+} from './StickmanSocialPublishPanel.js';
 import CreatorToolShell from './CreatorToolShell.js';
 import {
   createCreatorArtifactObjectUrl,
@@ -168,6 +173,7 @@ export default function StickmanVideoWorkspace(props: {
   const [controlPending, setControlPending] = useState<'canceling' | 'resuming'>();
   const [ttsConfigurationStatus, setTtsConfigurationStatus] = useState<TtsConfigurationStatus>('loading');
   const [imageConfigurationStatus, setImageConfigurationStatus] = useState<ImageConfigurationStatus>('loading');
+  const [publishingConfigurationStatus, setPublishingConfigurationStatus] = useState<PublishingConfigurationStatus>('loading');
   const [scriptDraftState, setScriptDraftState] = useState<ScriptDraftState>();
   const [scriptSubmitting, setScriptSubmitting] = useState(false);
   const [transitionPending, setTransitionPending] = useState<'audio' | 'visuals'>();
@@ -293,6 +299,7 @@ export default function StickmanVideoWorkspace(props: {
     if (service === null || service === undefined) {
       setTtsConfigurationStatus('unavailable');
       setImageConfigurationStatus('unavailable');
+      setPublishingConfigurationStatus('unavailable');
       return () => {
         active = false;
       };
@@ -307,6 +314,15 @@ export default function StickmanVideoWorkspace(props: {
           : response.config.tts[provider];
         const configured = ttsCredentialsConfigured(provider, response);
         setTtsConfigurationStatus(configured ? 'configured' : 'missing');
+        const uploadPost = response.config.publishing?.uploadPost;
+        setPublishingConfigurationStatus(
+          uploadPost !== undefined
+            && uploadPost.profile.trim().length > 0
+            && (uploadPost.apiKey.trim().length > 0
+              || response.configuredCredentials.includes('publishing.uploadPost.apiKey'))
+            ? 'configured'
+            : 'missing'
+        );
         const imageProvider = response.config.image.provider;
         if (imageProvider === 'codex-native') {
           setImageConfigurationStatus('configured');
@@ -338,6 +354,7 @@ export default function StickmanVideoWorkspace(props: {
           );
           setTtsConfigurationStatus('unavailable');
           setImageConfigurationStatus('unavailable');
+          setPublishingConfigurationStatus('unavailable');
         }
       });
     return () => {
@@ -416,6 +433,27 @@ export default function StickmanVideoWorkspace(props: {
   );
   const deliveryManifest = useArtifactJson<DeliveryManifest>(currentDeliveryManifest?.id);
   const videoUrl = useArtifactUrl(currentVideo?.id);
+
+  async function publishToSocial(settings: SocialPublishSettings) {
+    if (currentDeliveryManifest === undefined) return;
+    session.clearError();
+    setNotice('');
+    try {
+      // The confirmation is user-only; the stage then publishes exactly this confirmation once.
+      await session.applyAction({
+        actor: 'user',
+        action: 'confirm-social-publish',
+        input: { ...settings, deliveryManifestArtifactId: currentDeliveryManifest.id } as never
+      });
+      await session.applyAction({ actor: 'user', action: 'run-stage', input: { stageId: 'social-publish' } as never });
+    } catch (error) {
+      session.captureCreatorFailure(
+        'stickman.social-publish',
+        error,
+        l('发布未完成，请检查发布设置后重试。', 'Publishing did not start. Check the publishing settings and retry.')
+      );
+    }
+  }
 
   async function apply(action: string, input: Record<string, unknown>) {
     session.clearError();
@@ -887,6 +925,19 @@ export default function StickmanVideoWorkspace(props: {
                 onOpen={artifact => void openArtifact(session, artifact).catch(() => undefined)}
                 onDownload={artifact => void downloadArtifact(session, artifact).catch(() => undefined)}
                 onBack={() => setActiveStep(4)}
+                publishPanel={
+                  <StickmanSocialPublishPanel
+                    l={l}
+                    configuration={publishingConfigurationStatus}
+                    {...(currentDeliveryManifest === undefined ? {} : { deliveryManifestArtifactId: currentDeliveryManifest.id })}
+                    ratio={ratio}
+                    defaultTitle={script?.title ?? ''}
+                    defaultDescription={script?.segments.map(segment => segment.narration).join(' ') ?? ''}
+                    artifacts={job.artifacts}
+                    stages={job.stages}
+                    onPublish={publishToSocial}
+                  />
+                }
               />
             ) : null}
           </section>
@@ -2148,6 +2199,7 @@ function ResultStep(props: {
   onOpen(artifact: CreatorArtifact): void;
   onDownload(artifact: CreatorArtifact): void;
   onBack(): void;
+  publishPanel?: ReactNode;
 }) {
   if (props.snapshot === undefined) return <PendingPanel icon={FileVideo} label={props.l('最终交付尚未完成', 'Final delivery is not complete yet.')} />;
   const publishable = props.manifest?.packageStatus === 'publishable';
@@ -2197,6 +2249,7 @@ function ResultStep(props: {
             })}
           </div>
         </section>
+        {props.publishPanel}
       </div>
       <footer className="stickman-wizard-actions stickman-script-actions">
         <button className="video-translation-secondary-action" type="button" onClick={props.onBack}>

@@ -399,6 +399,10 @@ function createVideoConfig() {
       seedance: { baseUrl: '', apiKey: '', model: 'doubao-seedance-2-5-260628' },
       kling: { baseUrl: '', accessKey: '', secretKey: '', model: 'kling-v2-1-master' },
       veo: { baseUrl: '', apiKey: '', model: 'veo-3.1-generate-preview' }
+    },
+    publishing: {
+      provider: 'upload-post' as const,
+      uploadPost: { apiKey: '', profile: '' }
     }
   };
 }

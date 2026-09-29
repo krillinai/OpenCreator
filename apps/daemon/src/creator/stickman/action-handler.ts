@@ -24,6 +24,10 @@ import {
   staleSupersededStickmanScopedArtifacts
 } from './lineage.js';
 import {
+  createSocialPublishConfirmation,
+  socialPublishConfirmationInputSchema
+} from './social-publish.js';
+import {
   DEFAULT_STICKMAN_CHARACTER_ASSET,
   DEFAULT_STICKMAN_STYLE_ASSET,
   readVisualAssetRef
@@ -63,6 +67,49 @@ export function handleStickmanAction(input: {
       state: current.state,
       status: current.status,
       affectedArtifactIds: []
+    };
+  }
+
+  if (
+    (input.action === 'update-settings' || input.action === 'undo-action')
+    && isPlainRecord(parsedInput.patch)
+    && Object.hasOwn(parsedInput.patch, 'socialPublish')
+  ) {
+    throw new CreatorServiceError(
+      'creator_action_input_invalid',
+      'Publishing can only be confirmed with confirm-social-publish'
+    );
+  }
+
+  if (input.action === 'confirm-social-publish') {
+    // Publishing is public and hard to undo: only a person may confirm it, never the Agent.
+    if (input.actor !== 'user') {
+      throw new CreatorServiceError(
+        'creator_user_confirmation_required',
+        'Only the user can confirm publishing to social platforms'
+      );
+    }
+    const parsed = socialPublishConfirmationInputSchema.safeParse(parsedInput);
+    if (!parsed.success) {
+      throw new CreatorServiceError('creator_action_input_invalid', 'Publishing settings are invalid');
+    }
+    const manifest = [...current.artifacts].reverse().find(artifact => (
+      artifact.kind === 'delivery_manifest' && artifact.status === 'completed'
+    ));
+    if (manifest === undefined || manifest.id !== parsed.data.deliveryManifestArtifactId) {
+      throw new CreatorServiceError(
+        'creator_stage_input_missing',
+        'Only the latest finished delivery can be published'
+      );
+    }
+    return {
+      handled: true,
+      state: {
+        ...current.state,
+        socialPublish: createSocialPublishConfirmation(parsed.data) as unknown as CreatorJson
+      },
+      status: current.status,
+      affectedArtifactIds: [manifest.id]
     };
   }
 
@@ -616,4 +663,8 @@ function readRecord(value: CreatorJson | undefined, field: string): Record<strin
     throw new CreatorServiceError('creator_action_input_invalid', `${field} must be an object`);
   }
   return value;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
