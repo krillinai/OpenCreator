@@ -24,7 +24,9 @@ import {
   staleSupersededStickmanScopedArtifacts
 } from './lineage.js';
 import {
+  checkPublishableDelivery,
   createSocialPublishConfirmation,
+  notPublishableMessage,
   socialPublishConfirmationInputSchema
 } from './social-publish.js';
 import {
@@ -100,6 +102,13 @@ export function handleStickmanAction(input: {
       throw new CreatorServiceError(
         'creator_stage_input_missing',
         'Only the latest finished delivery can be published'
+      );
+    }
+    const delivery = checkPublishableDelivery(manifest.path);
+    if (!delivery.publishable) {
+      throw new CreatorServiceError(
+        'creator_social_publish_delivery_not_publishable',
+        notPublishableMessage(delivery.reasons)
       );
     }
     return {

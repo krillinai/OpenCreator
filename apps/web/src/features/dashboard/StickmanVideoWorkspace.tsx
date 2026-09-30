@@ -124,6 +124,7 @@ type DeliveryManifest = {
   height?: number;
   duration?: number;
   providers?: { image: string; video: string; voice: string };
+  placeholderAssets?: string[];
   blockingChecks?: string[];
   files?: Array<{
     name: string;
@@ -930,6 +931,13 @@ export default function StickmanVideoWorkspace(props: {
                     l={l}
                     configuration={publishingConfigurationStatus}
                     {...(currentDeliveryManifest === undefined ? {} : { deliveryManifestArtifactId: currentDeliveryManifest.id })}
+                    {...(deliveryManifest === undefined ? {} : {
+                      delivery: {
+                        packageStatus: deliveryManifest.packageStatus,
+                        placeholderAssets: deliveryManifest.placeholderAssets ?? [],
+                        blockingChecks: deliveryManifest.blockingChecks ?? []
+                      }
+                    })}
                     ratio={ratio}
                     defaultTitle={script?.title ?? ''}
                     defaultDescription={script?.segments.map(segment => segment.narration).join(' ') ?? ''}

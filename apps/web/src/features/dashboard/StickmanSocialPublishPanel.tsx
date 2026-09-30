@@ -16,6 +16,13 @@ import type { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
 export type PublishingConfigurationStatus = 'loading' | 'configured' | 'missing' | 'unavailable';
 
+/** The delivery manifest's own verdict; publishing follows it (the daemon enforces the same rule). */
+export type SocialPublishDeliveryState = {
+  packageStatus: 'publishable' | 'technical-draft';
+  placeholderAssets: string[];
+  blockingChecks: string[];
+};
+
 export type SocialPublishSettings = {
   platforms: SocialPublishPlatform[];
   title: string;
@@ -40,6 +47,8 @@ export function StickmanSocialPublishPanel(props: {
   l: ReturnType<typeof useLocalizedCopy>;
   configuration: PublishingConfigurationStatus;
   deliveryManifestArtifactId?: string;
+  /** Undefined while the delivery manifest is still loading. */
+  delivery?: SocialPublishDeliveryState;
   ratio: '16:9' | '9:16';
   defaultTitle: string;
   defaultDescription: string;
@@ -94,7 +103,27 @@ export function StickmanSocialPublishPanel(props: {
     );
   }
 
+  const blockers = props.delivery === undefined ? [] : deliveryBlockers(props.delivery, l);
+  if (blockers.length > 0) {
+    return (
+      <section className="stickman-delivery-files stickman-social-publish" aria-label={l('发布到社交平台', 'Publish to social platforms')}>
+        <header><h3>{l('发布到社交平台', 'Publish to social platforms')}</h3></header>
+        <p className="stickman-social-publish-error" role="status">
+          <CircleAlert size={14} />
+          {l('这份成片还不能发布：', 'This delivery cannot be published yet:')}
+        </p>
+        <ul className="stickman-social-publish-blockers">
+          {blockers.map(blocker => <li key={blocker}>{blocker}</li>)}
+        </ul>
+        <p className="stickman-social-publish-hint">
+          {l('解决上述检查并重新生成成片后即可发布。', 'Resolve these checks and regenerate the delivery to publish it.')}
+        </p>
+      </section>
+    );
+  }
+
   const canPublish = props.deliveryManifestArtifactId !== undefined
+    && props.delivery !== undefined
     && platforms.length > 0
     && title.trim().length > 0
     && !running
@@ -245,6 +274,25 @@ function PublishResults(props: {
       ))}
     </div>
   );
+}
+
+function deliveryBlockers(
+  delivery: SocialPublishDeliveryState,
+  l: ReturnType<typeof useLocalizedCopy>
+): string[] {
+  const blockers: string[] = [];
+  if (delivery.packageStatus !== 'publishable') {
+    blockers.push(l('成片仍是技术草稿', 'The delivery is still a technical draft'));
+  }
+  if (delivery.placeholderAssets.length > 0) {
+    const assets = delivery.placeholderAssets.join(', ');
+    blockers.push(l(`仍有占位素材：${assets}`, `Placeholder assets remain: ${assets}`));
+  }
+  if (delivery.blockingChecks.length > 0) {
+    const checks = delivery.blockingChecks.join(', ');
+    blockers.push(l(`未通过的发布检查：${checks}`, `Unresolved publishing checks: ${checks}`));
+  }
+  return blockers;
 }
 
 function resultDetail(result: SocialPublishPlatformResult, l: ReturnType<typeof useLocalizedCopy>): string {

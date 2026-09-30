@@ -22,12 +22,14 @@ When a delivery is ready, the **Video delivery** step shows a **Publish to socia
 
 If publishing is not configured, the panel links to the settings page instead of offering a publish button.
 
+Only a **publishable** delivery can be published. If the delivery manifest is a technical draft, still has placeholder assets, or lists unresolved blocking checks, the panel explains which ones instead of offering to publish, and the Daemon rejects both the confirmation and the stage for the same reasons. Resolve the checks and regenerate the delivery first.
+
 ## How it works
 
 - Publishing is the optional `social-publish` stage of the `stickman-video` template (executor `upload-post-publish`). The workflow never queues it on its own.
 - The user-only `confirm-social-publish` action records what to publish (platforms, copy, privacy, and the delivery manifest it applies to) in the job state. The Agent cannot confirm a publish, and `update-settings` / `undo-action` cannot write that confirmation.
-- The stage publishes one confirmation **at most once**. Its id is sent to Upload-Post as both `request_id` and `Idempotency-Key`, and the provider request ledger refuses a second submission for the same confirmation; publishing again needs a new confirmation.
-- The video is uploaded once with `async_upload=true`, and the stage polls `GET /api/uploadposts/status` until every platform finishes (up to 10 minutes; after that the result is recorded as `submitted`). If the connection drops mid-upload the file is not re-sent: the stage looks the request up by its id, and if Upload-Post has no record of it the request is marked as unknown for the user to resolve.
+- The stage publishes one confirmation **at most once**. Its id is sent to Upload-Post as both `request_id` and `Idempotency-Key`, and the provider request ledger refuses a second submission for the same confirmation; publishing again needs a new confirmation. Only a definitive rejection (an HTTP 4xx other than 408, where Upload-Post created nothing) lets the same confirmation be retried, for example after fixing the API key.
+- The video is uploaded once with `async_upload=true`, and the stage polls `GET /api/uploadposts/status` until every platform finishes (up to 10 minutes; after that the result is recorded as `submitted`). If the connection drops mid-upload, or Upload-Post answers with a 5xx or an unreadable response, the file is not re-sent: the stage looks the request up by its id and keeps tracking it if it exists; otherwise the request is marked as unknown and goes through the existing provider-request resolution flow.
 - Results are written to a `social_publish_result` artifact (`social-publish.json`) and do not create a new result version.
 - The request goes through the proxy configured in **AI Services** when one is set.
 

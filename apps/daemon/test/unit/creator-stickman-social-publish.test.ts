@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDefaultCreatorServicesConfig, type SocialPublishResult } from '@opencreator/protocol';
+import {
+  createDefaultCreatorServicesConfig,
+  stickmanCanvasForRatio,
+  type SocialPublishResult
+} from '@opencreator/protocol';
 import { createCreatorPreflight } from '../../src/creator/preflight.js';
 import { CreatorProviderRequestLedger } from '../../src/creator/provider-requests.js';
 import {
@@ -272,6 +276,98 @@ describe('social-publish stage', () => {
     db.close();
   });
 
+  it('never submits the same confirmation twice after an ambiguous 5xx, even after a restart', async () => {
+    const { db, repository, service, templates, jobId, manifestId } = setupDeliveredJob();
+    confirm(service, jobId, manifestId);
+    const client = fakeClient([{ status: 'not_found', completed: 0, total: null, results: [] }]);
+    client.submitVideo.mockRejectedValueOnce(new UploadPostApiError('upload_post_http_error', 'Upload-Post: HTTP 503', 503));
+    const runner = stageRunner(repository, templates, client);
+
+    expect((await runner.runStageRun(queuePublish(repository, jobId).id)).status).toBe('failed');
+    expect(latestStage(service, jobId).errorCode).toBe('creator_provider_resolution_required');
+    expect(service.getJob(jobId)!.providerRequests[0]!.status).toBe('unknown_remote_acceptance');
+    expect(client.getStatus).toHaveBeenCalledWith(expect.any(String), expect.any(AbortSignal));
+
+    // Retrying the stage with the same confirmation is refused.
+    expect((await runner.runStageRun(queuePublish(repository, jobId).id)).status).toBe('failed');
+    expect(latestStage(service, jobId).errorCode).toBe('creator_social_publish_already_submitted');
+    await runner.close();
+
+    // A restarted daemon (new ledger, runner and executor on the same database) recovers
+    // the request by id and still refuses to send the file again.
+    const ledger = new CreatorProviderRequestLedger(repository);
+    const request = service.getJob(jobId)!.providerRequests[0]!;
+    const recovered = await ledger.recover(request.id, createUploadPostProviderCapabilities({
+      configStore: { read: async () => configured() },
+      createClient: () => fakeClient([{ status: 'in_progress', completed: 0, total: 2, results: [] }]) as unknown as UploadPostClient
+    }));
+    expect(recovered.status).toBe('waiting_remote');
+    const restarted = stageRunner(repository, templates, client);
+    expect((await restarted.runStageRun(queuePublish(repository, jobId).id)).status).toBe('failed');
+    expect(latestStage(service, jobId).errorCode).toBe('creator_social_publish_already_submitted');
+    expect(client.submitVideo).toHaveBeenCalledTimes(1);
+    await restarted.close();
+    db.close();
+  });
+
+  it('keeps tracking a request that Upload-Post accepted despite a 5xx answer', async () => {
+    const { db, repository, service, templates, jobId, manifestId } = setupDeliveredJob();
+    confirm(service, jobId, manifestId);
+    const client = fakeClient([
+      { status: 'processing', completed: 0, total: 1, results: [] },
+      { status: 'completed', completed: 1, total: 1, results: normalizeUploadPostResults([{ platform: 'tiktok', success: true }]) }
+    ]);
+    client.submitVideo.mockRejectedValueOnce(new UploadPostApiError('upload_post_http_error', 'Upload-Post: HTTP 502', 502));
+    const runner = stageRunner(repository, templates, client);
+
+    expect((await runner.runStageRun(queuePublish(repository, jobId).id)).status).toBe('succeeded');
+    expect(client.submitVideo).toHaveBeenCalledTimes(1);
+    expect(service.getJob(jobId)!.providerRequests[0]!.status).toBe('succeeded');
+    await runner.close();
+    db.close();
+  });
+
+  it('refuses to publish a technical draft with placeholders and unresolved checks', async () => {
+    const { db, repository, service, templates, jobId, manifestId } = setupDeliveredJob({
+      delivery: {
+        packageStatus: 'technical-draft',
+        placeholderAssets: ['shot-02'],
+        blockingChecks: ['visual_ocr_unverified']
+      }
+    });
+    const job = service.getJob(jobId)!;
+    expect(() => service.applyAction(jobId, {
+      actor: 'user',
+      action: 'confirm-social-publish',
+      expectedRevision: job.revision,
+      input: confirmationInput(manifestId)
+    })).toThrow(/technical draft.*shot-02.*visual_ocr_unverified/);
+    expect(service.getJob(jobId)!.state.socialPublish).toBeUndefined();
+
+    // Even a confirmation that is already in the state cannot publish the draft.
+    repository.updateJob({
+      id: jobId,
+      status: job.status,
+      revision: job.revision,
+      state: {
+        ...job.state,
+        socialPublish: {
+          ...confirmationInput(manifestId),
+          id: '0b37296f-03c0-416e-9515-8aac6038e2d8',
+          confirmedAt: '2026-09-30T00:00:00.000Z'
+        }
+      }
+    });
+    const client = fakeClient([{ status: 'completed', completed: 0, total: 0, results: [] }]);
+    const runner = stageRunner(repository, templates, client);
+    expect((await runner.runStageRun(queuePublish(repository, jobId).id)).status).toBe('failed');
+    expect(latestStage(service, jobId).errorCode).toBe('creator_social_publish_delivery_not_publishable');
+    expect(client.submitVideo).not.toHaveBeenCalled();
+    expect(service.getJob(jobId)!.providerRequests).toHaveLength(0);
+    await runner.close();
+    db.close();
+  });
+
   it('is blocked by preflight until Upload-Post is configured', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'social-publish-preflight-'));
     const stage = createStickmanVideoTemplate().stages.find(item => item.id === 'social-publish')!;
@@ -317,7 +413,13 @@ describe('social-publish stage', () => {
   });
 });
 
-function setupDeliveredJob(options: { keepTempDir?: boolean } = {}) {
+type DeliveryVerdict = {
+  packageStatus?: 'publishable' | 'technical-draft';
+  placeholderAssets?: string[];
+  blockingChecks?: string[];
+};
+
+function setupDeliveredJob(options: { keepTempDir?: boolean; delivery?: DeliveryVerdict } = {}) {
   if (!options.keepTempDir || !tempDir) tempDir = mkdtempSync(join(tmpdir(), 'creator-social-publish-'));
   const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
   const repository = createCreatorRepository(db);
@@ -326,12 +428,12 @@ function setupDeliveredJob(options: { keepTempDir?: boolean } = {}) {
   const job = service.createJob({ projectId: 'p1', templateId: 'stickman-video', state: {} });
   const videoPath = join(tempDir, 'short.mp4');
   writeFileSync(videoPath, 'video');
-  const manifestPath = join(tempDir, 'delivery-manifest.json');
-  writeFileSync(manifestPath, JSON.stringify({ packageStatus: 'publishable' }));
   const video = repository.insertArtifact({
     jobId: job.id, kind: 'clean_video', status: 'completed', path: videoPath,
     sha256: sha256(videoPath), sourceArtifactIds: [], metadata: {}
   });
+  const manifestPath = join(tempDir, 'delivery-manifest.json');
+  writeFileSync(manifestPath, JSON.stringify(deliveryManifest(video.id, options.delivery)));
   const manifest = repository.insertArtifact({
     jobId: job.id, kind: 'delivery_manifest', status: 'completed', path: manifestPath,
     sha256: sha256(manifestPath), sourceArtifactIds: [video.id], metadata: {}
@@ -422,4 +524,27 @@ async function readAll(stream: Readable): Promise<string> {
 
 function multipartFields(body: string): Array<[string, string]> {
   return [...body.matchAll(/name="([^"]+)"\r\n\r\n([^\r]*)\r\n/g)].map(match => [match[1]!, match[2]!]);
+}
+
+function deliveryManifest(videoArtifactId: string, verdict: DeliveryVerdict = {}) {
+  const canvas = stickmanCanvasForRatio('9:16');
+  const file = (name: string, mime: string) => ({
+    name, relativePath: `delivery/${name}`, sha256: 'a'.repeat(64), bytes: 1, mime, sourceArtifactId: videoArtifactId
+  });
+  return {
+    packageStatus: verdict.packageStatus ?? 'publishable',
+    ratio: '9:16',
+    width: canvas.width,
+    height: canvas.height,
+    duration: 6,
+    providers: { image: 'codex-native', video: 'remotion', voice: 'edge-tts' },
+    placeholderAssets: verdict.placeholderAssets ?? [],
+    blockingChecks: verdict.blockingChecks ?? [],
+    files: [
+      file('short.mp4', 'video/mp4'),
+      file('subtitles.srt', 'application/x-subrip'),
+      file('thumbnail.png', 'image/png'),
+      file('publish-copy.md', 'text/markdown')
+    ]
+  };
 }

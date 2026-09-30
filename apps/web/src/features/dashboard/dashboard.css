@@ -9231,6 +9231,13 @@
   color: var(--danger, #c0392b);
 }
 
+.stickman-social-publish-blockers {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  font-size: 12px;
+}
+
 .stickman-social-publish-platforms {
   display: flex;
   flex-wrap: wrap;

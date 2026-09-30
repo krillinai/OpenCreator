@@ -3,7 +3,11 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfirmDialogProvider } from '../../components/dialogs/ConfirmDialogProvider.js';
-import { StickmanSocialPublishPanel, type PublishingConfigurationStatus } from './StickmanSocialPublishPanel.js';
+import {
+  StickmanSocialPublishPanel,
+  type PublishingConfigurationStatus,
+  type SocialPublishDeliveryState
+} from './StickmanSocialPublishPanel.js';
 
 const l = (_chinese: string, english: string) => english;
 
@@ -54,6 +58,30 @@ describe('StickmanSocialPublishPanel', () => {
     expect(screen.getByText('Duplicate content')).toBeInTheDocument();
   });
 
+  it('blocks a technical draft and explains the unresolved checks instead of offering to publish', () => {
+    const onPublish = vi.fn(async () => undefined);
+    renderPanel({
+      onPublish,
+      delivery: {
+        packageStatus: 'technical-draft',
+        placeholderAssets: ['shot-02'],
+        blockingChecks: ['visual_ocr_unverified']
+      }
+    });
+
+    expect(screen.getByText('The delivery is still a technical draft')).toBeInTheDocument();
+    expect(screen.getByText('Placeholder assets remain: shot-02')).toBeInTheDocument();
+    expect(screen.getByText('Unresolved publishing checks: visual_ocr_unverified')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Publish/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'TikTok' })).not.toBeInTheDocument();
+    expect(onPublish).not.toHaveBeenCalled();
+  });
+
+  it('keeps publishing disabled until the delivery verdict has loaded', () => {
+    renderPanel({ delivery: null });
+    expect(screen.getByRole('button', { name: 'Publish…' })).toBeDisabled();
+  });
+
   it('locks the form while a publish is running', () => {
     renderPanel({
       stages: [{
@@ -69,6 +97,7 @@ describe('StickmanSocialPublishPanel', () => {
 
 function renderPanel(overrides: {
   configuration?: PublishingConfigurationStatus;
+  delivery?: SocialPublishDeliveryState | null;
   artifacts?: CreatorArtifact[];
   stages?: CreatorStageRun[];
   onPublish?: () => Promise<void>;
@@ -79,6 +108,9 @@ function renderPanel(overrides: {
         l={l}
         configuration={overrides.configuration ?? 'configured'}
         deliveryManifestArtifactId="manifest-1"
+        {...(overrides.delivery === null ? {} : {
+          delivery: overrides.delivery ?? { packageStatus: 'publishable', placeholderAssets: [], blockingChecks: [] }
+        })}
         ratio="9:16"
         defaultTitle="How RAG works"
         defaultDescription="Stick figures explain retrieval."

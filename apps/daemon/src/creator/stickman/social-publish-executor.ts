@@ -16,11 +16,17 @@ import {
   type UploadPostClient,
   type UploadPostStatus
 } from '../publishing/upload-post-client.js';
-import { readSocialPublishConfirmation, socialPublishRequestKey } from './social-publish.js';
+import {
+  checkPublishableDelivery,
+  notPublishableMessage,
+  readSocialPublishConfirmation,
+  socialPublishRequestKey
+} from './social-publish.js';
 
 const finalStatuses = new Set(['completed', 'failed']);
-// `registered` never left the machine and `failed` was rejected by Upload-Post before
-// it created anything, so only these block a second attempt with the same confirmation.
+// `registered` never left the machine and `failed` is only recorded for a definitive
+// pre-acceptance rejection (see isDefinitiveRejection), so only these block a second
+// attempt with the same confirmation.
 const acceptedLedgerStatuses = new Set(['submitting', 'waiting_remote', 'unknown_remote_acceptance', 'succeeded']);
 
 export const uploadPostPublishExecutorId = 'upload-post-publish';
@@ -54,6 +60,13 @@ export function createUploadPostPublishExecutor(input: {
         throw new CreatorExecutorError(
           'creator_social_publish_confirmation_stale',
           'The confirmed delivery is no longer the latest one; confirm publishing again'
+        );
+      }
+      const delivery = checkPublishableDelivery(manifest.path);
+      if (!delivery.publishable) {
+        throw new CreatorExecutorError(
+          'creator_social_publish_delivery_not_publishable',
+          notPublishableMessage(delivery.reasons)
         );
       }
       const requestKey = socialPublishRequestKey(stage.job.id, confirmation.id);
@@ -117,15 +130,17 @@ export function createUploadPostPublishExecutor(input: {
         });
         accepted = true;
       } catch (error) {
-        if (error instanceof UploadPostApiError) {
+        if (isDefinitiveRejection(error)) {
+          // Upload-Post refused the request before creating anything, so the same
+          // confirmation may be retried (for example after fixing the API key).
           input.ledger.markFailed(ledger.id, error);
           throw new CreatorExecutorError(publishErrorCode(error), error.message, {
             ...(error.status === undefined ? {} : { status: error.status })
           });
         }
         if (stage.signal.aborted) throw error;
-        // The upload may have reached Upload-Post before the connection dropped.
-        // Never re-send the file: look the request up by its id instead.
+        // A 5xx, a dropped connection or an unreadable response does not prove that
+        // nothing was created. Never re-send the file: look the request up by its id.
       }
       if (!accepted) {
         const found = await client.getStatus(confirmation.id, stage.signal).catch(() => undefined);
@@ -237,6 +252,18 @@ function summarize(status: UploadPostStatus & { timedOut?: true }): SocialPublis
   )).length;
   if (published === 0) return 'failed';
   return failed > 0 || status.results.some(result => result.status === 'skipped') ? 'partial' : 'completed';
+}
+
+/**
+ * Only a 4xx answer is a definitive pre-acceptance rejection (a 408 timeout is not).
+ * Everything else is ambiguous and must go through the request-id lookup.
+ */
+function isDefinitiveRejection(error: unknown): error is UploadPostApiError {
+  return error instanceof UploadPostApiError
+    && error.status !== undefined
+    && error.status >= 400
+    && error.status < 500
+    && error.status !== 408;
 }
 
 function publishErrorCode(error: UploadPostApiError): string {

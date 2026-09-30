@@ -653,10 +653,12 @@ describe('StickmanVideoWorkspace', () => {
       getTtsVoices: vi.fn(async () => ({ provider: 'openai' as const, model: '', voices: [] })),
       previewTtsVoice: vi.fn()
     };
+    persisted.contents.set('manifest', deliveryManifestContent());
     renderWorkspace(persisted.job, persisted.contents, applyAction, creatorServicesService as never);
 
     fireEvent.click(screen.getByRole('button', { name: /成片交付/ }));
     const panel = await screen.findByRole('region', { name: '发布到社交平台' });
+    await waitFor(() => expect(within(panel).getByRole('button', { name: '发布…' })).toBeEnabled());
     await waitFor(() => expect(within(panel).getByRole('textbox', { name: '标题 / 文案' })).toHaveValue('测试脚本'));
     fireEvent.click(within(panel).getByRole('button', { name: '发布…' }));
     expect(applyAction).not.toHaveBeenCalled();
@@ -676,6 +678,31 @@ describe('StickmanVideoWorkspace', () => {
       action: 'run-stage',
       input: { stageId: 'social-publish' }
     });
+  });
+
+  it('does not offer publishing for a technical draft delivery', async () => {
+    const persisted = completedJob();
+    persisted.contents.set('manifest', deliveryManifestContent({
+      packageStatus: 'technical-draft',
+      placeholderAssets: ['shot-02'],
+      blockingChecks: ['visual_ocr_unverified']
+    }));
+    const applyAction = vi.fn();
+    const config = createDefaultCreatorServicesConfig();
+    config.publishing.uploadPost.profile = 'my-brand';
+    const creatorServicesService = {
+      getConfig: vi.fn(async () => ({ config, configuredCredentials: ['publishing.uploadPost.apiKey'] })),
+      getTtsVoices: vi.fn(async () => ({ provider: 'openai' as const, model: '', voices: [] })),
+      previewTtsVoice: vi.fn()
+    };
+    renderWorkspace(persisted.job, persisted.contents, applyAction as never, creatorServicesService as never);
+
+    fireEvent.click(screen.getByRole('button', { name: /成片交付/ }));
+    const panel = await screen.findByRole('region', { name: '发布到社交平台' });
+    expect(await within(panel).findByText('未通过的发布检查：visual_ocr_unverified')).toBeInTheDocument();
+    expect(within(panel).getByText('仍有占位素材：shot-02')).toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: '发布…' })).not.toBeInTheDocument();
+    expect(applyAction).not.toHaveBeenCalled();
   });
 
   it('scrolls only storyboard content and keeps back and next actions visible', async () => {
@@ -1439,5 +1466,19 @@ function partialStoryboardJob(status: 'idle' | 'failed' | 'running') {
       }
     },
     contents
+  };
+}
+
+function deliveryManifestContent(verdict: {
+  packageStatus?: 'publishable' | 'technical-draft';
+  placeholderAssets?: string[];
+  blockingChecks?: string[];
+} = {}) {
+  return {
+    packageStatus: verdict.packageStatus ?? 'publishable',
+    ratio: '16:9',
+    placeholderAssets: verdict.placeholderAssets ?? [],
+    blockingChecks: verdict.blockingChecks ?? [],
+    files: []
   };
 }
