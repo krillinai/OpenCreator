@@ -378,6 +378,46 @@ describe('CreatorServicesConfigStore', () => {
     });
   });
 
+  it('adds empty publishing defaults when reading an older saved configuration', async () => {
+    const legacy = createDefaultCreatorServicesConfig() as Partial<ReturnType<
+      typeof createDefaultCreatorServicesConfig
+    >>;
+    delete legacy.publishing;
+    const store = createCreatorServicesConfigStore({
+      getPassword: vi.fn(async () => JSON.stringify(legacy)),
+      setPassword: vi.fn(async () => undefined),
+      deletePassword: vi.fn(async () => undefined)
+    });
+
+    await expect(store.read()).resolves.toMatchObject({
+      publishing: { provider: 'upload-post', uploadPost: { apiKey: '', profile: '' } }
+    });
+  });
+
+  it('keeps the Upload-Post key in credentials.json and redacts and retains it', async () => {
+    vi.stubEnv('VOLCENGINE_APP_ID', '');
+    vi.stubEnv('VOLCENGINE_ACCESS_TOKEN', '');
+    root = mkdtempSync(join(tmpdir(), 'opencreator-creator-services-'));
+    const configFile = join(root, 'config.toml');
+    const credentialsFile = join(root, 'credentials.json');
+    const config = createDefaultCreatorServicesConfig();
+    config.publishing.uploadPost = { apiKey: 'upload-post-private-key', profile: 'my-brand' };
+    const store = createOpenCreatorCreatorServicesConfigStore({ configFile, credentialsFile });
+
+    await store.write(config);
+    await expect(store.read()).resolves.toMatchObject({ publishing: config.publishing });
+    expect(readFileSync(configFile, 'utf8')).toContain('my-brand');
+    expect(readFileSync(configFile, 'utf8')).not.toContain('upload-post-private-key');
+    expect(JSON.parse(readFileSync(credentialsFile, 'utf8'))).toMatchObject({
+      creatorServices: { 'publishing.uploadPost.apiKey': 'upload-post-private-key' }
+    });
+
+    const presented = presentCreatorServicesConfig(config);
+    expect(presented.config.publishing.uploadPost).toEqual({ apiKey: '', profile: 'my-brand' });
+    expect(presented.configuredCredentials).toContain('publishing.uploadPost.apiKey');
+    expect(retainCreatorServicesCredentials(presented.config, config).publishing).toEqual(config.publishing);
+  });
+
   it('adds the credential-free Codex image defaults when reading an older saved configuration', async () => {
     const legacy = structuredClone(createDefaultCreatorServicesConfig()) as unknown as {
       image: Record<string, unknown>;

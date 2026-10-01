@@ -71,6 +71,13 @@ export type KlingAiConfig = {
   model: string;
 };
 
+/** Upload-Post (https://upload-post.com): one API key, accounts connected per profile. */
+export type UploadPostConfig = {
+  apiKey: string;
+  /** Upload-Post profile whose connected social accounts are posted from. */
+  profile: string;
+};
+
 export type AliyunOssConfig = {
   accessKeyId: string;
   accessKeySecret: string;
@@ -142,6 +149,10 @@ export type CreatorServicesConfig = {
     seedance: OpenAiCompatibleConfig;
     kling: KlingAiConfig;
     veo: OpenAiCompatibleConfig;
+  };
+  publishing: {
+    provider: 'upload-post';
+    uploadPost: UploadPostConfig;
   };
 };
 
@@ -220,7 +231,8 @@ export type CreatorServicesCredentialField =
   | 'video.seedance.apiKey'
   | 'video.kling.accessKey'
   | 'video.kling.secretKey'
-  | 'video.veo.apiKey';
+  | 'video.veo.apiKey'
+  | 'publishing.uploadPost.apiKey';
 
 export const defaultVolcengineSpeechBaseUrl = 'https://openspeech.bytedance.com';
 export const defaultVolcengineAsrResourceId = 'volc.seedasr.auc';
@@ -330,6 +342,13 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
         baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
         apiKey: '',
         model: defaultVideoGenerationModels.veo
+      }
+    },
+    publishing: {
+      provider: 'upload-post',
+      uploadPost: {
+        apiKey: '',
+        profile: ''
       }
     }
   };

@@ -838,6 +838,8 @@ function creatorConfigurationInput(
           ? 'image'
         : code === 'creator_video_config_missing'
           ? 'video'
+        : code === 'creator_publishing_config_missing'
+          ? 'publishing'
         : presetService ?? null;
   return section === null ? null : {
     code,

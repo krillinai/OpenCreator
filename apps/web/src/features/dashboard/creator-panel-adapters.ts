@@ -400,7 +400,8 @@ export const stickmanVideoPanelAdapter: CreatorPanelAdapter = {
       timeline: l('生成时间线与旁白字幕', 'Build timeline and narration subtitles'),
       'render-clean': l('渲染火柴人动画', 'Render stickman video'),
       'media-validation': l('校验成片媒体', 'Validate rendered media'),
-      'package-validation': l('整理成片与字幕', 'Prepare video and subtitles')
+      'package-validation': l('整理成片与字幕', 'Prepare video and subtitles'),
+      'social-publish': l('发布到社交平台', 'Publish to social platforms')
     };
     return labels[stageId] ?? l('火柴人视频任务', 'Stickman video task');
   },

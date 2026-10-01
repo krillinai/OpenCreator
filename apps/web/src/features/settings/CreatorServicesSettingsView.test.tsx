@@ -470,6 +470,29 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.getByLabelText('默认模型')).toHaveValue('veo-3.1-generate-preview');
   });
 
+  it('saves the Upload-Post publishing key and profile', async () => {
+    const user = userEvent.setup();
+    const service = createService();
+    render(
+      <CreatorServicesSettingsView
+        connected
+        service={service}
+        modelService={createModelService()}
+        initialSection="publishing"
+      />
+    );
+
+    expect(await screen.findByRole('tab', { name: '发布' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Upload-Post API Key')).toHaveAttribute('type', 'password');
+    await user.type(screen.getByLabelText('Upload-Post API Key'), 'up-key');
+    await user.type(screen.getByLabelText('Profile 名称'), 'my-brand');
+    await user.click(screen.getByRole('button', { name: '保存配置' }));
+
+    await waitFor(() => expect(service.saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+      publishing: { provider: 'upload-post', uploadPost: { apiKey: 'up-key', profile: 'my-brand' } }
+    })));
+  });
+
   it('uses local Codex image generation by default without configuration fields', async () => {
     const user = userEvent.setup();
     render(

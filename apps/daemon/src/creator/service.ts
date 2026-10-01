@@ -1493,6 +1493,7 @@ function summarizeAction(action: string, input: Record<string, CreatorJson>): st
   if (action === 'import-subtitle') return '导入本地字幕并保留旧版本';
   if (action === 'edit-subtitle') return '更新字幕并保留下游旧版本';
   if (action === 'commit-version') return '保存项目版本设置';
+  if (action === 'confirm-social-publish') return '确认发布到社交平台';
   if (action === 'run-stage') return `启动阶段 ${String(input.stageId ?? '')}`.trim();
   if (action === 'retry-stage') return `重试阶段 ${String(input.stageId ?? '')}`.trim();
   if (action === 'resolve-provider-request') return '处置计费服务请求';

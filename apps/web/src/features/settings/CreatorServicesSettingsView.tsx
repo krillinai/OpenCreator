@@ -33,7 +33,8 @@ import {
   LoaderCircle,
   Mic2,
   RotateCcw,
-  Save
+  Save,
+  Send
 } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
@@ -46,7 +47,7 @@ import { usePageIssueState } from '../issues/page-issue-state.js';
 import { inferLlmProviderId, llmProviderOptions } from './llm-provider-selection.js';
 import './creator-services-settings.css';
 
-export type CreatorServicesSection = 'text' | 'transcription' | 'tts' | 'image' | 'video';
+export type CreatorServicesSection = 'text' | 'transcription' | 'tts' | 'image' | 'video' | 'publishing';
 type ModelSettingsService = Pick<ConnectionService, 'getCodexProvider' | 'updateCodexProvider'> & {
   getCodexModels?: ConnectionService['getCodexModels'];
 };
@@ -198,7 +199,8 @@ export function CreatorServicesSettingsView(props: {
     { id: 'transcription', label: l('语音识别', 'Transcription'), icon: Mic2 },
     { id: 'tts', label: l('配音服务', 'Voice'), icon: AudioLines },
     { id: 'image', label: l('图像生成', 'Images'), icon: Image },
-    { id: 'video', label: l('视频生成', 'Video'), icon: Clapperboard }
+    { id: 'video', label: l('视频生成', 'Video'), icon: Clapperboard },
+    { id: 'publishing', label: l('发布', 'Publishing'), icon: Send }
   ];
 
   function updateConfig(mutator: (draft: CreatorServicesConfig) => void) {
@@ -301,8 +303,8 @@ export function CreatorServicesSettingsView(props: {
     const confirmed = await confirm({
       title: l('恢复默认配置', 'Restore default settings'),
       description: l(
-        '这会清除语音、图像和视频服务的 Key 与设置；模型服务配置会保留。',
-        'This clears speech, image, and video service keys and settings. The model provider configuration is kept.'
+        '这会清除语音、图像、视频和发布服务的 Key 与设置；模型服务配置会保留。',
+        'This clears speech, image, video, and publishing service keys and settings. The model provider configuration is kept.'
       ),
       confirmLabel: l('恢复默认', 'Restore defaults'),
       destructive: true
@@ -443,6 +445,9 @@ export function CreatorServicesSettingsView(props: {
           ) : null}
           {activeSection === 'video' ? (
             <VideoSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
+          ) : null}
+          {activeSection === 'publishing' ? (
+            <PublishingSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
           ) : null}
 
           <footer className="creator-services-actions">
@@ -1094,6 +1099,35 @@ function VideoSettings(props: SettingsGroupProps) {
       {provider === 'seedance' ? <OpenAiFields id="video-seedance" credential="video.seedance.apiKey" configuredCredentials={props.configuredCredentials} value={props.config.video.seedance} modelLabel={l('默认模型', 'Default model')} modelPlaceholder={defaultVideoGenerationModels.seedance} modelSuggestions={videoGenerationModelIds.seedance} baseUrlPlaceholder="https://ark.cn-beijing.volces.com/api/v3" onChange={value => props.update(config => { config.video.seedance = value; })} /> : null}
       {provider === 'kling' ? <KlingFields id="video-kling" accessKeyCredential="video.kling.accessKey" secretKeyCredential="video.kling.secretKey" configuredCredentials={props.configuredCredentials} value={props.config.video.kling} modelLabel={l('默认模型', 'Default model')} modelPlaceholder={defaultVideoGenerationModels.kling} modelSuggestions={creatorProviderOfKind('video', 'kling-video')?.models.map(model => model.id)} onChange={value => props.update(config => { config.video.kling = value; })} /> : null}
       {provider === 'veo' ? <OpenAiFields id="video-veo" credential="video.veo.apiKey" configuredCredentials={props.configuredCredentials} value={props.config.video.veo} modelLabel={l('默认模型', 'Default model')} modelPlaceholder={defaultVideoGenerationModels.veo} modelSuggestions={videoGenerationModelIds.veo} baseUrlPlaceholder="https://generativelanguage.googleapis.com/v1beta" onChange={value => props.update(config => { config.video.veo = value; })} /> : null}
+    </SettingsFieldset>
+  );
+}
+
+function PublishingSettings(props: SettingsGroupProps) {
+  const l = useLocalizedCopy();
+  const uploadPost = props.config.publishing.uploadPost;
+  return (
+    <SettingsFieldset
+      title={l('发布到社交平台', 'Publish to social platforms')}
+      description={l(
+        '通过 Upload-Post 将成片发布到 TikTok、Instagram、YouTube、LinkedIn、Facebook、X、Threads 和 Bluesky。先在 upload-post.com 创建 Profile 并连接账号，再填写 API Key 和 Profile 名称。每次发布都需要你在成片页确认。',
+        'Publish finished videos to TikTok, Instagram, YouTube, LinkedIn, Facebook, X, Threads, and Bluesky through Upload-Post. Create a profile at upload-post.com, connect your accounts to it, then enter the API key and profile name. Every publish needs your confirmation on the delivery page.'
+      )}
+    >
+      <PasswordField
+        id="publishing-upload-post-api-key"
+        label="Upload-Post API Key"
+        value={uploadPost.apiKey}
+        configured={props.configuredCredentials.has('publishing.uploadPost.apiKey')}
+        onChange={apiKey => props.update(config => { config.publishing.uploadPost.apiKey = apiKey; })}
+      />
+      <TextField
+        id="publishing-upload-post-profile"
+        label={l('Profile 名称', 'Profile name')}
+        value={uploadPost.profile}
+        placeholder="my-brand"
+        onChange={profile => props.update(config => { config.publishing.uploadPost.profile = profile; })}
+      />
     </SettingsFieldset>
   );
 }
