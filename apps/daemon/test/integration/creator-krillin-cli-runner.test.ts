@@ -129,6 +129,8 @@ describe('KrillinAI CLI runner', () => {
       base_url: 'http://127.0.0.1:4321/internal/krillin-llm/v1',
       api_key: 'task-token',
       model: 'codex',
+      provider: 'openai-compatible',
+      timeout_seconds: 120,
       json: false
     });
   });

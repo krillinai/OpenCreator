@@ -140,7 +140,10 @@ export function CreatorServicesSettingsView(props: {
         if (providerResult.status === 'fulfilled') {
           const provider = providerResult.value;
           setModelProvider(provider);
-          setModelProviderId(inferLlmProviderId(provider.baseUrl, provider.model));
+          setModelProviderId(response.config.llm.providerId ?? inferLlmProviderId(
+            useLegacyTextModel ? response.config.llm.baseUrl : provider.baseUrl,
+            useLegacyTextModel ? response.config.llm.model : provider.model
+          ));
           setModelBaseUrl(useLegacyTextModel ? response.config.llm.baseUrl : provider.baseUrl);
           setModelName(useLegacyTextModel ? response.config.llm.model : provider.model);
           pageIssues.resolveOperation('settings.creator-services.load-model-provider');
@@ -267,6 +270,7 @@ export function CreatorServicesSettingsView(props: {
             baseUrl: modelBaseUrl,
             apiKey: modelApiKey,
             model: modelName,
+            providerId: modelProviderId,
             source: 'custom'
           };
         }
@@ -408,6 +412,7 @@ export function CreatorServicesSettingsView(props: {
                 setNotice(undefined);
               }}
               providerId={modelProviderId}
+              onTestConnection={props.service.testLlmConnection}
               runtimeModelIds={runtimeModelIds}
               onProviderIdChange={id => {
                 const preset = creatorProviderCatalogById.llm[id];
@@ -506,10 +511,12 @@ function TextModelSettings(props: SettingsGroupProps & {
   fieldErrors: ModelFieldErrors;
   onProviderChange(value: OpenAiCompatibleConfig): void;
   providerId: string;
+  onTestConnection(config: { baseUrl: string; model: string; apiKey: string; timeoutSeconds: number }): Promise<Response>;
   runtimeModelIds: readonly string[];
   onProviderIdChange(value: string): void;
 }) {
   const l = useLocalizedCopy();
+  const [connectionResult, setConnectionResult] = useState<string>();
   const legacyApiKeyConfigured = props.config.llm.source === 'custom'
     && props.configuredCredentials.has('llm.apiKey');
   const providerApiKeyConfigured = props.provider?.apiKeyConfigured === true;
@@ -517,7 +524,7 @@ function TextModelSettings(props: SettingsGroupProps & {
     && (props.provider.authentication === 'chatgpt' || providerApiKeyConfigured);
   const textTasksAvailable = props.mode === 'codex'
     ? codexAvailable
-    : legacyApiKeyConfigured || props.apiKey.trim().length > 0;
+    : props.providerId === 'hy-mt2' || legacyApiKeyConfigured || props.apiKey.trim().length > 0;
   const selectedModeAvailable = props.mode === 'codex' ? codexAvailable : textTasksAvailable;
   const TextTaskStatusIcon = textTasksAvailable ? Check : CircleAlert;
   const modelCredentials = legacyApiKeyConfigured
@@ -580,10 +587,43 @@ function TextModelSettings(props: SettingsGroupProps & {
               : l(`已连接本机 Codex · ${props.provider.model || 'Runtime'}`, `Local Codex connected · ${props.provider.model || 'Runtime'}`)}
           </p>
         )}
+        {props.mode === 'custom' ? <TextField
+          id="llm-timeout-seconds"
+          label={l('请求超时（秒）', 'Request timeout (seconds)')}
+          value={String(props.config.llm.timeoutSeconds ?? 120)}
+          onChange={value => props.update(config => { config.llm.timeoutSeconds = Number(value); })}
+        /> : null}
+        {props.mode === 'custom' ? <div className="creator-services-inline-note is-wide">
+          <button type="button" onClick={() => {
+            setConnectionResult(l('正在测试连接…', 'Testing connection…'));
+            void props.onTestConnection({
+              baseUrl: props.baseUrl,
+              model: props.model,
+              apiKey: props.apiKey,
+              timeoutSeconds: props.config.llm.timeoutSeconds ?? 120
+            }).then(async response => {
+              if (response.ok) {
+                setConnectionResult(l('连接成功，模型可用', 'Connected; model available'));
+                return;
+              }
+              const payload: unknown = await response.json().catch(() => null);
+              const message = typeof payload === 'object' && payload !== null && 'error' in payload
+                && typeof payload.error === 'object' && payload.error !== null && 'message' in payload.error
+                && typeof payload.error.message === 'string'
+                ? payload.error.message : `HTTP ${response.status}`;
+              setConnectionResult(l(`连接失败：${message}`, `Connection failed: ${message}`));
+            }).catch(error => {
+              setConnectionResult(error instanceof Error ? error.message : String(error));
+            });
+          }}>{l('测试连接', 'Test connection')}</button>
+          {connectionResult ? <span role="status">{connectionResult}</span> : null}
+        </div> : null}
         <div className="creator-services-model-status is-wide" role="status">
           <span className={selectedModeAvailable ? '' : 'is-warning'}>
             <TextTaskStatusIcon size={15} aria-hidden="true" />
-            {textTasksAvailable
+            {props.mode === 'custom' && props.providerId === 'hy-mt2'
+              ? l('您自行部署的本地 Hy-MT2 服务，请测试连接', 'Self-hosted Hy-MT2; test the connection')
+              : textTasksAvailable
               ? l('文本任务可用', 'Text tasks ready')
               : props.mode === 'codex'
                 ? l('本机 Codex 尚未配置', 'Local Codex is not configured')

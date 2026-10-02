@@ -38,6 +38,36 @@ export async function registerCreatorServicesRoutes(
     }
   });
 
+  server.post<{ Body: { baseUrl?: string; model?: string; apiKey?: string; timeoutSeconds?: number } }>(
+    '/creator-services/llm/test', async (request, reply) => {
+      const { baseUrl, model, apiKey, timeoutSeconds } = request.body ?? {};
+      if (typeof baseUrl !== 'string' || typeof model !== 'string' || !/^https?:$/.test(safeProtocol(baseUrl))
+        || !model.trim() || typeof apiKey !== 'string'
+        || !Number.isInteger(timeoutSeconds) || timeoutSeconds! < 1 || timeoutSeconds! > 600) {
+        return reply.code(400).send(apiError('VALIDATION_FAILED', 'Invalid LLM connection settings'));
+      }
+      try {
+        const saved = await store.read();
+        const credential = apiKey || (saved.llm.source === 'custom' && saved.llm.baseUrl === baseUrl
+          && saved.llm.model === model ? saved.llm.apiKey : '');
+        const response = await fetch(`${baseUrl.replace(/\/$/, '')}/models`, {
+          headers: credential ? { Authorization: `Bearer ${credential}` } : {},
+          signal: AbortSignal.timeout(timeoutSeconds! * 1000)
+        });
+        if (!response.ok) return reply.code(502).send(apiError('LLM_CONNECTION_FAILED', `LLM endpoint returned HTTP ${response.status}`));
+        const result: unknown = await response.json();
+        const models = typeof result === 'object' && result !== null && 'data' in result && Array.isArray(result.data)
+          ? result.data : [];
+        if (!models.some(item => typeof item === 'object' && item !== null && 'id' in item && item.id === model)) {
+          return reply.code(502).send(apiError('LLM_CONNECTION_FAILED', `Model ${model} is not served by this endpoint`));
+        }
+        return { connected: true, model };
+      } catch (error) {
+        return reply.code(502).send(apiError('LLM_CONNECTION_FAILED', error instanceof Error ? error.message : 'LLM endpoint unavailable'));
+      }
+    }
+  );
+
   server.patch<{ Body: unknown }>('/creator-services/config', async (request, reply) => {
     try {
       const config = parseCreatorServicesConfig(request.body);
@@ -162,6 +192,10 @@ export async function registerCreatorServicesRoutes(
       }
     );
   }
+}
+
+function safeProtocol(baseUrl: string): string {
+  try { return new URL(baseUrl).protocol; } catch { return ''; }
 }
 
 function sendStoreError(reply: FastifyReply, error: unknown) {

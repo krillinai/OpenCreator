@@ -24,6 +24,9 @@ export function createCreatorServicesService(client: ClientLike) {
       return client.patch('/creator-services/config', config);
     },
     testTranscriptionConnection(config: CreatorServicesConfig['transcription']['funasr']): Promise<{ connected: boolean; model: string; models: string[]; capabilities: string[] }> { return client.rawRequest('/creator-services/transcription/test', { method: 'POST', body: config }).then(response => response.json()); },
+    testLlmConnection(config: { baseUrl: string; model: string; apiKey: string; timeoutSeconds: number }): Promise<Response> {
+      return client.rawRequest('/creator-services/llm/test', { method: 'POST', body: config });
+    },
     resetConfig(): Promise<CreatorServicesConfigResponse> {
       return client.delete('/creator-services/config');
     },

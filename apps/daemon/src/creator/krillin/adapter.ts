@@ -125,6 +125,21 @@ export function createKrillinExecutor(input: {
         artifacts: relevantArtifacts,
         ffprobe
       });
+      if (stage.stageRun.stageId === 'subtitle') {
+        for (const output of outputs) {
+          if (output.kind === 'target_subtitle') {
+            output.metadata = {
+              ...output.metadata,
+              translationProvider: preflight.config.llm.source === 'codex'
+                ? 'codex'
+                : preflight.config.llm.providerId === 'hy-mt2' ? 'hy-mt2' : 'openai-compatible',
+              translationModel: preflight.config.llm.source === 'codex'
+                ? input.getCodexLlmConfig?.()?.model ?? preflight.config.llm.model
+                : preflight.config.llm.model
+            };
+          }
+        }
+      }
       return {
         outputs,
         progress: {

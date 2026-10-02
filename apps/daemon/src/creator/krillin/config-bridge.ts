@@ -12,6 +12,8 @@ export function createKrillinConfigToml(
       base_url: llm.baseUrl,
       api_key: llm.apiKey,
       model: llm.model,
+      provider: config.llm.providerId ?? 'openai-compatible',
+      timeout_seconds: config.llm.timeoutSeconds ?? 120,
       json: config.llm.jsonMode
     },
     transcribe: {

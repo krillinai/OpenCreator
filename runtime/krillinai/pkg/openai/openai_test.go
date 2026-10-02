@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"krillin-ai/config"
 	"krillin-ai/log"
@@ -12,6 +13,74 @@ import (
 	"testing"
 	"time"
 )
+
+func TestChatCompletionParsesSelfHostedStream(t *testing.T) {
+	setTestModel(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		var body struct {
+			Model  string `json:"model"`
+			Stream bool   `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body.Model != "test-model" || !body.Stream {
+			t.Errorf("request = %+v", body)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"你好\"}}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer server.Close()
+	client := newClient(server.URL+"/v1", "", "", time.Second)
+	got, err := client.ChatCompletion("Translate Hello")
+	if err != nil || got != "你好" {
+		t.Fatalf("completion = %q, %v", got, err)
+	}
+}
+
+func TestHyMT2UsesUserPromptWithoutSystemMessage(t *testing.T) {
+	setTestModel(t)
+	previousProvider := config.Conf.Llm.Provider
+	config.Conf.Llm.Provider = "hy-mt2"
+	config.Conf.Llm.Model = "local-translation-model"
+	t.Cleanup(func() { config.Conf.Llm.Provider = previousProvider })
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if len(body.Messages) != 1 || body.Messages[0].Role != "user" {
+			t.Errorf("messages = %+v", body.Messages)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"你好\"}}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer server.Close()
+	_, err := newClient(server.URL+"/v1", "", "", time.Second).ChatCompletion("Translate Hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestChatCompletionPropagatesSelfHostedError(t *testing.T) {
+	setTestModel(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"message":"model unavailable","type":"server_error"}}`, http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	_, err := newClient(server.URL+"/v1", "", "", time.Second).ChatCompletion("Translate Hello")
+	if err == nil {
+		t.Fatal("expected provider error")
+	}
+}
 
 func TestChatCompletionTimesOut(t *testing.T) {
 	setTestModel(t)
@@ -34,6 +103,15 @@ func TestChatCompletionTimesOut(t *testing.T) {
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("ChatCompletion() error = %v, want context deadline", err)
+	}
+}
+
+func TestNewClientUsesConfiguredTimeout(t *testing.T) {
+	previous := config.Conf.Llm.TimeoutSeconds
+	config.Conf.Llm.TimeoutSeconds = 7
+	t.Cleanup(func() { config.Conf.Llm.TimeoutSeconds = previous })
+	if got := NewClient("http://127.0.0.1:8000/v1", "", "").requestTimeout; got != 7*time.Second {
+		t.Fatalf("request timeout = %v, want 7s", got)
 	}
 }
 

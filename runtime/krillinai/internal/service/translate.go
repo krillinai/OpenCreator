@@ -56,8 +56,7 @@ func (t *Translator) SplitTextAndTranslate(inputText string, originLang, targetL
 		signal  = make(chan struct{}, config.Conf.App.TranslateParallelNum) // 控制最大并发数
 		wg      sync.WaitGroup
 		results = make([]*TranslatedItem, len(sentences))
-		// errChan = make(chan error, 1)
-		// mutex   sync.Mutex
+		errChan = make(chan error, len(sentences))
 	)
 
 	for i, sentence := range sentences {
@@ -102,10 +101,7 @@ func (t *Translator) SplitTextAndTranslate(inputText string, originLang, targetL
 			translatedText, err := t.translateWithRetry(prompt, originText, originLang, targetLang)
 			if err != nil {
 				log.GetLogger().Error("splitTextAndTranslate llm translate error after retries", zap.Error(err), zap.Any("original text", originText))
-				results[index] = &TranslatedItem{
-					OriginText:     originText,
-					TranslatedText: originText,
-				}
+				errChan <- fmt.Errorf("subtitle translation failed at segment %d: %w", index+1, err)
 			} else {
 				results[index] = &TranslatedItem{
 					OriginText:     originText,
@@ -116,6 +112,10 @@ func (t *Translator) SplitTextAndTranslate(inputText string, originLang, targetL
 	}
 
 	wg.Wait()
+	close(errChan)
+	if err, ok := <-errChan; ok {
+		return nil, err
+	}
 
 	return results, nil
 }
@@ -625,13 +625,9 @@ func (t *Translator) BatchTranslateSrtBlocks(blocks []*util.SrtBlock, originLang
 					targetLangCode)
 
 				if err != nil {
-					log.GetLogger().Error("单独翻译失败，使用原文",
-						zap.Error(err),
-						zap.Int("块索引", block.Index))
-					block.TargetLanguageSentence = block.OriginLanguageSentence
-				} else {
-					block.TargetLanguageSentence = translatedText
+					return fmt.Errorf("subtitle translation failed at block %d: %w", block.Index, err)
 				}
+				block.TargetLanguageSentence = translatedText
 			}
 
 			// 更新任务进度
@@ -780,6 +776,17 @@ Required JSON format (output ONLY this structure):
 		}
 		if invalidResultErr != nil {
 			lastErr = invalidResultErr
+			continue
+		}
+		complete := true
+		for _, translation := range translations {
+			if translation == "" {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			lastErr = fmt.Errorf("translation response omitted one or more subtitles")
 			continue
 		}
 

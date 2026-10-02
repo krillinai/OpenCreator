@@ -57,6 +57,55 @@ describe('creator services API', () => {
     await server.close();
   });
 
+  it('tests a self-hosted model without persisting credentials', async () => {
+    const endpoint = createServer((request, response) => {
+      expect(request.url).toBe('/v1/models');
+      expect(request.headers.authorization).toBeUndefined();
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify({ data: [{ id: 'tencent/Hy-MT2-1.8B' }] }));
+    });
+    await new Promise<void>(resolve => endpoint.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = endpoint.address();
+      if (address === null || typeof address === 'string') throw new Error('Missing endpoint address');
+      const result = await server.inject({
+        method: 'POST', url: '/creator-services/llm/test',
+        payload: { baseUrl: `http://127.0.0.1:${address.port}/v1`, model: 'tencent/Hy-MT2-1.8B', apiKey: '', timeoutSeconds: 2 }
+      });
+      expect(result.statusCode).toBe(200);
+      expect(result.json()).toEqual({ connected: true, model: 'tencent/Hy-MT2-1.8B' });
+      expect(store.write).not.toHaveBeenCalled();
+    } finally {
+      endpoint.close();
+    }
+  });
+
+  it('accepts a Hy-MT2 configuration with no API key and retains provider identity', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.llm = { ...config.llm, source: 'custom', providerId: 'hy-mt2',
+      baseUrl: 'http://127.0.0.1:8000/v1', model: 'local-translation-model', apiKey: '', timeoutSeconds: 30 };
+    const result = await server.inject({ method: 'PATCH', url: '/creator-services/config', payload: config });
+    expect(result.statusCode).toBe(200);
+    expect(result.json().config.llm).toMatchObject({ providerId: 'hy-mt2', model: 'local-translation-model', timeoutSeconds: 30 });
+    expect(result.json().configuredCredentials).not.toContain('llm.apiKey');
+  });
+
+  it('reports an unavailable model from a self-hosted endpoint', async () => {
+    const endpoint = createServer((_request, response) => {
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify({ data: [{ id: 'other-model' }] }));
+    });
+    await new Promise<void>(resolve => endpoint.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = endpoint.address();
+      if (address === null || typeof address === 'string') throw new Error('Missing endpoint address');
+      const result = await server.inject({ method: 'POST', url: '/creator-services/llm/test',
+        payload: { baseUrl: `http://127.0.0.1:${address.port}/v1`, model: 'tencent/Hy-MT2-1.8B', apiKey: '', timeoutSeconds: 2 } });
+      expect(result.statusCode).toBe(502);
+      expect(result.body).toContain('Model tencent/Hy-MT2-1.8B is not served');
+    } finally { endpoint.close(); }
+  });
+
   it('supports legacy independent text-model fields during migration', async () => {
     const read = await server.inject({ method: 'GET', url: '/creator-services/config' });
     expect(read.statusCode).toBe(200);

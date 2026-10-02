@@ -107,6 +107,8 @@ export type CreatorServicesConfig = {
   llm: OpenAiCompatibleConfig & {
     jsonMode: boolean;
     source: 'codex' | 'custom';
+    timeoutSeconds?: number;
+    providerId?: string;
   };
   transcription: {
     provider: CreatorTranscriptionProvider;
@@ -235,7 +237,8 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
       apiKey: '',
       model: 'gpt-4o-mini',
       jsonMode: false,
-      source: 'codex'
+      source: 'codex',
+      timeoutSeconds: 120
     },
     transcription: {
       provider: 'openai',
