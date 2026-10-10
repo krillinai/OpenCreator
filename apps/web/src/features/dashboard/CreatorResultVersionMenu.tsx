@@ -10,6 +10,7 @@ export type CreatorResultVersionItem = {
 };
 
 export default function CreatorResultVersionMenu(props: {
+  showCompletion?: boolean;
   version: number;
   versions: CreatorResultVersionItem[];
   onVersionChange(version: number): void;
@@ -66,7 +67,7 @@ export default function CreatorResultVersionMenu(props: {
         aria-controls={menuId}
         onClick={() => setHistoryOpen(open => !open)}
       >
-        {!stale ? <CircleCheck size={15} strokeWidth={2} aria-hidden="true" /> : null}
+        {!stale && props.showCompletion !== false ? <CircleCheck size={15} strokeWidth={2} aria-hidden="true" /> : null}
         <span>{l(`项目 V${props.version}`, `Project V${props.version}`)}</span>
         <ChevronDown className="video-result-version-chevron" size={15} strokeWidth={1.8} aria-hidden="true" />
       </button>

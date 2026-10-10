@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures/runtime.js';
 import type { GatewayAccountState } from '@opencreator/protocol';
 
-test('独立订阅页面支持游客选套餐、登录后继续购买并返回个人中心', async ({ page, runtime }, testInfo) => {
+test('独立订阅页面支持游客选套餐、登录后继续购买并返回账户页面', async ({ page, runtime }, testInfo) => {
   const guest: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
   let state = guest;
   let paid = false;
@@ -36,9 +36,9 @@ test('独立订阅页面支持游客选套餐、登录后继续购买并返回�
   const navigation = page.getByRole('navigation', { name: 'OpenCreator', exact: true });
   const openNavigation = page.getByRole('button', { name: '打开导航', exact: true });
   if (await openNavigation.isVisible()) await openNavigation.click();
-  await navigation.getByRole('button', { name: '个人中心', exact: true }).click();
+  await navigation.getByRole('button', { name: '账户', exact: true }).click();
   if (await openNavigation.isVisible()) await expect(page.getByLabel('OpenCreator 导航', { exact: true })).toHaveCSS('visibility', 'hidden');
-  const center = page.getByRole('main', { name: '个人中心', exact: true });
+  const center = page.getByRole('main', { name: '账户', exact: true });
   await expect(center.getByRole('button', { name: '登录 / 注册' })).toBeVisible();
   await expect(center.getByRole('heading', { name: '订阅套餐', exact: true })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('personal-center.png'), fullPage: true });
@@ -139,12 +139,12 @@ test('浏览器完成真实网关设备授权，缺少模型配置时保留登�
   const navigation = page.getByRole('navigation', { name: 'OpenCreator', exact: true });
   const openNavigation = page.getByRole('button', { name: '打开导航', exact: true });
   if (await openNavigation.isVisible()) await openNavigation.click();
-  await navigation.getByRole('button', { name: '个人中心', exact: true }).click();
+  await navigation.getByRole('button', { name: '账户', exact: true }).click();
   if (await openNavigation.isVisible()) await expect(page.getByLabel('OpenCreator 导航', { exact: true })).toHaveCSS('visibility', 'hidden');
   await expect(page).toHaveURL(/#\/account$/);
-  await expect(navigation.getByRole('button', { name: '个人中心', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect(navigation.getByRole('button', { name: '首页', exact: true })).not.toHaveAttribute('aria-current', 'page');
-  const center = page.getByRole('main', { name: '个人中心', exact: true });
+  await expect(navigation.getByRole('button', { name: '账户', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(navigation.getByRole('button', { name: '模版', exact: true })).not.toHaveAttribute('aria-current', 'page');
+  const center = page.getByRole('main', { name: '账户', exact: true });
   await expect(center.getByRole('heading', { name: 'gateway-demo@example.test', exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(account.getByText('已登录', { exact: true })).toBeVisible();
   await expect(account.getByRole('group', { name: '使用模式' })).toHaveCount(0);

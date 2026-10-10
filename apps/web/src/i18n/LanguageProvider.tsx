@@ -18,7 +18,7 @@ import {
 
 const messages = {
   'zh-CN': {
-    'nav.home': '首页',
+    'nav.home': '模版',
     'nav.dashboard': '工作台',
     'nav.plugins': '插件中心',
     'nav.projects': '我的项目',
@@ -265,7 +265,7 @@ const messages = {
     'timeline.process.thinking': '正在思考'
   },
   'en-US': {
-    'nav.home': 'Home',
+    'nav.home': 'Templates',
     'nav.dashboard': 'Dashboard',
     'nav.plugins': 'Plugins',
     'nav.projects': 'My Projects',
@@ -512,7 +512,7 @@ const messages = {
     'timeline.process.thinking': 'Thinking'
   },
   'sv-SE': {
-    'nav.home': 'Hem', 'nav.dashboard': 'Arbetsyta', 'nav.plugins': 'Insticksprogram', 'nav.projects': 'Mina projekt', 'nav.settings': 'Inställningar', 'nav.schedules': 'Schemalagda jobb', 'nav.search': 'Sök', 'nav.collapse': 'Fäll ihop sidofältet', 'nav.expand': 'Fäll ut sidofältet', 'nav.autoCollapsed': 'Sidofältet fälldes ihop automatiskt', 'nav.autoCollapsedHint': 'Stäng filarbetsytan för att fälla ut sidofältet i det här fönstret',
+    'nav.home': 'Mallar', 'nav.dashboard': 'Arbetsyta', 'nav.plugins': 'Insticksprogram', 'nav.projects': 'Mina projekt', 'nav.settings': 'Inställningar', 'nav.schedules': 'Schemalagda jobb', 'nav.search': 'Sök', 'nav.collapse': 'Fäll ihop sidofältet', 'nav.expand': 'Fäll ut sidofältet', 'nav.autoCollapsed': 'Sidofältet fälldes ihop automatiskt', 'nav.autoCollapsedHint': 'Stäng filarbetsytan för att fälla ut sidofältet i det här fönstret',
     'settings.navigation': 'Inställningsnavigering', 'settings.back': 'Tillbaka till appen', 'settings.categories': 'Inställningskategorier', 'settings.tab.general': 'Allmänt', 'settings.tab.aiServices': 'AI-tjänster', 'settings.tab.runtimeComponents': 'Tredjepartskomponenter', 'settings.tab.codexAgent': 'Codex Agent', 'settings.tab.plugins': 'Insticksprogram', 'settings.tab.memory': 'Minne', 'settings.tab.profiles': 'Profiler', 'settings.tab.cleanup': 'Rensa', 'settings.tab.diagnostics': 'Diagnostik', 'settings.tab.about': 'Om OpenCreator',
     'settings.required': 'Krävs', 'settings.general.description': 'Justera OpenCreators standardinställningar och skrivbordsvisning.', 'settings.colorMode': 'Färgläge', 'settings.light': 'Ljust', 'settings.dark': 'Mörkt', 'settings.accent': 'Accentfärg', 'settings.permission': 'Standardbehörighet', 'settings.permission.followProject': 'Följ projektinställningen', 'settings.permission.approval': 'Begär godkännande', 'settings.permission.fullAccess': 'Fullständig åtkomst', 'settings.permission.confirm': 'Fullständig åtkomst låter OpenCreator läsa lokala filer och köra lokala åtgärder. Vill du ange den som standardbehörighet?',
     'settings.defaultFileApp': 'Standardapp för filer', 'settings.systemDefaultApp': 'Systemets standardapp', 'settings.language': 'Visningsspråk', 'settings.language.system': 'Systemspråk ({{language}})', 'settings.language.zh': 'Förenklad kinesiska', 'settings.language.en': 'Engelska', 'settings.language.sv': 'Svenska', 'settings.menuBar': 'Visa i menyraden', 'settings.browserMode': 'Webbläsarläge', 'settings.closeWindow': 'När fönstret stängs', 'settings.hideToMenuBar': 'Dölj i menyraden', 'settings.quit': 'Avsluta OpenCreator',

@@ -435,7 +435,7 @@ export default function VideoGenerationWorkspace(props: {
 
   async function generate() {
     if (generating) return;
-    if (!serviceReady) { setError(l('官方视频服务暂不可用，请在个人中心检查连接状态', 'Official video service is unavailable. Check the connection in your personal center.')); return; }
+    if (!serviceReady) { setError(l('官方视频服务暂不可用，请在账户页面检查连接状态', 'Official video service is unavailable. Check the connection in your account.')); return; }
     if (session === null) {
       setError(l(
         '视频生成服务暂不可用，请检查 Runtime 连接',

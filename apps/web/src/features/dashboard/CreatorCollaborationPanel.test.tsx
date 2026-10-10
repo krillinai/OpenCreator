@@ -169,6 +169,23 @@ describe('Short video script panel', () => {
 });
 
 describe('CreatorCollaborationPanel', () => {
+  it('places a supplied summary above the timeline and preserves current issues', () => {
+    const panel = (currentIssue?: string) => <LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={videoGenerationJob()} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+        <CreatorCollaborationPanel adapter={videoGenerationPanelAdapter} stepLabel="生成视频"
+          contextSummary="Veo" taskSummary={<aside aria-label="任务摘要">任务参数</aside>} currentIssue={currentIssue} />
+      </CreatorSessionProvider>
+    </LanguageProvider>;
+    const view = render(panel());
+    const summary = screen.getByLabelText('任务摘要');
+    const timeline = screen.getByRole('log', { name: '协作时间线' });
+    expect(summary.compareDocumentPosition(timeline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('当前任务')).not.toBeInTheDocument();
+    view.rerender(panel('请检查服务设置'));
+    expect(screen.getByText('请检查服务设置')).toBeVisible();
+    expect(screen.getByLabelText('任务摘要')).toBeVisible();
+  });
+
   it('shows a pre-job failure once and forwards questions to the real Agent without creating a job', () => {
     const issue = normalizePageIssue(
       'creator-launch',

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { CreatorJob } from '@opencreator/protocol';
 import { FileVideo } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,6 +7,24 @@ import CreatorTaskSummary from './CreatorTaskSummary.js';
 import { CreatorSessionProvider } from './creator-session-store.js';
 
 describe('CreatorTaskSummary', () => {
+  it('starts compact, expands the details, and preserves expansion when settings change', () => {
+    const summary = (value: string) => <LanguageProvider initialPreference="zh-CN">
+      <CreatorTaskSummary sourceIcon={FileVideo} sourceLabel="源视频" sourceValue="demo.mp4"
+        compactSummary={`English → 简体中文 · ${value}`} items={[{ label: '输出', value }]} />
+    </LanguageProvider>;
+    const view = render(summary('16:9 横屏'));
+    const details = screen.getByLabelText('任务摘要').querySelector('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(screen.getByText('demo.mp4')).not.toBeVisible();
+    fireEvent.click(screen.getByText('任务摘要'));
+    expect(details).toHaveAttribute('open');
+    expect(screen.getByText('demo.mp4')).toBeVisible();
+    view.rerender(summary('9:16 竖屏'));
+    expect(details).toHaveAttribute('open');
+    expect(screen.getByText('English → 简体中文 · 9:16 竖屏')).toBeVisible();
+    expect(screen.getByText('9:16 竖屏')).toBeVisible();
+  });
+
   it('shows the preset origin shared by every Creator workspace', () => {
     const createdAt = '2026-09-08T00:00:00.000Z';
     const job: CreatorJob = {

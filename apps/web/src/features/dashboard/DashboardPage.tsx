@@ -204,6 +204,12 @@ const creatorTools: DashboardEntry[] = [
 
 const categories = ['全部', '视频创作', '视频编辑', '图像创作', '文案创作', '音频处理'] as const;
 type CategoryFilter = typeof categories[number];
+const allTabWorkspaces = new Set<CreatorWorkspace>([
+  'video-download',
+  'video-translation',
+  'video-generation',
+  'image-generation'
+]);
 
 const CREATOR_JOB_CREATE_ATTEMPT_TIMEOUT_MS = 4_000;
 const CREATOR_JOB_CREATE_ATTEMPTS = 3;
@@ -255,7 +261,9 @@ export default function DashboardPage(props: {
     : value;
   const visibleTools = useMemo(() => creatorTools.filter(tool => {
     if (tool.workspace === undefined || !isVisibleCreatorWorkspace(tool.workspace)) return false;
-    const matchesCategory = category === '全部' || tool.category === category;
+    const matchesCategory = category === '全部'
+      ? allTabWorkspaces.has(tool.workspace)
+      : tool.category === category;
     const matchesQuery = normalizedQuery.length === 0
       || `${localize(tool.title)} ${localize(tool.description)} ${localize(tool.category)}`
         .toLocaleLowerCase()

@@ -22,6 +22,11 @@ export type VideoTranslationResultTab = 'video' | 'subtitles' | 'voice' | 'setti
 export type VideoResultVariant = 'horizontal' | 'vertical' | 'dubbed';
 export type SubtitleResultVariant = 'horizontal' | 'vertical';
 
+export type VideoTranslationResultExecution = {
+  status: 'queued' | 'running' | 'needs_input' | 'failed' | 'canceled' | 'interrupted';
+  stageLabel: string;
+};
+
 export type SubtitleCue = {
   id: number;
   start: string;
@@ -104,6 +109,7 @@ export default function VideoTranslationResultWorkspace(props: {
   affectedArtifacts: string[];
   hasPendingChanges: boolean;
   regenerationPending: boolean;
+  execution?: VideoTranslationResultExecution;
   notice?: string;
   onTabChange(tab: VideoTranslationResultTab): void;
   onVersionChange(version: number): void;
@@ -150,6 +156,19 @@ export default function VideoTranslationResultWorkspace(props: {
   const generatedArtifactCount = props.videoOutputs.length
     + props.subtitleOutputs.length
     + (props.voiceOutput === undefined ? 0 : 1);
+  const outputEmptyTitle = emptyResultTitle('video', props.execution?.status, l);
+  const subtitleEmptyTitle = emptyResultTitle('subtitles', props.execution?.status, l);
+  const voiceEmptyTitle = props.dubbing
+    ? emptyResultTitle('voice', props.execution?.status, l)
+    : l('此版本未开启配音', 'Dubbing is disabled for this version');
+  const executionDetail = props.execution === undefined ? undefined
+    : props.execution.status === 'failed'
+      ? l('查看任务面板中的错误详情后重试。', 'Check the error in the task panel and retry.')
+      : props.execution.status === 'needs_input'
+        ? l('请先处理任务面板中的待办事项。', 'Resolve the pending action in the task panel to continue.')
+        : props.execution.status === 'canceled' || props.execution.status === 'interrupted'
+          ? l('可在任务面板中继续任务。', 'Resume the task from the task panel.')
+          : l(`当前阶段：${props.execution.stageLabel}`, `Current stage: ${props.execution.stageLabel}`);
 
   useEffect(() => {
     setSelectedSubtitleVariant(availableSubtitleVariants.includes('horizontal')
@@ -198,6 +217,7 @@ export default function VideoTranslationResultWorkspace(props: {
         </div>
 
         <CreatorResultVersionMenu
+          showCompletion={props.execution === undefined && generatedArtifactCount > 0}
           version={props.version}
           versions={props.versions}
           onVersionChange={props.onVersionChange}
@@ -208,31 +228,18 @@ export default function VideoTranslationResultWorkspace(props: {
 
       {props.activeTab === 'video' ? (
         <div className="video-result-pane">
-          <header className="video-result-pane-heading">
-            <div>
-              <h2>{l('作品', 'Works')}</h2>
-              <p>{l(
-                `项目 V${props.version} · ${generatedArtifactCount} 个文件`,
-                `Project V${props.version} · ${generatedArtifactCount} file(s)`
-              )}</p>
-            </div>
-          </header>
+          {generatedArtifactCount > 0 && props.execution ? (
+            <p className="video-result-notice" role="status">{outputEmptyTitle} · {executionDetail}</p>
+          ) : null}
           {generatedArtifactCount > 0 ? (
             <div className="video-result-generated-sections">
               {props.videoOutputs.length > 0 ? (
-                <section className="video-result-generated-section">
-                  <h3>{l('成片', 'Videos')}</h3>
+                <section className="video-result-generated-section" aria-label={l('成片', 'Videos')}>
                   <div className="video-result-video-grid">
                     {props.videoOutputs.map(output => {
                       const artifactLabel = videoVariantArtifactLabel(output.variant, l);
                       return (
-                        <section className="video-result-output-column" data-variant={output.variant} key={output.artifactId}>
-                          <div className="video-result-output-heading">
-                            <div>
-                              <h3>{artifactLabel}</h3>
-                              <small>{videoVariantFormatLabel(output.variant, l)} · {l('子项', 'Item')} V{output.artifactVersion}</small>
-                            </div>
-                          </div>
+                        <section className="video-result-output-column" aria-label={artifactLabel} data-variant={output.variant} key={output.artifactId}>
                           <div className="video-result-player-frame" data-ratio={output.variant === 'vertical' ? '9:16' : '16:9'}>
                             {output.src !== undefined ? (
                               <video
@@ -253,11 +260,8 @@ export default function VideoTranslationResultWorkspace(props: {
                           <div className="video-result-file-row">
                             <span aria-hidden="true"><FileVideo size={19} strokeWidth={1.7} /></span>
                             <div>
-                              <strong>{output.fileName ?? `${artifactLabel}-${props.targetLanguage}-V${props.version}.mp4`}</strong>
-                              <small>
-                                {l('子项', 'Item')} V{output.artifactVersion}
-                                {' · '}{l('项目', 'Project')} V{props.version}
-                              </small>
+                              <strong title={output.fileName}>{output.fileName ?? `${artifactLabel}-${props.targetLanguage}-V${props.version}.mp4`}</strong>
+                              <small>{videoVariantFormatLabel(output.variant, l)}</small>
                             </div>
                             <button
                               type="button"
@@ -285,10 +289,8 @@ export default function VideoTranslationResultWorkspace(props: {
                         <div className="video-result-file-row" key={output.artifactId}>
                           <span aria-hidden="true"><Captions size={19} strokeWidth={1.7} /></span>
                           <div>
-                            <strong>{output.fileName ?? `${variantLabel}-V${props.version}.srt`}</strong>
-                            <small>
-                              {variantLabel} · {l('子项', 'Item')} V{output.artifactVersion}
-                            </small>
+                            <strong title={output.fileName}>{output.fileName ?? `${variantLabel}-V${props.version}.srt`}</strong>
+                            <small>{variantLabel}</small>
                           </div>
                           <button
                             type="button"
@@ -312,11 +314,7 @@ export default function VideoTranslationResultWorkspace(props: {
                     <div className="video-result-file-row">
                       <span aria-hidden="true"><FileAudio size={19} strokeWidth={1.7} /></span>
                       <div>
-                        <strong>{props.voiceOutput.fileName ?? `${l('目标语言配音', 'Target-language-dubbing')}-V${props.version}.wav`}</strong>
-                        <small>
-                          {l('配音', 'Dubbing')} V{props.voiceOutput.artifactVersion}
-                          {' · '}{l('项目', 'Project')} V{props.version}
-                        </small>
+                        <strong title={props.voiceOutput.fileName}>{props.voiceOutput.fileName ?? `${l('目标语言配音', 'Target-language-dubbing')}-V${props.version}.wav`}</strong>
                       </div>
                       <button
                         type="button"
@@ -332,9 +330,10 @@ export default function VideoTranslationResultWorkspace(props: {
               ) : null}
             </div>
           ) : (
-            <div className="video-result-empty">
+            <div className="video-result-empty" role="status">
               <PackageOpen size={26} strokeWidth={1.5} aria-hidden="true" />
-              <strong>{l('当前项目版本没有作品', 'This project version has no works')}</strong>
+              <strong>{outputEmptyTitle}</strong>
+              {executionDetail ? <p>{executionDetail}</p> : null}
             </div>
           )}
         </div>
@@ -546,12 +545,15 @@ export default function VideoTranslationResultWorkspace(props: {
                     })}
                   </div>
                 ) : (
-                  <div className="video-result-subtitle-empty">{l('当前版本没有可展示的字幕', 'No subtitle cues to display')}</div>
+                  <div className="video-result-subtitle-empty" role="status">{l('字幕文件中没有可显示的内容', 'The subtitle file contains no cues')}</div>
                 )}
               </section>
             </div>
           ) : (
-            <div className="video-result-subtitle-empty">{l('当前版本没有可展示的字幕', 'No subtitles to display for this version')}</div>
+            <div className="video-result-subtitle-empty" role="status">
+              <strong>{subtitleEmptyTitle}</strong>
+              {executionDetail ? <p>{executionDetail}</p> : null}
+            </div>
           )}
         </div>
       ) : null}
@@ -561,7 +563,7 @@ export default function VideoTranslationResultWorkspace(props: {
           <header className="video-result-pane-heading">
             <div>
               <h2>{l('目标语言配音', 'Target-language dubbing')}</h2>
-              <p>{props.hasVoiceArtifact ? l('配音文件已生成', 'Dubbing file generated') : l('当前版本未生成配音', 'No dubbing was generated for this version')}</p>
+              {props.hasVoiceArtifact ? <p>{l('配音文件已生成', 'Dubbing file generated')}</p> : null}
             </div>
           </header>
           {props.hasVoiceArtifact && props.voiceOutput !== undefined ? (
@@ -610,10 +612,15 @@ export default function VideoTranslationResultWorkspace(props: {
               </div>
             </div>
           ) : (
-            <div className="video-result-empty">
+            <div className="video-result-empty" role="status">
               <FileAudio size={26} strokeWidth={1.5} aria-hidden="true" />
-              <strong>{l('这个版本没有配音文件', 'This version has no dubbing file')}</strong>
-              <button type="button" onClick={props.onAdjustSettings}>{l('开启配音并生成新版本', 'Enable dubbing and generate a new version')}</button>
+              <strong>{voiceEmptyTitle}</strong>
+              {props.dubbing && executionDetail ? <p>{executionDetail}</p> : null}
+              {props.execution === undefined ? (
+                <button type="button" onClick={props.onAdjustSettings}>{props.dubbing
+                  ? l('调整配音设置', 'Adjust dubbing settings')
+                  : l('开启配音并生成新版本', 'Enable dubbing and generate a new version')}</button>
+              ) : null}
             </div>
           )}
         </div>
@@ -708,12 +715,38 @@ function subtitleCueDisplayText(
 
 function localizeResultTab(label: string, l: LocalizeCopy): string {
   const labels: Record<string, string> = {
-    '作品': 'Works',
+    '作品': 'Outputs',
     '字幕': 'Subtitles',
     '配音': 'Dubbing',
     '任务设置': 'Task settings'
   };
   return l(label, labels[label] ?? label);
+}
+
+function emptyResultTitle(
+  tab: 'video' | 'subtitles' | 'voice',
+  status: VideoTranslationResultExecution['status'] | undefined,
+  l: LocalizeCopy
+): string {
+  if (status === 'failed') return l('翻译任务失败', 'Translation failed');
+  if (status === 'needs_input') return l('翻译任务等待处理', 'Translation needs your attention');
+  if (status === 'canceled') return l('翻译任务已终止', 'Translation stopped');
+  if (status === 'interrupted') return l('翻译任务已中断', 'Translation interrupted');
+  if (status === 'queued') return ({
+    video: l('翻译任务等待执行', 'Translation is queued'),
+    subtitles: l('字幕等待生成', 'Subtitles are pending'),
+    voice: l('配音等待生成', 'Dubbing is pending')
+  })[tab];
+  if (status === 'running') return ({
+    video: l('翻译进行中', 'Translation in progress'),
+    subtitles: l('字幕尚未就绪', 'Subtitles are not ready yet'),
+    voice: l('配音尚未就绪', 'Dubbing is not ready yet')
+  })[tab];
+  return ({
+    video: l('此版本暂无生成结果', 'No outputs available for this version'),
+    subtitles: l('此版本尚未生成字幕', 'Subtitles have not been generated for this version'),
+    voice: l('此版本尚未生成配音', 'Dubbing has not been generated for this version')
+  })[tab];
 }
 
 function subtitleTimestampSeconds(value: string): number {

@@ -4218,7 +4218,7 @@ export function AppController(props: AppControllerProps) {
   const composerDisabledReason = connectionState.status !== 'connected'
     ? t('conversation.connectingRuntime')
     : agentSetup === 'skipped'
-      ? gatewayAccountState?.source === 'gateway' ? l('请在个人中心连接模型服务', 'Connect model services from your personal center') : l('请先配置 Agent 模型服务', 'Configure the Agent model service first')
+      ? gatewayAccountState?.source === 'gateway' ? l('请在账户页面连接模型服务', 'Connect model services from your account') : l('请先配置 Agent 模型服务', 'Configure the Agent model service first')
     : projectLoadError !== undefined
       ? t('conversation.checkingTask')
       : conversationNeedsProject && currentProject === undefined
@@ -4527,7 +4527,7 @@ export function AppController(props: AppControllerProps) {
                   : l('请登录 OpenCreator 后继续创作。', 'Sign in to OpenCreator to continue creating.')
                 : l('Agent 尚未配置，暂时无法发送任务。', 'Agent is not configured; you cannot send tasks yet.')}
               <button type="button" onClick={() => gatewayAccountState?.source === 'gateway' ? openPrimaryView('account') : setAgentSetup('needed')}>
-                {gatewayAccountState?.source === 'gateway' ? l('个人中心', 'Personal center') : l('配置 Agent', 'Set up Agent')}
+                {gatewayAccountState?.source === 'gateway' ? l('账户', 'Account') : l('配置 Agent', 'Set up Agent')}
               </button>
             </div>
           ) : null}

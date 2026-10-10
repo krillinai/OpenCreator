@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import CreatorCollaborationPanel, {
   type CreatorPanelQuickAction
 } from './CreatorCollaborationPanel.js';
@@ -8,6 +9,7 @@ export type VideoTranslationAgentQuickAction = CreatorPanelQuickAction;
 export default function VideoTranslationAgentPanel(props: {
   stepLabel: string;
   contextSummary: string;
+  taskSummary?: ReactNode;
   promptHint?: string;
   currentIssue?: string;
   quickActions?: VideoTranslationAgentQuickAction[];

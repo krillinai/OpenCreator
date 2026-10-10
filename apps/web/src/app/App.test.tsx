@@ -222,7 +222,7 @@ describe('App', () => {
     }
     if (activationState === 'blocked') {
       expect(screen.getByText('已登录，模型服务暂不可用。')).toBeInTheDocument();
-      await user.click(within(screen.getByText('已登录，模型服务暂不可用。').parentElement!).getByRole('button', { name: '个人中心' }));
+      await user.click(within(screen.getByText('已登录，模型服务暂不可用。').parentElement!).getByRole('button', { name: '账户' }));
       await waitFor(() => expect(window.location.hash).toBe('#/account'));
     }
   });
@@ -927,7 +927,7 @@ describe('App', () => {
       .toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '视频创作' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '图像设计' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '首页' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '模版' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: '工作台' })).not.toHaveAttribute('aria-current');
     expect(screen.queryByRole('button', { name: '空白视频翻译' })).not.toBeInTheDocument();
   });
@@ -1455,7 +1455,6 @@ describe('App', () => {
     );
     await user.click(screen.getByRole('button', { name: '继续' }));
     await user.click(screen.getByRole('button', { name: '继续' }));
-    await user.click(screen.getByRole('button', { name: '继续' }));
     await user.click(within(
       screen.getByRole('region', { name: '视频翻译操作区' })
     ).getByRole('button', { name: '开始翻译' }));
@@ -1509,7 +1508,6 @@ describe('App', () => {
       lastModified: 123
     });
     await user.upload(screen.getByLabelText('Upload a local video'), file);
-    await user.click(screen.getByRole('button', { name: 'Continue' }));
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     await user.click(within(

@@ -84,8 +84,8 @@ export function GatewayAccountSettingsView(props: {
   const signedIn = state?.authState === 'signed_in';
   const status = <p role="status">{!service ? l('登录服务暂不可用', 'Sign-in service is unavailable')
     : state === undefined ? l('正在连接账户服务…', 'Connecting to account service…')
-    : state.authState === 'authorizing' ? l('等待浏览器确认登录', 'Waiting for browser authorization')
-    : state.authState === 'signing_out' ? l('正在退出', 'Signing out')
+    : state.authState === 'authorizing' ? l('请在浏览器中完成登录', 'Complete sign-in in your browser')
+    : state.authState === 'signing_out' ? l('正在退出登录…', 'Signing out…')
     : state.authState === 'expired' ? l('登录已过期，请重新登录', 'Session expired; sign in again')
     : signedIn && profile ? l('已登录', 'Signed in')
     : signedIn ? state.activationState === 'ready' && state.source === 'gateway' ? l('已登录，可以开始创作', 'Signed in and ready to create')
@@ -102,10 +102,10 @@ export function GatewayAccountSettingsView(props: {
     {state?.activationError && (!profile || state.source === 'gateway') ? <p role="alert">{state.activationError.code === 'active_tasks' ? l('请等待当前任务结束后再连接官方服务。', 'Wait for the current tasks to finish before connecting official services.') : l('模型服务暂不可用，请重新连接。', 'Model service is unavailable. Please reconnect.')}</p> : null}
     {signedIn ? <div className="gateway-account__actions">
       {(profile ? state.source === 'gateway' && state.activationState !== 'ready' : state.activationState !== 'ready' || state.source !== 'gateway') ? <button type="button" disabled={busy || !service || state.activationState === 'loading'} onClick={() => void action(async () => update(await service!.activate()))}><RefreshCw size={16}/>{l('重新连接', 'Reconnect')}</button> : null}
-      {props.onOpenSubscription ? <button type="button" onClick={props.onOpenSubscription}><CreditCard size={16}/>{l('积分与充值', 'Credits & Recharge')}</button> : null}
+      {props.onOpenSubscription ? <button type="button" onClick={props.onOpenSubscription}><CreditCard size={16}/>{l('积分与充值', 'Credits')}</button> : null}
       <button type="button" disabled={busy || !service} onClick={() => void action(async () => update(await service!.logout()))}><LogOut size={16}/>{l('退出登录', 'Sign out')}</button>
     </div> : state?.authState === 'authorizing' ? <button type="button" disabled={busy} onClick={() => void action(async () => { update(await service!.cancel()); props.onSignInCanceled?.(); })}>{l('取消登录', 'Cancel sign-in')}</button>
-      : <button type="button" className="gateway-account__primary" disabled={busy || !service || !state || state.authState === 'signing_out' || state.authState === 'disabled'} onClick={() => void action(signIn)}><LogIn size={16}/>{busy ? l('正在登录…', 'Signing in…') : profile ? l('登录 / 注册', 'Sign in / Register') : l('登录 OpenCreator', 'Sign in to OpenCreator')}</button>}
+      : <button type="button" className="gateway-account__primary" disabled={busy || !service || !state || state.authState === 'signing_out' || state.authState === 'disabled'} onClick={() => void action(signIn)}><LogIn size={16}/>{busy ? l('正在登录…', 'Signing in…') : profile ? l('登录 / 注册', 'Sign in / Sign up') : l('登录 OpenCreator', 'Sign in to OpenCreator')}</button>}
     {authorization ? <a href={authorization.authorizationUrl} target="_blank" rel="noreferrer">{l('打开登录页面', 'Open sign-in page')} <ExternalLink size={14}/></a> : null}
     {error ? <p role="alert">{error}</p> : null}
     {(compact || profile) && error && !state && service ? <button type="button" disabled={busy} onClick={() => void action(refresh)}><RefreshCw size={16}/>{l('重试', 'Retry')}</button> : null}

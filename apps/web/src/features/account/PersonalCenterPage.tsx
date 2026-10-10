@@ -22,7 +22,7 @@ export default function PersonalCenterPage(props: {
   useEffect(() => { setState(props.accountState); }, [props.accountState]);
   const email = state?.authState === 'signed_in' ? state.account?.email : undefined;
   const subscriptionPage = props.view === 'subscription';
-  const title = subscriptionPage ? l('积分与充值', 'Credits & Recharge') : l('个人中心', 'Personal center');
+  const title = subscriptionPage ? l('积分与充值', 'Credits') : l('账户', 'Account');
 
   return <main className="opencreator-scroll-page personal-center" aria-label={title}>
     <div className="personal-center__content">

@@ -15,7 +15,7 @@ test('账户入口在同尺寸 Browser/Desktop Bridge 下读取同一个 Daemon 
       } });
     });
     try {
-      await runtime.openApp(page); await page.getByRole('button', { name: '个人中心', exact: true }).click();
+      await runtime.openApp(page); await page.getByRole('button', { name: '账户', exact: true }).click();
       const account = page.getByRole('region', { name:'OpenCreator 账户' });
       await expect(account.getByRole('button', { name:'登录 / 注册' })).toBeVisible();
       await expect(account.getByRole('button', { name:'本地模式' })).toHaveCount(0);

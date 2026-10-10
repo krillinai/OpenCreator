@@ -35,7 +35,7 @@ it('keeps a plans link available with purchases disabled', async () => {
   const value = service();
   vi.mocked(value.getSummary).mockResolvedValue({ balance: { availableUnits: '0', reservedUnits: '0', periodEnd: null, asOf: '2026-10-05T01:00:00Z' }, subscription: null, billingAvailable: false });
   render(<LanguageProvider initialPreference="zh-CN"><GatewaySubscriptionSettingsView service={value}/></LanguageProvider>);
-  expect(await screen.findByText('充值暂未开放')).toBeInTheDocument();
+  expect(await screen.findByText('充值暂不可用')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '充值积分' })).toBeDisabled();
   expect(screen.getByRole('link', { name: '查看积分方案' })).toHaveAttribute('href', 'https://www.open-creator.ai/pricing?lang=zh');
 });
@@ -43,7 +43,7 @@ it('shows refund review and prevents new recharge', async () => {
   const value = service();
   vi.mocked(value.getSummary).mockResolvedValue({ balance: { availableUnits: '1000000', reservedUnits: '0', periodEnd: null, asOf: '2026-10-05T01:00:00Z' }, subscription: null, billingAvailable: false, paymentReview: true });
   render(<LanguageProvider initialPreference="zh-CN"><GatewaySubscriptionSettingsView service={value}/></LanguageProvider>);
-  expect(await screen.findByText(/官方额度已暂停/)).toBeInTheDocument();
+  expect(await screen.findByText('付款正在审核，积分使用已暂停，请联系客服')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '充值积分' })).toBeDisabled();
 });
 it('keeps the last balance marked stale on failure and recovers through retry', async () => {

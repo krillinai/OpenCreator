@@ -19,7 +19,7 @@ import {
   Square,
   XCircle
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import OpenCreatorMark from '../../components/brand/OpenCreatorMark.js';
 import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
@@ -98,6 +98,7 @@ export default function CreatorCollaborationPanel(props: {
   adapter: CreatorPanelAdapter;
   stepLabel: string;
   contextSummary: string;
+  taskSummary?: ReactNode;
   promptHint?: string;
   currentIssue?: string;
   quickActions?: CreatorPanelQuickAction[];
@@ -237,13 +238,15 @@ export default function CreatorCollaborationPanel(props: {
         ) : null}
       </header>
 
-      <div className="creator-collaboration-context">
+      {props.taskSummary ? <div className="creator-collaboration-task-summary">{props.taskSummary}</div> : null}
+
+      {!props.taskSummary || props.currentIssue ? <div className="creator-collaboration-context">
         <Sparkles size={14} strokeWidth={1.8} aria-hidden="true" />
         <span>
           <small>{l('当前任务', 'Current task')}</small>
           <strong>{props.currentIssue ?? props.contextSummary}</strong>
         </span>
-      </div>
+      </div> : null}
 
       {session?.preflight !== null && session?.preflight !== undefined ? (
         <section className="creator-collaboration-preflight" aria-label={l('启动前体检', 'Preflight check')}>

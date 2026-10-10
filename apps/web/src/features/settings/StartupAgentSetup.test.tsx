@@ -226,7 +226,7 @@ describe('StartupAgentSetup', () => {
     await user.click(screen.getByRole('button', { name: '登录模式' }));
     await waitFor(() => expect(screen.getByRole('button', { name: '登录 OpenCreator' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: '登录 OpenCreator' }));
-    expect(await screen.findByText('等待浏览器确认登录')).toBeInTheDocument();
+    expect(await screen.findByText('请在浏览器中完成登录')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '返回' }));
     expect(gateway.cancel).toHaveBeenCalledOnce();
     await user.click(screen.getByRole('button', { name: '本地模式' }));

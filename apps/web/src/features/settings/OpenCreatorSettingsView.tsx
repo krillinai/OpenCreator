@@ -209,7 +209,7 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
                     {gatewayState.authState === 'authorizing' ? l('正在登录', 'Signing in') : gatewayState.activationState === 'loading' ? l('正在连接', 'Connecting') : gatewayState.activationState === 'ready' ? l('已连接', 'Connected') : gatewayState.authState === 'expired' ? l('登录已过期', 'Session expired') : l('暂不可用', 'Unavailable')}
                   </p>
                 </div>
-                {props.onOpenPersonalCenter ? <button type="button" onClick={props.onOpenPersonalCenter}><UserRound size={15} aria-hidden="true"/>{l('个人中心', 'Personal center')}</button> : null}
+                {props.onOpenPersonalCenter ? <button type="button" onClick={props.onOpenPersonalCenter}><UserRound size={15} aria-hidden="true"/>{l('账户', 'Account')}</button> : null}
               </header>
               {props.gatewayAccountService ? <OfficialServicesSettingsView state={gatewayState} service={props.gatewayAccountService} onChange={next => { setGatewayState(next); props.onGatewayStateChange?.(next); }} /> : null}
             </section> : null}

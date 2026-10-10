@@ -41,6 +41,65 @@ const baseProps = {
 };
 
 describe('VideoTranslationResultWorkspace', () => {
+  it.each([
+    ['queued', 'Translation is queued'],
+    ['running', 'Translation in progress'],
+    ['needs_input', 'Translation needs your attention'],
+    ['failed', 'Translation failed'],
+    ['canceled', 'Translation stopped'],
+    ['interrupted', 'Translation interrupted']
+  ] as const)('shows the %s task state before any outputs exist', (status, title) => {
+    render(<LanguageProvider initialPreference="en-US"><VideoTranslationResultWorkspace
+      {...baseProps} activeTab="video" subtitleOutputs={[]}
+      execution={{ status, stageLabel: 'Subtitle translation' }}
+    /></LanguageProvider>);
+    expect(screen.getByText(title)).toBeVisible();
+    expect(screen.queryByText('This project version has no works')).not.toBeInTheDocument();
+    expect(screen.queryByText('No outputs available for this version')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Outputs' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Project V1' }).querySelector('.lucide-circle-check')).toBeNull();
+  });
+
+  it('distinguishes subtitles still processing from an empty generated subtitle file', () => {
+    const view = render(<LanguageProvider initialPreference="en-US"><VideoTranslationResultWorkspace
+      {...baseProps} activeTab="subtitles" subtitleOutputs={[]}
+      execution={{ status: 'running', stageLabel: 'Subtitle translation' }}
+    /></LanguageProvider>);
+    expect(screen.getByText('Subtitles are not ready yet')).toBeVisible();
+    view.rerender(<LanguageProvider initialPreference="en-US"><VideoTranslationResultWorkspace
+      {...baseProps} activeTab="subtitles" subtitleOutputs={[{ ...baseProps.subtitleOutputs[0]!, cues: [] }]}
+    /></LanguageProvider>);
+    expect(screen.getByText('The subtitle file contains no cues')).toBeVisible();
+    expect(screen.queryByText('Subtitles are not ready yet')).not.toBeInTheDocument();
+  });
+
+  it('keeps generated files visible while later stages are running', () => {
+    render(<LanguageProvider initialPreference="en-US"><VideoTranslationResultWorkspace
+      {...baseProps} activeTab="video" execution={{ status: 'running', stageLabel: 'Dubbing' }}
+    /></LanguageProvider>);
+    expect(screen.getByText('horizontal.srt')).toBeVisible();
+    expect(screen.getByText('Translation in progress · Current stage: Dubbing')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Project V1' })).toBeVisible();
+  });
+
+  it('distinguishes pending dubbing from disabled dubbing and does not invite duplicate generation', () => {
+    const view = render(<LanguageProvider initialPreference="en-US"><VideoTranslationResultWorkspace
+      {...baseProps} activeTab="voice" dubbing execution={{ status: 'running', stageLabel: 'Subtitle translation' }}
+    /></LanguageProvider>);
+    expect(screen.getByText('Dubbing is not ready yet')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Enable dubbing and generate a new version' })).not.toBeInTheDocument();
+    view.rerender(<LanguageProvider initialPreference="en-US"><VideoTranslationResultWorkspace
+      {...baseProps} activeTab="voice" execution={{ status: 'running', stageLabel: 'Subtitle translation' }}
+    /></LanguageProvider>);
+    expect(screen.getByText('Dubbing is disabled for this version')).toBeVisible();
+    expect(screen.queryByText('Dubbing is not ready yet')).not.toBeInTheDocument();
+    view.rerender(<LanguageProvider initialPreference="en-US"><VideoTranslationResultWorkspace
+      {...baseProps} activeTab="voice" dubbing
+    /></LanguageProvider>);
+    expect(screen.getByRole('button', { name: 'Adjust dubbing settings' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Enable dubbing and generate a new version' })).not.toBeInTheDocument();
+  });
+
   it('localizes preview loading failures without modifying subtitles or automatically retrying', () => {
     const raw = '后台原文：原视频读取失败';
     const onPrepareSourceVideo = vi.fn();
@@ -110,8 +169,9 @@ describe('VideoTranslationResultWorkspace', () => {
     );
 
     expect(screen.getByRole('tab', { name: '作品' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('heading', { name: '作品' })).toBeInTheDocument();
-    expect(screen.getByText('项目 V1 · 1 个文件')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '作品' })).not.toBeInTheDocument();
+    expect(screen.queryByText('项目 V1 · 1 个文件')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '项目 V1' })).toBeInTheDocument();
     expect(screen.getByText('horizontal.srt')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '下载横屏字幕' }));
     expect(onExport).toHaveBeenCalledWith('subtitles', 'subtitle-horizontal-v1');
@@ -136,7 +196,8 @@ describe('VideoTranslationResultWorkspace', () => {
     );
 
     expect(screen.getByText('translated-horizontal.mp4')).toBeInTheDocument();
-    expect(screen.getByText('子项 V1 · 项目 V1')).toBeInTheDocument();
+    expect(screen.queryByText('子项 V1 · 项目 V1')).not.toBeInTheDocument();
+    expect(screen.getByText('横屏 16:9')).toBeInTheDocument();
     expect(screen.getByLabelText('横屏成片预览')).toHaveAttribute(
       'src',
       'blob:http://localhost/translated-video'
@@ -173,8 +234,8 @@ describe('VideoTranslationResultWorkspace', () => {
       />
     );
 
-    expect(screen.getByRole('heading', { name: '横屏成片' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '竖屏成片' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '横屏成片' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '竖屏成片' })).toBeInTheDocument();
     expect(screen.getByLabelText('横屏成片预览').parentElement).toHaveAttribute('data-ratio', '16:9');
     expect(screen.getByLabelText('竖屏成片预览').parentElement).toHaveAttribute('data-ratio', '9:16');
     expect(screen.queryByRole('radiogroup', { name: '成片画幅' })).not.toBeInTheDocument();

@@ -293,32 +293,41 @@ describe('local transcription component management', () => {
 });
 
 describe('video translation component notice', () => {
-  it('explains conditional transcription and preserves context before navigating', () => {
+  it('only shows the transcription settings link and preserves context before navigating', () => {
     const beforeNavigate = vi.fn();
     window.location.hash = '#/workbench?tool=video-translation&jobId=job_1';
     const controller = controllerFixture();
-    render(<LanguageProvider><LanguageSwitchControls /><LocalTranscriptionNotice controller={controller} platformCaptions importedSubtitle={false} beforeNavigate={beforeNavigate} /></LanguageProvider>);
-    expect(screen.getByText(/没有可用字幕时才需要本地转录/)).toBeInTheDocument();
-    const link = screen.getByRole('link', { name: '前往组件下载' });
+    controller.componentsStatus!.selectedModel = null;
+    render(<LanguageProvider><LanguageSwitchControls /><LocalTranscriptionNotice controller={controller} importedSubtitle={false} beforeNavigate={beforeNavigate} /></LanguageProvider>);
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent(/^调整转录设置$/);
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    const link = screen.getByRole('link', { name: '调整转录设置' });
+    expect(link.getAttribute('href')).toContain('tab=ai-services');
+    expect(link.getAttribute('href')).toContain('section=transcription');
     expect(link.getAttribute('href')).toContain('component=whisperkit');
     expect(link.getAttribute('href')).toContain('returnPath=');
     const href = link.getAttribute('href');
     fireEvent.click(screen.getByRole('button', { name: 'en-US' }));
-    expect(screen.getByText(/Local transcription is needed only when captions are unavailable/)).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Go to component downloads' })).toHaveAttribute('href', href);
+    expect(notice).toHaveTextContent(/^Change transcription settings$/);
+    expect(screen.getByRole('link', { name: 'Change transcription settings' })).toHaveAttribute('href', href);
     fireEvent.click(screen.getByRole('button', { name: 'sv-SE' }));
-    expect(screen.getByText(/Lokal transkription behövs endast när undertexter saknas/)).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Gå till komponentnedladdningar' })).toHaveAttribute('href', href);
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(screen.getByRole('link')).toHaveAttribute('href', href);
     expect(beforeNavigate).not.toHaveBeenCalled();
     expect(controller.downloadComponents).not.toHaveBeenCalled();
     fireEvent.click(link);
     expect(beforeNavigate).toHaveBeenCalledOnce();
   });
 
-  it('does not require downloading when subtitles were imported, or when using cloud transcription', () => {
-    const { rerender } = render(<LanguageProvider><LocalTranscriptionNotice controller={controllerFixture()} platformCaptions={false} importedSubtitle beforeNavigate={() => {}} /></LanguageProvider>);
-    expect(screen.getByText('当前任务使用导入字幕，无需本地语音转录。')).toBeInTheDocument();
-    rerender(<LanguageProvider><LocalTranscriptionNotice controller={controllerFixture({}, 'openai')} platformCaptions={false} importedSubtitle={false} beforeNavigate={() => {}} /></LanguageProvider>);
-    expect(screen.queryByText('本地转录组件尚未就绪')).not.toBeInTheDocument();
+  it('hides the notice when subtitles were imported, cloud transcription is selected, or a local model is configured', () => {
+    const { rerender } = render(<LanguageProvider><LocalTranscriptionNotice controller={controllerFixture()} importedSubtitle beforeNavigate={() => {}} /></LanguageProvider>);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    rerender(<LanguageProvider><LocalTranscriptionNotice controller={controllerFixture({}, 'openai')} importedSubtitle={false} beforeNavigate={() => {}} /></LanguageProvider>);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    for (const state of ['ready', 'not_installed', 'downloading', 'failed'] as const) {
+      rerender(<LanguageProvider><LocalTranscriptionNotice controller={controllerFixture({ state })} importedSubtitle={false} beforeNavigate={() => {}} /></LanguageProvider>);
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    }
   });
 });

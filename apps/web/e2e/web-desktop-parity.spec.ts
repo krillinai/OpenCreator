@@ -29,7 +29,7 @@ test('项目管理资源不随通用项目页面提前加载且 Browser/Desktop 
         headingBox: await heading.boundingBox(),
         styles
       });
-      await page.getByRole('button', { name: '首页', exact: true }).click();
+      await page.getByRole('button', { name: '模版', exact: true }).click();
       await expect(page.getByRole('tab', { name: '推荐', exact: true })).toBeVisible();
       expect(resources).toHaveLength(0);
     } finally { await context.close(); }

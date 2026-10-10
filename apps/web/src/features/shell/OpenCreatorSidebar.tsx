@@ -10,7 +10,7 @@ import {
   FolderMinus,
   FolderPlus,
   FolderOpen,
-  House,
+  LayoutTemplate,
   LoaderCircle,
   MoreHorizontal,
   Pencil,
@@ -135,16 +135,16 @@ export function OpenCreatorSidebar(props: {
     onClick(): void;
   }> = [
     {
-      label: t('nav.home'),
-      icon: House,
-      current: props.homeActive === true,
-      onClick: props.onOpenHome
-    },
-    {
       label: t('nav.dashboard'),
       icon: PanelsTopLeft,
       current: props.activeView === 'dashboard',
       onClick: () => props.onOpenView('dashboard')
+    },
+    {
+      label: t('nav.home'),
+      icon: LayoutTemplate,
+      current: props.homeActive === true,
+      onClick: props.onOpenHome
     },
     {
       label: t('nav.projects'),
@@ -813,9 +813,9 @@ export function OpenCreatorSidebar(props: {
       )}
 
       <div className="sidebar-bottom">
-        <button type="button" className="sidebar-account" aria-label={l('个人中心', 'Personal center')} title={l('个人中心', 'Personal center')} aria-current={props.activeView === 'account' || props.activeView === 'subscription' ? 'page' : undefined} onClick={() => props.onOpenView('account')}>
+        <button type="button" className="sidebar-account" aria-label={l('账户', 'Account')} title={l('账户', 'Account')} aria-current={props.activeView === 'account' || props.activeView === 'subscription' ? 'page' : undefined} onClick={() => props.onOpenView('account')}>
           <AccountAvatar email={accountEmail} accountId={props.gatewayAccountState?.account?.id} avatarUrl={props.gatewayAccountState?.account?.avatarUrl} loadAvatar={props.loadAccountAvatar}/>
-          {!collapsed ? <span className="sidebar-account__copy"><strong>{l('个人中心', 'Personal center')}</strong><small>{accountEmail ?? (props.gatewayAccountState?.authState === 'expired' ? l('登录已过期', 'Session expired') : l('未登录', 'Signed out'))}</small></span> : null}
+          {!collapsed ? <span className="sidebar-account__copy"><strong>{l('账户', 'Account')}</strong><small>{accountEmail ?? (props.gatewayAccountState?.authState === 'expired' ? l('登录已过期', 'Session expired') : l('未登录', 'Signed out'))}</small></span> : null}
         </button>
       </div>
 

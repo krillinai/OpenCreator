@@ -372,7 +372,7 @@ export default function ImageGenerationWorkspace(props: {
 
   async function generate() {
     if (generating) return;
-    if (official.official && !official.ready) { setError(l('官方图片服务暂不可用，请在个人中心检查连接状态', 'Official image service is unavailable. Check the connection in your personal center.')); return; }
+    if (official.official && !official.ready) { setError(l('官方图片服务暂不可用，请在账户页面检查连接状态', 'Official image service is unavailable. Check the connection in your account.')); return; }
     if (session === null) {
       setError(l(
         '图像生成服务暂不可用，请检查 Runtime 连接',

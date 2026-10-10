@@ -228,7 +228,7 @@ export default function SmartDubbingWorkspace(props: {
   }
 
   async function generate() {
-    if (official.official && !official.ready) { setError(l('官方语音服务暂不可用，请在个人中心检查连接状态', 'Official speech service is unavailable. Check your personal center.')); return; }
+    if (official.official && !official.ready) { setError(l('官方语音服务暂不可用，请在账户页面检查连接状态', 'Official speech service is unavailable. Check your account.')); return; }
     if (generating) return;
     if (session === null) {
       setError(l('智能配音服务暂不可用，请检查 Runtime 连接', 'Smart dubbing is unavailable. Check the Runtime connection.'));

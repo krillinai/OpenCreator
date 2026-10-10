@@ -13,6 +13,44 @@ import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
 import { LanguageSwitchControls } from '../../test/LanguageSwitchControls.js';
 
 describe('VideoTranslationWorkspace task controls', () => {
+  it.each([
+    ['running', 'queued', '翻译任务等待执行'],
+    ['running', 'running', '翻译进行中'],
+    ['running', 'succeeded', '翻译进行中'],
+    ['needs_input', 'failed', '翻译任务等待处理'],
+    ['failed', 'failed', '翻译任务失败'],
+    ['canceled', 'canceled', '翻译任务已终止'],
+    ['failed', 'interrupted', '翻译任务已中断']
+  ] as const)('restores a %s/%s translation before artifacts arrive', (jobStatus, stageStatus, title) => {
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider
+      initialJob={job({ status: jobStatus, revision: 1, stages: [stage({
+        id: 'generation', status: stageStatus, dispatchStatus: stageStatus === 'queued' ? 'queued' : 'claimed',
+        progress: { workflow: true }
+      })] })}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+    ><VideoTranslationWorkspace onBack={vi.fn()} /></CreatorSessionProvider></LanguageProvider>);
+    const workspace = screen.getByRole('region', { name: '视频翻译操作区' });
+    expect(within(workspace).getByText(title)).toBeVisible();
+    expect(workspace.querySelector('.video-translation-header p')).toHaveTextContent('https://www.youtube.com/watch?v=job-control');
+    expect(within(workspace).queryByText('当前项目版本没有作品')).not.toBeInTheDocument();
+  });
+
+  it.each(['subtitle', 'prepare-source-video'])('does not label existing outputs as generating when %s targets another result or only prepares a preview', stageId => {
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider
+      initialJob={job({ status: 'running', revision: 1, artifacts: [subtitleArtifact(1, '已完成字幕')],
+        state: { dubbing: true, composeVideo: true },
+        stages: [{ ...stage({ id: 'other-operation', status: 'running', dispatchStatus: 'claimed',
+          progress: stageId === 'subtitle' ? { targetResultVersion: 2 } : { inputResultVersion: 1 }
+        }), stageId }]
+      })}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+    ><VideoTranslationWorkspace onBack={vi.fn()} /></CreatorSessionProvider></LanguageProvider>);
+    const workspace = screen.getByRole('region', { name: '视频翻译操作区' });
+    fireEvent.click(within(workspace).getByRole('tab', { name: '配音' }));
+    expect(within(workspace).getByText('此版本尚未生成配音')).toBeVisible();
+    expect(within(workspace).queryByText('配音尚未就绪')).not.toBeInTheDocument();
+  });
+
   it('downloads and previews a draft Douyin source without entering results and clears playback when the source changes', async () => {
     const objectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
     const revokeDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
@@ -230,9 +268,54 @@ describe('VideoTranslationWorkspace task controls', () => {
     expect(screen.getByLabelText('UTF-8 SRT file')).toHaveAttribute('type', 'file');
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByRole('radio', { name: '16:9 + 9:16 Both' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Render subtitled video' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('combobox', { name: 'Output format' })).toHaveValue('horizontal');
+    expect(screen.getByRole('option', { name: '16:9 + 9:16 Both' })).toBeInTheDocument();
     expect(screen.queryByText('双画幅')).not.toBeInTheDocument();
+  });
+
+  it('restores an old fourth-step draft on the final step of the three-step workflow', () => {
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider
+      initialJob={job({ status: 'draft', revision: 0, stages: [], state: {
+        currentStep: 3, furthestStep: 3, composeVideo: true, dubbing: true, voiceCode: 'marin', voiceName: 'Marin'
+      } })}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+    ><VideoTranslationWorkspace onBack={vi.fn()} /></CreatorSessionProvider></LanguageProvider>);
+
+    const steps = screen.getByRole('navigation', { name: '翻译流程' });
+    expect(within(steps).getAllByRole('button')).toHaveLength(3);
+    expect(within(steps).getByRole('button', { name: '3 视频与字幕' })).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('switch', { name: '生成目标语言配音' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('marin');
+    expect(screen.queryByRole('button', { name: '继续' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: '视频翻译操作区' })).getByRole('button', { name: '开始翻译' })).toBeInTheDocument();
+  });
+
+  it('preserves the selected voice but submits without dubbing when video composition is disabled', async () => {
+    let current = job({ status: 'draft', revision: 0, stages: [], state: {
+      currentStep: 2, furthestStep: 2, composeVideo: true, dubbing: true, voiceCode: 'marin', voiceName: 'Marin'
+    } });
+    const stageSettings: CreatorJob['state'][] = [];
+    const applyAction = vi.fn(async (_id: string, request: { action: string; input: Record<string, CreatorJson> }) => {
+      if (request.action === 'run-stage') stageSettings.push({ ...current.state });
+      current = { ...current, revision: current.revision + 1, state: { ...current.state, ...request.input.patch as object } };
+      return { job: current };
+    });
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={current}
+      service={{ applyAction, runAgentTurn: vi.fn() } as never}
+    ><VideoTranslationWorkspace onBack={vi.fn()} /></CreatorSessionProvider></LanguageProvider>);
+
+    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+    expect(screen.queryByRole('switch', { name: '生成目标语言配音' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('任务摘要')).not.toHaveTextContent('配音');
+    await waitFor(() => expect(current.state).toMatchObject({ composeVideo: false, dubbing: false, voiceCode: 'marin' }));
+
+    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+    fireEvent.click(screen.getByRole('switch', { name: '生成目标语言配音' }));
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('marin');
+    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+    fireEvent.click(within(screen.getByRole('region', { name: '视频翻译操作区' })).getByRole('button', { name: '开始翻译' }));
+    await waitFor(() => expect(stageSettings).toEqual([expect.objectContaining({ composeVideo: false, dubbing: false, voiceCode: 'marin' })]));
   });
 
   it('keeps an imported translation in configuration and shows its persisted metadata', async () => {
@@ -255,7 +338,6 @@ describe('VideoTranslationWorkspace task controls', () => {
     fireEvent.change(screen.getByLabelText('UTF-8 SRT 文件'), { target: { files: [new File(['srt'], 'translated.srt')] } });
     expect(await screen.findByText('本地导入 · translated.srt · zh_cn · 1 条字幕 · v1')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '设置翻译语言' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(within(screen.getByRole('region', { name: '视频翻译操作区' })).getByRole('button', { name: '开始翻译' }));
     await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({ action: 'run-stage', input: { stageId: 'subtitle', workflow: true } })));
@@ -293,6 +375,7 @@ describe('VideoTranslationWorkspace task controls', () => {
             state: {
               currentStep: 2,
               furthestStep: 2,
+              composeVideo: true,
               subtitleFont: 'serif',
               subtitleSize: 'large',
               subtitleColor: '#7EE7FF'
@@ -306,15 +389,44 @@ describe('VideoTranslationWorkspace task controls', () => {
     );
 
     expect(screen.getByRole('combobox', { name: '字幕字体' })).toHaveValue('serif');
-    expect(screen.getByRole('radio', { name: '大' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('combobox', { name: '字幕大小' })).toHaveValue('large');
+    expect(screen.getByRole('button', { name: '选择译文颜色' })).toHaveTextContent('#7EE7FF');
+    fireEvent.click(screen.getByRole('button', { name: '选择译文颜色' }));
     expect(screen.getByRole('button', { name: '#7EE7FF' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('validates HEX colors, updates the preview, and closes the palette with Escape or an outside click', () => {
+    render(<LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={job({ status: 'draft', revision: 0, stages: [], state: {
+        currentStep: 2, furthestStep: 2, composeVideo: true
+      } })} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+        <VideoTranslationWorkspace onBack={vi.fn()} />
+      </CreatorSessionProvider>
+    </LanguageProvider>);
+    const trigger = screen.getByRole('button', { name: '选择译文颜色' });
+    expect(screen.queryByRole('dialog', { name: '译文颜色色板' })).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    const hex = screen.getByRole('textbox', { name: '译文颜色 HEX' });
+    const frame = screen.getByRole('region', { name: '字幕样式预览' }).querySelector(':scope > div');
+    fireEvent.change(hex, { target: { value: '#12' } });
+    expect(frame).toHaveStyle({ '--subtitle-preview-color': '#FFFFFF' });
+    fireEvent.change(hex, { target: { value: '123abc' } });
+    expect(frame).toHaveStyle({ '--subtitle-preview-color': '#123ABC' });
+    expect(trigger).toHaveTextContent('#123ABC');
+    fireEvent.keyDown(hex, { key: 'Escape' });
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(trigger);
+    expect(screen.getByRole('textbox', { name: '译文颜色 HEX' })).toHaveValue('#123ABC');
+    fireEvent.pointerDown(screen.getByRole('combobox', { name: '输出画幅' }));
+    expect(screen.queryByRole('dialog', { name: '译文颜色色板' })).not.toBeInTheDocument();
   });
 
   it('uses the same preset and custom color controls for original, outline, and shadow', () => {
     render(
       <LanguageProvider initialPreference="zh-CN">
         <CreatorSessionProvider
-          initialJob={job({ status: 'draft', revision: 0, stages: [], state: { currentStep: 2, furthestStep: 2 } })}
+          initialJob={job({ status: 'draft', revision: 0, stages: [], state: { currentStep: 2, furthestStep: 2, composeVideo: true } })}
           service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
         >
           <VideoTranslationWorkspace onBack={vi.fn()} />
@@ -322,13 +434,16 @@ describe('VideoTranslationWorkspace task controls', () => {
       </LanguageProvider>
     );
 
+    fireEvent.click(screen.getByText('更多样式'));
     for (const label of ['原文颜色', '描边颜色', '阴影颜色']) {
+      fireEvent.click(screen.getByRole('button', { name: `选择${label}` }));
       const preset = screen.getByRole('button', { name: `${label} #7EE7FF` });
       fireEvent.click(preset);
       expect(preset).toHaveAttribute('aria-pressed', 'true');
-      expect(screen.getByLabelText(label)).toHaveValue('#7ee7ff');
+      expect(screen.getByRole('textbox', { name: `${label} HEX` })).toHaveValue('#7EE7FF');
     }
-    expect(screen.getAllByText('自定义')).toHaveLength(4);
+    expect(screen.getAllByRole('slider')).toHaveLength(2);
+    expect(screen.queryByText('自定义')).not.toBeInTheDocument();
   });
 
   it('uses the platform poster and actual dimensions when metadata provides them', async () => {
@@ -344,7 +459,7 @@ describe('VideoTranslationWorkspace task controls', () => {
         <CreatorSessionProvider
           initialJob={job({
             status: 'draft', revision: 0, stages: [],
-            state: { currentStep: 2, furthestStep: 2, sourceUrl: 'https://www.bilibili.com/video/BV1abc' }
+            state: { currentStep: 2, furthestStep: 2, composeVideo: true, sourceUrl: 'https://www.bilibili.com/video/BV1abc' }
           })}
           service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
         >
@@ -368,7 +483,7 @@ describe('VideoTranslationWorkspace task controls', () => {
         <CreatorSessionProvider
           initialJob={job({
             status: 'draft', revision: 0, stages: [],
-            state: { currentStep: 2, furthestStep: 2, sourceUrl: 'https://www.youtube.com/shorts/portrait123' }
+            state: { currentStep: 2, furthestStep: 2, composeVideo: true, sourceUrl: 'https://www.youtube.com/shorts/portrait123' }
           })}
           service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
         >
@@ -390,7 +505,7 @@ describe('VideoTranslationWorkspace task controls', () => {
         <CreatorSessionProvider
           initialJob={job({
             status: 'draft', revision: 0, stages: [],
-            state: { currentStep: 2, furthestStep: 2, sourceUrl: 'https://video.example.test/source.mp4' }
+            state: { currentStep: 2, furthestStep: 2, composeVideo: true, sourceUrl: 'https://video.example.test/source.mp4' }
           })}
           service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
         >
@@ -415,14 +530,49 @@ describe('VideoTranslationWorkspace task controls', () => {
     expect(preview).toHaveAttribute('data-ratio', '4:3');
     expect(preview.querySelector(':scope > div')).toHaveStyle({ '--subtitle-preview-aspect-ratio': '1440 / 1080' });
 
-    fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
-    fireEvent.click(screen.getByRole('radio', { name: /9:16/ }));
-    fireEvent.click(within(screen.getByRole('navigation', { name: '翻译流程' })).getByRole('button', {
-      name: /字幕样式$/
-    }));
+    fireEvent.change(screen.getByRole('combobox', { name: '输出画幅' }), { target: { value: 'vertical' } });
     expect(screen.getByRole('region', { name: '字幕样式预览' })).toHaveAttribute('data-ratio', '9:16');
     expect(screen.getByRole('region', { name: '字幕样式预览' })).toHaveAttribute('data-converted', 'true');
+  });
+
+  it('previews vertical titles live for portrait and dual output and hides them for landscape output', () => {
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          initialJob={job({
+            status: 'draft', revision: 0, stages: [],
+            state: { currentStep: 2, furthestStep: 2, composeVideo: true }
+          })}
+          service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+        >
+          <VideoTranslationWorkspace onBack={vi.fn()} />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    const format = screen.getByRole('combobox', { name: '输出画幅' });
+    const preview = screen.getByRole('region', { name: '字幕样式预览' });
+    fireEvent.change(format, { target: { value: 'vertical' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /竖屏主标题/ }), { target: { value: '1111' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /竖屏副标题/ }), { target: { value: '2222' } });
+    expect(within(preview).getByText('1111')).toBeVisible();
+    expect(within(preview).getByText('2222')).toBeVisible();
+    fireEvent.change(screen.getByRole('textbox', { name: /竖屏主标题/ }), { target: { value: '更新标题' } });
+    expect(within(preview).queryByText('1111')).not.toBeInTheDocument();
+    expect(within(preview).getByText('更新标题')).toBeVisible();
+
+    fireEvent.change(format, { target: { value: 'all' } });
+    expect(preview).toHaveAttribute('data-ratio', '9:16');
+    expect(within(preview).getByText('更新标题')).toBeVisible();
+    expect(within(preview).getByText('2222')).toBeVisible();
+
+    fireEvent.change(format, { target: { value: 'horizontal' } });
+    expect(within(preview).queryByText('更新标题')).not.toBeInTheDocument();
+    expect(within(preview).queryByText('2222')).not.toBeInTheDocument();
+    fireEvent.change(format, { target: { value: 'vertical' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /竖屏主标题/ }), { target: { value: '' } });
+    expect(within(preview).queryByText('更新标题')).not.toBeInTheDocument();
+    expect(within(preview).getByText('2222')).toBeVisible();
   });
 
   it('uses a local video still and preserves its portrait 3:4 ratio', () => {
@@ -457,6 +607,7 @@ describe('VideoTranslationWorkspace task controls', () => {
       fireEvent.loadedMetadata(sourceVideo);
       fireEvent.click(screen.getByRole('button', { name: '继续' }));
       fireEvent.click(screen.getByRole('button', { name: '继续' }));
+      fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
 
       const preview = screen.getByRole('region', { name: '字幕样式预览' });
       expect(preview).toHaveAttribute('data-ratio', '3:4');
@@ -488,6 +639,7 @@ describe('VideoTranslationWorkspace task controls', () => {
             state: {
               currentStep: 2,
               furthestStep: 2,
+              composeVideo: true,
               sourceType: 'file',
               sourceUrl: '',
               sourceFileName: 'saved.mp4',
@@ -523,6 +675,7 @@ describe('VideoTranslationWorkspace task controls', () => {
       state: {
         currentStep: 2,
         furthestStep: 2,
+        composeVideo: true,
         subtitleStyle: {
           fontPreset: 'sans',
           fontWeight: 'bold',
@@ -581,22 +734,34 @@ describe('VideoTranslationWorkspace task controls', () => {
     fireEvent.change(screen.getByRole('combobox', { name: '字幕字体' }), {
       target: { value: 'rounded' }
     });
-    fireEvent.click(screen.getByRole('radio', { name: '常规' }));
-    fireEvent.click(screen.getByRole('radio', { name: '小' }));
-    fireEvent.change(screen.getByLabelText('自定义译文颜色'), {
+    fireEvent.change(screen.getByRole('combobox', { name: '字幕字重' }), {
+      target: { value: 'regular' }
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: '字幕大小' }), {
+      target: { value: 'small' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '选择译文颜色' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '译文颜色 HEX' }), {
       target: { value: '#123456' }
     });
-    fireEvent.change(screen.getByLabelText('原文颜色'), {
+    fireEvent.click(screen.getByRole('button', { name: '选择原文颜色' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '原文颜色 HEX' }), {
       target: { value: '#654321' }
     });
-    fireEvent.change(screen.getByLabelText('描边颜色'), {
+    const advancedStyles = screen.getByText('更多样式').closest('details');
+    expect(advancedStyles).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByText('更多样式'));
+    expect(advancedStyles).toHaveAttribute('open');
+    fireEvent.click(screen.getByRole('button', { name: '选择描边颜色' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '描边颜色 HEX' }), {
       target: { value: '#111111' }
     });
     fireEvent.change(screen.getByRole('spinbutton', { name: '描边宽度' }), {
       target: { value: '3.5' }
     });
     fireEvent.click(screen.getByRole('switch', { name: '字幕阴影' }));
-    fireEvent.change(screen.getByLabelText('阴影颜色'), {
+    fireEvent.click(screen.getByRole('button', { name: '选择阴影颜色' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '阴影颜色 HEX' }), {
       target: { value: '#222222' }
     });
     fireEvent.change(screen.getByRole('spinbutton', { name: '不透明度' }), {
@@ -1305,8 +1470,16 @@ describe('VideoTranslationWorkspace task controls', () => {
       expect(screen.queryByText('任务状态刚刚发生变化，请重试一次。你的设置没有丢失。')).not.toBeInTheDocument();
     });
     expect(screen.getByText('翻译任务已开始，进度会实时同步到创作动态')).toBeInTheDocument();
+    expect(within(workspace).getByText('翻译进行中')).toBeVisible();
+    expect(within(workspace).queryByText('当前项目版本没有作品')).not.toBeInTheDocument();
     expect(within(workspace).getByRole('button', { name: '终止任务' })).toBeInTheDocument();
     expect(applyAction.mock.calls.filter(([, request]) => request.action === 'run-stage')).toHaveLength(1);
+    act(() => currentSession!.applyRemoteSnapshot(job({
+      status: 'completed', revision: 4, artifacts: [subtitleArtifact(1, '翻译完成')],
+      stages: [stage({ id: 'stage_subtitle_started', status: 'succeeded', dispatchStatus: 'finished', progress: { resultVersion: 1 } })]
+    })));
+    expect(within(workspace).queryByText('翻译进行中')).not.toBeInTheDocument();
+    expect(within(workspace).queryByText('翻译任务已开始，进度会实时同步到创作动态')).not.toBeInTheDocument();
   });
 });
 

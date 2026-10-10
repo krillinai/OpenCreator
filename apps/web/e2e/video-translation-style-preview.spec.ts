@@ -31,6 +31,7 @@ test('字幕样式预览显示视频封面并按源比例或竖屏输出比例�
       targetLanguage: 'zh_cn',
       currentStep: 2,
       furthestStep: 2,
+      composeVideo: true,
       workspacePhase: 'configure'
     },
     creationKey: 'style-preview-ratio'
@@ -59,6 +60,7 @@ test('字幕样式预览显示视频封面并按源比例或竖屏输出比例�
   const sourceBox = await frame.boundingBox();
   expect(sourceBox).not.toBeNull();
   expect(sourceBox!.width / sourceBox!.height).toBeCloseTo(4 / 3, 1);
+  await page.screenshot({ path: test.info().outputPath('video-subtitle-settings-wide.png'), fullPage: true });
 
   await page.setViewportSize({ width: 1100, height: 800 });
   expect(await settings.evaluate(element => {
@@ -66,13 +68,11 @@ test('字幕样式预览显示视频封面并按源比例或竖屏输出比例�
     return container !== null && element.getBoundingClientRect().width <= container.getBoundingClientRect().width;
   })).toBe(true);
 
-  await page.getByRole('button', { name: '继续' }).click();
-  await page.getByRole('switch', { name: '合成字幕视频' }).click();
-  await page.getByRole('radio', { name: /9:16/ }).click();
-  await page.getByRole('navigation', { name: '翻译流程' }).getByRole('button', { name: /字幕样式$/ }).click();
+  await page.getByRole('combobox', { name: '输出画幅' }).selectOption('vertical');
   await expect(preview).toHaveAttribute('data-ratio', '9:16');
   await expect(preview).toHaveAttribute('data-converted', 'true');
   const verticalBox = await frame.boundingBox();
   expect(verticalBox).not.toBeNull();
   expect(verticalBox!.width / verticalBox!.height).toBeCloseTo(9 / 16, 1);
+  await page.screenshot({ path: test.info().outputPath('video-subtitle-settings-narrow.png'), fullPage: true });
 });

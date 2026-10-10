@@ -136,10 +136,9 @@ describe('dashboard CSS contracts', () => {
     const verticalPreview = cssBlocks('.video-translation-subtitle-preview[data-orientation="portrait"] > div');
 
     expect(layout[0]).toContain('align-items: start;');
-    expect(layout[0]).toContain('minmax(350px, 1.2fr) minmax(260px, 1fr)');
+    expect(layout[0]).toContain('grid-template-columns: minmax(0, 1fr) 280px;');
     expect(outlineFields[0]).toContain('grid-template-columns: minmax(0, 1fr) 88px;');
     expect(colorOptions[0]).toContain('flex-wrap: wrap;');
-    expect(dashboardCss).toMatch(/@container video-translation-workspace \(max-width: 760px\) \{\s*\.video-translation-subtitle-style-layout/);
     expect(preview[0]).toContain('grid-template-rows: auto auto;');
     expect(preview[0]).toContain('align-content: start;');
     expect(player[0]).toContain('aspect-ratio: var(--subtitle-preview-aspect-ratio, 16 / 9);');
@@ -149,21 +148,23 @@ describe('dashboard CSS contracts', () => {
     expect(cues[0]).toContain('position: absolute;');
     expect(cues[0]).toContain('z-index: 2;');
     expect(verticalPreview).toHaveLength(1);
-    expect(verticalPreview[0]).toContain('width: min(236px, 100%);');
+    expect(verticalPreview[0]).toContain('width: min(158px, 100%);');
   });
 
-  it('widens the translation settings consistently and keeps smaller color swatches', () => {
+  it('fills the available translation workspace width and keeps smaller color swatches', () => {
     for (const selector of [
       '.video-translation-source-step',
+      '.video-translation-bilibili-parts',
+      '.video-translation-source-step .video-translation-url-field',
       '.video-translation-configure-top',
       '.video-translation-wizard-main .video-translation-wizard-body',
       '.video-translation-wizard-main .video-translation-wizard-actions',
       '.video-translation-run-notice'
     ]) {
-      expect(cssBlocks(selector)[0]).toContain('width: min(960px, 100%);');
+      expect(cssBlocks(selector)[0]).toContain('width: 100%;');
     }
     expect(cssBlocks('.video-translation-color-options > button')[0]).toContain('width: 26px;');
-    expect(cssBlocks('.video-translation-custom-color input')[0]).toContain('width: 26px;');
+    expect(cssBlocks('.video-translation-color-palette .video-translation-color-picker')[0]).toContain('height: 150px;');
   });
 
   it('matches video download settings width to translation and centers labeled platforms', () => {
@@ -248,9 +249,9 @@ describe('dashboard CSS contracts', () => {
     );
 
     expect(resultHeader).toHaveLength(1);
-    expect(resultHeader[0]).toContain('width: min(1080px, 100%);');
+    expect(resultHeader[0]).toContain('width: 100%;');
     expect(resultBody).toHaveLength(1);
-    expect(resultBody[0]).toContain('width: min(1080px, 100%);');
+    expect(resultBody[0]).toContain('width: 100%;');
   });
 
   it('keeps media generation steps vertically scrollable inside the fixed workspace', () => {
