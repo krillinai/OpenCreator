@@ -37,7 +37,16 @@ export class CreatorProviderRequestLedger {
     private readonly issueService?: CreatorIssueService
   ) {}
 
+  findLatest(provider: string, requestKey: string) {
+    return this.repository.getLatestProviderRequest(provider, requestKey);
+  }
+
+  findByRemoteTaskId(jobId: string, remoteTaskId: string) {
+    return this.repository.listProviderRequests(jobId).filter(request => request.remoteTaskId === remoteTaskId);
+  }
+
   registerBeforeSubmit(input: {
+    gateway?: CreatorProviderRequest['gateway'];
     jobId: string;
     provider: string;
     stageRunId: string;
@@ -46,11 +55,12 @@ export class CreatorProviderRequestLedger {
     request: Record<string, CreatorJson>;
     billingSideEffect?: boolean;
   }): CreatorProviderRequest {
-    const requestHash = hashRequest(input.request);
+    const requestHash = hashRequest(input.gateway ? { request: input.request, gateway: input.gateway } : input.request);
     return this.repository.transaction(() => {
       const latest = this.repository.getLatestProviderRequest(input.provider, input.requestKey);
       if (latest === undefined) {
         return this.repository.createProviderRequest({
+          ...(input.gateway ? { gateway: input.gateway } : {}),
           jobId: input.jobId,
           provider: input.provider,
           stageRunId: input.stageRunId,
@@ -81,6 +91,7 @@ export class CreatorProviderRequestLedger {
         );
       }
       return this.repository.createProviderRequest({
+        ...(input.gateway ? { gateway: input.gateway } : {}),
         jobId: input.jobId,
         provider: input.provider,
         stageRunId: input.stageRunId,
@@ -195,6 +206,7 @@ export class CreatorProviderRequestLedger {
         'abandoned_unknown'
       );
       return this.repository.createProviderRequest({
+        ...(current.gateway ? { gateway: current.gateway } : {}),
         jobId: current.jobId,
         provider: current.provider,
         stageRunId: current.stageRunId,
@@ -319,7 +331,27 @@ export class CreatorProviderRequestLedger {
     result: 'succeeded' | 'failed' | 'canceled' | 'unknown',
     error?: unknown
   ): boolean {
-    const issue = this.findProviderIssue(request, 'resolving');
+    let issue = this.findProviderIssue(request, 'resolving');
+    if (issue === undefined && result === 'succeeded' && !this.repository.listProviderRequests(request.jobId).some(other => (
+      other.id !== request.id && other.provider === request.provider && other.stageRunId === request.stageRunId
+      && other.scopeKey === request.scopeKey && isPendingRemote(other.status)
+    ))) {
+      issue = this.issueService?.list(request.jobId).find(candidate => (
+        candidate.source === 'provider' && candidate.code === 'creator_provider_resolution_required'
+        && candidate.status === 'open' && candidate.stageRunId === request.stageRunId
+        && candidate.scopeKey === (request.scopeKey ?? undefined) && candidate.publicFacts?.provider === request.provider
+      ));
+      if (issue !== undefined) {
+        this.issueService?.beginResolution({
+          jobId: request.jobId,
+          issueId: issue.id,
+          resolutionAttemptId: request.id,
+          associationKind: 'provider-request',
+          associationId: request.id,
+          stageRunId: request.stageRunId
+        });
+      }
+    }
     if (issue === undefined) return false;
     this.issueService?.finishResolution({
       jobId: request.jobId,

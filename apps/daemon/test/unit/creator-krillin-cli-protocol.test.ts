@@ -10,9 +10,13 @@ import {
   resolveKrillinCliSource
 } from '../../src/creator/krillin/cli-runner.js';
 import { createKrillinConfigToml } from '../../src/creator/krillin/config-bridge.js';
-import { buildKrillinStageOptions } from '../../src/creator/krillin/adapter.js';
+import { buildKrillinStageOptions, normalizeKrillinFailure } from '../../src/creator/krillin/adapter.js';
 
 describe('KrillinAI CLI protocol', () => {
+  it.each(['audio_no_speech', 'audio_transcription_empty', 'audio_transcription_invalid_response', 'audio_transcription_timestamps_missing', 'audio_transcription_api_failed'])('preserves %s through usage-error normalization', code => {
+    const message = 'OpenAI transcription response was classified by the runtime';
+    expect(normalizeKrillinFailure({ code, kind: 'usage', message })).toEqual({ code, message });
+  });
   it.each([true, false])('never prepares video in the translation subtitle stage, even when composeVideo=%s', composeVideo => {
     const stage = { job: { templateId: 'video-translation', state: { sourceUrl: 'https://youtu.be/demo', sourceLanguage: 'en', targetLanguage: 'zh_cn', composeVideo } }, stageRun: { stageId: 'subtitle', id: 'stage' }, workdir: '/job/stage' };
     const options = buildKrillinStageOptions(stage as never);

@@ -14,6 +14,7 @@ import {
   stickmanScriptManifestSchema
 } from './contracts.js';
 import { stickmanEdgeTtsVoiceForLanguage } from './tts.js';
+import { gatewayCreatorBinding } from '../../gateway/creator-service-source.js';
 
 type Synthesize = Pick<KrillinTtsService, 'synthesize'>['synthesize'];
 type EdgeTtsSynthesisResult = {
@@ -106,9 +107,11 @@ async function synthesizeSegment(
   const segmentIndex = script.segments.findIndex(candidate => candidate.id === scopeKey);
   const segmentCount = script.segments.length;
   const config = await input.configStore.read();
+  const gateway = gatewayCreatorBinding(config);
   const selection = resolveTtsSelection(stage, config);
   const requestKey = `${stage.job.id}:narration:${scopeKey}:${fingerprint}`;
-  const ledger = input.ledger.registerBeforeSubmit({
+  let ledger = input.ledger.registerBeforeSubmit({
+    ...(gateway ? { gateway:{ accountId:gateway.accountId, bindingVersion:gateway.bindingVersion, logicalId:requestKey } } : {}),
     jobId: stage.job.id,
     provider: selection.provider,
     stageRunId: stage.stageRun.id,
@@ -122,7 +125,7 @@ async function synthesizeSegment(
       format: selection.provider === 'edge-tts' ? 'mp3' : 'wav'
     }
   });
-  input.ledger.markSubmitting(ledger.id);
+  ledger = input.ledger.markSubmitting(ledger.id);
   stage.reportProgress({
     phase: 'synthesizing',
     percent: Math.round(((segmentIndex + 0.1) / segmentCount) * 100),
@@ -144,11 +147,14 @@ async function synthesizeSegment(
       : await synthesize({
           text: segment.narration,
           provider: selection.provider,
+          logicalId: ledger.gateway?.logicalId ?? ledger.id,
+          ...(gateway ? { onGatewayRequest: (id: string) => { ledger = input.ledger.markWaitingRemote(ledger.id, id); } } : {}),
           model: selection.model,
           voiceId: selection.voiceId,
           format: 'wav',
           signal: stage.signal
         });
+    if (gateway) ledger = input.ledger.markSucceeded(ledger.id);
     const path = join(stage.workdir, `${scopeKey}.${result.format}`);
     await writeFile(path, result.content);
     const media = await probe(path, input.ffprobePath);
@@ -158,7 +164,7 @@ async function synthesizeSegment(
         `Narration for ${scopeKey} is not a valid audio file`
       );
     }
-    input.ledger.markSucceeded(ledger.id);
+    if (!gateway) ledger = input.ledger.markSucceeded(ledger.id);
     return {
       outputs: [{
         kind: 'narration_audio',
@@ -189,7 +195,10 @@ async function synthesizeSegment(
       }
     };
   } catch (error) {
-    input.ledger.markFailed(ledger.id, error);
+    if (['submitting', 'waiting_remote'].includes(ledger.status)) {
+      if (gateway) input.ledger.markUnknownRemoteAcceptance(ledger.id);
+      else input.ledger.markFailed(ledger.id, error);
+    }
     if (error instanceof CreatorExecutorError) throw error;
     if (hasErrorCode(error)) {
       throw new CreatorExecutorError(error.code, error.message);
@@ -278,7 +287,8 @@ async function buildAudioTiming(
 }
 
 function resolveTtsSelection(stage: CreatorExecutorInput, config: CreatorServicesConfig) {
-  const provider = stage.job.state.ttsProvider === 'openai'
+  const gateway = gatewayCreatorBinding(config);
+  const provider = gateway ? 'openai' : stage.job.state.ttsProvider === 'openai'
     || stage.job.state.ttsProvider === 'aliyun'
     || stage.job.state.ttsProvider === 'edge-tts'
     || stage.job.state.ttsProvider === 'minimax'
@@ -301,7 +311,7 @@ function resolveTtsSelection(stage: CreatorExecutorInput, config: CreatorService
     };
   }
   const providerConfig = config.tts[provider];
-  const model = typeof stage.job.state.ttsModel === 'string' && stage.job.state.ttsModel.trim()
+  const model = !gateway && typeof stage.job.state.ttsModel === 'string' && stage.job.state.ttsModel.trim()
     ? stage.job.state.ttsModel.trim()
     : providerConfig.model;
   const voiceId = typeof stage.job.state.voiceCode === 'string' && stage.job.state.voiceCode.trim()

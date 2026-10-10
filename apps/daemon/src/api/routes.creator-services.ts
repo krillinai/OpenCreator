@@ -21,6 +21,7 @@ import {
   type KrillinTtsService
 } from '../creator/krillin/tts-service.js';
 import { apiError } from './errors.js';
+import { gatewayCreatorBinding } from '../gateway/creator-service-source.js';
 
 export async function registerCreatorServicesRoutes(
   server: FastifyInstance,
@@ -30,8 +31,34 @@ export async function registerCreatorServicesRoutes(
   ttsService?: Pick<KrillinTtsService, 'listVoices' | 'preview'>,
   onConfigurationChanged?: () => Promise<void> | void,
   readCodexImageStatus?: () => Promise<CodexImageStatus>,
-  readCodexModelStatus?: () => Promise<CodexProviderConfig>
+  readCodexModelStatus?: () => Promise<CodexProviderConfig>,
+  networkStore: CreatorServicesConfigStore = store
 ): Promise<void> {
+  server.get('/creator-services/network', async (_request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    try { return { proxy: (await networkStore.read()).proxy }; }
+    catch (error) { return sendStoreError(reply, error); }
+  });
+  server.patch<{ Body: unknown }>('/creator-services/network', async (request, reply) => {
+    const body = request.body as { proxy?: unknown } | null;
+    const proxy = typeof body?.proxy === 'string' ? body.proxy.trim() : undefined;
+    let valid = proxy !== undefined && proxy.length <= 2048;
+    if (proxy) {
+      try {
+        const url = new URL(proxy);
+        valid = valid && ['http:', 'https:'].includes(url.protocol) && !!url.hostname
+          && !url.search && !url.hash && (url.pathname === '/' || url.pathname === '');
+      } catch { valid = false; }
+    }
+    if (!valid || !body || Object.keys(body).some(key => key !== 'proxy')) {
+      return reply.code(400).send(apiError('VALIDATION_FAILED', 'Enter a valid HTTP or HTTPS proxy URL'));
+    }
+    try {
+      const current = await networkStore.read();
+      const saved = await networkStore.write({ ...current, proxy: proxy! });
+      return { proxy: saved.proxy };
+    } catch (error) { return sendStoreError(reply, error); }
+  });
   server.get('/creator-services/capabilities', async () => readCapabilities());
   server.get('/creator-services/model/codex/status', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store');
@@ -53,7 +80,14 @@ export async function registerCreatorServicesRoutes(
 
   server.get('/creator-services/config', async (_request, reply) => {
     try {
-      return presentCreatorServicesConfig(await store.read());
+      const config = await store.read();
+      if (gatewayCreatorBinding(config)) {
+        const result = presentCreatorServicesConfig(config);
+        clearOfficialAddresses(result.config);
+        result.configuredCredentials = [];
+        return result;
+      }
+      return presentCreatorServicesConfig(config);
     } catch (error) {
       return sendStoreError(reply, error);
     }
@@ -73,6 +107,7 @@ export async function registerCreatorServicesRoutes(
         ));
       }
       const current = await store.read();
+      if (networkStore !== store) config.proxy = (await networkStore.read()).proxy;
       const saved = await store.write(retainCreatorServicesCredentials(config, current));
       try {
         await onConfigurationChanged?.();
@@ -126,7 +161,9 @@ export async function registerCreatorServicesRoutes(
 
   server.delete('/creator-services/config', async (_request, reply) => {
     try {
-      return presentCreatorServicesConfig(await store.reset());
+      const proxy = networkStore !== store ? (await networkStore.read()).proxy : undefined;
+      const reset = await store.reset();
+      return presentCreatorServicesConfig(proxy === undefined ? reset : await store.write({ ...reset, proxy }));
     } catch (error) {
       return sendStoreError(reply, error);
     }
@@ -182,6 +219,14 @@ export async function registerCreatorServicesRoutes(
         }
       }
     );
+  }
+}
+
+function clearOfficialAddresses(value: unknown): void {
+  if (!value || typeof value !== 'object') return;
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'baseUrl' || key === 'apiKey' || key === 'proxy') (value as Record<string, unknown>)[key] = '';
+    else clearOfficialAddresses(child);
   }
 }
 

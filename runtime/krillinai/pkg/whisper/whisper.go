@@ -2,6 +2,8 @@ package whisper
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"github.com/sashabaranov/go-openai"
 	"go.uber.org/zap"
 	"krillin-ai/internal/types"
@@ -10,21 +12,29 @@ import (
 )
 
 func (c *Client) Transcription(audioFile, language, workDir string) (*types.TranscriptionData, error) {
+	granularity := openai.TranscriptionTimestampGranularityWord
+	if c.official {
+		granularity = openai.TranscriptionTimestampGranularitySegment
+	}
 	resp, err := c.client.CreateTranscription(
 		context.Background(),
 		openai.AudioRequest{
-			Model:    openai.Whisper1,
+			Model:    c.model,
 			FilePath: audioFile,
 			Format:   openai.AudioResponseFormatVerboseJSON,
 			TimestampGranularities: []openai.TranscriptionTimestampGranularity{
-				openai.TranscriptionTimestampGranularityWord,
+				granularity,
 			},
 			Language: language,
 		},
 	)
 	if err != nil {
+		var classified *TranscriptionError
+		if errors.As(err, &classified) {
+			return nil, err
+		}
 		log.GetLogger().Error("openai create transcription failed", zap.Error(err))
-		return nil, err
+		return nil, &TranscriptionError{Code: "audio_transcription_api_failed", Message: fmt.Sprintf("transcription service request failed: %v", err), Cause: err}
 	}
 
 	transcriptionData := &types.TranscriptionData{
@@ -34,6 +44,9 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 	}
 	num := 0
 	for _, word := range resp.Words {
+		if strings.TrimSpace(word.Word) == "" || word.Start < 0 || word.End <= word.Start {
+			continue
+		}
 		if strings.Contains(word.Word, "—") {
 			// 对称切分
 			mid := (word.Start + word.End) / 2
@@ -64,5 +77,40 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 		}
 	}
 
+	if c.official && len(transcriptionData.Words) == 0 {
+		for _, segment := range resp.Segments {
+			if strings.TrimSpace(segment.Text) != "" && segment.End > segment.Start && segment.Start >= 0 {
+				transcriptionData.Words = append(transcriptionData.Words, types.Word{Num: len(transcriptionData.Words), Text: segment.Text, Start: segment.Start, End: segment.End})
+			}
+		}
+	}
+	if strings.TrimSpace(transcriptionData.Text) == "" {
+		parts := make([]string, len(transcriptionData.Words))
+		for i, word := range transcriptionData.Words {
+			parts[i] = word.Text
+		}
+		// Recognized text without valid timing is distinct from an empty result.
+		if len(parts) == 0 {
+			for _, word := range resp.Words {
+				if text := strings.TrimSpace(word.Word); text != "" {
+					parts = append(parts, text)
+				}
+			}
+			if len(parts) == 0 {
+				for _, segment := range resp.Segments {
+					if text := strings.TrimSpace(segment.Text); text != "" {
+						parts = append(parts, text)
+					}
+				}
+			}
+		}
+		if len(parts) == 0 {
+			return nil, emptyTranscriptionError(inspectAudioSignal(audioFile))
+		}
+		transcriptionData.Text = strings.Join(parts, " ")
+	}
+	if c.official && len(transcriptionData.Words) == 0 {
+		return nil, &TranscriptionError{Code: "audio_transcription_timestamps_missing", Message: "transcription returned text but no valid subtitle timestamps; choose a timestamp-capable model"}
+	}
 	return transcriptionData, nil
 }

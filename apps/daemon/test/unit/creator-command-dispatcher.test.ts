@@ -116,6 +116,61 @@ describe('creator command dispatcher', () => {
     fixture.db.close();
   });
 
+  it('queues an image retry once and preserves the failed attempt', () => {
+    const fixture = setup();
+    try {
+      const job = fixture.service.createJob({
+        projectId: 'project-1',
+        templateId: 'image-generation',
+        state: { prompt: 'test' }
+      });
+      const failed = fixture.repository.createStageRun({
+        jobId: job.id,
+        stageId: 'generate',
+        executor: 'image',
+        status: 'failed'
+      });
+      const wake = vi.fn();
+      const dispatcher = createCreatorCommandDispatcher({
+        service: fixture.service,
+        repository: fixture.repository,
+        receipts: fixture.receipts,
+        onQueuedStage: wake
+      });
+      const request = {
+        action: 'retry-stage',
+        expectedRevision: job.revision,
+        idempotencyKey: 'retry-image-1',
+        input: { stageId: 'generate' }
+      };
+
+      const first = dispatcher.dispatch(job.id, request, 'user');
+      const replay = dispatcher.dispatch(job.id, request, 'user');
+      const restored = fixture.service.getJob(job.id)!;
+
+      expect(first.commandReceipt).toMatchObject({
+        status: 'committed',
+        stageRunId: expect.any(String)
+      });
+      expect(replay.commandReceipt).toMatchObject({
+        id: first.commandReceipt.id,
+        status: 'replayed',
+        stageRunId: first.commandReceipt.stageRunId
+      });
+      expect(restored.status).toBe('running');
+      expect(restored.revision).toBe(job.revision + 1);
+      expect(restored.stages).toHaveLength(2);
+      expect(restored.stages.find(stage => stage.id === failed.id)?.status).toBe('failed');
+      expect(restored.stages.find(stage => stage.id === first.commandReceipt.stageRunId)).toMatchObject({
+        stageId: 'generate',
+        status: 'queued',
+        dispatchStatus: 'queued',
+        idempotencyKey: 'retry-image-1:stage'
+      });
+      expect(wake).toHaveBeenCalledTimes(1);
+    } finally { fixture.db.close(); }
+  });
+
   it('rejects reuse of an idempotency key with a different payload', () => {
     const fixture = setup();
     const dispatcher = createCreatorCommandDispatcher({

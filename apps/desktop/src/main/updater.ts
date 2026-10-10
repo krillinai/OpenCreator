@@ -1,4 +1,4 @@
-import { app, dialog } from 'electron';
+import { app, autoUpdater as nativeAutoUpdater, dialog } from 'electron';
 import electronUpdater from 'electron-updater';
 import type { DesktopLogger } from './logger.js';
 
@@ -34,14 +34,17 @@ export function startUpdater(input: {
   logger: DesktopLogger;
   isPackaged?: boolean;
   updater?: UpdaterLike;
+  nativeUpdater?: Pick<Electron.AutoUpdater, 'on' | 'removeListener'>;
   showMessageBox?: typeof dialog.showMessageBox;
   prepareInstall?(): Promise<void>;
+  beforeQuitForInstall?(): void;
   recoverAfterInstallFailure?(): Promise<void>;
   setAllowQuit?(allowed: boolean): void;
   platform?: NodeJS.Platform;
   arch?: string;
 }): DesktopUpdaterController {
   const updater = input.updater ?? electronUpdater.autoUpdater;
+  const nativeUpdater = input.nativeUpdater ?? nativeAutoUpdater;
   const isPackaged = input.isPackaged ?? app.isPackaged;
   let state: DesktopUpdaterState = 'idle';
   let disposed = false;
@@ -108,6 +111,12 @@ export function startUpdater(input: {
   const onNotAvailable = () => {
     if (state === 'checking') state = 'idle';
   };
+  const onBeforeQuitForUpdate = () => {
+    if (disposed || state !== 'installing') return;
+    // On macOS this precedes window closing; before-quit arrives afterwards.
+    input.logger.info('Desktop updater is quitting for installation');
+    input.beforeQuitForInstall?.();
+  };
   const onAvailable = (info: { version: string }) => {
     if (disposed || state === 'downloading' || state === 'installing') return;
     state = 'available';
@@ -148,6 +157,9 @@ export function startUpdater(input: {
         });
         if (choice.response !== 0 || disposed) return;
         state = 'preparing_install';
+        input.logger.info('Desktop update installation preparing', {
+          version: info.version
+        });
         await input.prepareInstall?.();
         input.setAllowQuit?.(true);
         state = 'installing';
@@ -164,6 +176,7 @@ export function startUpdater(input: {
   updater.on('update-not-available', onNotAvailable);
   updater.on('update-available', onAvailable);
   updater.on('update-downloaded', onDownloaded);
+  nativeUpdater.on('before-quit-for-update', onBeforeQuitForUpdate);
 
   const checkNow = async () => {
     if (
@@ -195,6 +208,7 @@ export function startUpdater(input: {
       updater.removeListener('update-not-available', onNotAvailable);
       updater.removeListener('update-available', onAvailable);
       updater.removeListener('update-downloaded', onDownloaded);
+      nativeUpdater.removeListener('before-quit-for-update', onBeforeQuitForUpdate);
     },
     checkNow,
     getState: () => state

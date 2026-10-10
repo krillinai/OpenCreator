@@ -1148,6 +1148,9 @@ export function createCreatorService(input: {
           if (stage === undefined) {
             throw new CreatorServiceError('creator_stage_not_found', 'Creator stage was not found');
           }
+          if (current.templateId === 'image-generation' && providerRequestLedger.unresolvedForStage({ jobId, stageId, scopeKey: typeof parsedInput.scopeKey === 'string' ? parsedInput.scopeKey : null }).length > 0) {
+            throw new CreatorServiceError('creator_provider_resolution_required', 'Resolve the previous paid image request before starting another generation');
+          }
           for (const field of ['baseResultVersion', 'inputResultVersion', 'targetResultVersion'] as const) {
             readResultVersion(current, parsedInput[field], field);
           }

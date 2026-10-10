@@ -21,6 +21,7 @@ import {
   Square
 } from 'lucide-react';
 import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
+import { OfficialModelField, useOfficialServices } from './official-services.js';
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
 import { LocalTranscriptionNotice } from './LocalTranscriptionNotice.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
@@ -1495,6 +1496,7 @@ export default function VideoTranslationWorkspace(props: {
 }) {
   const l = useLocalizedCopy();
   const creatorSession = useOptionalCreatorSession();
+  const officialSpeech = useOfficialServices('speech');
   const mediaPreviewContextRef = useRef({ session: creatorSession, localize: l });
   mediaPreviewContextRef.current = { session: creatorSession, localize: l };
   const mediaPreviewJobId = creatorSession?.job.id;
@@ -1719,6 +1721,12 @@ export default function VideoTranslationWorkspace(props: {
   }, [creatorSession?.job.id, creatorSession?.job.revision]);
 
   useEffect(() => {
+    if (officialSpeech.official) {
+      setTtsProvider('openai'); setTtsModel(officialSpeech.model?.id ?? '');
+      const voices = officialSpeech.model?.voices ?? [];
+      if (!voices.includes(voiceCode)) { setVoiceCode(voices[0] ?? ''); setVoiceName(voices[0] ?? ''); }
+      return;
+    }
     let active = true;
     if (props.creatorServicesService === null || props.creatorServicesService === undefined) {
       return () => {
@@ -1758,7 +1766,7 @@ export default function VideoTranslationWorkspace(props: {
     return () => {
       active = false;
     };
-  }, [creatorSession?.job.id, props.creatorServicesService]);
+  }, [creatorSession?.job.id, props.creatorServicesService, officialSpeech.official, officialSpeech.model?.id]);
 
   useEffect(() => {
     if (creatorSession === null) return;
@@ -3513,10 +3521,10 @@ export default function VideoTranslationWorkspace(props: {
                   </div>
                   {dubbing ? (
                     <div className="video-translation-option-content">
-                      <div className="video-translation-voice-source">
+                      {officialSpeech.official ? <OfficialModelField label={l('语音合成模型', 'Speech model')} service={officialSpeech} /> : <div className="video-translation-voice-source">
                         <strong>{ttsProviderLabel(ttsProvider, l)}</strong>
                         <small>{ttsModel || l('本地语音服务', 'Local speech service')}</small>
-                      </div>
+                      </div>}
                       <TtsVoicePicker
                         id="video-translation-voice"
                         provider={ttsProvider}

@@ -1,0 +1,31 @@
+.account-avatar { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; background: var(--surface-3, var(--surface-2)); color: var(--muted); font-size: 14px; font-weight: 600; letter-spacing: 0; }
+.account-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.account-avatar--large { width: 56px; height: 56px; flex-basis: 56px; font-size: 22px; }
+.sidebar-account { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.sidebar-account:hover, .sidebar-account[aria-current=page] { background: var(--surface-2); }
+.sidebar-account:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sidebar-account__copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.sidebar-account__copy strong { font-size: 13px; font-weight: 500; }
+.sidebar-account__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); }
+.opencreator-sidebar[data-collapsed=true] .sidebar-account { justify-content: center; padding: 6px 0; }
+.personal-center { min-width: 0; height: 100%; padding: var(--page-title-inset) 32px 40px; }
+.personal-center__content { width: 100%; max-width: 800px; margin: 0 auto; }
+.personal-center__heading { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
+.personal-center__heading h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0; }
+.personal-center__heading button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: 0 0 32px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.personal-center__heading button:hover { color: var(--text); background: var(--surface-2); }
+.personal-center__identity { display: flex; align-items: center; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.personal-center .gateway-account--profile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; padding: 0; flex: 1; }
+.gateway-account__identity { min-width: 0; }
+.gateway-account__identity h2 { font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
+.gateway-account__identity > [role=status] { color: var(--muted); margin: 5px 0 0; font-size: 12px; }
+.gateway-account--profile .gateway-account__actions, .gateway-account--profile > button:first-of-type { grid-column: 2; grid-row: 1; margin: 0; }
+.gateway-account--profile > [role=alert], .gateway-account--profile > a { grid-column: 1 / -1; margin: 4px 0; }
+.personal-center .gateway-subscription { padding: 0; }
+@media (max-width: 640px) {
+  .personal-center { padding: 20px 20px 32px; }
+  .personal-center__heading { margin-bottom: 24px; }
+  .personal-center__identity { align-items: flex-start; gap: 14px; }
+  .personal-center .gateway-account--profile { grid-template-columns: minmax(0, 1fr); }
+  .gateway-account--profile .gateway-account__actions, .gateway-account--profile > button:first-of-type { grid-column: 1; grid-row: auto; justify-self: start; margin-top: 6px; }
+}

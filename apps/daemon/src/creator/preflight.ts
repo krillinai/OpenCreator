@@ -1,5 +1,6 @@
 import type {
   CodexImageStatus,
+  CreatorArtifact,
   CreatorJob,
   CreatorPreflightCheck,
   CreatorPreflightExecutionMode,
@@ -9,7 +10,7 @@ import type {
   PublicErrorFacts
 } from '@opencreator/protocol';
 import { creatorPreflightFailure, imagePromptRequiresReference } from '@opencreator/protocol';
-import { access, mkdir } from 'node:fs/promises';
+import { access, mkdir, readFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
 import type { CreatorTemplateStage } from './templates/types.js';
@@ -26,6 +27,9 @@ import { readStickmanRemotionRuntime } from './stickman/remotion-runtime.js';
 import type { RemotionComponentManager } from './stickman/remotion-component.js';
 import { validateBilibiliSource } from './templates/video-translation-actions.js';
 import type { VideoMetadataService } from '../video-metadata/service.js';
+import { gatewayCreatorBinding } from '../gateway/creator-service-source.js';
+import { stickmanShotSpecSchema } from './stickman/contracts.js';
+import { shouldUsePreviousShotReference } from './stickman/image-prompt.js';
 
 export type CreatorPreflight = ReturnType<typeof createCreatorPreflight>;
 
@@ -61,6 +65,7 @@ export function createCreatorPreflight(input: {
   validateRuntimeAssets?: boolean;
   readCodexImageStatus?(): Promise<CodexImageStatus>;
   videoMetadataService?: VideoMetadataService;
+  assertServiceSource?(jobId: string): void;
 }) {
   const executorIds = new Set(input.executorIds ?? []);
 
@@ -91,8 +96,11 @@ export function createCreatorPreflight(input: {
       add('ready', { id: 'executor', title: '执行器', message: `${stage.executor} 已加载`, executionMode: mode });
     }
 
+    try { input.assertServiceSource?.(job.id); } catch {
+      add('blocked', { id: 'service-source', title: '任务服务来源不匹配', message: '请恢复原任务账户和服务来源后继续。', executionMode: 'remote' }, { label: '打开账户设置', deepLink: '#/settings?tab=ai-services' });
+      return { templateId: job.templateId, templateVersion: job.templateVersion, stageId: stage.id, executionMode: mode, canStart: false, ready, warning, blocked, checkedAt: new Date().toISOString() };
+    }
     const config = await input.configStore.read();
-    await checkProviderConfig(job, stage, config, input.readCapabilities(), add, input.readCodexImageStatus);
     const inputSnapshot = options.inputResultVersion === undefined
       ? undefined
       : creatorResultSnapshotForVersion(job, options.inputResultVersion);
@@ -133,6 +141,7 @@ export function createCreatorPreflight(input: {
       inputSnapshot?.artifactRefs,
       inputSnapshot?.state
     );
+    await checkProviderConfig(job, stage, config, resolvedInputs.artifacts, input.readCapabilities(), add, input.readCodexImageStatus);
     if (job.templateId === 'image-generation' && stage.id === 'generate'
       && typeof inputState.prompt === 'string' && imagePromptRequiresReference(inputState.prompt)
       && !resolvedInputs.artifacts.some(artifact => artifact.kind === 'reference_image'
@@ -298,6 +307,7 @@ async function checkProviderConfig(
   job: CreatorJob,
   stage: CreatorTemplateStage,
   config: CreatorServicesConfig,
+  inputArtifacts: CreatorArtifact[],
   capabilities: CreatorServicesCapabilitiesResponse,
   add: (status: 'ready' | 'warning' | 'blocked', item: Omit<CreatorPreflightCheck, 'executionMode'> & { executionMode?: CreatorPreflightExecutionMode }, repair?: CreatorPreflightCheck['repair']) => void,
   readCodexImageStatus?: () => Promise<CodexImageStatus>
@@ -340,6 +350,10 @@ async function checkProviderConfig(
     }
   }
   if (needs.has('tts')) {
+    const gateway = gatewayCreatorBinding(config);
+    if (gateway && (stage.executor === 'smart-dubbing' || (typeof job.state.speed === 'number' && job.state.speed !== 1))) {
+      add('blocked', { id: 'tts-style-capability', title: '配音参数不受支持', message: '当前官方语音模型未提供已验证的样式或语速控制，请选择其他配音服务。', executionMode: 'remote' }, { label: '打开配音设置', deepLink: '#/settings?tab=ai-services&section=tts' });
+    }
     const provider = readTtsProvider(job, config);
     if (provider === 'edge-tts') add('ready', { id: 'tts', title: '配音服务', message: 'Edge TTS 不需要 API Key。', executionMode: 'remote' });
     else checkTts(config, provider, add);
@@ -347,7 +361,7 @@ async function checkProviderConfig(
   if (needs.has('image')) {
     const settings = resolveCreatorImageSettings({
       config,
-      provider: job.state.provider,
+      provider: gatewayCreatorBinding(config) ? 'openai' : job.state.provider,
       candidateCount: job.state.candidateCount,
       fallbackCandidateCount: job.templateId === 'image-generation' ? 2 : 1,
       maxCandidateCount: job.templateId === 'image-generation' ? 4 : 8
@@ -376,18 +390,39 @@ async function checkProviderConfig(
     const hasReference = stage.executor === 'stickman-image'
       || (stage.inputArtifacts.some(item => item.kind === 'reference_image')
         && typeof job.state.referenceImageArtifactId === 'string');
-    if (hasReference && !settings.supportsReferenceImage) add('blocked', {
+    const gateway = gatewayCreatorBinding(config);
+    const supportsReference = gateway ? gateway.capabilities?.image?.includes('edit') === true : settings.supportsReferenceImage;
+    if (gateway && stage.executor === 'stickman-image') {
+      let multiple = inputArtifacts.some(artifact => artifact.kind === 'style_reference');
+      const shotSpec = inputArtifacts.find(artifact => artifact.kind === 'shot_spec');
+      if (shotSpec?.path) {
+        try {
+          const spec = stickmanShotSpecSchema.parse(JSON.parse(await readFile(shotSpec.path, 'utf8')));
+          multiple ||= spec.shots.some(shouldUsePreviousShotReference);
+        } catch {
+          add('blocked', { id: 'shot-spec-invalid', title: '分镜数据不可用', message: '无法检查分镜的参考图要求，请重新生成分镜。', executionMode: 'local' });
+        }
+      }
+      if (multiple) add('blocked', { id: 'reference-image-count', title: '参考图数量不支持', message: '当前官方图像服务仅验证了 1 张参考图，此任务需要多张参考图。', executionMode: 'remote' });
+    }
+    if (hasReference && !supportsReference) add('blocked', {
       id: 'reference-image-capability', title: '参考图能力不匹配', message: `${provider} 不支持当前阶段的参考图编辑。`, executionMode: 'remote'
     }, { label: '选择支持参考图的服务', deepLink: '#/settings?tab=ai-services&section=image' });
   }
   if (needs.has('video')) {
-    const provider = readVideoProvider(job, config);
-    const settings = config.video[provider];
-    const hasKey = providerCredentials(settings, provider);
-    if (!hasKey || !settings.model.trim() || !settings.baseUrl.trim()) add('blocked', {
-      id: 'video-provider', title: '视频服务配置不完整', message: `请配置 ${provider} 的 Base URL、模型和凭据。`, executionMode: 'remote'
-    }, { label: '打开 AI 服务设置', deepLink: '#/settings?tab=ai-services&section=video' });
-    else add('ready', { id: 'video-provider', title: '视频服务', message: `${provider} / ${settings.model} 已配置。`, executionMode: 'remote' });
+    const gateway = gatewayCreatorBinding(config);
+    if (gateway) {
+      add(gateway.models.video ? 'ready' : 'blocked', { id: 'video-provider', title: '官方视频服务', message: gateway.models.video ? `${gateway.models.video} 已配置。` : '当前官方服务没有可用的视频模型', executionMode: 'remote' });
+      if (job.artifacts.some(artifact => artifact.kind === 'reference_image' && artifact.status === 'completed') && !gateway.capabilities?.video?.includes('image_to_video')) add('blocked', { id:'reference-image-capability',title:'参考图能力不匹配',message:'当前官方视频模型不支持参考图。',executionMode:'remote' });
+    } else {
+      const provider = readVideoProvider(job, config);
+      const settings = config.video[provider];
+      const hasKey = providerCredentials(settings, provider);
+      if (!hasKey || !settings.model.trim() || !settings.baseUrl.trim()) add('blocked', {
+        id: 'video-provider', title: '视频服务配置不完整', message: `请配置 ${provider} 的 Base URL、模型和凭据。`, executionMode: 'remote'
+      }, { label: '打开 AI 服务设置', deepLink: '#/settings?tab=ai-services&section=video' });
+      else add('ready', { id: 'video-provider', title: '视频服务', message: `${provider} / ${settings.model} 已配置。`, executionMode: 'remote' });
+    }
   }
   if (stage.executor === 'krillinai' && stage.id === 'subtitle' && (job.state.sourceType === 'file' || job.state.preferPlatformCaptions === false)) {
     const provider = capabilities.transcription.providers.find(candidate => candidate.provider === config.transcription.provider);
@@ -409,13 +444,13 @@ function checkOpenAi(
   id: string,
   title: string,
   deepLink: string,
-  add: Parameters<typeof checkProviderConfig>[4]
+  add: Parameters<typeof checkProviderConfig>[5]
 ) {
   if (!value.baseUrl.trim() || !value.model.trim() || !value.apiKey.trim()) add('blocked', { id, title: `${title}配置不完整`, message: `请补全 ${title} 的 Base URL、模型和 API Key。`, executionMode: 'remote' }, { label: '打开 AI 服务设置', deepLink });
   else add('ready', { id, title, message: `${value.model} 已配置。`, executionMode: 'remote' });
 }
 
-function checkTts(config: CreatorServicesConfig, provider: Exclude<CreatorServicesConfig['tts']['provider'], 'edge-tts'>, add: Parameters<typeof checkProviderConfig>[4]) {
+function checkTts(config: CreatorServicesConfig, provider: Exclude<CreatorServicesConfig['tts']['provider'], 'edge-tts'>, add: Parameters<typeof checkProviderConfig>[5]) {
   const credentialsReady = provider === 'volcengine'
     ? Boolean(config.tts.volcengine.appId.trim() && config.tts.volcengine.accessToken.trim())
     : Boolean(config.tts[provider].apiKey.trim());
@@ -428,7 +463,7 @@ async function checkInputs(
   stage: CreatorTemplateStage,
   artifacts: Array<CreatorJob['artifacts'][number]>,
   missing: string[],
-  add: Parameters<typeof checkProviderConfig>[4]
+  add: Parameters<typeof checkProviderConfig>[5]
 ): Promise<void> {
   for (const kind of missing) {
     add('blocked', { id: `input-artifact:${kind}`, title: '前置产物缺失', message: `请先生成 ${kind}，再启动 ${stage.id}。`, executionMode: 'local' }, { label: '返回上一步', deepLink: '#/settings?tab=diagnostics' });
@@ -448,6 +483,7 @@ async function checkInputs(
 }
 
 function readTtsProvider(job: CreatorJob, config: CreatorServicesConfig): CreatorServicesConfig['tts']['provider'] {
+  if (gatewayCreatorBinding(config)) return 'openai';
   const value = job.state.ttsProvider;
   return value === 'openai' || value === 'aliyun' || value === 'edge-tts' || value === 'minimax' || value === 'volcengine' ? value : config.tts.provider;
 }

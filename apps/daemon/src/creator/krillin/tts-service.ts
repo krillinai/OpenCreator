@@ -7,6 +7,7 @@ import type {
   PublicErrorFacts,
   RuntimeErrorCode
 } from '@opencreator/protocol';
+import { gatewayDefaultVoiceId } from '@opencreator/protocol';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -25,6 +26,7 @@ import {
 import { parseVolcengineV3Audio } from './volcengine-tts-v3.js';
 import { creatorServiceErrorInfo } from '../../creator-services/upstream-fetch.js';
 import { publicFactsFromFailure } from '../public-error-facts.js';
+import { gatewayCreatorBinding } from '../../gateway/creator-service-source.js';
 
 const MAX_OUTPUT_BYTES = 100 * 1024 * 1024;
 const MAX_PROCESS_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -60,6 +62,9 @@ type ExecuteUtilityInput = {
 };
 
 type ExecuteSynthesisInput = {
+  onGatewayRequest?(id: string): void;
+  logicalId?: string;
+  official?: boolean;
   config: CreatorServicesConfig;
   provider: Exclude<CreatorTtsProvider, 'edge-tts'>;
   model: string;
@@ -77,6 +82,8 @@ type ExecuteSynthesisResult = {
 };
 
 export type KrillinTtsSynthesisRequest = {
+  onGatewayRequest?(id: string): void;
+  logicalId?: string;
   text: string;
   provider?: CreatorTtsProvider;
   model?: string;
@@ -146,10 +153,18 @@ export function createKrillinTtsService(input: {
     provider: CreatorTtsProvider,
     model?: string
   ): Promise<CreatorTtsVoicesResponse> {
+    const config = await input.configStore.read();
+    const gateway = gatewayCreatorBinding(config);
+    if (gateway) {
+      const selected = gateway.catalog?.find(candidate => candidate.modality === 'speech' && candidate.id === (model || gateway.models.speech));
+      if (model && model !== gateway.models.speech && !selected) throw new KrillinTtsServiceError('VALIDATION_FAILED', '请选择官方语音模型', 400);
+      const defaultVoice = selected?.capabilities.includes('default_voice') ?? gateway.capabilities?.speech?.includes('default_voice');
+      return { provider: 'openai', model: selected?.id ?? gateway.models.speech ?? '', voices: (defaultVoice ? [gatewayDefaultVoiceId] : selected?.voices ?? gateway.speechVoices ?? []).map(id => ({ id, name: id === gatewayDefaultVoiceId ? '默认音色' : id, provider: 'openai' as const, kind: 'builtin' as const })) };
+    }
     if (provider === 'edge-tts') {
       return { provider, model: '', voices: [] };
     }
-    const prepared = prepareConfig(await input.configStore.read(), provider, model);
+    const prepared = prepareConfig(config, provider, model);
     const bundledVoices = listBundledTtsVoices(provider, prepared.model);
     if (bundledVoices !== undefined) {
       return {
@@ -186,7 +201,10 @@ export function createKrillinTtsService(input: {
       throw new KrillinTtsServiceError('VALIDATION_FAILED', 'Speech text is required', 400);
     }
     const configured = await input.configStore.read();
-    const provider = request.provider ?? configured.tts.provider;
+    const gateway = gatewayCreatorBinding(configured);
+    const selected = gateway?.catalog?.find(candidate => candidate.modality === 'speech' && candidate.id === (request.model || gateway.models.speech));
+    if (gateway && request.model && request.model !== gateway.models.speech && (gateway.stageRunId || !selected)) throw new KrillinTtsServiceError('VALIDATION_FAILED', '请选择当前任务的官方语音模型', 400);
+    const provider = gateway ? 'openai' : request.provider ?? configured.tts.provider;
     if (provider === 'edge-tts') {
       throw new KrillinTtsServiceError(
         'unsupported_capability',
@@ -196,12 +214,18 @@ export function createKrillinTtsService(input: {
     }
     const prepared = prepareConfig(configured, provider, request.model);
     ensureCredentials(prepared.config, provider);
-    const voiceId = request.voiceId?.trim() || prepared.providerConfig.defaultVoiceId;
+    const defaultVoice = gateway && (selected?.capabilities.includes('default_voice') ?? gateway.capabilities?.speech?.includes('default_voice'));
+    const voiceId = request.voiceId?.trim() || (defaultVoice ? gatewayDefaultVoiceId : selected?.voices?.[0] || prepared.providerConfig.defaultVoiceId);
+    const allowedVoices = defaultVoice ? [gatewayDefaultVoiceId] : selected?.voices ?? gateway?.speechVoices;
+    if (allowedVoices && !allowedVoices.includes(voiceId)) {
+      throw new KrillinTtsServiceError('VALIDATION_FAILED', '请选择当前模型支持的音色', 400);
+    }
     if (!voiceId) {
       throw new KrillinTtsServiceError('VALIDATION_FAILED', 'A voice must be selected', 400);
     }
     const format = request.format ?? 'wav';
     const speed = request.speed ?? 1;
+    if (gateway && (speed !== 1 || request.instructions)) throw new KrillinTtsServiceError('unsupported_capability', '当前官方语音路由未验证此生成参数', 400);
     if (!Number.isFinite(speed) || speed < 0.5 || speed > 2) {
       throw new KrillinTtsServiceError(
         'VALIDATION_FAILED',
@@ -210,8 +234,12 @@ export function createKrillinTtsService(input: {
       );
     }
 
+    const logicalId = gateway && request.logicalId !== undefined && request.logicalId === gateway.stageRunId
+      ? gateway.logicalId ?? request.logicalId
+      : request.logicalId ?? gateway?.logicalId ?? crypto.randomUUID();
     try {
       const synthesis = await executeSynthesis({
+        ...(gateway ? { official: true, logicalId, onGatewayRequest: request.onGatewayRequest } : {}),
         config: prepared.config,
         provider,
         model: prepared.model,
@@ -447,9 +475,9 @@ async function synthesizeOpenAi(
     {
       model: input.model,
       input: input.text,
-      voice: input.voiceId,
+      ...(input.official && input.voiceId === gatewayDefaultVoiceId ? {} : { voice: input.voiceId }),
       response_format: input.format,
-      speed: input.speed,
+      ...(input.official ? {} : { speed: input.speed }),
       ...(input.instructions === undefined ? {} : { instructions: input.instructions })
     },
     input
@@ -551,10 +579,13 @@ async function providerFetch(
     method: 'POST',
     headers: {
       authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json'
+      'content-type': 'application/json',
+      ...(input.logicalId ? { 'Idempotency-Key': input.logicalId } : {})
     },
     body: JSON.stringify(body)
   }, input);
+  const requestId = response.headers.get('x-request-id');
+  if (input.official && requestId && /^[A-Za-z0-9_-]{12,128}$/.test(requestId)) input.onGatewayRequest?.(requestId);
   if (!response.ok) await throwProviderHttpError(response, input.provider);
   return response;
 }

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CreatorServicesConfigStore } from '../../src/creator-services/config-store.js';
+import { createGatewayCreatorSource } from '../../src/gateway/creator-service-source.js';
 import {
   createKrillinTtsService,
   KrillinTtsServiceError
@@ -16,6 +17,30 @@ describe('KrillinTtsService', () => {
     vi.unstubAllGlobals();
     const { rm } = await import('node:fs/promises');
     await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
+  });
+
+  it('rejects personal models and lists voices for the selected official speech model', async () => {
+    const root = await temporaryRoot();
+    const executeUtility = vi.fn();
+    const source = createGatewayCreatorSource({
+      account: { peekState: () => ({ source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1', models: [], activationError: null }), modelCredentials: async () => ({ accountId: 'a', modelKey: 'secret', keyVersion: '1', bindingVersion: 'a:1', baseUrl: 'https://gateway.example/v1', defaults: { speech: 'official-first' }, models: [{ id: 'official-first', modality: 'speech', capabilities: [], voices: ['first-voice'] }, { id: 'official-second', modality: 'speech', capabilities: [], voices: ['second-voice'] }] }) },
+      manual: createConfigStore(createDefaultCreatorServicesConfig()), getLocalOrigin: () => 'http://127.0.0.1:39999'
+    });
+    const service = createKrillinTtsService({ resourceRoot: join(root, 'runtime'), workRoot: join(root, 'work'), configStore: source.store, executeUtility });
+    await expect(service.listVoices('aliyun', 'personal-model')).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    const result = await service.listVoices('openai', 'official-second');
+    expect(result).toMatchObject({ provider: 'openai', model: 'official-second', voices: [{ id: 'second-voice', provider: 'openai' }] });
+    expect((await service.listVoices('openai')).voices.map(voice => voice.id)).toEqual(['first-voice']);
+    expect(executeUtility).not.toHaveBeenCalled();
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'audio/mpeg' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const audio = await service.synthesize({ text: 'hello', provider: 'openai', model: 'official-second', format: 'mp3' });
+    expect(audio).toMatchObject({ model: 'official-second', voiceId: 'second-voice' });
+    expect(JSON.parse(String(fetchMock.mock.lastCall?.[1]?.body))).toMatchObject({ model: 'official-second', voice: 'second-voice' });
+    await expect(service.synthesize({ text: 'hello', model: 'personal-model' })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(service.synthesize({ text: 'hello', model: 'official-second', voiceId: 'first-voice' })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(source.runForJob('job', 'stage', () => service.synthesize({ text: 'hello', model: 'official-second' }))).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('lists the bundled Qwen3 voice catalog without calling an outdated Runtime', async () => {

@@ -7,7 +7,9 @@ import (
 )
 
 type Client struct {
-	client *openai.Client
+	client   *openai.Client
+	model    string
+	official bool
 }
 
 func NewClient(baseUrl, apiKey, proxyAddr string) *Client {
@@ -25,6 +27,13 @@ func NewClient(baseUrl, apiKey, proxyAddr string) *Client {
 		}
 	}
 
+	cfg.HTTPClient = &audioResponseClient{next: cfg.HTTPClient}
 	client := openai.NewClientWithConfig(cfg)
-	return &Client{client: client}
+	return &Client{client: client, model: openai.Whisper1}
+}
+
+func NewOfficialClient(baseUrl, apiKey, proxyAddr, model string) *Client {
+	c := NewClient(baseUrl, apiKey, proxyAddr)
+	c.model, c.official = model, true
+	return c
 }

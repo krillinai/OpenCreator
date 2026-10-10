@@ -717,6 +717,7 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'creator_artifacts', 'input_fingerprint', 'input_fingerprint TEXT');
   ensureColumn(db, 'creator_artifacts', 'sha256', 'sha256 TEXT');
   ensureColumn(db, 'creator_jobs', 'creation_key', 'creation_key TEXT');
+  ensureColumn(db, 'creator_jobs', 'service_binding_json', `service_binding_json TEXT NOT NULL DEFAULT '{"source":"manual"}'`);
   ensureColumn(
     db,
     'creator_jobs',
@@ -725,6 +726,7 @@ export function migrate(db: Database.Database): void {
   );
   ensureColumn(db, 'creator_jobs', 'creation_fingerprint', 'creation_fingerprint TEXT');
   ensureColumn(db, 'creator_issues', 'public_facts_json', 'public_facts_json TEXT');
+  ensureColumn(db, 'creator_provider_requests', 'gateway_binding_json', 'gateway_binding_json TEXT');
   backfillCreatorCreationFingerprints(db);
   db.prepare(`
     UPDATE schedules

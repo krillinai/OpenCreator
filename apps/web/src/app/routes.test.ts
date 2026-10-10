@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { formatRoute, parseRoute } from './routes.js';
 
 describe('app routes', () => {
+  it('round-trips the personal center route', () => {
+    expect(formatRoute({ view: 'account' })).toBe('#/account');
+    expect(parseRoute('#/account')).toEqual({ view: 'account' });
+  });
+  it('round-trips the subscription page route', () => {
+    expect(formatRoute({ view: 'subscription' })).toBe('#/subscription');
+    expect(parseRoute('#/subscription')).toEqual({ view: 'subscription' });
+  });
+  it.each(['account', 'subscription'] as const)('opens the independent %s page for the old settings link', tab => {
+    expect(parseRoute(`#/settings?tab=${tab}`)).toEqual({ view: tab });
+  });
   it('round-trips a Remotion component settings target', () => {
     const route = { view: 'settings' as const, tab: 'local-components' as const, component: 'remotion' as const };
     expect(parseRoute(formatRoute(route))).toEqual(route);
@@ -96,7 +107,7 @@ describe('app routes', () => {
     expect(parseRoute('#/assets')).toEqual({ view: 'dashboard' });
     expect(parseRoute('#/knowledge')).toEqual({ view: 'dashboard' });
     expect(parseRoute('#/drive')).toEqual({ view: 'dashboard' });
-    expect(parseRoute('#/account')).toEqual({ view: 'dashboard' });
+    expect(parseRoute('#/account')).toEqual({ view: 'account' });
     expect(parseRoute('#/activity')).toEqual({ view: 'dashboard' });
   });
 

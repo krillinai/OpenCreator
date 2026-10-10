@@ -30,6 +30,9 @@ export type CreateImageGenerationRequest = {
   size: ImageGenerationSize;
   quality: ImageGenerationQuality;
   count: number;
+  aspectRatio?: string;
+  resolution?: string;
+  officialQuality?: string;
 };
 
 /** Detect explicit references to an existing image, rather than ordinary photo styles. */
@@ -66,8 +69,8 @@ export type ImageGenerationResultResponse = {
 
 export const videoGenerationSizes = ['1280x720', '720x1280', '1024x1024'] as const;
 export const videoGenerationDurations = [4, 5, 6, 8, 10] as const;
-export type VideoGenerationSize = typeof videoGenerationSizes[number];
-export type VideoGenerationDuration = typeof videoGenerationDurations[number];
+export type VideoGenerationSize = typeof videoGenerationSizes[number] | `${number}x${number}` | `${string}@${number}:${number}`;
+export type VideoGenerationDuration = number;
 export type VideoGenerationStatus = 'queued' | 'in_progress' | 'completed' | 'failed';
 export type VideoGenerationProvider = 'seedance' | 'kling' | 'veo';
 

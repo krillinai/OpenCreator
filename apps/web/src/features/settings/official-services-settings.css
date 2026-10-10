@@ -1,0 +1,213 @@
+.ai-services-mode {
+  width: min(1160px, 100%);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin: 0 auto 24px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-services-mode--official,
+.official-services-settings {
+  width: min(820px, 100%);
+}
+
+.ai-services-mode__label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ai-services-mode .gateway-account__source {
+  gap: 3px;
+  margin: 0;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+
+.ai-services-mode .gateway-account__source button {
+  min-height: 32px;
+  padding: 5px 14px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ai-services-mode .gateway-account__source button[aria-pressed='true'] {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.ai-services-mode .gateway-account__source button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.ai-services-mode > [role='alert'] {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+}
+
+.official-services-settings {
+  margin: 0 auto;
+  padding: 0;
+}
+
+.official-services-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.official-services-heading > div {
+  display: grid;
+  gap: 10px;
+}
+
+.official-services-heading h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.official-services-heading p.official-services-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--warning);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.official-services-heading p.official-services-status.is-ready {
+  color: var(--success);
+}
+
+.official-services-heading button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.official-services-models {
+  border-top: 1px solid var(--border);
+}
+
+.official-services-model-row {
+  min-width: 0;
+  min-height: 86px;
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(0, 380px);
+  align-items: center;
+  gap: 16px 24px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.official-services-model-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.official-services-model-label > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.official-services-model-label > span {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.official-services-model-name {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.official-services-model-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.official-services-model-select {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.official-services-model-select select {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 36px 0 12px;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.official-services-model-select select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.official-services-model-select select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.official-services-model-select > svg {
+  position: absolute;
+  right: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.official-services-error {
+  margin: 16px 0 0;
+  font-size: 13px;
+}
+
+.ai-services-mode button:focus-visible,
+.official-services-settings button:focus-visible,
+.official-services-model-select select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.official-services-spinner {
+  animation: official-services-spin 1s linear infinite;
+}
+
+.official-services-model-row[aria-busy='true'] .official-model-toggle { visibility: hidden; }
+
+@keyframes official-services-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 960px) {
+  .official-services-model-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 18px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .official-services-spinner { animation: none; }
+}

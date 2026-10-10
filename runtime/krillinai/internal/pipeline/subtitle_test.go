@@ -3,11 +3,13 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"krillin-ai/internal/service"
 	subtitlestyle "krillin-ai/internal/subtitle_style"
 	"krillin-ai/internal/types"
 	pkgimage "krillin-ai/pkg/image"
 	"krillin-ai/pkg/util"
+	"krillin-ai/pkg/whisper"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -208,6 +210,26 @@ func TestGenerateSubtitlesPreservesPlatformAndAudioFallbackErrors(t *testing.T) 
 	}
 	if resp.Error == nil || resp.Error.Code != "audio_transcription_failed" {
 		t.Fatalf("response error = %+v", resp.Error)
+	}
+}
+
+func TestGenerateSubtitlesPreservesTranscriptionClassification(t *testing.T) {
+	for _, code := range []string{"audio_no_speech", "audio_transcription_empty", "audio_transcription_invalid_response", "audio_transcription_timestamps_missing", "audio_transcription_api_failed"} {
+		for _, fallback := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/fallback=%v", code, fallback), func(t *testing.T) {
+				classified := &whisper.TranscriptionError{Code: code, Message: "fixture reason"}
+				fake := &fakeStageService{audioErr: fmt.Errorf("service wrapper: %w", classified)}
+				req := SubtitleRequest{Input: "local:fixture.mp4", Workdir: t.TempDir(), CaptionSource: CaptionSourceWhisper}
+				if fallback {
+					req.Input, req.CaptionSource = "https://youtu.be/1_iv-S02hJ0", CaptionSourceAny
+					fake.downloadErr = errors.New("no captions")
+				}
+				response, err := GenerateSubtitles(context.Background(), fake, req)
+				if !errors.Is(err, classified) || response.Error == nil || response.Error.Code != code || response.Error.Retryable != classified.Retryable() {
+					t.Fatalf("response = %+v, error = %v", response.Error, err)
+				}
+			})
+		}
 	}
 }
 

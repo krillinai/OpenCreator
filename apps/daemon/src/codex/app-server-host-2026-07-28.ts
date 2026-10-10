@@ -98,6 +98,7 @@ export type CodexAppServerHostInput = {
   mcpServers?: CodexMcpServerConfig[];
   builtInTools?: BuiltInToolPolicy;
   env?: Record<string, string>;
+  baseEnvironment?: NodeJS.ProcessEnv;
   skillRoots?: string[];
   requiredSkillNames?: string[];
   spawnTimeoutMs?: number;
@@ -108,6 +109,7 @@ export type CodexAppServerHostInput = {
 export type CodexAppServerHost = {
   readonly pid: number | undefined;
   readonly started: Promise<number>;
+  readonly ready?: Promise<void>;
   run(input: CodexAppServerTurnInput): CodexAppServerProcess;
   isReusable(): boolean;
   close(reason?: string, forceKillGraceMs?: number): Promise<void>;
@@ -167,7 +169,7 @@ export function createCodexAppServerHost(
     buildCodexAppServerArgs(input),
     {
       cwd: input.cwd,
-      env: { ...process.env, ...input.env, CODEX_HOME: input.codexHome },
+      env: { ...(input.baseEnvironment ?? process.env), ...input.env, CODEX_HOME: input.codexHome },
       stdio: ['pipe', 'pipe', 'pipe']
     }
   );
@@ -951,6 +953,7 @@ export function createCodexAppServerHost(
       return child.pid;
     },
     started,
+    ready: initializePromise,
     run,
     isReusable() {
       return state === 'starting' || state === 'ready';

@@ -10,6 +10,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CreatorExecutorInput } from '../../src/creator/executor.js';
 import { createVideoExecutor } from '../../src/creator/video/executor.js';
+import { CreatorProviderRequestLedger } from '../../src/creator/provider-requests.js';
+import { createCreatorRepository } from '../../src/creator/repository.js';
+import { openRuntimeDatabase } from '../../src/storage/database.js';
 import {
   VideoGenerationError,
   type VideoGenerationService
@@ -23,6 +26,53 @@ afterEach(async () => {
 });
 
 describe('creator video executor', () => {
+  it('recovers exactly the original video ledger entry among multiple pending requests', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'creator-video-recover-ledger-'));
+    const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
+    try {
+      const repository = createCreatorRepository(db);
+      const job = repository.createJob({ projectId: 'project', templateId: 'video-generation', templateVersion: 1, status: 'running', state: stageInput({}, []).job.state });
+      const original = repository.createStageRun({ jobId: job.id, stageId: 'generate', executor: 'video', status: 'interrupted', progress: { videoGenerationResultId: 'video_original' } });
+      const resumed = repository.createStageRun({ jobId: job.id, stageId: 'generate', executor: 'video', status: 'running', progress: { resumedFromStageRunId: original.id } });
+      const ledger = new CreatorProviderRequestLedger(repository);
+      const register = (logicalId: string) => {
+        const record = ledger.registerBeforeSubmit({ jobId: job.id, stageRunId: original.id, provider: 'opencreator-gateway-video', requestKey: logicalId, request: { prompt: logicalId }, gateway: { accountId: 'a', bindingVersion: 'a:1', logicalId } });
+        return ledger.markSubmitting(record.id);
+      };
+      const other = register('another-video');
+      const expected = register('original-video');
+      const stage = stageInput({}, []); stage.job = repository.getJob(job.id)!; stage.stageRun = resumed;
+      const service = videoService({
+        create: vi.fn(async () => { throw new Error('must not create another video'); }),
+        getGatewayBinding: async () => ({ accountId: 'a', bindingVersion: 'a:1', logicalId: 'original-video', requestId: 'original_gateway_request' }),
+        get: async () => videoResult({ id: 'video_original', status: 'completed' })
+      });
+      const executor = createVideoExecutor({ ledger, service, probeVideo: async () => ({ duration: 5, width: 1280, height: 720, hasVideo: true, hasAudio: false }) });
+      await executor.run(stage);
+      const requests = repository.getJob(job.id)!.providerRequests;
+      expect(requests.find(record => record.id === expected.id)).toMatchObject({ status: 'succeeded', remoteTaskId: 'original_gateway_request' });
+      expect(requests.find(record => record.id === other.id)).toMatchObject({ status: 'submitting', remoteTaskId: null });
+      expect(service.create).not.toHaveBeenCalled();
+    } finally { db.close(); }
+  });
+  it('keeps a completed paid request successful when local output processing fails', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'creator-video-ledger-'));
+    const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
+    try {
+      const repository = createCreatorRepository(db);
+      const job = repository.createJob({ projectId: 'project', templateId: 'video-generation', templateVersion: 1, status: 'running', state: {} });
+      const stageRun = repository.createStageRun({ jobId: job.id, stageId: 'generate', executor: 'video', status: 'running' });
+      const stage = stageInput({}, []); stage.job.id = job.id; stage.stageRun.id = stageRun.id;
+      const executor = createVideoExecutor({ ledger: new CreatorProviderRequestLedger(repository),
+        service: videoService({ create: vi.fn(async (_request, options) => {
+          options!.onGatewayBinding!({ accountId: 'a', bindingVersion: 'a:1', logicalId: stageRun.id });
+          options!.onGatewayRequest!('original_gateway_request');
+          return videoResult({ status: 'completed' });
+        }) }), probeVideo: vi.fn(async () => { throw new Error('Local video validation failed'); }) });
+      await expect(executor.run(stage)).rejects.toThrow('Local video validation failed');
+      expect(repository.getJob(job.id)!.providerRequests[0]!.status).toBe('succeeded');
+    } finally { db.close(); }
+  });
   it('preserves upstream facts and the cause when a generation request is rejected', async () => {
     const publicFacts = {
       kind: 'http-rejected' as const, provider: 'seedance', httpStatus: 400,

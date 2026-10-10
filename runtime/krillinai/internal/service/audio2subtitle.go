@@ -10,6 +10,7 @@ import (
 	"krillin-ai/internal/types"
 	"krillin-ai/log"
 	"krillin-ai/pkg/util"
+	"krillin-ai/pkg/whisper"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -122,6 +123,10 @@ func (s Service) audioToOriginSubtitle(ctx context.Context, stepParam *types.Sub
 				},
 			)
 			if err == nil {
+				break
+			}
+			var classified *whisper.TranscriptionError
+			if errors.As(err, &classified) && !classified.Retryable() {
 				break
 			}
 		}
@@ -772,7 +777,8 @@ func (s Service) startTranscribeWorkers(ctx context.Context, eg *errgroup.Group,
 					)
 					log.GetLogger().Info("Begin transcribe", zap.Any("taskId", stepParam.TaskId), zap.Any("splitId", audioFileItem.Id))
 					// 语音转文字
-					for range config.Conf.App.TranscribeMaxAttempts {
+					attempts := max(1, config.Conf.App.TranscribeMaxAttempts)
+					for range attempts {
 						transcriptionData, err = s.transcribeAudio(
 							audioFileItem.Id,
 							audioFileItem.Data,
@@ -789,6 +795,10 @@ func (s Service) startTranscribeWorkers(ctx context.Context, eg *errgroup.Group,
 							},
 						)
 						if err == nil {
+							break
+						}
+						var classified *whisper.TranscriptionError
+						if errors.As(err, &classified) && !classified.Retryable() {
 							break
 						}
 					}

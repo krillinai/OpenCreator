@@ -181,15 +181,12 @@ describe('CreatorServicesSettingsView', () => {
     await user.clear(screen.getByLabelText('Base URL'));
     await user.type(screen.getByLabelText('Base URL'), 'not-a-url');
     await user.clear(screen.getByLabelText('模型'));
-    await user.type(screen.getByLabelText('代理地址'), 'socks5://127.0.0.1:1080');
     await user.click(screen.getByRole('button', { name: '保存配置' }));
 
     expect(screen.getByLabelText('Base URL')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('请输入有效的 HTTP 或 HTTPS 地址')).toBeInTheDocument();
     expect(screen.getByLabelText('模型')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('模型不能为空')).toBeInTheDocument();
-    expect(screen.getByLabelText('代理地址')).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByText('请输入有效的 HTTP 或 HTTPS 代理地址')).toBeInTheDocument();
     expect(modelService.updateCodexProvider).not.toHaveBeenCalled();
   });
 

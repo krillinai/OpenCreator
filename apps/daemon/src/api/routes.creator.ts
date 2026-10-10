@@ -167,7 +167,12 @@ export async function registerCreatorRoutes(
     const presetCatalogRoot = options.presetCatalogRoot;
     server.get('/creator/presets', async request => {
     const locale = normalizeCreatorPresetLocale(readObject(request.query).locale);
-    const config = await options.readServicesConfig?.();
+    let config: CreatorServicesConfig | undefined;
+    try {
+      config = await options.readServicesConfig?.();
+    } catch {
+      // Model details are optional; credentials must not prevent browsing templates.
+    }
     const published = presets.listPublished(locale);
     let codexImageModel: string | undefined;
     if (config !== undefined && options.codexImageRuntime !== undefined && published.some(preset => {

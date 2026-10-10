@@ -1,0 +1,56 @@
+.gateway-account { padding: 20px 0; font-size: 14px; min-width: 0; color: var(--text); }
+.gateway-account__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.gateway-account h2 { margin: 0; font-size: 18px; letter-spacing: 0; }
+.gateway-account button, .gateway-account select { font: inherit; color: inherit; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+.gateway-account button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.gateway-account button:disabled { opacity: .5; cursor: default; }
+.gateway-account__icon { width: 34px; height: 34px; padding: 0 !important; flex-shrink: 0; }
+.gateway-account__source { display: flex; margin: 16px 0; gap: 6px; flex-wrap: wrap; }
+.gateway-account button[aria-pressed=true], .gateway-account button.gateway-account__primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.gateway-account__actions, .gateway-account__plans { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.gateway-account__balance { display: flex; gap: 32px; margin: 16px 0; flex-wrap: wrap; }
+.gateway-account__balance dt { opacity: .7; font-size: 12px; }
+.gateway-account__balance dd { margin: 6px 0 0; font-size: 22px; font-variant-numeric: tabular-nums; }
+.gateway-account__email, .gateway-account a { overflow-wrap: anywhere; }
+.gateway-account__models { padding: 0; list-style: none; margin: 14px 0; }
+.gateway-account__models li { display: flex; gap: 16px; padding: 6px 0; overflow-wrap: anywhere; }
+.gateway-account__models span { opacity: .6; min-width: 100px; }
+.gateway-account a { display: inline-flex; align-items: center; gap: 8px; color: var(--accent-strong); margin: 10px 0; }
+.gateway-account__plans select { max-width: 100%; min-width: 0; }
+.gateway-account--login { padding: 0; }
+.gateway-account--login > .gateway-account__primary { width: 100%; }
+.gateway-account p { line-height: 1.6; overflow-wrap: anywhere; }
+.gateway-account [role=alert] { color: var(--danger); }
+.gateway-subscription__plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+.gateway-subscription__plan { padding: 20px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.gateway-subscription__plan h3 { margin: 0; font-size: 16px; font-weight: 500; letter-spacing: 0; overflow-wrap: anywhere; }
+.gateway-subscription__price { margin: 20px 0 12px; font-size: 26px; font-variant-numeric: tabular-nums; }
+.gateway-subscription__price small { color: var(--muted); font-size: 13px; }
+.gateway-subscription__plan button { width: 100%; margin-top: 24px; }
+.gateway-subscription__overview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; padding: 28px 0; border-bottom: 1px solid var(--border); }
+.gateway-subscription__overview h2 { font-size: 12px; font-weight: 400; color: var(--muted); }
+.gateway-subscription p.gateway-subscription__credit-value { font-size: 30px; line-height: 1.3; font-variant-numeric: tabular-nums; margin: 10px 0 6px; }
+.gateway-subscription__credit-value small { font-size: 12px; color: var(--muted); }
+.gateway-subscription__current-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin: 12px 0 8px; }
+.gateway-subscription__current-name strong { font-size: 18px; font-weight: 500; overflow-wrap: anywhere; }
+.gateway-subscription__current-name span { font-size: 12px; color: var(--muted); }
+.gateway-subscription__current-name span.is-active { color: var(--success, #62bc8b); }
+.gateway-subscription__detail { font-size: 12px; color: var(--muted); margin: 5px 0; }
+.gateway-subscription__current button { margin-top: 14px; }
+.gateway-subscription__catalog { padding: 28px 0; }
+.gateway-subscription button.gateway-subscription__entry { display: flex; justify-content: flex-start; width: 100%; margin: 24px 0 0; padding: 16px 0; background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; text-align: left; }
+.gateway-subscription__entry span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gateway-subscription__entry svg { flex-shrink: 0; color: var(--muted); }
+.gateway-subscription button.gateway-subscription__entry:hover { color: var(--accent-strong); }
+.gateway-subscription__catalog-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 18px; }
+.gateway-subscription__catalog-heading h2 { font-size: 17px; font-weight: 500; }
+.gateway-subscription__catalog-heading p, .gateway-subscription__empty { font-size: 12px; color: var(--muted); margin: 0; }
+.gateway-subscription__allowance { margin: 0; }
+.gateway-subscription__loading { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.gateway-subscription__loading svg { animation: gateway-loading-spin 1s linear infinite; flex-shrink: 0; }
+.gateway-subscription__credit-value, .gateway-subscription__price { overflow-wrap: anywhere; }
+.gateway-subscription__error { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
+.gateway-subscription__error p { margin: 0; }
+@keyframes gateway-loading-spin { to { transform: rotate(360deg); } }
+@media (max-width: 640px) { .gateway-subscription__overview { grid-template-columns: minmax(0, 1fr); gap: 26px; } }
+@media (prefers-reduced-motion: reduce) { .gateway-subscription__loading svg { animation: none; } }

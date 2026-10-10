@@ -12,13 +12,17 @@ import type { RuntimeClient } from '../runtime/client.js';
 
 type ClientLike = Pick<RuntimeClient, 'get' | 'patch' | 'delete' | 'rawRequest'>;
 
-export type CreatorServicesSettingsService = Omit<ReturnType<typeof createCreatorServicesService>, 'getCodexImageStatus' | 'getCodexModelStatus'> & {
+export type CreatorServicesSettingsService = Omit<ReturnType<typeof createCreatorServicesService>, 'getCodexImageStatus' | 'getCodexModelStatus' | 'getNetwork' | 'saveNetwork'> & {
   getCodexImageStatus?: () => Promise<CodexImageStatus>;
   getCodexModelStatus?: () => Promise<CodexProviderConfig>;
+  getNetwork?: () => Promise<{ proxy: string }>;
+  saveNetwork?: (network: { proxy: string }) => Promise<{ proxy: string }>;
 };
 
 export function createCreatorServicesService(client: ClientLike) {
   return {
+    getNetwork(): Promise<{ proxy: string }> { return client.get('/creator-services/network'); },
+    saveNetwork(network: { proxy: string }): Promise<{ proxy: string }> { return client.patch('/creator-services/network', network); },
     getCodexModelStatus(): Promise<CodexProviderConfig> {
       return client.get('/creator-services/model/codex/status');
     },

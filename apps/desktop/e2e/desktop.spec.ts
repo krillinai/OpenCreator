@@ -1136,6 +1136,77 @@ test('@package-smoke 启动 Codex app-server 后在 3 秒内退出', async () =>
   }
 });
 
+test('@package-smoke 关闭后隐藏保留本地服务，重新打开后可以正常退出', async () => {
+  test.skip(process.platform !== 'darwin', 'Custom window controls are macOS only');
+  const fixture = await launchPackagedDesktop('success');
+  try {
+    await waitForRuntimeReady(fixture.page, false);
+    await fixture.page.evaluate(async () => {
+      await window.opencreatorDesktop?.updateDesktopPreferences({ closeBehavior: 'hide' });
+    });
+    await fixture.page.getByRole('button', { name: '关闭窗口', exact: true }).click();
+    expect(fixture.process.exitCode).toBeNull();
+    expect((await runtimeRequest(fixture.page, 'GET', '/healthz')).status).toBe(200);
+
+    await launchSecondInstance(fixture);
+    await expect(fixture.page.getByRole('button', { name: '关闭窗口', exact: true })).toBeVisible();
+    await requestPackagedAppQuit(fixture);
+    expect(await waitForProcessExit(fixture.process, 3_000)).toBe(true);
+    expect(fixture.process.exitCode).toBe(0);
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
+test('@package-smoke 创作模块连接内嵌 Runtime 并使用默认项目', async ({}, testInfo) => {
+  const fixture = await launchPackagedDesktop('success');
+  try {
+    await waitForWorkspace(fixture.page);
+    expect(await fixture.page.evaluate(() => window.opencreatorDesktop?.readConnectionConfig()))
+      .toEqual({ baseUrl: '/.opencreator/runtime' });
+    await expect.poll(async () => {
+      const response = await runtimeRequest<{ projects: Array<{ name: string }> }>(
+        fixture.page, 'GET', '/projects?status=all'
+      );
+      return response.body.projects.filter(project => project.name === '默认项目').length;
+    }).toBe(1);
+    expect((await runtimeRequest(fixture.page, 'GET', '/creator/templates')).status).toBe(200);
+
+    for (const [tool, title] of [
+      ['video-translation', '视频翻译配音'],
+      ['video-download', '视频下载'],
+      ['image-generation', '图像生成'],
+      ['video-generation', '视频生成'],
+      ['smart-dubbing', '智能配音'],
+      ['cover-generator', '封面生成'],
+      ['stickman-video', '火柴人动画']
+    ]) {
+      await navigateToAppRoute(fixture.page, `#/workbench?tool=${tool}`);
+      await expect(fixture.page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+      await expect(fixture.page.getByRole('heading', { name: '本地创作服务未连接' })).toHaveCount(0);
+      await fixture.page.screenshot({ path: testInfo.outputPath(`${tool}.png`) });
+    }
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
+test('@package-smoke 设置关闭后退出时，关闭按钮结束实际 App', async () => {
+  test.skip(process.platform !== 'darwin', 'Custom window controls are macOS only');
+  const fixture = await launchPackagedDesktop('success');
+  try {
+    await waitForRuntimeReady(fixture.page, false);
+    await fixture.page.evaluate(async () => {
+      await window.opencreatorDesktop?.updateDesktopPreferences({ closeBehavior: 'quit' });
+    });
+    await fixture.page.getByRole('button', { name: '关闭窗口', exact: true }).click();
+    expect(await waitForProcessExit(fixture.process, 3_000)).toBe(true);
+    expect(fixture.process.exitCode).toBe(0);
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
 type DesktopFixture = PackagedApp & {
   root: string;
   stateDir: string;
@@ -1330,9 +1401,11 @@ async function waitForRuntimeReady(page: Page, confirmSetup = true): Promise<voi
   if (!confirmSetup) return;
   const confirmed = await page.evaluate(() => window.localStorage.getItem('opencreator.agent-setup-confirmed.v1') !== null);
   if (confirmed) return;
-  const setup = page.getByRole('heading', { name: '开始使用 Agent' });
+  const setup = page.getByRole('region', { name: '开始使用 Agent' });
   await setup.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
   if (!await setup.isVisible()) return;
+  const localMode = page.getByRole('button', { name: '本地模式', exact: true });
+  if (await localMode.isVisible()) await localMode.click();
   const useLocalCodex = page.getByRole('button', { name: '使用本机 Codex，继续' });
   if (await useLocalCodex.isVisible()) await useLocalCodex.click();
   await setup.waitFor({ state: 'hidden', timeout: 3_000 }).catch(() => undefined);

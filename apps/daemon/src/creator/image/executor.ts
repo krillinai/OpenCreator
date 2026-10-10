@@ -7,6 +7,9 @@ import type {
 } from '@opencreator/protocol';
 import { imagePromptRequiresReference } from '@opencreator/protocol';
 import { readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { gatewayCreatorBinding } from '../../gateway/creator-service-source.js';
+import type { CreatorProviderRequestLedger } from '../provider-requests.js';
 import { join } from 'node:path';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import {
@@ -54,6 +57,7 @@ type CoverImageNormalizer = (input: {
 }) => Promise<{ width: number; height: number }>;
 
 export function createImageExecutor(input: {
+  ledger?: CreatorProviderRequestLedger;
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
   generate?: GenerateImageContents;
   codexNative?: CodexNativeImageRuntime;
@@ -113,12 +117,22 @@ export function createImageExecutor(input: {
         total: request.count
       });
       const settled = await Promise.allSettled(
-        Array.from({ length: request.count }, (_, index) => (
-          generate(
+        Array.from({ length: request.count }, (_, index) => {
+          const gateway = gatewayCreatorBinding(config);
+          const logicalId = `${gateway?.logicalId ?? stage.stageRun.id}:candidate:${index}`;
+          let ledger = gateway && input.ledger ? input.ledger.registerBeforeSubmit({
+            jobId:stage.job.id, stageRunId:stage.stageRun.id, provider:'opencreator-gateway-image', requestKey:logicalId,
+            gateway:{ accountId:gateway.accountId, bindingVersion:gateway.bindingVersion, logicalId },
+            request:{prompt:request.prompt,size:request.size,quality:request.quality,model:gateway.models.image ?? '',reference:referenceImage ? createHash('sha256').update(referenceImage.content).digest('hex') : null}
+          }) : undefined;
+          if (ledger) ledger = input.ledger!.markSubmitting(ledger.id);
+          return generate(
             { ...request, count: 1 },
             config,
             {
               signal: stage.signal,
+              logicalId,
+              onGatewayRequest: id => { if (ledger) ledger = input.ledger!.markWaitingRemote(ledger.id,id); },
               onProgress: progress => stage.reportProgress({
                 ...progress, completed, failed, total: request.count
               }),
@@ -168,6 +182,7 @@ export function createImageExecutor(input: {
                 if (sourcePath !== path) await rm(sourcePath, { force: true });
               }
               const metadata = await validateImageFile(path);
+              if (ledger) ledger = input.ledger!.markSucceeded(ledger.id);
               completed += 1;
               stage.reportProgress({
                 status: 'running',
@@ -221,18 +236,24 @@ export function createImageExecutor(input: {
               } satisfies CreatorExecutorOutput;
             })
             .catch(error => {
+              if (ledger && ['submitting', 'waiting_remote'].includes(ledger.status)) {
+                const status = error instanceof ImageGenerationProviderError ? error.publicFacts.httpStatus : undefined;
+                ledger = status && [400, 401, 402, 403, 404, 422, 429].includes(status)
+                  ? input.ledger!.markFailed(ledger.id, error)
+                  : input.ledger!.markUnknownRemoteAcceptance(ledger.id);
+              }
               failed += 1;
               stage.reportProgress({
-                status: 'running',
+                status: completed + failed === request.count && completed === 0 ? 'failed' : 'running',
                 phase: 'generating_candidates',
-                percent: candidateProgress(completed, failed, request.count),
+                percent: candidateProgress(completed, 0, request.count),
                 completed,
                 failed,
                 total: request.count
               });
               throw error;
             })
-        ))
+        })
       );
       const outputs = settled.flatMap(item => item.status === 'fulfilled' ? [item.value] : []);
       const failures = settled.flatMap((item, index) => item.status === 'rejected'
@@ -319,7 +340,12 @@ function imageRequest(
       provider: settings.provider,
       size,
       quality,
-      count: settings.candidateCount
+      count: settings.candidateCount,
+      ...(gatewayCreatorBinding(config) && stage.job.templateId === 'image-generation' ? {
+        aspectRatio: readString(stage.job.state.aspectRatio) || undefined,
+        resolution: readString(stage.job.state.resolution) || undefined,
+        officialQuality: readString(stage.job.state.officialQuality) || undefined
+      } : {})
     },
     ...(cover === undefined ? {} : { cover: cover.details })
   };

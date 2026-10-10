@@ -122,7 +122,8 @@ export function createCreatorCommandDispatcher(input: {
         });
         let response = actionResponse;
         let stageRunId: string | null = null;
-        if (request.action === 'run-stage') {
+        if (request.action === 'run-stage'
+          || (request.action === 'retry-stage' && actionResponse.job.templateId === 'image-generation')) {
           const stageId = readStageId(request.input.stageId);
           const template = input.service.templates.get(
             actionResponse.job.templateId,

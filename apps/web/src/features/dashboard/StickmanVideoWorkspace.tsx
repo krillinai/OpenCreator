@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
+import { useOfficialServices } from './official-services.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
@@ -161,6 +162,8 @@ export default function StickmanVideoWorkspace(props: {
 }) {
   const l = useLocalizedCopy();
   const session = useCreatorSession();
+  const officialSpeech = useOfficialServices('speech');
+  const officialImage = useOfficialServices('image');
   const { job, state } = session;
   const [activeStep, setActiveStep] = useState(0);
   const [notice, setNotice] = useState('');
@@ -216,8 +219,8 @@ export default function StickmanVideoWorkspace(props: {
   const targetDurationSeconds = typeof state.targetDurationSeconds === 'number'
     ? state.targetDurationSeconds
     : 30;
-  const ttsProvider = isTtsProvider(state.ttsProvider) ? state.ttsProvider : 'openai';
-  const ttsModel = typeof state.ttsModel === 'string' ? state.ttsModel : '';
+  const ttsProvider = officialSpeech.official ? 'openai' : isTtsProvider(state.ttsProvider) ? state.ttsProvider : 'openai';
+  const ttsModel = officialSpeech.official ? officialSpeech.model?.id ?? '' : typeof state.ttsModel === 'string' ? state.ttsModel : '';
   const voiceCode = typeof state.voiceCode === 'string' ? state.voiceCode : '';
   const voiceName = typeof state.voiceName === 'string' ? state.voiceName : voiceCode;
   const targetLanguage = typeof state.targetLanguage === 'string' ? state.targetLanguage : 'zh-CN';
@@ -288,6 +291,15 @@ export default function StickmanVideoWorkspace(props: {
   }, [job.id, props.creatorService]);
 
   useEffect(() => {
+    if (officialSpeech.official) {
+      setTtsConfigurationStatus(officialSpeech.ready ? 'configured' : 'unavailable');
+      setImageConfigurationStatus(!officialImage.ready ? 'unavailable' : officialImage.model?.capabilities.includes('edit') ? 'configured' : 'unsupported');
+      if (scriptArtifact === undefined) {
+        const voices = officialSpeech.model?.voices ?? [];
+        session.updateDraft({ ttsProvider: 'openai', ttsModel: officialSpeech.model?.id ?? '', voiceCode: voices.includes(voiceCode) ? voiceCode : voices[0] ?? '', voiceName: voices.includes(voiceCode) ? voiceName : voices[0] ?? '' });
+      }
+      return;
+    }
     let active = true;
     const service = props.creatorServicesService;
     if (service === null || service === undefined) {
@@ -343,7 +355,7 @@ export default function StickmanVideoWorkspace(props: {
     return () => {
       active = false;
     };
-  }, [job.id, props.creatorServicesService, scriptArtifact?.id]);
+  }, [job.id, props.creatorServicesService, scriptArtifact?.id, officialSpeech.official, officialSpeech.ready, officialSpeech.model?.id, officialImage.ready, officialImage.model?.id]);
 
   useEffect(() => {
     setActiveStep(current => (
@@ -800,7 +812,7 @@ export default function StickmanVideoWorkspace(props: {
                         ratio: '9:16',
                         targetDurationSeconds: 30,
                         targetLanguage: 'en-US',
-                        ttsProvider: 'edge-tts'
+                        ttsProvider: officialSpeech.official ? 'openai' : 'edge-tts'
                       }
                     : { outputPreset: preset, ratio: '16:9' },
                   { semantic: true }

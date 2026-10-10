@@ -26,6 +26,7 @@ export type RunCodexExecInput = {
   forceKillGraceMs?: number;
   finalKillSettleMs?: number;
   env?: NodeJS.ProcessEnv;
+  baseEnvironment?: NodeJS.ProcessEnv;
   beforeSpawn?: () => Promise<void>;
   onStdoutLine?: (line: string) => Promise<void> | void;
   onStderrChunk?: (chunk: string) => Promise<void> | void;
@@ -113,7 +114,7 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
   const result = new Promise<RunCodexExecResult>((resolve, reject) => {
     const child = spawnCodexProcess(input.codexBin, input.args, {
       cwd: input.cwd,
-      env: { ...process.env, ...input.env, CODEX_HOME: input.codexHome },
+      env: { ...(input.baseEnvironment ?? process.env), ...input.env, CODEX_HOME: input.codexHome },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 

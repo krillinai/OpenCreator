@@ -1,9 +1,22 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import { autoUpdater as nativeUpdater } from 'electron';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { startUpdater } from '../src/main/updater.js';
 import type { DesktopLogger } from '../src/main/logger.js';
 
+vi.mock('electron', async () => {
+  const { EventEmitter } = await import('node:events');
+  return {
+    app: { isPackaged: false },
+    dialog: {},
+    autoUpdater: new EventEmitter()
+  };
+});
+
 describe('Desktop updater', () => {
+  beforeEach(() => {
+    nativeUpdater.removeAllListeners();
+  });
   it('uses a separate update channel for Intel macOS releases', () => {
     const updater = new FakeUpdater();
     const controller = startUpdater({
@@ -96,6 +109,57 @@ describe('Desktop updater', () => {
     controller.dispose();
   });
 
+  it('allows native update window closing before the ordinary quit event', async () => {
+    const steps: string[] = [];
+    const updater = new FakeUpdater();
+    updater.quitAndInstall = vi.fn(() => {
+      nativeUpdater.emit('before-quit-for-update');
+      steps.push('native-window-close');
+    });
+    const controller = startUpdater({
+      logger: fakeLogger(),
+      isPackaged: true,
+      updater,
+      showMessageBox: vi.fn(async () => ({ response: 0, checkboxChecked: false })),
+      async prepareInstall() {
+        steps.push('stop-runtime');
+      },
+      beforeQuitForInstall() {
+        steps.push('allow-window-close');
+      }
+    });
+
+    updater.emit('update-downloaded', { version: '1.2.3' });
+    await vi.waitFor(() => expect(updater.quitAndInstall).toHaveBeenCalledOnce());
+
+    expect(steps).toEqual(['stop-runtime', 'allow-window-close', 'native-window-close']);
+    controller.dispose();
+  });
+
+  it('keeps the window available until the native installer actually quits', async () => {
+    const beforeQuitForInstall = vi.fn();
+    const updater = new FakeUpdater();
+    const controller = startUpdater({
+      logger: fakeLogger(),
+      isPackaged: true,
+      updater,
+      beforeQuitForInstall,
+      showMessageBox: vi.fn(async () => ({ response: 0, checkboxChecked: false }))
+    });
+
+    nativeUpdater.emit('before-quit-for-update');
+    expect(beforeQuitForInstall).not.toHaveBeenCalled();
+    updater.emit('update-downloaded', { version: '1.2.3' });
+    await vi.waitFor(() => expect(controller.getState()).toBe('installing'));
+    expect(beforeQuitForInstall).not.toHaveBeenCalled();
+
+    updater.emit('error', new Error('native download failed'));
+    nativeUpdater.emit('before-quit-for-update');
+    expect(controller.getState()).toBe('error');
+    expect(beforeQuitForInstall).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
   it('keeps the current runtime running when the user postpones installation', async () => {
     const prepareInstall = vi.fn(async () => undefined);
     const recover = vi.fn(async () => undefined);
@@ -151,6 +215,7 @@ describe('Desktop updater', () => {
     controller.dispose();
 
     expect(updater.eventNames()).toEqual([]);
+    expect(nativeUpdater.eventNames()).toEqual([]);
   });
 });
 

@@ -50,6 +50,7 @@ describe('daemon production startup', () => {
       OPENCREATOR_DEFAULT_PROJECT_ROOT: ' /tmp/Documents ',
       OPENCREATOR_YT_DLP_PATH: ' /tmp/yt-dlp '
     })).toEqual({
+      gatewayOrigin: 'https://www.open-creator.ai',
       dataDir: '/tmp/opencreator-data',
       codexBin: '/tmp/fake-codex',
       codexHome: '/tmp/opencreator-codex-home',
@@ -67,7 +68,16 @@ describe('daemon production startup', () => {
       OPENCREATOR_DEFAULT_CWD: '\n',
       OPENCREATOR_DEFAULT_PROJECT_ROOT: ' ',
       OPENCREATOR_YT_DLP_PATH: ''
-    })).toEqual({});
+    })).toEqual({ gatewayOrigin: 'https://www.open-creator.ai' });
+  });
+
+  it('uses the production gateway by default and allows an explicit local gateway', () => {
+    expect(resolveProductionServerEnvironment({
+      OPENCREATOR_GATEWAY_ORIGIN: ' '
+    }).gatewayOrigin).toBe('https://www.open-creator.ai');
+    expect(resolveProductionServerEnvironment({
+      OPENCREATOR_GATEWAY_ORIGIN: ' http://127.0.0.1:8787 '
+    }).gatewayOrigin).toBe('http://127.0.0.1:8787');
   });
 
   it('prefers standard CODEX_HOME and keeps the legacy variable as a fallback', () => {

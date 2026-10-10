@@ -11,6 +11,7 @@ import { createCoverTemplate } from '../../src/creator/templates/cover.js';
 import { createSmartDubbingTemplate } from '../../src/creator/templates/smart-dubbing.js';
 import { createVideoTranslationTemplate } from '../../src/creator/templates/video-translation.js';
 import { createKrillinCreatorServicesCapabilities } from '../../src/creator/krillin/capabilities.js';
+import { createGatewayCreatorSource } from '../../src/gateway/creator-service-source.js';
 
 let root = '';
 
@@ -20,6 +21,32 @@ afterEach(async () => {
 });
 
 describe('creator preflight', () => {
+  it('blocks multiple official Stickman references before submitting any generation', async () => {
+    root = await mkdtemp(join(tmpdir(), 'creator-official-references-'));
+    const config = createDefaultCreatorServicesConfig();
+    const source = createGatewayCreatorSource({
+      account: { peekState: () => ({ source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1', models: [], activationError: null }), modelCredentials: async () => ({ accountId: 'a', modelKey: 'secret', keyVersion: '1', bindingVersion: 'a:1', baseUrl: 'https://gateway.example/v1', defaults: { image: 'image' }, models: [{ id: 'image', modality: 'image', capabilities: ['edit'] }] }) },
+      manual: { read: async () => config, write: async c => c, reset: async () => config }, getLocalOrigin: () => 'http://127.0.0.1:39999'
+    });
+    const job = fakeJob('stickman-video', { provider: 'gemini' });
+    job.artifacts = ['character_reference', 'style_reference'].map((kind, i) => ({ id: `ref-${i}`, jobId: job.id, kind, version: 1, scopeKey: null, inputFingerprint: null, sourceArtifactIds: [], path: join(root, `${i}.png`), status: 'completed', metadata: {}, sha256: 'hash', producerStageRunId: null, createdAt: job.createdAt, updatedAt: job.updatedAt }));
+    const result = await createCreatorPreflight({ configStore: source.store, readCapabilities: () => createKrillinCreatorServicesCapabilities('darwin', 'arm64'), resourceRoot: root, jobsRoot: join(root, 'jobs'), validateRuntimeAssets: false }).check(job, createStickmanVideoTemplate().stages.find(stage => stage.executor === 'stickman-image')!);
+    expect(result.blocked).toContainEqual(expect.objectContaining({ id: 'reference-image-count', message: expect.stringContaining('1 张') }));
+  });
+  it.each(['reference', 'speech-style'])('blocks unverified official %s before executing', async feature => {
+    root = await mkdtemp(join(tmpdir(), 'creator-official-capability-'));
+    const config = createDefaultCreatorServicesConfig();
+    const source = createGatewayCreatorSource({
+      account: { peekState: () => ({ source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1', models: [], activationError: null }), modelCredentials: async () => ({ accountId: 'a', modelKey: 'secret', keyVersion: '1', bindingVersion: 'a:1', baseUrl: 'https://gateway.example/v1', defaults: { image: 'image', speech: 'speech' }, models: [] }) },
+      manual: { read: async () => config, write: async c => c, reset: async () => config }, getLocalOrigin: () => 'http://127.0.0.1:39999'
+    });
+    const job = feature === 'reference'
+      ? fakeJob('image-generation', { provider: 'openai', prompt: 'draw', referenceImageArtifactId: 'reference' })
+      : fakeJob('smart-dubbing', { text: 'hello', speed: 1 });
+    const template = feature === 'reference' ? createImageGenerationTemplate() : createSmartDubbingTemplate();
+    const result = await createCreatorPreflight({ configStore: source.store, readCapabilities: () => createKrillinCreatorServicesCapabilities('darwin', 'arm64'), resourceRoot: root, jobsRoot: join(root, 'jobs'), validateRuntimeAssets: false }).check(job, template.stages[0]!);
+    expect(result.blocked.map(item => item.id)).toContain(feature === 'reference' ? 'reference-image-capability' : 'tts-style-capability');
+  });
   it.each(['openai', 'codex-native'])('blocks missing reference input for %s before starting a task', async provider => {
     root = await mkdtemp(join(tmpdir(), 'creator-preflight-reference-'));
     const check = createCreatorPreflight({

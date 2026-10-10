@@ -1,8 +1,9 @@
-import type { CodexProviderConfig, CodexRuntimeReadiness } from '@opencreator/protocol';
+import type { CodexProviderConfig, CodexRuntimeReadiness, GatewayAccountState } from '@opencreator/protocol';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
+import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import {
   availableAgentMode, confirmAgentSetup, isAgentSetupConfirmed,
   StartupAgentSetup, type AgentSetupService, type AgentSetupSnapshot
@@ -63,6 +64,7 @@ describe('StartupAgentSetup', () => {
     const snapshot = { readiness: readiness('signed_in'), provider };
     const { onReady } = mount(service, snapshot);
     expect(isAgentSetupConfirmed(snapshot)).toBe(false);
+    await userEvent.setup().click(screen.getByRole('button', { name: '本地模式' }));
     expect(screen.getByText('已找到本机 Codex')).toBeInTheDocument();
     expect(screen.getByText(/ChatGPT 登录 · gpt-test/)).toBeInTheDocument();
     expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
@@ -80,6 +82,7 @@ describe('StartupAgentSetup', () => {
     } };
     const { onReady } = mount(service, snapshot);
     const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '本地模式' }));
     await user.click(screen.getByRole('button', { name: '自定义模型服务' }));
     expect(screen.getByRole('combobox', { name: '供应商' })).toBeInTheDocument();
     await user.selectOptions(screen.getByRole('combobox', { name: '供应商' }), 'deepseek');
@@ -98,6 +101,7 @@ describe('StartupAgentSetup', () => {
     const provider: CodexProviderConfig = { baseUrl: 'https://gateway.example.test/v1', model: 'model-1', apiKeyConfigured: true, authentication: 'api_key' };
     const snapshot = { readiness: readiness('signed_out', 'degraded'), provider };
     const { onReady } = mount(service, snapshot);
+    await userEvent.setup().click(screen.getByRole('button', { name: '本地模式' }));
     expect(screen.getByText(/API Key 已配置 · model-1/)).toBeInTheDocument();
     expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole('button', { name: '使用本机 Codex，继续' }));
@@ -110,10 +114,12 @@ describe('StartupAgentSetup', () => {
     expect(isAgentSetupConfirmed({ ...snapshot, provider: { ...provider, apiKeyConfigured: false } })).toBe(false);
   });
 
-  it('shows provider and API key fields immediately without credentials, never a login action', async () => {
+  it('shows provider configuration only after choosing local mode', async () => {
     const service = createService();
     const { onReady } = mount(service);
     const user = userEvent.setup();
+    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '本地模式' }));
     const providerSelect = await screen.findByRole('combobox', { name: '供应商' });
     expect(providerSelect).toHaveValue('openai');
     expect(screen.getByLabelText('Base URL')).toHaveValue('https://api.openai.com/v1');
@@ -136,6 +142,7 @@ describe('StartupAgentSetup', () => {
     const snapshot = { readiness: readiness('signed_out', 'degraded'), provider };
     const { onReady } = mount(service, snapshot);
     const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '本地模式' }));
     await user.click(screen.getByRole('button', { name: '自定义模型服务' }));
     await user.clear(screen.getByLabelText('模型名称'));
     await user.type(screen.getByLabelText('模型名称'), 'new-model');
@@ -152,6 +159,7 @@ describe('StartupAgentSetup', () => {
     vi.mocked(service.getCodexReadiness).mockResolvedValue(readiness('signed_out', 'blocked'));
     const { onReady } = mount(service);
     const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '本地模式' }));
     await user.selectOptions(await screen.findByRole('combobox', { name: '供应商' }), 'openai');
     await user.type(screen.getByLabelText('API Key'), 'secret');
     await user.click(screen.getByRole('button', { name: '保存并开始使用' }));
@@ -164,6 +172,7 @@ describe('StartupAgentSetup', () => {
     const service = createService();
     const { onReady } = mount(service);
     const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '本地模式' }));
     await screen.findByRole('combobox', { name: '供应商' });
     await user.clear(screen.getByLabelText('Base URL'));
     await user.type(screen.getByLabelText('API Key'), 'secret');
@@ -178,6 +187,7 @@ describe('StartupAgentSetup', () => {
       baseUrl: 'https://gateway.example.test/v1', model: 'model-1', apiKeyConfigured: true, authentication: 'api_key'
     });
     const { onReady } = mount(service);
+    await userEvent.setup().click(screen.getByRole('button', { name: '本地模式' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('暂时无法读取');
     await userEvent.setup().click(screen.getByRole('button', { name: '重新检测' }));
     expect(await screen.findByText('已找到本机 Codex')).toBeInTheDocument();
@@ -188,8 +198,38 @@ describe('StartupAgentSetup', () => {
   it('supports skipping without changing local Codex', async () => {
     const service = createService();
     const { onSkip } = mount(service);
-    await userEvent.setup().click(screen.getByRole('button', { name: '暂时跳过' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: '稍后配置，进入本地模式' }));
     expect(onSkip).toHaveBeenCalledOnce();
     expect(service.updateCodexProvider).not.toHaveBeenCalled();
+  });
+
+  it('offers both modes and never exposes provider fields in sign-in mode', async () => {
+    mount(createService());
+    expect(screen.getByRole('heading', { name: 'OpenCreator' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '本地模式' })).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: '登录模式' }));
+    expect(screen.getByRole('button', { name: '登录 OpenCreator' })).toBeDisabled();
+    expect(screen.queryByLabelText('Base URL')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+  });
+
+  it('cancels browser authorization before returning to the local mode selector', async () => {
+    let state: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const gateway: GatewayAccountSettingsService = {
+      getState: vi.fn(async () => state),
+      start: vi.fn(async () => { state = { ...state, authState: 'authorizing' }; return { attemptId: 'a', authorizationUrl: 'https://gateway.example/device', expiresAt: '2026-11-01T00:00:00Z' }; }),
+      cancel: vi.fn(async () => { state = { ...state, authState: 'signed_out' }; return state; }),
+      activate: vi.fn(), logout: vi.fn(), setSource: vi.fn(), selectModel: vi.fn(), getBalance: vi.fn(), getSummary: vi.fn(), getPlans: vi.fn(), checkout: vi.fn(), portal: vi.fn()
+    };
+    render(<LanguageProvider initialPreference="zh-CN"><StartupAgentSetup service={createService()} gatewayService={gateway} onReady={vi.fn()} onSkip={vi.fn()}/></LanguageProvider>);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '登录模式' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '登录 OpenCreator' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: '登录 OpenCreator' }));
+    expect(await screen.findByText('等待浏览器确认登录')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '返回' }));
+    expect(gateway.cancel).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: '本地模式' }));
+    expect(await screen.findByLabelText('API Key')).toBeInTheDocument();
   });
 });

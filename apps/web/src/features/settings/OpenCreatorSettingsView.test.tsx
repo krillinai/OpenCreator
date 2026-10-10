@@ -5,6 +5,10 @@ import { ConfirmDialogProvider } from '../../components/dialogs/ConfirmDialogPro
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { languagePreferenceStorageKey } from '../../i18n/language.js';
 import { OpenCreatorSettingsView } from './OpenCreatorSettingsView.js';
+import type { GatewayAccountState } from '@opencreator/protocol';
+import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
+import { createGatewayAccountService } from '../../services/gateway-account-service.js';
+import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 
 const runtimeStatus = {
   connected: true,
@@ -17,6 +21,62 @@ const runtimeStatus = {
 };
 
 describe('OpenCreatorSettingsView', () => {
+  it('keeps the general proxy editable while signed in without reading custom credentials', async () => {
+    const state: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', models: [], activationError: null };
+    const getConfig = vi.fn(); const saveNetwork = vi.fn(async (value: { proxy: string }) => value);
+    const creatorServicesService = { getNetwork: vi.fn(async () => ({ proxy: 'http://127.0.0.1:7897' })), saveNetwork, getConfig } as unknown as CreatorServicesSettingsService;
+    render(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} gatewayAccountState={state} creatorServicesService={creatorServicesService} onBack={vi.fn()} />);
+    const user = userEvent.setup(); const input = await screen.findByDisplayValue('http://127.0.0.1:7897');
+    await user.clear(input); await user.type(input, 'http://127.0.0.1:8888');
+    await user.click(screen.getByRole('button', { name: '保存网络代理' }));
+    expect(saveNetwork).toHaveBeenCalledWith({ proxy: 'http://127.0.0.1:8888' });
+    expect(getConfig).not.toHaveBeenCalled();
+  });
+  it('shows only official model controls and changes the model without exposing connection settings', async () => {
+    const state: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: 'a:1', models: [{ id: 'vendor/first', modality: 'text', capabilities: ['responses'] }, { id: 'vendor/second', modality: 'text', capabilities: ['responses'] }], selectedModels: { text: 'vendor/first' }, activationError: null };
+    const next = { ...state, selectedModels: { text: 'vendor/second' } };
+    const client = { get: vi.fn(), post: vi.fn(), patch: vi.fn().mockResolvedValue(next) };
+    const service = createGatewayAccountService(client);
+    const changed = vi.fn();
+    render(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} gatewayAccountService={service} gatewayAccountState={state} onGatewayStateChange={changed} initialTab="ai-services" onBack={vi.fn()} />);
+    expect(screen.getByRole('combobox', { name: '文本模型' })).toHaveValue('first');
+    expect(screen.queryByText(/OpenRouter|base_url|api_key|Base URL|API Key/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '模型服务' })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: '文本模型' }));
+    await user.click(screen.getByRole('option', { name: 'second' }));
+    await waitFor(() => expect(changed).toHaveBeenCalledWith(next));
+    expect(client.patch).toHaveBeenCalledWith('/gateway/model', { modality: 'text', model: 'vendor/second' });
+  });
+  it('shows custom settings for guests and directs sign-in to the personal center', async () => {
+    const gateway: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const service: GatewayAccountSettingsService = { getState: vi.fn(async () => gateway), setSource: vi.fn(), selectModel: vi.fn(), start: vi.fn(), cancel: vi.fn(), logout: vi.fn(), activate: vi.fn(), getBalance: vi.fn(), getSummary: vi.fn(), getPlans: vi.fn(), checkout: vi.fn(), portal: vi.fn() };
+    const onOpenPersonalCenter = vi.fn();
+    render(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} gatewayAccountService={service} gatewayAccountState={gateway} initialTab="ai-services" onOpenPersonalCenter={onOpenPersonalCenter} onBack={vi.fn()}/>);
+    expect(await screen.findByText('自定义配置')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: '登录 OpenCreator' }));
+    expect(onOpenPersonalCenter).toHaveBeenCalledOnce();
+    expect(service.setSource).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: '官方服务' })).not.toBeInTheDocument();
+  });
+  it('keeps signed-in accounts in official settings and restores custom settings after sign-out', async () => {
+    const gateway: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: null, models: [], activationError: null };
+    const local = { ...gateway, source: 'manual' as const, authState: 'signed_out' as const, activationState: 'inactive' as const, account: null };
+    const service: GatewayAccountSettingsService = { getState: vi.fn(async () => gateway), setSource: vi.fn(async () => local), selectModel: vi.fn(), start: vi.fn(), cancel: vi.fn(), logout: vi.fn(), activate: vi.fn(), getBalance: vi.fn(), getSummary: vi.fn(), getPlans: vi.fn(), checkout: vi.fn(), portal: vi.fn() };
+    const onGatewayStateChange = vi.fn();
+    const view = render(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} gatewayAccountService={service} gatewayAccountState={gateway} initialTab="ai-services" onGatewayStateChange={onGatewayStateChange} onBack={vi.fn()}/>);
+    expect(await screen.findByText('官方服务')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '自定义配置' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '模型服务' })).not.toBeInTheDocument();
+    expect(service.setSource).not.toHaveBeenCalled();
+    view.rerender(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} gatewayAccountService={service} gatewayAccountState={local} initialTab="ai-services" onBack={vi.fn()}/>);
+    expect(await screen.findByRole('tab', { name: '模型服务' })).toBeInTheDocument();
+  });
+  it('keeps account and subscription management out of settings', () => {
+    render(<OpenCreatorSettingsView runtimeStatus={{ connected: false }} onBack={vi.fn()}/>);
+    expect(screen.queryByRole('button', { name: '账户' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '订阅与积分' })).not.toBeInTheDocument();
+  });
   it('renders default navigation and general settings without old work mode copy', () => {
     render(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
 

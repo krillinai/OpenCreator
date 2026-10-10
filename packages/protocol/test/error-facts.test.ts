@@ -14,6 +14,11 @@ describe('public error kind for business code', () => {
     ['krillin_auth_failed', 'unauthorized'],
     ['ENOTFOUND', 'dns'],
     ['ERR_FS_FILE_TOO_LARGE', 'storage'],
+    ['audio_no_speech', 'validation'],
+    ['audio_transcription_invalid_response', 'invalid-response'],
+    ['audio_transcription_timestamps_missing', 'unsupported'],
+    ['audio_transcription_api_failed', 'provider-failed'],
+    ['audio_transcription_empty', undefined],
     ['creator_provider_request_failed', undefined]
   ])('classifies %s conservatively', (code, expected) => {
     expect(publicErrorKindForCode(code)).toBe(expected);

@@ -5,7 +5,8 @@ import type {
   CreatorJob,
   CreatorJson,
   CreatorServicesConfigResponse,
-  CreatorStageRun
+  CreatorStageRun,
+  GatewayAccountState
 } from '@opencreator/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -13,8 +14,36 @@ import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { LanguageSwitchControls } from '../../test/LanguageSwitchControls.js';
 import VideoGenerationWorkspace from './VideoGenerationWorkspace.js';
 import { CreatorSessionProvider, useCreatorSession } from './creator-session-store.js';
+import { OfficialServicesContext } from './official-services.js';
 
 describe('VideoGenerationWorkspace', () => {
+  it('shows model-native video sizes and durations beyond the custom provider presets', () => {
+    const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', models: [{ id: 'vendor/video', modality: 'video', capabilities: [], resolutions: ['1080p', '720p'], aspectRatios: ['16:9', '9:16'], durations: [3, 12] }], activationError: null };
+    renderWorkspace(creatorJob({ state: { prompt: 'city', currentStep: 1, furthestStep: 1 } }), { gatewayState });
+    const size = screen.getByRole('combobox', { name: '画幅' }) as HTMLSelectElement;
+    expect([...size.options].map(option => option.value)).toEqual(['1080p@16:9', '1080p@9:16', '720p@16:9', '720p@9:16']);
+    const duration = screen.getByRole('combobox', { name: '视频时长' }) as HTMLSelectElement;
+    expect([...duration.options].map(option => option.value)).toEqual(['3', '12']);
+  });
+  it('shows only the official video model and supported parameters while signed in', async () => {
+    const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1', selectedModels: { video: 'bytedance/seedance-1-5-pro' }, models: [{ id: 'bytedance/seedance-1-5-pro', modality: 'video', capabilities: ['image_to_video'], sizes: ['1280x720', '720x1280'], durations: [4, 5] }], activationError: null };
+    const getConfig = vi.fn();
+    renderWorkspace(creatorJob({ state: { prompt: 'city skyline', provider: 'veo', model: 'veo-3.1-generate-preview', size: '1024x1024', duration: 10, currentStep: 1, furthestStep: 1 } }), { gatewayState, creatorServicesService: { getConfig } });
+    expect(screen.getByLabelText('视频模型')).toHaveTextContent('seedance-1-5-pro');
+    expect(screen.queryByRole('combobox', { name: '视频服务' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: '模型版本' })).not.toBeInTheDocument();
+    const durations = screen.getByRole('combobox', { name: '视频时长' }) as HTMLSelectElement;
+    expect([...durations.options].map(option => option.value)).toEqual(['4', '5']);
+    expect(screen.queryByRole('option', { name: /1024/ })).not.toBeInTheDocument();
+    expect(getConfig).not.toHaveBeenCalled();
+  });
+
+  it('blocks official generation when account activation is unavailable', () => {
+    renderWorkspace(creatorJob({ state: { prompt: 'city skyline', currentStep: 2, furthestStep: 2 } }), { gatewayState: null });
+    expect(screen.getByRole('button', { name: '开始生成' })).toBeDisabled();
+    expect(screen.queryByRole('combobox', { name: '视频服务' })).not.toBeInTheDocument();
+  });
+
   it('leaves the running screen and shows the true failure through read-only reconciliation without an SSE event', async () => {
     vi.useFakeTimers();
     const running = runningVideoJob({ phase: 'submitting', percent: 8 });
@@ -692,6 +721,7 @@ function renderWorkspace(
     creatorServicesService?: { getConfig(): Promise<CreatorServicesConfigResponse> };
     language?: 'zh-CN' | 'en-US' | 'sv-SE';
     children?: ReactNode;
+    gatewayState?: GatewayAccountState | null;
   } = {}
 ) {
   const workspace = (options: typeof overrides) => (
@@ -708,11 +738,13 @@ function renderWorkspace(
           runAgentTurn: vi.fn()
         } as never}
       >
+        <OfficialServicesContext.Provider value={options.gatewayState}>
         <VideoGenerationWorkspace
           creatorServicesService={options.creatorServicesService as never}
           onBack={vi.fn()}
         />
         {options.children}
+        </OfficialServicesContext.Provider>
       </CreatorSessionProvider>
     </LanguageProvider>
   );

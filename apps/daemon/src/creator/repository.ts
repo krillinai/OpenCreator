@@ -31,8 +31,14 @@ import type {
 import { parseSrt } from './validators/srt.js';
 
 type RepositoryOptions = {
+  serviceBinding?(): CreatorServiceBinding;
   idFactory?(prefix: string): string;
   now?(): string;
+};
+
+export type CreatorServiceBinding = { source: 'manual' } | {
+  source: 'gateway'; accountId: string; bindingVersion: string;
+  models: Record<string, string>; capabilities: Record<string, string[]>;
 };
 
 export const CREATOR_ISSUE_UPSERT_SQL = `
@@ -133,6 +139,7 @@ type CreateStageRunInput = {
 };
 
 type CreateProviderRequestInput = {
+  gateway?: CreatorProviderRequest['gateway'];
   jobId: string;
   provider: string;
   stageRunId: string;
@@ -146,6 +153,7 @@ type CreateProviderRequestInput = {
 };
 
 export type CreatorRepository = {
+  getServiceBinding(jobId: string): CreatorServiceBinding;
   transaction<T>(operation: () => T): T;
   createJob(input: CreateJobInput): CreatorJob;
   getJob(id: string): CreatorJob | undefined;
@@ -347,7 +355,7 @@ export function createCreatorRepository(
 
   const listProviderRequests = (jobId: string): CreatorProviderRequest[] => (
     db.prepare(`
-      SELECT id, job_id, provider, stage_run_id, scope_key, request_key, request_hash,
+      SELECT id, job_id, provider, stage_run_id, scope_key, request_key, request_hash, gateway_binding_json,
              remote_task_id, billing_side_effect, status, result_artifact_id,
              generation, resubmission_of, created_at, updated_at
       FROM creator_provider_requests
@@ -453,12 +461,16 @@ export function createCreatorRepository(
     createJob(input: CreateJobInput): CreatorJob {
       const id = idFactory('creator_job');
       const timestamp = now();
+      const serviceBinding = options.serviceBinding?.() ?? { source: 'manual' as const };
+      const state = serviceBinding.source === 'gateway'
+        ? { ...input.state, officialModels: { ...serviceBinding.models, ...(isRecord(input.state.officialModels) ? input.state.officialModels : {}) } }
+        : input.state;
       db.prepare(`
         INSERT INTO creator_jobs (
           id, creation_key, creation_fingerprint, project_id, template_id,
           template_version, status, revision, state_json, preset_origin_json,
-          agent_thread_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+          agent_thread_id, created_at, updated_at, service_binding_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         input.creationKey ?? null,
@@ -467,17 +479,23 @@ export function createCreatorRepository(
         input.templateId,
         input.templateVersion,
         input.status,
-        JSON.stringify(input.state),
+        JSON.stringify(state),
         input.presetOrigin === undefined || input.presetOrigin === null
           ? null
           : JSON.stringify(input.presetOrigin),
         input.agentThreadId ?? null,
         timestamp,
-        timestamp
+        timestamp,
+        JSON.stringify(serviceBinding)
       );
       return getJob(id)!;
     },
     getJob,
+    getServiceBinding(jobId) {
+      const row = db.prepare('SELECT service_binding_json FROM creator_jobs WHERE id = ?').get(jobId) as { service_binding_json: string } | undefined;
+      if (!row) throw new Error('Creator job was not found');
+      return JSON.parse(row.service_binding_json) as CreatorServiceBinding;
+    },
     getJobByCreationKey(creationKey: string): CreatorJob | undefined {
       const row = db.prepare(`
         SELECT id
@@ -697,8 +715,8 @@ export function createCreatorRepository(
         INSERT INTO creator_provider_requests (
           id, job_id, provider, stage_run_id, scope_key, request_key, request_hash,
           remote_task_id, billing_side_effect, status, result_artifact_id,
-          generation, resubmission_of, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?)
+          generation, resubmission_of, created_at, updated_at, gateway_binding_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?)
       `).run(
         id,
         providerInput.jobId,
@@ -712,13 +730,14 @@ export function createCreatorRepository(
         providerInput.generation ?? 1,
         providerInput.resubmissionOf ?? null,
         timestamp,
-        timestamp
+        timestamp,
+        providerInput.gateway === undefined ? null : JSON.stringify(providerInput.gateway)
       );
       return listProviderRequests(providerInput.jobId).find(item => item.id === id)!;
     },
     getProviderRequest(id): CreatorProviderRequest | undefined {
       const row = db.prepare(`
-        SELECT id, job_id, provider, stage_run_id, scope_key, request_key, request_hash,
+        SELECT id, job_id, provider, stage_run_id, scope_key, request_key, request_hash, gateway_binding_json,
                remote_task_id, billing_side_effect, status, result_artifact_id,
                generation, resubmission_of, created_at, updated_at
         FROM creator_provider_requests
@@ -728,7 +747,7 @@ export function createCreatorRepository(
     },
     getLatestProviderRequest(provider, requestKey): CreatorProviderRequest | undefined {
       const row = db.prepare(`
-        SELECT id, job_id, provider, stage_run_id, scope_key, request_key, request_hash,
+        SELECT id, job_id, provider, stage_run_id, scope_key, request_key, request_hash, gateway_binding_json,
                remote_task_id, billing_side_effect, status, result_artifact_id,
                generation, resubmission_of, created_at, updated_at
         FROM creator_provider_requests
@@ -1519,6 +1538,7 @@ type ArtifactRow = {
 };
 
 type ProviderRequestRow = {
+  gateway_binding_json: string | null;
   id: string;
   job_id: string;
   provider: string;
@@ -1538,6 +1558,7 @@ type ProviderRequestRow = {
 
 function hydrateProviderRequest(row: ProviderRequestRow): CreatorProviderRequest {
   return {
+    ...(row.gateway_binding_json === null ? {} : { gateway: JSON.parse(row.gateway_binding_json) as NonNullable<CreatorProviderRequest['gateway']> }),
     id: row.id,
     jobId: row.job_id,
     provider: row.provider,

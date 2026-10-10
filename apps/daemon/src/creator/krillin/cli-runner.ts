@@ -11,6 +11,7 @@ import { sha256CreatorFile } from '../file-hash.js';
 import { publicErrorKindForCode, sanitizePublicErrorFacts, type PublicErrorFacts } from '@opencreator/protocol';
 import { spawnCreatorProcess } from '../process-tree.js';
 import { createKrillinConfigToml } from './config-bridge.js';
+import { gatewayCreatorBinding } from '../../gateway/creator-service-source.js';
 import { isYouTubeSource } from './execution-plan.js';
 import {
   resolveInside,
@@ -121,7 +122,7 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
   const cliConfig = stageConfig(input.config, krillinCliStageId(input.stage.stageRun.stageId), input.options);
   await writeFile(
     join(configDir, 'config.toml'),
-    createKrillinConfigToml(cliConfig, input.llmOverride),
+    createKrillinConfigToml(cliConfig, input.llmOverride, gatewayCreatorBinding(input.config)?.models.transcription),
     { mode: 0o600 }
   );
   await writeFile(join(dependencyBin, '.yt-dlp-last-check'), new Date().toISOString(), { mode: 0o600 });

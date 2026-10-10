@@ -1,5 +1,6 @@
 import {
   defaultVideoGenerationModels,
+  gatewayVideoSizes,
   videoGenerationDurations,
   videoGenerationSizes,
   type CreateVideoGenerationRequest,
@@ -24,6 +25,7 @@ import {
   isRecord
 } from '../creator-services/upstream-fetch.js';
 import { publicFactsFromFailure } from '../creator/public-error-facts.js';
+import type { GatewayCreatorBinding } from '../gateway/creator-service-source.js';
 
 const MAX_PROMPT_LENGTH = 4_000;
 const MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -38,11 +40,16 @@ type StoredVideoGeneration = {
   result: VideoGenerationResult;
   upstreamId: string;
   generationMode?: 'text-to-video' | 'image-to-video';
+  gateway?: { accountId: string; bindingVersion: string; logicalId: string; params: Record<string, unknown> };
 };
 
 export type VideoGenerationOperationOptions = {
   signal?: AbortSignal;
   onDownloadStart?(): void;
+  logicalId?: string;
+  onPending?(id: string): void;
+  onGatewayBinding?(binding: { accountId: string; bindingVersion: string; logicalId: string }): void;
+  onGatewayRequest?(id: string): void;
 };
 
 export type VideoGenerationService = {
@@ -51,6 +58,7 @@ export type VideoGenerationService = {
     options?: VideoGenerationOperationOptions
   ): Promise<VideoGenerationResult>;
   get(id: string): Promise<VideoGenerationResult>;
+  getGatewayBinding?(id: string): Promise<{ accountId: string; bindingVersion: string; logicalId: string; requestId?: string } | undefined>;
   refresh(id: string, options?: VideoGenerationOperationOptions): Promise<VideoGenerationResult>;
   read(id: string): Promise<{ result: VideoGenerationResult; content: Buffer }>;
   copyTo(id: string, destination: string): Promise<VideoGenerationResult>;
@@ -80,6 +88,7 @@ export function createVideoGenerationService(input: {
   fetchImpl?: typeof fetch;
   now?: () => Date;
   createId?: () => string;
+  gatewaySource?: { binding(): Promise<GatewayCreatorBinding | undefined> };
 }): VideoGenerationService {
   const rootDir = resolve(input.dataDir, 'video-generation');
   const now = input.now ?? (() => new Date());
@@ -107,6 +116,44 @@ export function createVideoGenerationService(input: {
     } catch {
       throw new VideoGenerationError('VIDEO_GENERATION_STORAGE_FAILED', 'Video generation metadata could not be stored', 500);
     }
+  }
+
+  async function gatewayCall(binding: GatewayCreatorBinding, resource: string, options: VideoGenerationOperationOptions, params?: Record<string, unknown>, logicalId?: string) {
+    const response = await (input.fetchImpl ?? fetch)(`${binding.baseUrl}/${resource}`, {
+      method: params ? 'POST' : 'GET', redirect: 'error', signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: { Authorization: `Bearer ${binding.apiKey}`, 'Content-Type': 'application/json', ...(logicalId ? { 'Idempotency-Key': logicalId } : {}) },
+      ...(params ? { body: JSON.stringify(params) } : {})
+    });
+    if (!response.ok) throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', '官方视频请求未完成，请查询原任务', response.status);
+    return response;
+  }
+  async function refreshGateway(stored: StoredVideoGeneration, options: VideoGenerationOperationOptions) {
+    const source = await input.gatewaySource?.binding();
+    if (!source || source.accountId !== stored.gateway?.accountId) throw new VideoGenerationError('VIDEO_GENERATION_CONFIG_REQUIRED', '请登录原任务账户后查询视频', 403);
+    if (stored.result.status === 'completed' || stored.result.status === 'failed') return stored.result;
+    const response = stored.upstreamId
+      ? await gatewayCall(source, `requests/${encodeURIComponent(stored.upstreamId)}`, options)
+      : await gatewayCall(source, 'video/jobs', options, stored.gateway.params, stored.gateway.logicalId);
+    const payload = await response.json() as { requestId?: string; state?: string };
+    if (!payload.requestId || !/^[A-Za-z0-9_-]{12,128}$/.test(payload.requestId)) throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', '官方视频回执无效', 502);
+    stored.upstreamId = payload.requestId;
+    options.onGatewayRequest?.(payload.requestId);
+    const completed = payload.state === 'succeeded';
+    stored.result = { ...stored.result, status: completed ? 'in_progress' : ['failed','canceled'].includes(payload.state ?? '') ? 'failed' : 'in_progress', progress: completed ? 90 : 0, progressKnown: false, updatedAt: now().toISOString() };
+    await writeStored(stored);
+    if (completed) {
+      options.onDownloadStart?.();
+      const response = await gatewayCall(source, `requests/${encodeURIComponent(stored.upstreamId)}/result`, options);
+      const reader = response.body?.getReader(); const chunks: Buffer[] = []; let size = 0;
+      if (!reader) throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', '官方视频结果为空', 502);
+      for (;;) { const chunk = await reader.read(); if (chunk.done) break; size += chunk.value.length; if (size > MAX_VIDEO_BYTES) { await reader.cancel(); throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', '视频结果过大', 502); } chunks.push(Buffer.from(chunk.value)); }
+      const content = Buffer.concat(chunks);
+      if (!content.length) throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', '官方视频结果为空', 502);
+      await writeFile(videoPath(stored.result.id), content, { mode: 0o600 });
+      stored.result = { ...stored.result, status: 'completed', progress: 100, progressKnown: true, fileName: `OpenCreator-video-${stored.result.id}.mp4`, mime: 'video/mp4', size: content.length };
+      await writeStored(stored);
+    }
+    return stored.result;
   }
 
   async function completeFromPayload(
@@ -173,7 +220,20 @@ export function createVideoGenerationService(input: {
 
   return {
     async create(request, options = {}) {
-      validateRequest(request);
+      const gateway = await input.gatewaySource?.binding();
+      validateRequest(request, gateway === undefined);
+      if (gateway) {
+        if (!gateway.models.video || (request.referenceImage && !gateway.capabilities?.video?.includes('image_to_video'))) throw new VideoGenerationError('VIDEO_GENERATION_CONFIG_REQUIRED', '当前官方路由未提供此视频能力', 400);
+        if (request.model && request.model !== gateway.models.video) throw new VideoGenerationError('VALIDATION_FAILED', '请选择当前任务的官方视频模型', 400);
+        const model = gateway.catalog?.find(candidate => candidate.modality === 'video' && candidate.id === gateway.models.video);
+        if (!model || !gatewayVideoSizes(model).includes(request.size) || !model.durations?.includes(request.duration)) throw new VideoGenerationError('VALIDATION_FAILED', '当前官方视频模型不支持所选尺寸或时长', 400);
+        const id = createId(); validateResultId(id);
+        const logicalId = gateway.logicalId ?? options.logicalId ?? id;
+        options.onGatewayBinding?.({accountId:gateway.accountId,bindingVersion:gateway.bindingVersion,logicalId});
+        const stored: StoredVideoGeneration = { upstreamId: '', gateway: { accountId: gateway.accountId, bindingVersion: gateway.bindingVersion, logicalId, params: { model: gateway.models.video, prompt: request.prompt.trim(), duration: request.duration, size: request.size, ...(request.referenceImage ? { image: referenceImageDataUrl(request.referenceImage) } : {}) } }, result: { id, prompt: request.prompt.trim(), provider: request.provider, model: gateway.models.video, videoSize: request.size, duration: request.duration, status: 'queued', progress: 0, progressKnown: false, createdAt: now().toISOString(), updatedAt: now().toISOString() } };
+        await writeStored(stored); options.onPending?.(id);
+        return refreshGateway(stored, options);
+      }
       const config = await input.configStore.read();
       const operation = operationSignal(options.signal, REQUEST_TIMEOUT_MS);
       let remote: RemoteVideoJob;
@@ -225,8 +285,13 @@ export function createVideoGenerationService(input: {
     async get(id) {
       return (await readStored(id)).result;
     },
+    async getGatewayBinding(id) {
+      const { gateway, upstreamId } = await readStored(id);
+      return gateway ? { accountId: gateway.accountId, bindingVersion: gateway.bindingVersion, logicalId: gateway.logicalId, ...(upstreamId ? { requestId: upstreamId } : {}) } : undefined;
+    },
     async refresh(id, options = {}) {
       let stored = await readStored(id);
+      if (stored.gateway) return refreshGateway(stored, options);
       if (stored.result.status === 'completed' || stored.result.status === 'failed') return stored.result;
       const config = await input.configStore.read();
       const operation = operationSignal(options.signal, REQUEST_TIMEOUT_MS);
@@ -701,7 +766,7 @@ function readJobError(facts: PublicErrorFacts): string {
     + (facts.upstreamMessage === undefined ? '' : `: ${facts.upstreamMessage}`);
 }
 
-function validateRequest(request: CreateVideoGenerationRequest) {
+function validateRequest(request: CreateVideoGenerationRequest, validateProvider = true) {
   if (!isRecord(request)) {
     throw new VideoGenerationError('VALIDATION_FAILED', 'request body must be an object', 400);
   }
@@ -726,14 +791,14 @@ function validateRequest(request: CreateVideoGenerationRequest) {
       400
     );
   }
-  if (!(videoGenerationSizes as readonly unknown[]).includes(request.size)) {
+  if (validateProvider && !(videoGenerationSizes as readonly unknown[]).includes(request.size)) {
     throw new VideoGenerationError('VALIDATION_FAILED', 'video size is invalid', 400);
   }
-  if (!(videoGenerationDurations as readonly unknown[]).includes(request.duration)) {
+  if (validateProvider && !(videoGenerationDurations as readonly unknown[]).includes(request.duration)) {
     throw new VideoGenerationError('VALIDATION_FAILED', 'video duration is invalid', 400);
   }
   const validDurations = request.provider === 'veo' ? [4, 6, 8] : [5, 10];
-  if (!validDurations.includes(request.duration)) {
+  if (validateProvider && !validDurations.includes(request.duration)) {
     throw new VideoGenerationError('VALIDATION_FAILED', `video duration is not supported by ${request.provider}`, 400);
   }
   validateReferenceImage(request.referenceImage);
@@ -779,17 +844,17 @@ function isStoredVideoGeneration(value: unknown): value is StoredVideoGeneration
       || value.generationMode === 'text-to-video'
       || value.generationMode === 'image-to-video'
     )
-    && isVideoGenerationResult(value.result);
+    && isVideoGenerationResult(value.result, isRecord(value.gateway));
 }
 
-function isVideoGenerationResult(value: unknown): value is VideoGenerationResult {
+function isVideoGenerationResult(value: unknown, official = false): value is VideoGenerationResult {
   return isRecord(value)
     && typeof value.id === 'string'
     && typeof value.prompt === 'string'
     && (videoProviders as readonly unknown[]).includes(value.provider)
     && typeof value.model === 'string'
-    && (videoGenerationSizes as readonly unknown[]).includes(value.videoSize)
-    && (videoGenerationDurations as readonly unknown[]).includes(value.duration)
+    && (official ? typeof value.videoSize === 'string' && /^(?:\d+x\d+|[A-Za-z0-9._-]+@\d+:\d+)$/.test(value.videoSize) : (videoGenerationSizes as readonly unknown[]).includes(value.videoSize))
+    && (official ? typeof value.duration === 'number' && Number.isInteger(value.duration) && value.duration > 0 && value.duration <= 600 : (videoGenerationDurations as readonly unknown[]).includes(value.duration))
     && (value.status === 'queued' || value.status === 'in_progress' || value.status === 'completed' || value.status === 'failed')
     && typeof value.progress === 'number'
     && (value.progressKnown === undefined || typeof value.progressKnown === 'boolean')

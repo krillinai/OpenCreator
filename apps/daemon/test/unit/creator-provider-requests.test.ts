@@ -13,6 +13,7 @@ import { createCreatorRepository } from '../../src/creator/repository.js';
 import { CreatorServiceError, createCreatorService } from '../../src/creator/service.js';
 import {
   createCreatorTemplateRegistry,
+  createDefaultCreatorTemplateRegistry,
   createStickmanVideoTemplate
 } from '../../src/creator/templates/registry.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
@@ -46,6 +47,74 @@ function setup(path = join(tempDir, 'runtime.sqlite')) {
 }
 
 describe('creator provider request ledger', () => {
+  it('closes the matching unknown-receipt issue only after all requests in its scope are recovered', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-provider-stream-recovery-'));
+    const { db, repository, job, stage } = setup();
+    const issues = createCreatorIssueService(repository);
+    const ledger = new CreatorProviderRequestLedger(repository, issues);
+    try {
+      const requests = ['first', 'second'].map(requestKey => {
+        const request = ledger.registerBeforeSubmit({ jobId: job.id, stageRunId: stage.id, scopeKey: stage.scopeKey,
+          provider: 'opencreator-gateway-chat/completions', requestKey, request: { prompt: requestKey } });
+        ledger.markSubmitting(request.id); ledger.markWaitingRemote(request.id, 'remote-' + requestKey);
+        return ledger.markUnknownRemoteAcceptance(request.id);
+      });
+      const failedIssue = issues.capture({ jobId: job.id, stageRunId: stage.id, stageId: stage.stageId,
+        scopeKey: stage.scopeKey ?? undefined, source: 'provider', code: 'creator_provider_request_failed',
+        publicFacts: { kind: 'unknown', provider: requests[0]!.provider } });
+      const lookup = { lookupByRequestKey: false, lookup: async () => ({ status: 'succeeded' as const }) };
+      await ledger.recover(requests[0]!.id, lookup);
+      expect(issues.list(job.id)).toHaveLength(2);
+      expect(issues.list(job.id).every(issue => issue.status === 'open')).toBe(true);
+      await ledger.recover(requests[1]!.id, lookup);
+      expect(issues.list(job.id).find(issue => issue.code === 'creator_provider_resolution_required')!.status).toBe('resolved');
+      expect(issues.get(job.id, failedIssue.id)!.status).toBe('open');
+      expect(repository.listProviderRequests(job.id).every(request => request.status === 'succeeded')).toBe(true);
+    } finally { db.close(); }
+  });
+  it('blocks fresh image runs and retries until a previous paid request is explicitly resolved', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-image-recovery-'));
+    const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
+    const repository = createCreatorRepository(db);
+    const service = createCreatorService({ repository, templates: createDefaultCreatorTemplateRegistry() });
+    const job = service.createJob({ projectId: 'project', templateId: 'image-generation', state: { prompt: 'test' } });
+    const stage = repository.createStageRun({ jobId: job.id, stageId: 'generate', executor: 'image', status: 'failed' });
+    const ledger = new CreatorProviderRequestLedger(repository);
+    const request = ledger.registerBeforeSubmit({ jobId: job.id, stageRunId: stage.id, provider: 'opencreator-gateway-image', requestKey: 'paid-image', request: { prompt: 'test' } });
+    ledger.markSubmitting(request.id); ledger.markUnknownRemoteAcceptance(request.id);
+    try {
+      for (const action of ['run-stage', 'retry-stage']) {
+        expect(() => service.applyAction(job.id, { actor: 'user', action, expectedRevision: job.revision, input: { stageId: 'generate' } })).toThrowError(expect.objectContaining({ code: 'creator_provider_resolution_required' }));
+      }
+      const resolved = service.applyAction(job.id, { actor: 'user', action: 'resolve-provider-request', expectedRevision: job.revision, input: { ledgerId: request.id, decision: 'cancel-scope' } });
+      expect(repository.getProviderRequest(request.id)?.status).toBe('canceled');
+      expect(() => service.applyAction(job.id, { actor: 'user', action: 'retry-stage', expectedRevision: resolved.job.revision, input: { stageId: 'generate' } })).not.toThrow();
+    } finally { db.close(); }
+  });
+  it('preserves the service source of an existing job after an account switch and database reopen', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-service-binding-'));
+    const path = join(tempDir, 'runtime.sqlite');
+    let current = { source: 'gateway' as const, accountId: 'a', bindingVersion: 'a:1', models: { image: 'original-image' }, capabilities: { image: ['image_count'] } };
+    const db = openRuntimeDatabase(path);
+    const repository = createCreatorRepository(db, { serviceBinding: () => current });
+    const job = repository.createJob({ projectId: 'project', templateId: 'image-generation', templateVersion: 1, status: 'draft', state: {} });
+    current = { ...current, accountId: 'b', bindingVersion: 'b:1' };
+    expect(repository.getServiceBinding(job.id)).toMatchObject({ accountId: 'a', bindingVersion: 'a:1' });
+    db.close();
+    const reopened = openRuntimeDatabase(path);
+    expect(createCreatorRepository(reopened).getServiceBinding(job.id)).toMatchObject({ accountId: 'a', models: { image: 'original-image' } });
+    reopened.close();
+  });
+  it('persists the original gateway account and logical identity for recovery', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-gateway-ledger-'));
+    const { db, job, stage, repository, ledger } = setup();
+    const gateway = { accountId:'account-a', bindingVersion:'account-a:1', logicalId:'stable-stage-image' };
+    const original = ledger.registerBeforeSubmit({jobId:job.id,provider:'opencreator-gateway',stageRunId:stage.id,requestKey:gateway.logicalId,request:{prompt:'draw'},gateway});
+    ledger.markSubmitting(original.id); ledger.markWaitingRemote(original.id,'gateway-original-request');
+    expect(repository.getProviderRequest(original.id)).toMatchObject({gateway,remoteTaskId:'gateway-original-request'});
+    expect(JSON.stringify(repository.getProviderRequest(original.id))).not.toMatch(/modelKey|apiKey|accessToken/);
+    db.close();
+  });
   it('keeps unknown paid acceptance non-retryable and resolves the same issue after explicit resubmit', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-provider-ledger-'));
     const { db, job, stage, repository } = setup();

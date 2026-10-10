@@ -13,14 +13,15 @@
   width: min(100%, 480px);
   display: grid;
   gap: 18px;
-  padding: 32px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--surface);
+  padding: 24px;
 }
 
 .startup-agent-setup__eyebrow { color: var(--accent-strong); font-size: 13px; font-weight: 700; }
 .startup-agent-setup__card h1 { margin: 0; font-size: 27px; }
+.startup-agent-setup__card > .opencreator-mark { color: var(--accent-strong); }
+.startup-agent-setup__entry { display: grid; gap: 12px; margin: 16px 0; }
+.startup-agent-setup__entry button, .startup-agent-setup__back { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.startup-agent-setup__card .startup-agent-setup__back { justify-self: start; padding-left: 0; border: 0; background: transparent; }
 .startup-agent-setup__card p { margin: 0; color: var(--muted); line-height: 1.6; }
 .startup-agent-setup__card .startup-agent-setup__detected {
   display: grid;

@@ -1,6 +1,7 @@
 import {
   creatorPromptMaxLength,
   defaultVideoGenerationModels,
+  gatewayVideoSizes,
   isPublicErrorFacts,
   readCreatorResultSnapshots,
   videoGenerationModelIds,
@@ -28,6 +29,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { publicErrorReason } from '../issues/issue-catalog.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
+import { OfficialModelField, useOfficialServices } from './official-services.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import { CreatorTaskProgressNotice } from './CreatorCollaborationPanel.js';
@@ -92,6 +94,7 @@ export default function VideoGenerationWorkspace(props: {
 }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
+  const official = useOfficialServices('video');
   const mediaPreviewContextRef = useRef({ session, localize: l });
   mediaPreviewContextRef.current = { session, localize: l };
   const mediaPreviewJobId = session?.job.id;
@@ -120,9 +123,9 @@ export default function VideoGenerationWorkspace(props: {
     initialProvider
   ));
   const [model, setModel] = useState(() => readModel(session?.state.model, initialProvider));
-  const [size, setSize] = useState<VideoGenerationSize>(() => readSize(session?.state.size));
+  const [size, setSize] = useState<VideoGenerationSize>(() => readSize(session?.state.size, official.official));
   const [duration, setDuration] = useState<VideoGenerationDuration>(() => (
-    readDuration(session?.state.duration, readProvider(session?.state.provider))
+    readDuration(session?.state.duration, readProvider(session?.state.provider), official.official)
   ));
   const resultVersion = session?.job.state.resultVersion;
   const [videoUrl, setVideoUrl] = useState('');
@@ -131,14 +134,17 @@ export default function VideoGenerationWorkspace(props: {
   const [notice, setNotice] = useState('');
   const [taskControlPending, setTaskControlPending] = useState<'canceling' | 'resuming'>();
   const characterCount = useMemo(() => [...prompt.trim()].length, [prompt]);
-  const selectedSize = sizes.find(item => item.value === size) ?? sizes[0]!;
-  const selectedProvider = providers.find(item => item.value === provider) ?? providers[0]!;
+  const selectedProvider = official.official ? { zh: '官方服务', en: 'Official service' } : providers.find(item => item.value === provider) ?? providers[0]!;
   const modelOptions = useMemo(
     () => createVideoModelOptions(provider, modelDefaults[provider], model),
     [model, modelDefaults, provider]
   );
-  const selectedModelLabel = videoModelLabel(model);
-  const durations = providerDurations[provider];
+  const activeModel = official.official ? official.model?.id ?? '' : model;
+  const selectedModelLabel = videoModelLabel(activeModel);
+  const availableSizes = official.official ? gatewayVideoSizes(official.model).map(videoSizeOption) : sizes;
+  const selectedSize = availableSizes.find(item => item.value === size) ?? videoSizeOption(size);
+  const durations = official.official ? official.model?.durations ?? [] : providerDurations[provider];
+  const serviceReady = !official.official || (official.ready && availableSizes.length > 0 && durations.length > 0);
   const resultVersions = useMemo(
     () => createVideoResultVersions(session?.job.artifacts ?? [], session?.state.resultSnapshots),
     [session?.job.artifacts, session?.state.resultSnapshots]
@@ -184,13 +190,13 @@ export default function VideoGenerationWorkspace(props: {
   const referencePreviewArtifactId = referenceImageFile === undefined
     ? activeReferenceArtifact?.id
     : undefined;
-  const followsReferenceRatio = provider === 'seedance' && Boolean(currentReferenceName);
+  const followsReferenceRatio = !official.official && provider === 'seedance' && Boolean(currentReferenceName);
   const resultSettings = selectedResult?.state;
-  const resultProvider = providers.find(item => (
+  const resultProvider = resultSettings?.officialModels ? { value: 'seedance' as const, zh: '官方服务', en: 'Official service' } : providers.find(item => (
     item.value === readProvider(resultSettings?.provider)
   )) ?? providers[0]!;
-  const resultSize = readSize(resultSettings?.size);
-  const resultSizeOption = sizes.find(item => item.value === resultSize) ?? sizes[0]!;
+  const resultSize = readSize(resultSettings?.size, !!resultSettings?.officialModels);
+  const resultSizeOption = videoSizeOption(resultSize);
   const resultWidth = readArtifactNumber(selectedResult?.artifact, 'width');
   const resultHeight = readArtifactNumber(selectedResult?.artifact, 'height');
   const resultRatio = resultWidth !== undefined && resultHeight !== undefined
@@ -198,13 +204,13 @@ export default function VideoGenerationWorkspace(props: {
     : resultSizeOption.ratio;
   const resultResolution = resultWidth !== undefined && resultHeight !== undefined
     ? `${resultWidth}x${resultHeight}`
-    : resultSize;
+    : videoSizeDisplay(resultSize);
   const resultFormatLabel = resultWidth !== undefined && resultHeight !== undefined
     ? videoFormatLabel(resultWidth, resultHeight, l)
     : l(resultSizeOption.zh, resultSizeOption.en);
   const resultArtifactDuration = readVideoDuration(selectedResult?.artifact.metadata.duration);
   const resultDuration = resultArtifactDuration === undefined
-    ? readDuration(resultSettings?.duration, resultProvider.value)
+    ? readDuration(resultSettings?.duration, resultProvider.value, !!resultSettings?.officialModels)
     : Math.round(resultArtifactDuration * 100) / 100;
   const resultModel = readArtifactString(selectedResult?.artifact, 'model')
     ?? readOptionalModel(resultSettings?.model)
@@ -212,6 +218,7 @@ export default function VideoGenerationWorkspace(props: {
   const resultModelLabel = videoModelLabel(resultModel);
 
   useEffect(() => {
+    if (official.official) return;
     if (props.creatorServicesService === null || props.creatorServicesService === undefined) {
       return undefined;
     }
@@ -248,7 +255,13 @@ export default function VideoGenerationWorkspace(props: {
     return () => {
       active = false;
     };
-  }, [props.creatorServicesService, session?.job.id]);
+  }, [props.creatorServicesService, session?.job.id, official.official]);
+
+  useEffect(() => {
+    if (!official.official) return;
+    if (availableSizes.length && !availableSizes.some(item => item.value === size)) setSize(availableSizes[0]!.value);
+    if (durations.length && !durations.includes(duration)) setDuration(durations[0]!);
+  }, [official.official, activeModel, size, duration, availableSizes.map(item => item.value).join(','), durations.join(',')]);
 
   useEffect(() => {
     const { session, localize } = mediaPreviewContextRef.current;
@@ -358,6 +371,7 @@ export default function VideoGenerationWorkspace(props: {
   }
 
   function updateProvider(nextProvider: VideoGenerationProvider) {
+    if (official.official) return;
     settingsRevision.current += 1;
     const nextDurations = providerDurations[nextProvider];
     const nextDuration = nextDurations.includes(duration) ? duration : nextDurations[0]!;
@@ -374,6 +388,7 @@ export default function VideoGenerationWorkspace(props: {
   }
 
   function updateModel(nextModel: string) {
+    if (official.official) { official.selectModel(nextModel); return; }
     settingsRevision.current += 1;
     setModel(nextModel);
     session?.updateDraft({ model: nextModel });
@@ -420,6 +435,7 @@ export default function VideoGenerationWorkspace(props: {
 
   async function generate() {
     if (generating) return;
+    if (!serviceReady) { setError(l('官方视频服务暂不可用，请在个人中心检查连接状态', 'Official video service is unavailable. Check the connection in your personal center.')); return; }
     if (session === null) {
       setError(l(
         '视频生成服务暂不可用，请检查 Runtime 连接',
@@ -436,10 +452,11 @@ export default function VideoGenerationWorkspace(props: {
     setNotice('');
     session.updateDraft({
       prompt: prompt.trim(),
-      provider,
-      model,
+      provider: official.official ? 'seedance' : provider,
+      model: activeModel,
       size,
-      duration
+      duration,
+      ...(official.official ? official.draftPatch : {})
     }, { semantic: true });
     try {
       await session.flush();
@@ -707,7 +724,8 @@ export default function VideoGenerationWorkspace(props: {
                   <p>{l('设置视频服务、模型版本、画幅、分辨率和时长', 'Set the video provider, model version, format, resolution, and duration')}</p>
                 </div>
               </div>
-              <div className="video-generation-settings-grid">
+              <div className={`video-generation-settings-grid${official.official ? ' is-official' : ''}`}>
+                {official.official ? <OfficialModelField label={l('视频模型', 'Video model')} service={official} disabled={generating} /> : <>
                 <label className="creator-tool-field">
                   <span>{l('视频服务', 'Video provider')}</span>
                   <NativeSelect value={provider} onChange={event => updateProvider(event.target.value as VideoGenerationProvider)}>
@@ -722,11 +740,12 @@ export default function VideoGenerationWorkspace(props: {
                     ))}
                   </NativeSelect>
                 </label>
+                </>}
                 <label className="creator-tool-field">
                   <span>{l('画幅', 'Format')}</span>
                   <NativeSelect
                     value={size}
-                    disabled={followsReferenceRatio}
+                    disabled={followsReferenceRatio || !serviceReady}
                     title={followsReferenceRatio
                       ? l('Seedance 参考图模式会跟随参考图画幅', 'Seedance matches the reference image aspect ratio')
                       : undefined}
@@ -734,13 +753,13 @@ export default function VideoGenerationWorkspace(props: {
                   >
                     {followsReferenceRatio ? (
                       <option value={size}>{l('跟随参考图', 'Match reference image')}</option>
-                    ) : sizes.map(item => <option key={item.value} value={item.value}>{l(item.zh, item.en)} · {item.ratio} · {item.value}</option>)}
+                    ) : availableSizes.length ? availableSizes.map(item => <option key={item.value} value={item.value}>{item.value.includes('@') ? videoSizeDisplay(item.value) : `${l(item.zh, item.en)} · ${item.ratio} · ${item.value}`}</option>) : <option value="">{l('暂不可用', 'Unavailable')}</option>}
                   </NativeSelect>
                 </label>
                 <label className="creator-tool-field">
                   <span>{l('视频时长', 'Video duration')}</span>
-                  <NativeSelect value={duration} onChange={event => updateDuration(Number(event.target.value) as VideoGenerationDuration)}>
-                    {durations.map(value => <option key={value} value={value}>{value} {l('秒', 'seconds')}</option>)}
+                  <NativeSelect value={duration} disabled={!serviceReady} onChange={event => updateDuration(Number(event.target.value) as VideoGenerationDuration)}>
+                    {durations.length ? durations.map(value => <option key={value} value={value}>{value} {l('秒', 'seconds')}</option>) : <option value="">{l('暂不可用', 'Unavailable')}</option>}
                   </NativeSelect>
                 </label>
               </div>
@@ -808,7 +827,7 @@ export default function VideoGenerationWorkspace(props: {
                         </small>
                       </span>
                       <div>
-                        <button type="button" onClick={() => void generate()} disabled={generating}>
+                        <button type="button" onClick={() => void generate()} disabled={generating || !serviceReady}>
                           {generating
                             ? <LoaderCircle className="smart-dubbing-spinner" size={15} />
                             : <RotateCcw size={15} />}
@@ -833,10 +852,10 @@ export default function VideoGenerationWorkspace(props: {
                     <p>{l(
                       `${l(selectedProvider.zh, selectedProvider.en)} · ${selectedModelLabel} · ${followsReferenceRatio
                         ? l('跟随参考图', 'Match reference image')
-                        : selectedSize.ratio} · ${duration} 秒${followsReferenceRatio ? '' : ` · ${size}`}`,
+                        : selectedSize.ratio} · ${duration} 秒${followsReferenceRatio ? '' : ` · ${videoSizeDisplay(size)}`}`,
                       `${selectedProvider.en} · ${selectedModelLabel} · ${followsReferenceRatio
                         ? 'Match reference image'
-                        : selectedSize.ratio} · ${duration} seconds${followsReferenceRatio ? '' : ` · ${size}`}`
+                        : selectedSize.ratio} · ${duration} seconds${followsReferenceRatio ? '' : ` · ${videoSizeDisplay(size)}`}`
                     )}</p>
                     {resumable ? (
                       <button className="creator-tool-primary" type="button" onClick={() => void resumeTask()} disabled={taskControlPending !== undefined}>
@@ -901,12 +920,12 @@ export default function VideoGenerationWorkspace(props: {
             {currentStep === 0 ? l('返回', 'Back') : l('上一步', 'Back')}
           </button>
           {currentStep < 2 ? (
-            <button className="video-translation-primary-action" type="button" onClick={nextStep}>
+            <button className="video-translation-primary-action" type="button" disabled={currentStep === 1 && !serviceReady} onClick={nextStep}>
               {l('继续', 'Continue')}
             </button>
           ) : null}
           {currentStep === 2 && selectedResult === undefined && !generating && !resumable ? (
-            <button className="video-translation-primary-action" type="button" onClick={() => void generate()}>
+            <button className="video-translation-primary-action" type="button" disabled={!serviceReady} onClick={() => void generate()}>
               <Sparkles size={16} />
               {l('开始生成', 'Generate')}
             </button>
@@ -1069,14 +1088,30 @@ function videoModelLabel(model: string): string {
   return modelLabels[model] ?? model;
 }
 
-function readSize(value: CreatorJson | undefined): VideoGenerationSize {
+function videoSizeOption(value: string): typeof sizes[number] {
+  const known = sizes.find(item => item.value === value);
+  if (known) return known;
+  const [resolution, ratio] = value.split('@');
+  const match = /^(\d+)x(\d+)$/.exec(value);
+  const width = Number(match?.[1]), height = Number(match?.[2]);
+  const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
+  const divisor = gcd(width, height);
+  return { value: value as VideoGenerationSize, zh: resolution!, en: resolution!, ratio: ratio ?? (divisor ? `${width / divisor}:${height / divisor}` : '') };
+}
+
+function videoSizeDisplay(value: string): string { return value.replace('@', ' · '); }
+
+function readSize(value: CreatorJson | undefined, official = false): VideoGenerationSize {
+  if (official && typeof value === 'string' && /^(?:\d+x\d+|[A-Za-z0-9._-]+@\d+:\d+)$/.test(value)) return value as VideoGenerationSize;
   return value === '720x1280' || value === '1024x1024' ? value : '1280x720';
 }
 
 function readDuration(
   value: CreatorJson | undefined,
-  provider: VideoGenerationProvider
+  provider: VideoGenerationProvider,
+  official = false
 ): VideoGenerationDuration {
+  if (official && typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 600) return value;
   const allowed = providerDurations[provider];
   return typeof value === 'number' && allowed.includes(value as VideoGenerationDuration)
     ? value as VideoGenerationDuration

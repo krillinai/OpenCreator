@@ -10,6 +10,8 @@ import {
   type LocalCodexProvider
 } from '../codex/local-provider.js';
 import type { startCodexExec } from '../codex/runner.js';
+import { setTimeout as delay } from 'node:timers/promises';
+import { DIRECT_IMAGE_TIMEOUT_MS } from '../gateway/direct-transport.js';
 import { generateCodexNativeImage, type NativeImageProgress } from './codex-native.js';
 import { inspectCodexImageRuntime, readCodexImageConfiguration } from './codex-runtime.js';
 import { createKlingAuthorization } from '../creator-services/kling-auth.js';
@@ -22,6 +24,7 @@ import {
   openAiCompatibleEndpoint
 } from '../creator-services/upstream-fetch.js';
 import { publicFactsFromFailure } from '../creator/public-error-facts.js';
+import { gatewayCreatorBinding } from '../gateway/creator-service-source.js';
 
 const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 120 * 1024 * 1024;
@@ -81,13 +84,17 @@ export async function generateImageContents(
     referenceImages?: GeneratedImageContent[];
     codexNative?: CodexNativeImageRuntime;
     onProgress?(progress: NativeImageProgress): void;
+    logicalId?: string;
+    onGatewayRequest?(id: string): void;
   } = {}
 ): Promise<{ model: string; contents: GeneratedImageContent[] }> {
+  if (gatewayCreatorBinding(config)) request = { ...request, provider: 'openai' };
   const referenceImages = options.referenceImages
     ?? (options.referenceImage === undefined ? [] : [options.referenceImage]);
-  const capabilities = imageGenerationCapabilities(request.provider);
+  const gateway = gatewayCreatorBinding(config);
+  const capabilities = gateway ? { supportsReferenceImage: gateway.capabilities?.image?.includes('edit') === true, maxReferenceImages: gateway.capabilities?.image?.includes('edit') ? 1 : 0 } : imageGenerationCapabilities(request.provider);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new DOMException('图片生成超时，请重试', 'TimeoutError')), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(new DOMException(gateway ? '图片生成等待超时，请先查询请求状态，避免重复扣费' : '图片生成超时，请重试', 'TimeoutError')), gateway ? DIRECT_IMAGE_TIMEOUT_MS + 30_000 : REQUEST_TIMEOUT_MS);
   const abort = () => controller.abort(options.signal?.reason);
   timeout.unref();
   if (options.signal?.aborted) abort();
@@ -167,14 +174,19 @@ export async function generateImageContents(
       config,
       controller.signal,
       referenceImages,
-      options.fetchImpl
+      options.fetchImpl,
+      undefined,
+      options.logicalId,
+      options.onGatewayRequest,
+      gateway !== undefined
     );
   } catch (error) {
     if (error instanceof ImageGenerationProviderError) throw error;
     if (options.signal?.aborted) throw error;
     if (controller.signal.reason instanceof DOMException && controller.signal.reason.name === 'TimeoutError') {
-      throw new ImageGenerationProviderError('upstream_error', '图片生成超时，请稍后重试',
-        { kind: 'timeout', provider: request.provider, upstreamMessage: '图片生成超过等待时间，请稍后重试。' }, { cause: error });
+      const message = gateway ? '图片生成等待超时，请先查询请求状态，避免重复扣费' : '图片生成超时，请稍后重试';
+      throw new ImageGenerationProviderError('upstream_error', message,
+        { kind: 'timeout', provider: request.provider, upstreamMessage: message }, { cause: error });
     }
     if (nativeExecution && error instanceof Error) {
       throw new ImageGenerationProviderError('upstream_error', error.message,
@@ -200,7 +212,10 @@ async function generateOpenAiImages(
   signal: AbortSignal,
   referenceImages: GeneratedImageContent[],
   fetchImpl?: typeof fetch,
-  providerOverride?: LocalCodexProvider
+  providerOverride?: LocalCodexProvider,
+  logicalId?: string,
+  onGatewayRequest?: (id: string) => void,
+  official = false
 ) {
   const provider = providerOverride
     ?? (request.provider === 'jimeng' ? config.image.jimeng : config.image.openai);
@@ -219,20 +234,23 @@ async function generateOpenAiImages(
         size: request.size,
         quality: request.quality,
         count: request.count,
-        images: referenceImages
+        images: referenceImages,
+        ...(official ? { official: true, aspectRatio: request.aspectRatio, resolution: request.resolution, officialQuality: request.officialQuality } : {})
       });
-  const response = await fetchCreatorService({
+  let response = await fetchCreatorService({
     endpoint,
     method: 'POST',
     headers: {
       Authorization: `Bearer ${provider.apiKey}`,
       'Content-Type': multipart?.contentType ?? 'application/json'
+      ,...(logicalId ? { 'Idempotency-Key': logicalId } : {})
+      ,...(official ? { Prefer: 'respond-async' } : {})
     },
     body: multipart?.body ?? JSON.stringify({
         model,
         prompt: request.prompt.trim(),
         size: request.size,
-        ...(request.provider === 'jimeng' ? {} : { quality: request.quality }),
+        ...(official ? { aspect_ratio: request.aspectRatio, resolution: request.resolution, quality: request.officialQuality } : request.provider === 'jimeng' ? {} : { quality: request.quality }),
         n: request.count
       }),
     proxy: config.proxy.trim(),
@@ -240,6 +258,39 @@ async function generateOpenAiImages(
     maxResponseBytes: MAX_RESPONSE_BYTES,
     fetchImpl
   });
+  const gatewayRequest = response.headers.get('x-request-id');
+  if (gatewayRequest && /^[A-Za-z0-9_-]{12,128}$/.test(gatewayRequest)) onGatewayRequest?.(gatewayRequest);
+  if (official && response.status === 202) {
+    const accepted = await response.json() as { requestId?: string };
+    if (!accepted.requestId || accepted.requestId !== gatewayRequest || !/^ocdir_[a-f0-9]{48}$/.test(accepted.requestId)) {
+      throw new ImageGenerationProviderError('upstream_error', '图片生成请求回执无效');
+    }
+    const statusUrl = openAiCompatibleEndpoint(provider.baseUrl, `requests/${accepted.requestId}`);
+    for (;;) {
+      signal.throwIfAborted();
+      const status = await fetchCreatorService({ endpoint: statusUrl, method: 'GET', headers: { Authorization: `Bearer ${provider.apiKey}` }, proxy: config.proxy.trim(), signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]), maxResponseBytes: 16_384, fetchImpl });
+      if (!status.ok) {
+        void status.body?.cancel().catch(() => undefined);
+        throw new ImageGenerationProviderError('upstream_error', '暂时无法查询图片生成结果，请保留任务，避免重复扣费', { kind: 'provider-failed', upstreamCode: 'request_outcome_unknown', requestId: accepted.requestId });
+      }
+      const receipt = await status.json() as { state?: string; error?: { code?: string; status?: number } };
+      if (receipt.state === 'succeeded') {
+        response = await fetchCreatorService({ endpoint: appendEndpointPath(statusUrl, 'result'), method: 'GET', headers: { Authorization: `Bearer ${provider.apiKey}` }, proxy: config.proxy.trim(), signal, maxResponseBytes: MAX_RESPONSE_BYTES, fetchImpl });
+        if (!response.ok) {
+          void response.body?.cancel().catch(() => undefined);
+          throw new ImageGenerationProviderError('upstream_error', '图片结果暂时无法下载，请保留任务，避免重复扣费', { kind: 'provider-failed', upstreamCode: 'request_outcome_unknown', requestId: accepted.requestId });
+        }
+        break;
+      }
+      if (receipt.state === 'failed') {
+        response = Response.json({ error: { code: receipt.error?.code ?? 'official_service_unavailable', message: receipt.error?.code === 'credits_insufficient' ? '积分不足，请补充积分后再试' : '图片生成请求被拒绝' } }, { status: receipt.error?.status ?? 503 });
+        break;
+      }
+      if (receipt.state === 'outcome_unknown') throw new ImageGenerationProviderError('upstream_error', '图片生成结果尚未确认，请先查询请求状态，避免重复扣费', { kind: 'provider-failed', upstreamCode: 'request_outcome_unknown', requestId: accepted.requestId });
+      if (!['submitting', 'waiting_upstream'].includes(receipt.state ?? '')) throw new ImageGenerationProviderError('upstream_error', '图片生成请求状态无效');
+      await delay(1_000, undefined, { signal });
+    }
+  }
   if (!response.ok) {
     const failure = await creatorServiceErrorInfo(response, 'Image generation', request.provider);
     throw new ImageGenerationProviderError(
@@ -356,6 +407,10 @@ function createImageEditBody(input: {
   quality: string;
   count: number;
   images: GeneratedImageContent[];
+  aspectRatio?: string;
+  resolution?: string;
+  officialQuality?: string;
+  official?: boolean;
 }): { contentType: string; body: Buffer } {
   const boundary = `opencreator-${crypto.randomUUID()}`;
   const parts: Buffer[] = [];
@@ -371,7 +426,10 @@ function createImageEditBody(input: {
   addField('model', input.model);
   addField('prompt', input.prompt);
   addField('size', input.size);
-  addField('quality', input.quality);
+  if (!input.official) addField('quality', input.quality);
+  if (input.aspectRatio) addField('aspect_ratio', input.aspectRatio);
+  if (input.resolution) addField('resolution', input.resolution);
+  if (input.officialQuality) addField('quality', input.officialQuality);
   addField('n', String(input.count));
   for (const [index, image] of input.images.entries()) {
     const fieldName = input.images.length === 1 ? 'image' : 'image[]';

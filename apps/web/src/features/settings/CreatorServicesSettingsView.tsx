@@ -615,22 +615,6 @@ function TextModelSettings(props: SettingsGroupProps & {
           </p>
         )}
       </SettingsFieldset>
-      <SettingsFieldset
-        title={l('网络', 'Network')}
-        description={l('可选。为模型和媒体请求指定 HTTP 代理。', 'Optional. Route model and media requests through an HTTP proxy.')}
-      >
-        <TextField
-          id="creator-services-proxy"
-          label={l('代理地址', 'Proxy URL')}
-          value={props.config.proxy}
-          placeholder="http://127.0.0.1:7890"
-          error={props.fieldErrors.proxy}
-          onChange={value => props.update(config => {
-            config.proxy = value;
-          })}
-          wide
-        />
-      </SettingsFieldset>
     </>
   );
 }

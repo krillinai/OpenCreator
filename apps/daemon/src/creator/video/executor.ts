@@ -2,6 +2,7 @@ import type {
   CreateVideoGenerationRequest,
   CreatorArtifact,
   CreatorJson,
+  CreatorProviderRequest,
   VideoGenerationDuration,
   VideoGenerationProvider,
   VideoGenerationResult,
@@ -12,6 +13,7 @@ import { extname, join } from 'node:path';
 import type { MediaProbe } from '../validators/media.js';
 import type { CreatorExecutor, CreatorExecutorInput } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
+import type { CreatorProviderRequestLedger } from '../provider-requests.js';
 import {
   VideoGenerationError,
   type VideoGenerationService
@@ -21,6 +23,7 @@ type ProbeVideo = (path: string) => Promise<MediaProbe>;
 const MAX_CONSECUTIVE_REFRESH_FAILURES = 3;
 
 export function createVideoExecutor(input: {
+  ledger?: CreatorProviderRequestLedger;
   service: VideoGenerationService;
   probeVideo: ProbeVideo;
   pollIntervalMs?: number;
@@ -32,6 +35,7 @@ export function createVideoExecutor(input: {
   return {
     id: 'video',
     async run(stage) {
+      let providerRequest: CreatorProviderRequest | undefined;
       try {
         stage.reportProgress({
           status: 'running',
@@ -60,6 +64,14 @@ export function createVideoExecutor(input: {
           }
           result = await input.service.create(request, {
             signal: stage.signal,
+            logicalId: stage.stageRun.id,
+            onGatewayBinding: gateway => {
+              providerRequest = input.ledger?.registerBeforeSubmit({ jobId:stage.job.id, stageRunId:stage.stageRun.id, provider:'opencreator-gateway-video', requestKey:gateway.logicalId, gateway,
+                request:{prompt:request.prompt,duration:request.duration,size:request.size,reference:request.referenceImage?.data ?? null} });
+              if (providerRequest) providerRequest = input.ledger!.markSubmitting(providerRequest.id);
+            },
+            onGatewayRequest: id => { if (providerRequest) providerRequest = input.ledger!.markWaitingRemote(providerRequest.id,id); },
+            onPending: id => stage.reportProgress({ phase: 'submitting', videoGenerationResultId: id }),
             onDownloadStart: () => reportDownloading(stage)
           });
           stage.reportProgress({
@@ -69,6 +81,10 @@ export function createVideoExecutor(input: {
             upstreamModel: result.model
           });
         } else {
+          const binding = await input.service.getGatewayBinding?.(resumedResultId);
+          providerRequest = binding ? stage.job.providerRequests.find(value => value.provider === 'opencreator-gateway-video'
+            && value.gateway?.logicalId === binding.logicalId && value.gateway.accountId === binding.accountId) : undefined;
+          if (providerRequest && binding?.requestId && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(providerRequest.status)) providerRequest = input.ledger!.markWaitingRemote(providerRequest.id, binding.requestId);
           result = await input.service.get(resumedResultId);
           stage.reportProgress({
             ...remoteProgress(result),
@@ -85,6 +101,7 @@ export function createVideoExecutor(input: {
           try {
             result = await input.service.refresh(result.id, {
               signal: stage.signal,
+              onGatewayRequest: id => { if (providerRequest && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(providerRequest.status)) providerRequest = input.ledger!.markWaitingRemote(providerRequest.id, id); },
               onDownloadStart: () => reportDownloading(stage)
             });
             consecutiveRefreshFailures = 0;
@@ -117,12 +134,18 @@ export function createVideoExecutor(input: {
         }
 
         if (result.status === 'failed') {
+          if (providerRequest && input.ledger && ['submitting', 'waiting_remote'].includes(providerRequest.status)) providerRequest = input.ledger.markFailed(providerRequest.id);
           throw new CreatorExecutorError(
             'creator_video_generation_failed',
             result.error || 'The video provider failed to generate a video',
             {},
             result.publicFacts
           );
+        }
+
+        if (providerRequest && input.ledger && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(providerRequest.status)) {
+          if (providerRequest.status === 'unknown_remote_acceptance' && providerRequest.remoteTaskId) providerRequest = input.ledger.markWaitingRemote(providerRequest.id, providerRequest.remoteTaskId);
+          providerRequest = input.ledger.markSucceeded(providerRequest.id);
         }
 
         stage.reportProgress({
@@ -192,6 +215,7 @@ export function createVideoExecutor(input: {
           }
         };
       } catch (error) {
+        if (providerRequest && input.ledger && ['submitting', 'waiting_remote'].includes(providerRequest.status)) input.ledger.markUnknownRemoteAcceptance(providerRequest.id);
         throw creatorVideoError(error);
       }
     }
@@ -209,11 +233,14 @@ async function videoRequest(
     );
   }
   const reference = stage.inputArtifacts.find(artifact => artifact.kind === 'reference_image');
+  const officialModels = stage.job.state.officialModels;
+  const model = officialModels && typeof officialModels === 'object' && !Array.isArray(officialModels)
+    ? readString(officialModels.video) : readString(stage.job.state.model);
   return {
     prompt,
     provider: readProvider(stage.job.state.provider),
-    ...(readString(stage.job.state.model)
-      ? { model: readString(stage.job.state.model) }
+    ...(model
+      ? { model }
       : {}),
     size: readSize(stage.job.state.size),
     duration: readDuration(stage.job.state.duration),
@@ -357,10 +384,12 @@ function readProvider(value: CreatorJson | undefined): VideoGenerationProvider {
 }
 
 function readSize(value: CreatorJson | undefined): VideoGenerationSize {
+  if (typeof value === 'string' && /^(?:\d+x\d+|[A-Za-z0-9._-]+@\d+:\d+)$/.test(value)) return value as VideoGenerationSize;
   return value === '720x1280' || value === '1024x1024' ? value : '1280x720';
 }
 
 function readDuration(value: CreatorJson | undefined): VideoGenerationDuration {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 600) return value;
   return value === 4 || value === 6 || value === 8 || value === 10 ? value : 5;
 }
 

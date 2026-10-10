@@ -478,6 +478,20 @@ Open **Settings → AI Services** to configure the model, transcription, voice, 
 
 Credentials are saved through the local Runtime's system credential storage and should never be committed to the repository. Some local or system-backed providers, such as Edge TTS, do not require an API Key.
 
+### Account and Subscriptions
+
+The personal center displays your account, confirmed subscription and available
+credits. Sign-in opens `https://www.open-creator.ai/device` in your browser. Sign
+in on the website and approve the device; the local Daemon obtains its own
+session. The browser and client share an account but keep independent sessions.
+
+Subscription plans are selected inside OpenCreator. Purchasing opens Stripe
+Checkout, and managing a subscription opens Stripe Billing Portal. Client billing
+returns use the website's `/billing/return` page without requiring a website
+session. OpenCreator refreshes benefits from Gateway after verified Stripe
+notifications. The website's `/pricing` and `/account` pages provide another
+purchase entry to the same subscription backend.
+
 ### Third-party Runtime Components
 
 Open **Settings → Third-party Components** to inspect the yt-dlp nightly version currently in use, the version bundled with OpenCreator, its source, and the latest available release. OpenCreator checks for updates every seven days but never installs them automatically. Updates require an explicit user action, and the current working version remains available if downloading, verification, or installation fails.
@@ -491,6 +505,7 @@ Most users do not need environment variables. Use these when you need isolated d
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | `OPENCREATOR_DATA_DIR` | `.runtime` | OpenCreator database, Runs, attachments, and managed workspaces |
+| `OPENCREATOR_GATEWAY_ORIGIN` | `https://www.open-creator.ai` | Gateway for account sign-in, subscriptions, credits, and official model services; override for a local Gateway |
 | `OPENCREATOR_CODEX_BIN` | `codex` | Path to the Codex CLI executable |
 | `CODEX_HOME` | `~/.codex` | Source of truth for Codex sessions, configuration, Skills, MCP, and Profiles |
 | `OPENCREATOR_DEFAULT_CWD` | Current working directory | Default daemon working directory |

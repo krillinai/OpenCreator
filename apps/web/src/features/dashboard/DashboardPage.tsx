@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { CreatorJob, CreatorJson, OpenCreatorIssue } from '@opencreator/protocol';
+import type { CreatorJob, CreatorJson, GatewayAccountState, OpenCreatorIssue } from '@opencreator/protocol';
+import { OfficialServicesContext } from './official-services.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import {
@@ -215,6 +216,7 @@ export default function DashboardPage(props: {
   onWorkspaceModeChange?(active: boolean): void;
   skillLaunch?: CreatorSkillLaunch;
   creatorServicesService?: CreatorServicesSettingsService | null;
+  gatewayState?: GatewayAccountState | null;
   videoMetadataService?: VideoMetadataService;
   workspace?: CreatorWorkspace;
   jobId?: string;
@@ -340,7 +342,7 @@ export default function DashboardPage(props: {
         onAskIssue={props.onAskIssue}
         onBack={closeWorkspace}
       >
-        {content}
+        <OfficialServicesContext.Provider value={props.gatewayState}>{content}</OfficialServicesContext.Provider>
       </CreatorWorkspaceSession>
     );
   };

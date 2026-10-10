@@ -114,7 +114,8 @@ export function createKrillinExecutor(input: {
       } catch (error) {
         if (!(error instanceof KrillinCliError)) throw error;
         const normalized = normalizeKrillinFailure({
-          code: error.kind === 'usage' ? 'usage' : error.code,
+          code: error.code,
+          kind: error.kind,
           message: error.message
         });
         throw CreatorExecutorError.from(normalized.code, error, normalized.message);
@@ -193,11 +194,17 @@ async function ensureKrillinTranscriptionDependency(
   });
 }
 
-export function normalizeKrillinFailure(error: { code?: string; message?: string } | undefined): {
+export function normalizeKrillinFailure(error: { code?: string; kind?: string; message?: string } | undefined): {
   code: string;
   message: string;
 } {
   const message = error?.message ?? 'KrillinAI stage failed';
+  if (error?.code !== undefined && [
+    'audio_no_speech', 'audio_transcription_empty', 'audio_transcription_invalid_response',
+    'audio_transcription_timestamps_missing', 'audio_transcription_api_failed'
+  ].includes(error.code)) {
+    return { code: error.code, message };
+  }
   if (
     error?.code === 'subtitle_style_load_failed'
     || error?.code === 'default_subtitle_style_load_failed'
@@ -208,7 +215,7 @@ export function normalizeKrillinFailure(error: { code?: string; message?: string
   if (/OpenAI.*(?:杞綍|转录|transcri)|(?:杞綍|转录|transcri).*OpenAI/i.test(message)) {
     return { code: 'creator_transcription_config_missing', message };
   }
-  if (error?.code === 'usage') {
+  if (error?.code === 'usage' || error?.kind === 'usage') {
     if (/(?:TTS|閰嶉煶|配音|语音合成)/i.test(message)) {
       return { code: 'creator_tts_config_missing', message };
     }
@@ -216,7 +223,7 @@ export function normalizeKrillinFailure(error: { code?: string; message?: string
       return { code: 'creator_llm_config_missing', message };
     }
   }
-  return { code: error?.code ?? 'krillin_stage_failed', message };
+  return { code: error?.kind === 'usage' ? 'usage' : error?.code ?? 'krillin_stage_failed', message };
 }
 
 export function buildKrillinStageOptions(input: CreatorExecutorInput): Record<string, unknown> {

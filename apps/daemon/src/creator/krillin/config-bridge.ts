@@ -3,11 +3,12 @@ import type { AliyunOssConfig, CreatorServicesConfig } from '@opencreator/protoc
 
 export function createKrillinConfigToml(
   config: CreatorServicesConfig,
-  llmOverride?: { baseUrl: string; apiKey: string; model: string }
+  llmOverride?: { baseUrl: string; apiKey: string; model: string },
+  officialTranscriptionModel?: string
 ): string {
   const llm = llmOverride ?? config.llm;
   const document = compact({
-    app: { proxy: config.proxy },
+    app: { proxy: officialTranscriptionModel ? '' : config.proxy },
     llm: {
       base_url: llm.baseUrl,
       api_key: llm.apiKey,
@@ -17,7 +18,7 @@ export function createKrillinConfigToml(
     transcribe: {
       provider: normalizeTranscriptionProvider(config.transcription.provider),
       enable_gpu_acceleration: config.transcription.enableGpuAcceleration,
-      openai: openAi(config.transcription.openai),
+      openai: { ...openAi(config.transcription.openai), ...(officialTranscriptionModel ? { official_model: officialTranscriptionModel } : {}) },
       fasterwhisper: config.transcription.fasterWhisper,
       whisperkit: config.transcription.whisperKit,
       whispercpp: {

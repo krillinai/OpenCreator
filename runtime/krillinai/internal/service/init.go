@@ -37,6 +37,9 @@ func NewService() *Service {
 	switch config.Conf.Transcribe.Provider {
 	case "openai":
 		transcriber = whisper.NewClient(config.Conf.Transcribe.Openai.BaseUrl, config.Conf.Transcribe.Openai.ApiKey, config.Conf.App.Proxy)
+		if model := config.Conf.Transcribe.Openai.OfficialModel; model != "" {
+			transcriber = whisper.NewOfficialClient(config.Conf.Transcribe.Openai.BaseUrl, config.Conf.Transcribe.Openai.ApiKey, config.Conf.App.Proxy, model)
+		}
 	case "funasr":
 		transcriber = funasr.NewClient(config.Conf.Transcribe.FunASR.BaseUrl, config.Conf.Transcribe.FunASR.ApiKey, config.Conf.Transcribe.FunASR.Model, config.Conf.Transcribe.FunASR.TimeoutMs, config.Conf.App.Proxy)
 	case "fasterwhisper":

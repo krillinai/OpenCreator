@@ -1,4 +1,4 @@
-import { creatorPromptMaxLength } from '@opencreator/protocol';
+import { creatorPromptMaxLength, videoGenerationSizes, videoGenerationDurations } from '@opencreator/protocol';
 import { z } from 'zod';
 import type { CreatorTemplateDefinition } from './types.js';
 
@@ -13,17 +13,15 @@ export function createVideoGenerationTemplate(): CreatorTemplateDefinition {
       prompt: z.string().max(creatorPromptMaxLength).default(''),
       provider: z.enum(['seedance', 'kling', 'veo']).default('seedance'),
       model: z.string().trim().min(1).max(200).optional(),
-      size: z.enum(['1280x720', '720x1280', '1024x1024']).default('1280x720'),
-      duration: z.union([
-        z.literal(4),
-        z.literal(5),
-        z.literal(6),
-        z.literal(8),
-        z.literal(10)
-      ]).default(5),
+      size: z.string().regex(/^(?:\d+x\d+|[A-Za-z0-9._-]+@\d+:\d+)$/).default('1280x720'),
+      duration: z.number().int().positive().max(600).default(5),
       referenceImageArtifactId: z.string().nullable().default(null),
       currentStage: z.string().nullable().default(null)
-    }).passthrough() as never,
+    }).passthrough().superRefine((value, context) => {
+      if (value.officialModels !== undefined) return;
+      if (!(videoGenerationSizes as readonly string[]).includes(value.size)) context.addIssue({ code: 'custom', path: ['size'], message: 'Unsupported custom video size' });
+      if (!(videoGenerationDurations as readonly number[]).includes(value.duration)) context.addIssue({ code: 'custom', path: ['duration'], message: 'Unsupported custom video duration' });
+    }) as never,
     stages: [{
       id: 'generate',
       executor: 'video',

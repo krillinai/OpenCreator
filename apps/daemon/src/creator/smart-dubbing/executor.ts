@@ -18,25 +18,29 @@ import { CreatorExecutorError } from '../executor.js';
 
 export function createSmartDubbingExecutor(input: {
   ttsService: Pick<KrillinTtsService, 'synthesize'>;
+  isOfficial?(): boolean;
 }): CreatorExecutor {
   return {
     id: 'smart-dubbing',
     async run(stage) {
       stage.reportProgress({ phase: 'validating', percent: 5 });
       const request = readRequest(stage.job.state);
+      const official = input.isOfficial?.() === true;
+      if (official && (request.style !== 'natural' || request.speed !== 1)) throw new CreatorExecutorError('unsupported_capability', '当前官方语音模型只支持自然表达和默认语速');
       if (stage.signal.aborted) {
         throw new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled');
       }
       stage.reportProgress({ phase: 'generating_voice', percent: 20 });
       try {
         const synthesis = await input.ttsService.synthesize({
+          logicalId:stage.stageRun.id,
           text: request.text,
           ...(request.provider === undefined ? {} : { provider: request.provider }),
           ...(request.model === undefined ? {} : { model: request.model }),
           ...(request.voiceCode === undefined ? {} : { voiceId: request.voiceCode }),
           format: request.format,
           speed: request.speed,
-          instructions: smartDubbingInstructions(request.style),
+          instructions: official ? undefined : smartDubbingInstructions(request.style),
           signal: stage.signal
         });
         if (stage.signal.aborted) {

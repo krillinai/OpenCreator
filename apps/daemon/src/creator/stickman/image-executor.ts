@@ -18,6 +18,7 @@ import {
   type CodexNativeImageRuntime
 } from '../../image-generation/provider.js';
 import { resolveCreatorImageSettings } from '../image-settings.js';
+import { gatewayCreatorBinding } from '../../gateway/creator-service-source.js';
 import type { CreatorExecutor } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
 import { CreatorProviderRequestLedger } from '../provider-requests.js';
@@ -246,16 +247,21 @@ export function createStickmanImageExecutor(input: {
         ...(previousShotImage === undefined ? [] : [previousShotImage.id])
       ])];
       const config = await input.configStore.read();
+      const gateway = gatewayCreatorBinding(config);
       const imageSettings = resolveCreatorImageSettings({
         config,
-        provider: stage.job.state.provider,
+        provider: gateway ? 'openai' : stage.job.state.provider,
         candidateCount: 1,
         fallbackCandidateCount: 1,
         maxCandidateCount: 1
       });
       const { provider } = imageSettings;
       const quality = readQuality(stage.job.state.quality);
-      assertReferenceImageSupport(provider, referenceImages.length);
+      if (gateway) {
+        if (!gateway.capabilities?.image?.includes('edit') || referenceImages.length > 1) {
+          throw new CreatorExecutorError('creator_stickman_image_provider_unsupported', '当前官方图像服务仅支持 1 张参考图，无法执行此镜头');
+        }
+      } else assertReferenceImageSupport(provider, referenceImages.length);
       const model = imageSettings.model;
       if (
         promptPackArtifact.metadata.contract !== STICKMAN_IMAGE_PROMPT_CONTRACT
@@ -289,7 +295,8 @@ export function createStickmanImageExecutor(input: {
             ].join('\n');
         const candidateRequest = { ...request, prompt: candidatePrompt };
         const requestKey = `${stage.job.id}:images:${scopeKey}:${inputFingerprint}:candidate:${candidateAttempt}`;
-        const ledger = input.ledger.registerBeforeSubmit({
+        let ledger = input.ledger.registerBeforeSubmit({
+          ...(gateway ? { gateway: { accountId: gateway.accountId, bindingVersion: gateway.bindingVersion, logicalId: requestKey } } : {}),
           jobId: stage.job.id,
           provider,
           stageRunId: stage.stageRun.id,
@@ -316,7 +323,7 @@ export function createStickmanImageExecutor(input: {
             imagePromptContract: STICKMAN_IMAGE_PROMPT_CONTRACT
           }
         });
-        input.ledger.markSubmitting(ledger.id);
+        ledger = input.ledger.markSubmitting(ledger.id);
         stage.reportProgress({
           phase: candidateAttempt === 1 ? 'submitting' : 'retrying_candidate',
           percent: Math.round((
@@ -330,6 +337,7 @@ export function createStickmanImageExecutor(input: {
         let result: Awaited<ReturnType<typeof generate>>;
         try {
           result = await generate(candidateRequest, config, {
+            ...(gateway ? { logicalId: requestKey, onGatewayRequest: (id: string) => { ledger = input.ledger.markWaitingRemote(ledger.id, id); } } : {}),
             signal: stage.signal,
             onProgress: progress => stage.reportProgress({
               ...progress, completed: shotIndex, failed: candidateAttempt - 1, total: shotCount
@@ -342,9 +350,12 @@ export function createStickmanImageExecutor(input: {
               ? {}
               : { codexNative: input.codexNative })
           });
-          input.ledger.markSucceeded(ledger.id);
+          ledger = input.ledger.markSucceeded(ledger.id);
         } catch (error) {
-          input.ledger.markFailed(ledger.id, error);
+          if (['submitting', 'waiting_remote'].includes(ledger.status)) {
+            if (gateway) input.ledger.markUnknownRemoteAcceptance(ledger.id);
+            else input.ledger.markFailed(ledger.id, error);
+          }
           throw error;
         }
         const image = result.contents[0];

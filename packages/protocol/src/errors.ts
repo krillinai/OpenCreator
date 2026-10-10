@@ -1,6 +1,12 @@
 import type { OpenCreatorIssue, PublicErrorFacts } from './issues.js';
 
 export type RuntimeErrorCode =
+  | 'GATEWAY_AUTH_REQUIRED'
+  | 'GATEWAY_ACCOUNT_DISABLED'
+  | 'GATEWAY_CREDITS_INSUFFICIENT'
+  | 'GATEWAY_REQUEST_CONFLICT'
+  | 'GATEWAY_SERVICES_NOT_READY'
+  | 'GATEWAY_UNAVAILABLE'
   | 'VALIDATION_FAILED'
   | 'UNAUTHORIZED'
   | 'RUN_NOT_FOUND'
@@ -168,6 +174,14 @@ export type RuntimeErrorCode =
 
 export function publicErrorKindForCode(code: string): PublicErrorFacts['kind'] | undefined {
   const normalized = code.toUpperCase();
+  if (normalized === 'AUDIO_NO_SPEECH') return 'validation';
+  if (normalized === 'AUDIO_TRANSCRIPTION_INVALID_RESPONSE') return 'invalid-response';
+  if (normalized === 'AUDIO_TRANSCRIPTION_TIMESTAMPS_MISSING') return 'unsupported';
+  if (normalized === 'AUDIO_TRANSCRIPTION_API_FAILED') return 'provider-failed';
+  if (normalized === 'GATEWAY_AUTH_REQUIRED') return 'unauthorized';
+  if (normalized === 'GATEWAY_ACCOUNT_DISABLED' || normalized === 'GATEWAY_CREDITS_INSUFFICIENT') return 'http-rejected';
+  if (normalized === 'GATEWAY_SERVICES_NOT_READY') return 'configuration';
+  if (normalized === 'GATEWAY_UNAVAILABLE') return 'unavailable';
   if (normalized === 'ENOTFOUND' || normalized === 'EAI_AGAIN') return 'dns';
   if (normalized === 'ECONNREFUSED') return 'connection-refused';
   if (normalized === 'ECONNRESET' || normalized === 'EPIPE') return 'connection-reset';

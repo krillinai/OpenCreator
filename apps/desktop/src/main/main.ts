@@ -301,6 +301,9 @@ async function launchDesktop(): Promise<void> {
       telemetry.resume();
       notifications.start();
     },
+    beforeQuitForInstall() {
+      windowManager?.beginQuit();
+    },
     setAllowQuit(value) {
       allowQuit = value;
     }
@@ -311,10 +314,14 @@ async function launchDesktop(): Promise<void> {
     // The tray and Runtime intentionally remain active.
   });
   app.on('before-quit', event => {
-    if (allowQuit) return;
+    if (allowQuit) {
+      windowManager?.beginQuit();
+      return;
+    }
     event.preventDefault();
     if (shutdownStarted) return;
     shutdownStarted = true;
+    logger.info('OpenCreator Desktop quitting');
     windowManager?.beginQuit();
     protocolController.suspendRuntime();
     notifications.stop();

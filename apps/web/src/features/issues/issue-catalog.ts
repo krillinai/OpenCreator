@@ -65,6 +65,8 @@ function issuePublicFacts(issue: OpenCreatorIssue): PublicErrorFacts | undefined
 }
 
 function localizedIssueSummary(issue: OpenCreatorIssue, localize: LocalizeCopy): string {
+  const transcription = transcriptionIssueCopy(issue.code, localize) ?? transcriptionIssueCopy(issue.publicFacts?.upstreamCode, localize);
+  if (transcription !== undefined) return transcription.message;
   if (issue.code === 'ERR_FS_FILE_TOO_LARGE' || issue.publicFacts?.upstreamCode === 'ERR_FS_FILE_TOO_LARGE') return localize('本地文件读取超过大小限制。', 'The local file exceeded the read-size limit.', 'Den lokala filen överskred storleksgränsen för läsning.');
   if (issue.stageId === 'prepare-source-video') return localize('原视频准备失败，已有字幕不受影响。', 'Source video preparation failed; existing subtitles are unchanged.', 'Förberedelsen av originalvideon misslyckades; befintliga undertexter är oförändrade.');
   if (issue.operation === 'creator.agent-turn') return localize('Agent 未能完成诊断，请查看问题详情后重试。', 'The Agent could not complete the diagnosis. Review the issue details and retry.', 'Agent kunde inte slutföra diagnostiken. Läs probleminformationen och försök igen.');
@@ -75,6 +77,38 @@ function localizedIssueSummary(issue: OpenCreatorIssue, localize: LocalizeCopy):
   if (issue.code === 'image_generation_failed') return localize('图片生成失败。', 'Image generation failed.', 'Bildgenereringen misslyckades.');
   const entry = catalog[issue.summaryKey] ?? catalog[`issue.${issue.category}`] ?? catalog['issue.unknown']!;
   return localize(entry.zh, entry.en);
+}
+
+function transcriptionIssueCopy(code: string | undefined, localize: LocalizeCopy): { message: string; nextStep: string } | undefined {
+  switch (code) {
+    case 'audio_no_speech':
+      return {
+        message: localize('音频为静音或音量过低，未识别到可用语音。', 'The audio is silent or extremely quiet; no usable speech was transcribed.', 'Ljudet är tyst eller mycket svagt; inget användbart tal transkriberades.'),
+        nextStep: localize('请检查原音频和音量，或改用已有字幕。', 'Check the source audio and volume, or use existing subtitles.', 'Kontrollera originalljudet och volymen, eller använd befintliga undertexter.')
+      };
+    case 'audio_transcription_empty':
+      return {
+        message: localize('转录服务返回了空结果，尚不能确认音频是否含有语音。', 'The transcription service returned an empty result; whether the audio contains speech is still unconfirmed.', 'Transkriptionstjänsten returnerade ett tomt resultat; det är ännu oklart om ljudet innehåller tal.'),
+        nextStep: localize('请先确认原音频是否有讲话；若有，可换一个语音识别模型核验。音乐或噪声可能没有可翻译的文字。', 'Check whether the source audio contains speech. If it does, verify with another recognition model. Music or noise may have no text to translate.', 'Kontrollera om originalljudet innehåller tal. Prova i så fall en annan taligenkänningsmodell. Musik eller brus kan sakna text att översätta.')
+      };
+    case 'audio_transcription_invalid_response':
+      return {
+        message: localize('语音识别服务返回了无效结果。', 'The speech recognition service returned an invalid response.', 'Taligenkänningstjänsten returnerade ett ogiltigt svar.'),
+        nextStep: localize('请检查服务返回的错误，或更换语音识别模型后重试。', 'Review the provider error, or choose another speech recognition model and retry.', 'Kontrollera leverantörens fel, eller välj en annan taligenkänningsmodell och försök igen.')
+      };
+    case 'audio_transcription_timestamps_missing':
+      return {
+        message: localize('已识别到文字，但当前模型未提供可用的字幕时间戳。', 'Text was recognized, but the current model did not provide usable subtitle timestamps.', 'Text identifierades, men den aktuella modellen gav inga användbara tidsstämplar för undertexter.'),
+        nextStep: localize('请选择支持字幕时间戳的语音识别模型后重试。', 'Choose a speech recognition model that supports subtitle timestamps and retry.', 'Välj en taligenkänningsmodell som stöder tidsstämplar för undertexter och försök igen.')
+      };
+    case 'audio_transcription_api_failed':
+      return {
+        message: localize('语音识别服务调用失败。', 'The speech recognition request failed.', 'Anropet till taligenkänningstjänsten misslyckades.'),
+        nextStep: localize('请根据服务返回的原因检查连接、模型权限或配额后重试。', 'Use the provider reason to check the connection, model access or quota, then retry.', 'Kontrollera anslutningen, modellbehörigheten eller kvoten utifrån leverantörens felorsak och försök igen.')
+      };
+    default:
+      return undefined;
+  }
 }
 
 export function publicErrorReason(input: PublicErrorFacts, language: AppLanguage | LocalizeCopy): string {
@@ -143,7 +177,9 @@ export function issueConversationText(
   const detail = presentIssue(issue, language).description;
   const localize = createLocalizedCopy(language);
   const facts = issuePublicFacts(issue);
-  const nextStep = issue.code === 'ERR_FS_FILE_TOO_LARGE' || facts?.upstreamCode === 'ERR_FS_FILE_TOO_LARGE'
+  const transcription = transcriptionIssueCopy(issue.code, localize) ?? transcriptionIssueCopy(facts?.upstreamCode, localize);
+  const nextStep = transcription !== undefined ? transcription.nextStep
+    : issue.code === 'ERR_FS_FILE_TOO_LARGE' || facts?.upstreamCode === 'ERR_FS_FILE_TOO_LARGE'
     ? localize('请重试当前步骤；如果仍然失败，可先切分视频，并向 Agent 提供文件大小和诊断编号。', 'Retry the current step. If it still fails, split the video and provide the file size and diagnostic ID to the Agent.', 'Försök igen. Om det fortfarande misslyckas, dela videon och ge filstorleken och diagnostik-ID till Agent.')
     : issue.publicFacts?.upstreamCode === 'IMAGE_REFERENCE_MISSING'
     ? localize('请先上传参考图；如需纯文字生图，请移除对上传图片或原图的要求后重试。', 'Upload a reference image, or remove the uploaded/original image requirements for text-only generation, then retry.', 'Ladda upp en referensbild, eller ta bort kraven på en uppladdad eller ursprunglig bild för textgenerering och försök igen.')

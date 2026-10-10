@@ -26,11 +26,13 @@ export function bootstrapCreatorAgentRuntime(input: {
   runtimeRoot: string;
   codexHome?: string;
   bundledSkillDir: string;
+  source?: 'manual' | 'gateway';
 }): CreatorAgentBootstrapResult {
   const codexHome = input.codexHome ?? join(input.runtimeRoot, 'codex-home');
   const skillPath = join(codexHome, 'skills', 'opencreator-runtime');
   try {
-    createCodexIsolatedHome(input.sourceCodexHome, codexHome);
+    if (input.source === 'gateway') mkdirSync(codexHome, { recursive: true, mode: 0o700 });
+    else createCodexIsolatedHome(input.sourceCodexHome, codexHome);
     const manifest = JSON.parse(readFileSync(join(input.bundledSkillDir, 'manifest.json'), 'utf8')) as { version: number };
     const hash = hashSkill(input.bundledSkillDir);
     const currentHash = existsSync(join(skillPath, '.opencreator-hash'))

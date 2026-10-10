@@ -10,6 +10,7 @@ import {
   type ImageGenerationQuality,
   type ImageGenerationSize
 } from '@opencreator/protocol';
+import { OfficialModelField, useOfficialServices } from './official-services.js';
 import {
   Check,
   Download,
@@ -75,6 +76,7 @@ export default function ImageGenerationWorkspace(props: {
 }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
+  const official = useOfficialServices('image');
   const restoredResults = session?.job.artifacts.some(artifact => artifact.kind === 'generated_image') === true;
   const restoredStep = restoredResults
     ? 2
@@ -92,6 +94,20 @@ export default function ImageGenerationWorkspace(props: {
   const [size, setSize] = useState<ImageGenerationSize>(() => readSize(session?.state.size));
   const [quality, setQuality] = useState<ImageGenerationQuality>(() => readQuality(session?.state.quality));
   const [count, setCount] = useState(() => readCount(session?.state.candidateCount));
+  const [aspectRatio, setAspectRatio] = useState(() => readString(session?.state.aspectRatio));
+  const [resolution, setResolution] = useState(() => readString(session?.state.resolution));
+  const [officialQuality, setOfficialQuality] = useState(() => readString(session?.state.officialQuality));
+  const imageOptions = official.official ? official.model?.imageOptions : undefined;
+  useEffect(() => {
+    if (!imageOptions || official.taskRunning) return;
+    const nextRatio = imageOptions.aspectRatios?.includes(aspectRatio) ? aspectRatio : imageOptions.aspectRatios?.[0] ?? '';
+    const nextResolution = imageOptions.resolutions?.includes(resolution) ? resolution : imageOptions.resolutions?.[0] ?? '';
+    const nextQuality = imageOptions.qualities?.includes(officialQuality) ? officialQuality : imageOptions.qualities?.[0] ?? '';
+    setAspectRatio(nextRatio); setResolution(nextResolution); setOfficialQuality(nextQuality);
+    if (nextRatio !== aspectRatio || nextResolution !== resolution || nextQuality !== officialQuality) {
+      session?.updateDraft({ aspectRatio: nextRatio, resolution: nextResolution, officialQuality: nextQuality });
+    }
+  }, [official.model?.id, imageOptions, official.taskRunning, aspectRatio, resolution, officialQuality]);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState('');
   const resultVersion = session?.job.state.resultVersion;
@@ -100,9 +116,9 @@ export default function ImageGenerationWorkspace(props: {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const characterCount = useMemo(() => [...prompt.trim()].length, [prompt]);
-  const selectedSize = sizes.find(item => item.value === size) ?? sizes[0]!;
-  const selectedQuality = qualities.find(item => item.value === quality) ?? qualities[1]!;
-  const selectedProvider = providers.find(item => item.value === provider) ?? providers[0]!;
+  const selectedSize = imageOptions ? { value: resolution, zh: aspectRatio, en: aspectRatio, ratio: aspectRatio } : sizes.find(item => item.value === size) ?? sizes[0]!;
+  const selectedQuality = imageOptions ? { zh: officialQuality || resolution || '默认', en: officialQuality || resolution || 'Default' } : qualities.find(item => item.value === quality) ?? qualities[1]!;
+  const selectedProvider = official.official ? { zh: '官方服务', en: 'Official service' } : providers.find(item => item.value === provider) ?? providers[0]!;
   const resultVersions = useMemo(
     () => createImageResultVersions(session?.job.artifacts ?? [], session?.state.resultSnapshots),
     [session?.job.artifacts, session?.state.resultSnapshots]
@@ -121,11 +137,14 @@ export default function ImageGenerationWorkspace(props: {
   const visibleError = error || runtimeError || previewError;
   const resultSettings = selectedResult?.state;
   const resultSize = readSize(resultSettings?.size);
-  const resultSizeOption = sizes.find(item => item.value === resultSize) ?? sizes[0]!;
-  const resultProvider = providers.find(item => item.value === readProvider(resultSettings?.provider))
+  const resultSizeOption = resultSettings?.officialModels && typeof resultSettings.aspectRatio === 'string'
+    ? { value: readString(resultSettings.resolution), zh: resultSettings.aspectRatio, en: resultSettings.aspectRatio, ratio: resultSettings.aspectRatio }
+    : sizes.find(item => item.value === resultSize) ?? sizes[0]!;
+  const resultProvider = resultSettings?.officialModels ? { zh: '官方服务', en: 'Official service' } : providers.find(item => item.value === readProvider(resultSettings?.provider))
     ?? providers[0]!;
-  const resultQuality = qualities.find(item => item.value === readQuality(resultSettings?.quality))
-    ?? qualities[1]!;
+  const resultQuality = resultSettings?.officialModels && typeof resultSettings.officialQuality === 'string' && resultSettings.officialQuality
+    ? { zh: resultSettings.officialQuality, en: resultSettings.officialQuality }
+    : qualities.find(item => item.value === readQuality(resultSettings?.quality)) ?? qualities[1]!;
   const supportsReferenceImage = session === null
     || session.job.id.startsWith('pending:')
     || session.job.templateVersion >= 2;
@@ -163,6 +182,7 @@ export default function ImageGenerationWorkspace(props: {
     );
 
   useEffect(() => {
+    if (official.official) return;
     if (session === null || !shouldLoadDefaultProvider) return;
     let active = true;
     void props.creatorServicesService?.getConfig().then(response => {
@@ -181,7 +201,7 @@ export default function ImageGenerationWorkspace(props: {
       );
     }).catch(() => undefined);
     return () => { active = false; };
-  }, [count, props.creatorServicesService, session, shouldLoadDefaultProvider]);
+  }, [count, props.creatorServicesService, session, shouldLoadDefaultProvider, official.official]);
 
   useEffect(() => {
     const { session, l } = previewContext.current;
@@ -302,6 +322,7 @@ export default function ImageGenerationWorkspace(props: {
   }
 
   function updateProvider(value: ImageGenerationProvider) {
+    if (official.official) return;
     setProvider(value);
     const nextCount = value === 'codex-native' ? 1 : count;
     if (nextCount !== count) setCount(nextCount);
@@ -326,7 +347,7 @@ export default function ImageGenerationWorkspace(props: {
   }
 
   function updateCount(value: number) {
-    if (provider === 'codex-native' && value !== 1) return;
+    if (!official.official && provider === 'codex-native' && value !== 1) return;
     setCount(value);
     session?.updateDraft({ candidateCount: value });
     setError('');
@@ -351,6 +372,7 @@ export default function ImageGenerationWorkspace(props: {
 
   async function generate() {
     if (generating) return;
+    if (official.official && !official.ready) { setError(l('官方图片服务暂不可用，请在个人中心检查连接状态', 'Official image service is unavailable. Check the connection in your personal center.')); return; }
     if (session === null) {
       setError(l(
         '图像生成服务暂不可用，请检查 Runtime 连接',
@@ -372,10 +394,11 @@ export default function ImageGenerationWorkspace(props: {
     setNotice('');
     session.updateDraft({
       prompt: prompt.trim(),
-      provider,
+      provider: official.official ? 'openai' : provider,
       size,
       quality,
-      candidateCount: count
+      candidateCount: count,
+      ...(official.official ? { ...official.draftPatch, aspectRatio, resolution, officialQuality } : {})
     }, { semantic: true });
     try {
       await session.flush();
@@ -596,7 +619,7 @@ export default function ImageGenerationWorkspace(props: {
                   <p>{l('设置图片画幅、质量和一次生成数量', 'Set the image format, quality, and number of outputs')}</p>
                 </div>
               </div>
-              <div className="media-generation-control">
+              {official.official ? <OfficialModelField label={l('图片模型', 'Image model')} service={official} disabled={generating} /> : <div className="media-generation-control">
                 <span>{l('图像服务', 'Image provider')}</span>
                 <div className="creator-tool-segmented" role="radiogroup" aria-label={l('图像服务', 'Image provider')}>
                   {providers.map(item => (
@@ -613,8 +636,20 @@ export default function ImageGenerationWorkspace(props: {
                     )}
                   </p>
                 ) : null}
-              </div>
-              <div className="media-generation-control">
+              </div>}
+              {imageOptions ? <>
+                {[
+                  { key: 'aspectRatio', label: l('图片画幅', 'Image format'), values: imageOptions.aspectRatios, value: aspectRatio, set: setAspectRatio },
+                  { key: 'resolution', label: l('分辨率', 'Resolution'), values: imageOptions.resolutions, value: resolution, set: setResolution },
+                  { key: 'officialQuality', label: l('图片质量', 'Image quality'), values: imageOptions.qualities, value: officialQuality, set: setOfficialQuality }
+                ].filter(option => option.values?.length).map(option => <label className="creator-tool-field" key={option.key}>
+                  <span>{option.label}</span>
+                  <select aria-label={option.label} value={option.value} disabled={official.taskRunning || !official.ready}
+                    onChange={event => { option.set(event.target.value); session?.updateDraft({ [option.key]: event.target.value }); }}>
+                    {option.values?.map(value => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                </label>)}
+              </> : <><div className="media-generation-control">
                 <span>{l('画幅', 'Format')}</span>
                 <div className="media-generation-option-grid" role="radiogroup" aria-label={l('图片画幅', 'Image format')}>
                   {sizes.map(item => (
@@ -635,11 +670,11 @@ export default function ImageGenerationWorkspace(props: {
                     </button>
                   ))}
                 </div>
-              </div>
+              </div></>}
               <div className="media-generation-control">
                 <span>{l('生成数量', 'Number of images')}</span>
                 <div className="creator-tool-segmented" role="radiogroup" aria-label={l('生成数量', 'Number of images')}>
-                  {(provider === 'codex-native' ? [1] : [1, 2, 4]).map(value => (
+                  {(!official.official && provider === 'codex-native' ? [1] : [1, 2, 4]).map(value => (
                     <button type="button" role="radio" aria-checked={count === value} aria-selected={count === value} key={value} onClick={() => updateCount(value)}>
                       {value} {l('张', value === 1 ? 'image' : 'images')}
                     </button>
@@ -696,7 +731,7 @@ export default function ImageGenerationWorkspace(props: {
                       ))}
                     </div>
                     <div className="media-generation-result-actions">
-                      <button type="button" onClick={() => void generate()} disabled={generating}>
+                      <button type="button" onClick={() => void generate()} disabled={generating || (official.official && !official.ready)}>
                         {generating ? <LoaderCircle className="smart-dubbing-spinner" size={15} /> : <RotateCcw size={15} />}
                         {generating ? l('正在生成', 'Generating') : l('重新生成', 'Regenerate')}
                       </button>
@@ -710,7 +745,7 @@ export default function ImageGenerationWorkspace(props: {
                       `${l(selectedProvider.zh, selectedProvider.en)} · ${count} 张 ${selectedSize.ratio} 图片 · ${l(selectedQuality.zh, selectedQuality.en)}质量`,
                       `${selectedProvider.en} · ${count} ${selectedSize.ratio} images · ${selectedQuality.en} quality`
                     )}</p>
-                    <button className="creator-tool-primary" type="button" onClick={() => void generate()} disabled={generating}>
+                    <button className="creator-tool-primary" type="button" onClick={() => void generate()} disabled={generating || (official.official && !official.ready)}>
                       {generating ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}
                       {generating ? l('正在生成', 'Generating') : l('开始生成', 'Generate')}
                     </button>
@@ -730,7 +765,7 @@ export default function ImageGenerationWorkspace(props: {
                 ] : [
                   { label: l('图像服务', 'Provider'), value: l(selectedProvider.zh, selectedProvider.en) },
                   { label: l('画幅', 'Format'), value: `${l(selectedSize.zh, selectedSize.en)} · ${selectedSize.ratio}` },
-                  { label: l('分辨率', 'Resolution'), value: size },
+                  { label: l('分辨率', 'Resolution'), value: imageOptions ? resolution || l('默认', 'Default') : size },
                   { label: l('质量', 'Quality'), value: l(selectedQuality.zh, selectedQuality.en) },
                   { label: l('生成数量', 'Images'), value: String(count) }
                 ]}

@@ -3,15 +3,50 @@ import type {
   CreatorActionRequest,
   CreatorArtifact,
   CreatorJob,
-  CreatorJson
+  CreatorJson,
+  GatewayAccountState
 } from '@opencreator/protocol';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import ImageGenerationWorkspace from './ImageGenerationWorkspace.js';
 import { CreatorSessionProvider, useOptionalCreatorSession, type CreatorSessionContextValue } from './creator-session-store.js';
+import { OfficialServicesContext } from './official-services.js';
 
 describe('ImageGenerationWorkspace', () => {
+  it('uses official image metadata without changing the custom quality presets or candidate count', async () => {
+    const fixture = createFixture();
+    const state: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', models: [{ id: 'vendor/image', modality: 'image', capabilities: [], imageOptions: { aspectRatios: ['16:9', '9:16'], resolutions: ['1K', '2K'], qualities: ['standard', 'hd'], outputFormats: ['jpeg'], maxImages: 1, maxReferences: 0 } }], activationError: null };
+    renderWorkspace(fixture, { ...fixture.currentJob(), state: { prompt: 'city', currentStep: 1, furthestStep: 1 } }, { getConfig: vi.fn() }, state);
+    expect(screen.getByRole('combobox', { name: '图片画幅' })).toHaveValue('16:9');
+    fireEvent.change(screen.getByRole('combobox', { name: '分辨率' }), { target: { value: '2K' } });
+    fireEvent.change(screen.getByRole('combobox', { name: '图片质量' }), { target: { value: 'hd' } });
+    fireEvent.click(screen.getByRole('radio', { name: '4 张' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    await waitFor(() => expect(fixture.applyAction).toHaveBeenCalled());
+    const update = fixture.applyAction.mock.calls.find(([, request]) => request.action === 'update-settings');
+    expect(update?.[1].input.patch).toMatchObject({ aspectRatio: '16:9', resolution: '2K', officialQuality: 'hd', candidateCount: 4 });
+  });
+  it('allows only official image choices and submits the task choice without changing defaults', async () => {
+    const fixture = createFixture();
+    const state: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1', selectedModels: { image: 'official/first' }, models: [{ id: 'official/first', modality: 'image', capabilities: [] }, { id: 'official/second', modality: 'image', capabilities: ['edit'] }], activationError: null };
+    const getConfig = vi.fn();
+    renderWorkspace(fixture, { ...fixture.currentJob(), state: { prompt: 'city skyline', provider: 'codex-native', currentStep: 1, furthestStep: 1 } }, { getConfig }, state);
+    const model = screen.getByRole('combobox', { name: '图片模型' });
+    fireEvent.click(model);
+    expect(within(screen.getByRole('listbox', { name: '图片模型' })).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual(['first', 'second']);
+    expect(screen.queryByRole('radio', { name: '本机 Codex 生图' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: 'second' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith('creator_job_image_ui', expect.objectContaining({ action: 'run-stage', input: { stageId: 'generate' } })));
+    const update = fixture.applyAction.mock.calls.find(([, request]) => request.action === 'update-settings');
+    expect(update?.[1].input.patch).toMatchObject({ provider: 'openai', officialModels: { image: 'official/second' } });
+    expect(state.selectedModels?.image).toBe('official/first');
+    expect(getConfig).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
@@ -287,7 +322,8 @@ describe('ImageGenerationWorkspace', () => {
 function renderWorkspace(
   fixture: ReturnType<typeof createFixture>,
   initialJob = fixture.currentJob(),
-  creatorServicesService?: { getConfig(): Promise<unknown> }
+  creatorServicesService?: { getConfig(): Promise<unknown> },
+  gatewayState?: GatewayAccountState
 ) {
   let currentSession: CreatorSessionContextValue | null = null;
   const view = render(
@@ -302,11 +338,13 @@ function renderWorkspace(
           runAgentTurn: vi.fn()
         } as never}
       >
+        <OfficialServicesContext.Provider value={gatewayState}>
         <SessionObserver onSession={session => { currentSession = session; }} />
         <ImageGenerationWorkspace
           onBack={vi.fn()}
           creatorServicesService={creatorServicesService as never}
         />
+        </OfficialServicesContext.Provider>
       </CreatorSessionProvider>
     </LanguageProvider>
   );

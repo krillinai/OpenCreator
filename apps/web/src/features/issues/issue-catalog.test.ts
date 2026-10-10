@@ -6,6 +6,31 @@ const raw = '后台原文：操作无法完成';
 const issue = normalizePageIssue('runtime', 'creator.prepare', new Error(raw), raw);
 
 describe('localized issue copy', () => {
+  it.each([
+    ['audio_no_speech', '音频为静音或音量过低', '检查原音频和音量'],
+    ['audio_transcription_empty', '尚不能确认音频是否含有语音', '换一个语音识别模型核验'],
+    ['audio_transcription_invalid_response', '返回了无效结果', '检查服务返回的错误'],
+    ['audio_transcription_timestamps_missing', '未提供可用的字幕时间戳', '支持字幕时间戳'],
+    ['audio_transcription_api_failed', '语音识别服务调用失败', '检查连接、模型权限或配额']
+  ])('explains %s using the classified evidence', (code, summary, guidance) => {
+    const next = { ...issue, code };
+    const conversation = issueConversationText(next, 'zh-CN');
+    expect(conversation.message).toContain(summary);
+    expect(conversation.nextStep).toContain(guidance);
+    if (code === 'audio_transcription_empty') {
+      expect(conversation.message).not.toContain('音频为静音');
+      expect(conversation.message).not.toContain('未提供可用的字幕时间戳');
+      expect(conversation.message).not.toContain('服务调用失败');
+    }
+  });
+  it('preserves transcription guidance through a generic stage error', () => {
+    const next = { ...issue, code: 'creator_stage_failed', publicFacts: {
+      kind: 'unknown' as const, upstreamCode: 'audio_transcription_empty'
+    } };
+    expect(issueConversationText(next, 'zh-CN').nextStep).toContain('换一个语音识别模型核验');
+    expect(presentIssue(next, 'en-US').description).toContain('whether the audio contains speech is still unconfirmed');
+    expect(presentIssue(next, 'sv-SE').description).not.toMatch(/\p{Script=Han}/u);
+  });
   it('shows the filesystem failure code and actual cause with relevant retry guidance', () => {
     const next = { ...issue, source: 'stage' as const, code: 'ERR_FS_FILE_TOO_LARGE', publicFacts: {
       kind: 'storage' as const, upstreamCode: 'ERR_FS_FILE_TOO_LARGE',

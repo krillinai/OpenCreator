@@ -229,6 +229,7 @@ export type CreatorResultSnapshot = {
 };
 
 export type CreatorProviderRequest = {
+  gateway?: { accountId: string; bindingVersion: string; logicalId: string };
   id: string;
   jobId: string;
   provider: string;
