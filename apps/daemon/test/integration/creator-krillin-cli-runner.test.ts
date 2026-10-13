@@ -1,4 +1,8 @@
-import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
+import {
+  createDefaultCreatorServicesConfig,
+  defaultVolcengineTtsCluster,
+  defaultVolcengineTtsVoiceId
+} from '@opencreator/protocol';
 import { parse } from '@iarna/toml';
 import {
   chmodSync,
@@ -160,10 +164,18 @@ describe('KrillinAI CLI runner', () => {
       volcengine: {
         app_id: 'tts-app',
         access_token: 'tts-token',
-        cluster: 'volcano_tts',
-        default_voice_id: 'BV001_streaming'
+        // Assert the bridge copies whatever cluster/voice the service config
+        // holds, instead of pinning a literal that goes stale on every TTS
+        // catalogue migration (this pair was `volcano_tts`/`BV001_streaming`
+        // before the Doubao 2.0 move).
+        cluster: config.tts.volcengine.model,
+        default_voice_id: config.tts.volcengine.defaultVoiceId
       }
     });
+    // And the shipped defaults really are the Doubao 2.0 pair from the protocol,
+    // so a drift between the two is caught here rather than in production.
+    expect(config.tts.volcengine.model).toBe(defaultVolcengineTtsCluster);
+    expect(config.tts.volcengine.defaultVoiceId).toBe(defaultVolcengineTtsVoiceId);
   });
 
   it('recovers only the known Windows ASS drive-letter failure with the auto-video relative-path command', async () => {

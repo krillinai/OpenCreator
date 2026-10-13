@@ -1,6 +1,7 @@
 import {
   parseBilibiliVideoSource,
   supportedVideoSourcePlatform,
+  volcengineTtsUsesApiKey,
   type CreatorJob,
   type CreatorStageRun,
   type CreatorTtsProvider
@@ -196,7 +197,11 @@ function hasTtsCredentials(
   if (provider === 'openai') return config.tts.openai.apiKey.length > 0;
   if (provider === 'minimax') return config.tts.minimax.apiKey.length > 0;
   if (provider === 'volcengine') {
-    return config.tts.volcengine.appId.length > 0 && config.tts.volcengine.accessToken.length > 0;
+    return config.tts.volcengine.accessToken.length > 0
+      && (
+        volcengineTtsUsesApiKey(config.tts.volcengine.model)
+        || config.tts.volcengine.appId.length > 0
+      );
   }
   return config.tts.aliyun.apiKey.length > 0;
 }

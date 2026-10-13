@@ -7,7 +7,7 @@ import type {
   PublicErrorFacts,
   RuntimeErrorCode
 } from '@opencreator/protocol';
-import { gatewayDefaultVoiceId } from '@opencreator/protocol';
+import { gatewayDefaultVoiceId, volcengineTtsUsesApiKey } from '@opencreator/protocol';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -311,10 +311,15 @@ function ensureCredentials(
   provider: Exclude<CreatorTtsProvider, 'edge-tts'>
 ): void {
   if (provider === 'volcengine') {
-    if (config.tts.volcengine.appId.trim() && config.tts.volcengine.accessToken.trim()) return;
+    const value = config.tts.volcengine;
+    if (value.accessToken.trim() && (
+      volcengineTtsUsesApiKey(value.model) || value.appId.trim()
+    )) return;
     throw new KrillinTtsServiceError(
       'creator_tts_config_missing',
-      'Configure the Volcengine TTS App ID and Access Token before generating speech',
+      volcengineTtsUsesApiKey(value.model)
+        ? 'Configure the Volcengine TTS API Key before generating speech'
+        : 'Configure the Volcengine TTS App ID and Access Token before generating speech',
       409
     );
   }
@@ -442,8 +447,12 @@ async function synthesizeVolcengineV3(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'X-Api-App-Id': provider.appId,
-      'X-Api-Access-Key': provider.accessToken,
+      ...(provider.appId.trim()
+        ? {
+            'X-Api-App-Id': provider.appId,
+            'X-Api-Access-Key': provider.accessToken
+          }
+        : { 'X-Api-Key': provider.accessToken }),
       'X-Api-Resource-Id': resourceId,
       'X-Api-Request-Id': crypto.randomUUID()
     },

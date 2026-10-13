@@ -167,8 +167,15 @@ describe('dashboard CSS contracts', () => {
     expect(cssBlocks('.video-translation-color-palette .video-translation-color-picker')[0]).toContain('height: 150px;');
   });
 
-  it('matches video download settings width to translation and centers labeled platforms', () => {
-    expect(cssBlocks('.video-download-workspace-page .creator-tool-stack')[0]).toContain('width: min(960px, 100%);');
+  it('lets video download settings fill the full workspace width and centers labeled platforms', () => {
+    // The download page deliberately dropped the shared `min(1120px, 100%)`
+    // cap so the platform list spans the whole content pane;
+    // `e2e/video-download-layout.spec.ts` asserts the stack width equals the
+    // content width. This assertion kept the pre-change `min(960px, 100%)`
+    // value and was the only thing still pinning the old width.
+    expect(cssBlocks('.video-download-workspace-page .creator-tool-stack')[0]).toContain('width: 100%;');
+    expect(cssBlocks('.video-download-workspace-page .creator-tool-stack')[0])
+      .not.toContain('min(960px, 100%)');
     expect(cssBlocks('.video-download-platforms')[0]).toContain('justify-content: center;');
     expect(cssBlocks('.video-download-platforms')[0]).toContain('flex-wrap: wrap;');
     expect(cssBlocks('.video-download-platforms img')[0]).toContain('width: 32px;');

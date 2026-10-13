@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"go.uber.org/zap"
@@ -66,7 +67,9 @@ type AliyunTranscribeConfig struct {
 }
 
 // VolcengineAsrConfig holds Doubao Voice / OpenSpeech console credentials.
-// AppId and AccessToken are shared with TTS; ASR sends the token as X-Api-Access-Key.
+// AccessToken carries either a newer-console API Key or an older-console
+// Access Token. An empty AppId selects the single X-Api-Key form; a non-empty
+// AppId sends the App ID plus Access Token pair.
 type VolcengineAsrConfig struct {
 	AppId       string `toml:"app_id"`
 	AccessToken string `toml:"access_token"`
@@ -267,8 +270,8 @@ func ValidateTranscriptionConfig() error {
 			return errors.New("使用 FunASR 需要配置 Base URL 和模型")
 		}
 	case "volcengine":
-		if Conf.Transcribe.Volcengine.AppId == "" || Conf.Transcribe.Volcengine.AccessToken == "" {
-			return errors.New("使用火山引擎语音识别需要配置 App ID 和 Access Token")
+		if Conf.Transcribe.Volcengine.AccessToken == "" {
+			return errors.New("使用火山引擎语音识别需要配置 API Key 或 Access Token")
 		}
 	default:
 		return errors.New("不支持的转录提供商")
@@ -292,8 +295,11 @@ func ValidateTTSConfig() error {
 			return errors.New("使用 MiniMax 配音服务需要配置 API Key")
 		}
 	case "volcengine":
-		if Conf.Tts.Volcengine.AppId == "" || Conf.Tts.Volcengine.AccessToken == "" {
-			return errors.New("使用火山引擎配音服务需要配置 App ID 和 Access Token")
+		if Conf.Tts.Volcengine.AccessToken == "" {
+			return errors.New("使用火山引擎配音服务需要配置 API Key 或 Access Token")
+		}
+		if !strings.HasPrefix(Conf.Tts.Volcengine.Cluster, "seed-") && Conf.Tts.Volcengine.AppId == "" {
+			return errors.New("使用旧版火山引擎配音服务需要配置 App ID")
 		}
 	case "edge-tts":
 		return nil

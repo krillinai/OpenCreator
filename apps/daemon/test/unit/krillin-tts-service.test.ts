@@ -305,6 +305,10 @@ describe('KrillinTtsService', () => {
     config.tts.provider = 'volcengine';
     config.tts.volcengine.appId = 'app-1';
     config.tts.volcengine.accessToken = 'token-1';
+    // The default cluster is now the 2.0 one, which routes to V3; this case
+    // exercises the legacy V1 HTTP path, so pin it explicitly.
+    config.tts.volcengine.model = 'volcano_tts';
+    config.tts.volcengine.defaultVoiceId = 'BV001_streaming';
     const audio = Buffer.from('mp3-bytes');
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       code: 3000,
@@ -410,6 +414,37 @@ describe('KrillinTtsService', () => {
     expect((fetchMock.mock.calls[1]![1] as RequestInit).headers).toMatchObject({
       'X-Api-Resource-Id': 'seed-icl-2.0'
     });
+  });
+
+  it('uses the speech API key without requiring an App ID for Doubao 2.0', async () => {
+    const root = await temporaryRoot();
+    const config = createDefaultCreatorServicesConfig();
+    config.tts.provider = 'volcengine';
+    config.tts.volcengine.accessToken = 'api-key-1';
+    const audio = Buffer.from('v3-api-key-bytes');
+    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) => new Response([
+      JSON.stringify({ code: 0, data: audio.toString('base64') }),
+      JSON.stringify({ code: 20000000, message: 'OK' })
+    ].join('\n'), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const service = createKrillinTtsService({
+      resourceRoot: join(root, 'runtime'),
+      workRoot: join(root, 'work'),
+      configStore: createConfigStore(config)
+    });
+
+    await expect(service.synthesize({
+      text: '豆包语音二点零',
+      provider: 'volcengine',
+      voiceId: 'zh_female_cancan_uranus_bigtts',
+      format: 'mp3'
+    })).resolves.toMatchObject({ model: 'seed-tts-2.0' });
+    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.headers;
+    expect(headers).toMatchObject({
+      'X-Api-Key': 'api-key-1',
+      'X-Api-Resource-Id': 'seed-tts-2.0'
+    });
+    expect(headers).not.toHaveProperty('X-Api-App-Id');
   });
 
   it('requires the configured provider API key before synthesis', async () => {

@@ -333,6 +333,25 @@ describe('creator preflight', () => {
     expect(ready.blocked.map(item => item.id)).not.toContain('tts');
   });
 
+  it('accepts an API key without an App ID for Doubao TTS 2.0', async () => {
+    root = await mkdtemp(join(tmpdir(), 'creator-preflight-'));
+    const config = createDefaultCreatorServicesConfig();
+    config.tts.provider = 'volcengine';
+    // The default cluster is the 2.0 one, which only needs the API key.
+    config.tts.volcengine.accessToken = 'api-key';
+    const stage = createSmartDubbingTemplate().stages.find(candidate => candidate.id === 'tts')!;
+    const result = await createCreatorPreflight({
+      configStore: { read: async () => config },
+      readCapabilities: () => createKrillinCreatorServicesCapabilities('win32', 'x64'),
+      resourceRoot: join(root, 'runtime'),
+      jobsRoot: join(root, 'jobs'),
+      executorIds: ['smart-dubbing'],
+      validateRuntimeAssets: false
+    }).check(fakeJob('smart-dubbing', { ttsProvider: 'volcengine' }), stage);
+
+    expect(result.blocked.map(item => item.id)).not.toContain('tts');
+  });
+
   it('blocks Volcengine transcription when its shared credentials are missing', async () => {
     root = await mkdtemp(join(tmpdir(), 'creator-preflight-'));
     const config = createDefaultCreatorServicesConfig();

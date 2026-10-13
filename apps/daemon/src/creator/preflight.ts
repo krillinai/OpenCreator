@@ -9,7 +9,12 @@ import type {
   CreatorServicesConfig,
   PublicErrorFacts
 } from '@opencreator/protocol';
-import { creatorPreflightFailure, imagePromptRequiresReference } from '@opencreator/protocol';
+import {
+  creatorPreflightFailure,
+  imagePromptRequiresReference,
+  volcengineTtsUsesApiKey,
+  volcengineAsrCredentialsReady
+} from '@opencreator/protocol';
 import { access, mkdir, readFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
@@ -433,7 +438,7 @@ async function checkProviderConfig(
       add('blocked', { id: 'transcription-config', title: '语音识别凭据缺失', message: '请补全阿里云语音识别凭据。', executionMode: 'remote' }, { label: '打开 AI 服务设置', deepLink: '#/settings?tab=ai-services&section=transcription' });
     } else if (config.transcription.provider === 'funasr' && (!config.transcription.funasr.baseUrl.trim() || !config.transcription.funasr.model.trim())) {
       add('blocked', { id: 'transcription-config', title: '语音识别配置缺失', message: '请补全 FunASR Base URL 和模型。', executionMode: 'remote' }, { label: '打开 AI 服务设置', deepLink: '#/settings?tab=ai-services&section=transcription' });
-    } else if (config.transcription.provider === 'volcengine' && (!config.transcription.volcengine.appId.trim() || !config.transcription.volcengine.accessToken.trim())) {
+    } else if (config.transcription.provider === 'volcengine' && !volcengineAsrCredentialsReady(config.transcription.volcengine)) {
       add('blocked', { id: 'transcription-config', title: '语音识别凭据缺失', message: '请补全火山引擎 App ID 和 Access Token。', executionMode: 'remote' }, { label: '打开 AI 服务设置', deepLink: '#/settings?tab=ai-services&section=transcription' });
     } else add('ready', { id: 'transcription-config', title: '语音识别', message: `${config.transcription.provider} 已配置。`, executionMode: provider.kind === 'local' ? 'local' : 'remote' });
   }
@@ -452,7 +457,13 @@ function checkOpenAi(
 
 function checkTts(config: CreatorServicesConfig, provider: Exclude<CreatorServicesConfig['tts']['provider'], 'edge-tts'>, add: Parameters<typeof checkProviderConfig>[5]) {
   const credentialsReady = provider === 'volcengine'
-    ? Boolean(config.tts.volcengine.appId.trim() && config.tts.volcengine.accessToken.trim())
+    ? Boolean(
+        config.tts.volcengine.accessToken.trim()
+        && (
+          volcengineTtsUsesApiKey(config.tts.volcengine.model)
+          || config.tts.volcengine.appId.trim()
+        )
+      )
     : Boolean(config.tts[provider].apiKey.trim());
   const value = config.tts[provider];
   if (!value.baseUrl.trim() || !value.model.trim() || !credentialsReady) add('blocked', { id: 'tts', title: '配音服务配置不完整', message: `请补全 ${provider} 的 Base URL、模型和凭据。`, executionMode: 'remote' }, { label: '打开 AI 服务设置', deepLink: '#/settings?tab=ai-services&section=tts' });

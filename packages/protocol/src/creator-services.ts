@@ -152,6 +152,11 @@ export type CreatorServicesConfigResponse = {
   configuredCredentials: CreatorServicesCredentialField[];
 };
 
+export type CreatorServicesConfigUpdate = {
+  config: CreatorServicesConfig;
+  clearCredentials?: CreatorServicesCredentialField[];
+};
+
 export type CreatorTranscriptionProviderCapability = {
   provider: CreatorTranscriptionProvider;
   kind: 'cloud' | 'local';
@@ -260,8 +265,22 @@ export type CreatorServicesCredentialField =
 
 export const defaultVolcengineSpeechBaseUrl = 'https://openspeech.bytedance.com';
 export const defaultVolcengineAsrResourceId = 'volc.seedasr.auc';
-export const defaultVolcengineTtsCluster = 'volcano_tts';
-export const defaultVolcengineTtsVoiceId = 'BV001_streaming';
+export const defaultVolcengineTtsCluster = 'seed-tts-2.0';
+export const defaultVolcengineTtsVoiceId = 'zh_female_cancan_uranus_bigtts';
+
+export function volcengineTtsUsesApiKey(model: string): boolean {
+  return model.trim().toLowerCase().startsWith('seed-');
+}
+
+/**
+ * Newer Doubao Voice consoles issue a single API Key for file ASR; older ones
+ * issue an App ID plus Access Token pair. Both live in `accessToken`, so a
+ * non-empty token means ready: the App ID alone decides which wire form the
+ * client sends.
+ */
+export function volcengineAsrCredentialsReady(config: VolcengineAsrConfig): boolean {
+  return config.accessToken.trim().length > 0;
+}
 
 export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
   return {

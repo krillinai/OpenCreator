@@ -261,6 +261,25 @@ describe('CreatorServicesConfigStore', () => {
       .toEqual(current.tts.volcengine);
   });
 
+  it('clears an explicitly removed Volcengine App ID while retaining the API key', () => {
+    const current = createDefaultCreatorServicesConfig();
+    current.transcription.volcengine.appId = 'legacy-app-id';
+    current.transcription.volcengine.accessToken = 'new-api-key';
+    const presented = presentCreatorServicesConfig(current);
+
+    // `presented.config` has every credential blanked, which is what the client
+    // sends back; blank normally means "keep", so the App ID only disappears
+    // when it is explicitly listed.
+    const retained = retainCreatorServicesCredentials(
+      presented.config,
+      current,
+      ['transcription.volcengine.appId']
+    );
+
+    expect(retained.transcription.volcengine.appId).toBe('');
+    expect(retained.transcription.volcengine.accessToken).toBe('new-api-key');
+  });
+
   it('redacts and retains a configured FunASR API key', () => {
     const current = createDefaultCreatorServicesConfig();
     current.transcription.funasr.apiKey = 'funasr-secret';

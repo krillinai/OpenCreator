@@ -44,6 +44,10 @@ type AsrClient struct {
 	maxPollTime  time.Duration
 }
 
+// NewAsrClient builds a client for the v3 bigmodel file-ASR API. Newer
+// Doubao Voice consoles issue a single API Key, which is passed as accessToken
+// with an empty appID and sent as X-Api-Key. Older consoles issue an App ID
+// plus Access Token pair, sent as X-Api-App-Key and X-Api-Access-Key.
 func NewAsrClient(baseURL, appID, accessToken, resourceID, proxy string) *AsrClient {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
@@ -118,8 +122,8 @@ type asrWord struct {
 
 func (c *AsrClient) Transcription(audioFile, language, workDir string) (*types.TranscriptionData, error) {
 	_ = workDir
-	if c.appID == "" || c.accessToken == "" {
-		return nil, fmt.Errorf("volcengine asr app id or access token is empty")
+	if c.accessToken == "" {
+		return nil, fmt.Errorf("volcengine asr api key or access token is empty")
 	}
 	processed, err := processAudioFile(audioFile)
 	if err != nil {
@@ -192,8 +196,12 @@ func (c *AsrClient) post(endpoint, requestID string, body []byte) (string, []byt
 		return "", nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-App-Key", c.appID)
-	req.Header.Set("X-Api-Access-Key", c.accessToken)
+	if c.appID == "" {
+		req.Header.Set("X-Api-Key", c.accessToken)
+	} else {
+		req.Header.Set("X-Api-App-Key", c.appID)
+		req.Header.Set("X-Api-Access-Key", c.accessToken)
+	}
 	req.Header.Set("X-Api-Resource-Id", c.resourceID)
 	req.Header.Set("X-Api-Request-Id", requestID)
 	req.Header.Set("X-Api-Sequence", "-1")

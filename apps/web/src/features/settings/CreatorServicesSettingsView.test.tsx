@@ -352,25 +352,66 @@ describe('CreatorServicesSettingsView', () => {
 
     await user.click(screen.getByRole('combobox', { name: '语音识别服务' }));
     await user.click(screen.getByRole('option', { name: '火山引擎' }));
-    expect(screen.getByLabelText('Access Token')).toBeInTheDocument();
+    // Without an App ID the credential field is the newer-console API Key.
+    expect(screen.getByLabelText('API Key')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Access Token')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('App ID')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/X-Api-Key/).length).toBeGreaterThan(0);
     expect(screen.getByLabelText('资源 ID')).toHaveValue('volc.seedasr.auc');
-    expect(screen.getByText(/共用同一套 Access Token/)).toBeInTheDocument();
+    expect(screen.getByText(/旧版填 App ID 和 Access Token/)).toBeInTheDocument();
     expect(screen.queryByText('OSS 存储')).not.toBeInTheDocument();
+
+    // The explicit toggle selects the legacy form; before an App ID is typed
+    // the credential is still sent as a newer-console API Key, so the field
+    // keeps the API Key label and a note explains the pending switch.
+    const legacyToggle = screen.getByRole('switch', { name: /使用旧版凭据/ });
+    expect(legacyToggle).not.toBeChecked();
+    await user.click(legacyToggle);
+    // Scope by id: the TTS panel renders its own App ID field on the same page.
+    const asrAppId = document.getElementById('transcription-volcengine-app-id');
+    expect(asrAppId).not.toBeNull();
+    expect(asrAppId).toHaveValue('');
+    expect(screen.getByText(/App ID 留空时该凭据仍会作为新版 API Key/)).toBeInTheDocument();
+    // Filling the App ID completes the switch to the legacy pair.
+    await user.type(asrAppId!, '123456');
+    expect(screen.getByLabelText('Access Token')).toBeInTheDocument();
+    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+    // Turning the toggle back off clears the App ID and restores API Key mode.
+    await user.click(legacyToggle);
+    expect(document.getElementById('transcription-volcengine-app-id')).toBeNull();
+    expect(screen.getByLabelText('API Key')).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: '配音服务' }));
     await user.click(screen.getByRole('combobox', { name: '服务商' }));
     await user.click(screen.getByRole('option', { name: '火山引擎' }));
     expect(screen.getByRole('combobox', { name: '接口 / 集群' }))
-      .toHaveTextContent('小模型 TTS（volcano_tts）');
-    expect(screen.getByLabelText('Access Token')).toBeInTheDocument();
+      .toHaveTextContent('豆包语音 2.0（推荐音质）');
+    expect(screen.getByLabelText('API Key')).toBeInTheDocument();
+    expect(screen.queryByLabelText('App ID')).not.toBeInTheDocument();
     expect(screen.getByLabelText('克隆 / 自定义 Speaker ID')).toBeInTheDocument();
-    expect(screen.getByText(/使用与语音识别相同的豆包语音控制台/)).toBeInTheDocument();
-    expect(screen.getByText(/豆包 2.0 \/ 声音复刻走 V3/)).toBeInTheDocument();
+    expect(screen.getByText(/豆包语音 2.0 使用 API Key/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('combobox', { name: '服务商' }));
     await user.click(screen.getByRole('option', { name: 'Edge TTS' }));
     expect(screen.getByText('无需填写凭据。运行时会使用本地 Edge TTS 服务。'))
       .toBeInTheDocument();
+    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+  });
+
+  it('shows the legacy App ID and Access Token pair for a stored App ID', async () => {
+    const user = userEvent.setup();
+    const service = createService(['transcription.volcengine.appId', 'transcription.volcengine.accessToken']);
+    render(<CreatorServicesSettingsView connected service={service} modelService={createModelService()} initialSection="transcription" />);
+
+    await user.click(await screen.findByRole('combobox', { name: '语音识别服务' }));
+    await user.click(screen.getByRole('option', { name: '火山引擎' }));
+
+    // A stored App ID means the config is still on the legacy console, so the
+    // toggle starts on and the pair is shown instead of the API Key.
+    const legacyToggle = screen.getByRole('switch', { name: /使用旧版凭据/ });
+    expect(legacyToggle).toBeChecked();
+    expect(screen.getByLabelText('App ID')).toBeInTheDocument();
+    expect(screen.getByLabelText('Access Token')).toBeInTheDocument();
     expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
   });
 

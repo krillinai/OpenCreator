@@ -1703,8 +1703,14 @@ test('火山引擎语音识别设置在 Browser/Desktop Bridge 下保持相同�
       await page.goto(`${runtime.origin}/#/settings?tab=ai-services&section=transcription`);
       await page.getByRole('combobox', { name: '语音识别服务' }).click();
       await page.getByRole('option', { name: '火山引擎' }).click();
-      await page.getByLabel('App ID').fill('parity-volcengine-app');
-      await page.getByLabel('Access Token').fill('parity-volcengine-token');
+      // The default form is the newer-console single API Key; the App ID only
+      // appears in legacy mode, and the token field switches its label to
+      // "Access Token" once an App ID is present.
+      await page.getByRole('switch', { name: /使用旧版凭据/ }).click();
+      // Exact labels: the switch's own description also mentions "App ID" and
+      // "Access Token", so a substring match would resolve to two elements.
+      await page.getByLabel('App ID', { exact: true }).fill('parity-volcengine-app');
+      await page.getByLabel('Access Token', { exact: true }).fill('parity-volcengine-token');
       await page.getByRole('button', { name: '保存配置' }).click();
       await expect(page.getByText('配置已安全保存')).toBeVisible();
 
