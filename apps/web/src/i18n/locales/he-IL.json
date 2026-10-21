@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "התקדמות התצוגה המקדימה של הכתוביות",
   "Adjust timing": "התאמת תזמון",
   "Enter the required credentials for the selected dubbing service to continue.": "יש להזין את פרטי ההזדהות הנדרשים לשירות הדיבוב שנבחר כדי להמשיך.",
-  "Save and continue composing": "שמירה והמשך הרכבת הסרטון"
+  "Save and continue composing": "שמירה והמשך הרכבת הסרטון",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "מסוף Doubao Voice: עבור המסוף הישן מלאו את מזהה האפליקציה ואסימון הגישה, או עבור המסוף החדש השאירו את מזהה האפליקציה ריק והשתמשו רק במפתח API. זיהוי קבצים, TTS V1 ו-TTS V3 חולקים את אותם פרטי הגישה; רק שמות השדות HTTP שונים.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 משתמש במפתח API. המודלים הקטנים הישנים משתמשים במזהה אפליקציה ובאסימון גישה. בחר קול רשמי או הזן מזהה רמקול משוכפל שמתחיל ב-S_.",
+  "Use legacy credentials": "שימוש בפרטי גישה ישנים",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "כיבוי משתמש במפתח ה-API היחיד (X-Api-Key) של המסוף החדש. הפעלה עובר לזוגת מזהה האפליקציה ואסימון הגישה של המסוף הישן.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "מצב ישן נכנס לתוקף רק לאחר שהוגדר מזהה אפליקציה; כל עוד הוא ריק, פרטי הגישה נשלחים עדיין כמפתח API של המסוף החדש דרך X-Api-Key."
 }

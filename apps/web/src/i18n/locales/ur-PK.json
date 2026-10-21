@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "سب ٹائٹل پیش نظارے کی پیش رفت",
   "Adjust timing": "وقت ایڈجسٹ کریں",
   "Enter the required credentials for the selected dubbing service to continue.": "جاری رکھنے کے لیے منتخب ڈبنگ سروس کی مطلوبہ اسناد درج کریں۔",
-  "Save and continue composing": "محفوظ کریں اور ویڈیو بنانا جاری رکھیں"
+  "Save and continue composing": "محفوظ کریں اور ویڈیو بنانا جاری رکھیں",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "ڈوباؤ وائس کنسول: پرانے کنسول کے لیے ایپ آئی ڈی اور ایکسیس ٹوکن بھریں، یا نئے کنسول کے لیے ایپ آئی ڈی خالی چھوڑ کر صرف API کی استعمال کریں۔ فائل کی شناخت، TTS V1، اور TTS V3 ایک ہی سندیں استعمال کرتے ہیں؛ صرف HTTP فیلڈ کے نام مختلف ہیں۔",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 ایک API کی استعمال کرتا ہے۔ پرانے چھوٹے ماڈل کی آوازیں ایپ آئی ڈی اور ایکسیس ٹوکن استعمال کرتی ہیں۔ ایک آفیشل آواز چنیں یا S_ سے شروع ہونے والی کلون شدہ اسپیکر ID درج کریں۔",
+  "Use legacy credentials": "پرانی سندیں استعمال کریں",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "بند ہونے پر نئے کنسول کی ایک API کی (X-Api-Key) استعمال ہوتی ہے۔ کھلے ہونے پر پرانے کنسول کے ایپ آئی ڈی اور ایکسیس ٹوکن کی جوڑی پر تبدیل ہو جاتا ہے۔",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "پرانا موڈ صرف ایپ آئی ڈی کے مقرر ہونے کے بعد لاگو ہوتا ہے؛ جب تک وہ خالی ہے، سندیں X-Api-Key کے ذریعے نئے کنسول کی API کی کے طور پر بھیجی جاتی ہیں۔"
 }

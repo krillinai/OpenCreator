@@ -48,6 +48,22 @@ describe('volcengine environment overrides', () => {
     expect(ttsConfig.tts.volcengine.appId).toBe('tts-app');
   });
 
+  it('prefers volcengine ASR when only an API Key is present without an App ID', () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.transcription.volcengine.accessToken = 'asr-api-key';
+
+    // The env var is what lets the override run at all; the saved API Key must
+    // not be replaced, and no App ID exists, so only the newer-console
+    // single-credential form can make ASR ready.
+    const result = applyVolcengineEnvironmentOverrides(config, {
+      VOLCENGINE_ACCESS_TOKEN: 'env-access-token'
+    });
+
+    expect(result.transcription.volcengine.appId).toBe('');
+    expect(result.transcription.volcengine.accessToken).toBe('asr-api-key');
+    expect(result.transcription.provider).toBe('volcengine');
+  });
+
   it('does not replace saved credentials or a non-default provider', () => {
     const current = createDefaultCreatorServicesConfig();
     current.transcription.provider = 'aliyun';

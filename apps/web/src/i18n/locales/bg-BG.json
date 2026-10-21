@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Напредък на прегледа на субтитрите",
   "Adjust timing": "Регулиране на времето",
   "Enter the required credentials for the selected dubbing service to continue.": "Въведете необходимите идентификационни данни за избраната услуга за дублаж, за да продължите.",
-  "Save and continue composing": "Запазване и продължаване на композирането"
+  "Save and continue composing": "Запазване и продължаване на композирането",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Конзолата Doubao Voice: за старата конзола въведете App ID и Access Token, а за новата оставете App ID празно и използвайте само API ключ. Разпознаването на файлове, TTS V1 и TTS V3 споделят едни и същите данни за достъп; различават се само имената на полетата HTTP.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 използва API ключ. Старите малки модели използват App ID и Access Token. Изберете официален глас или въведете идентификатор на клониран говорител, започващ със S_.",
+  "Use legacy credentials": "Използване на старите данни за достъп",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Изключено използва единствения API ключ (X-Api-Key) на новата конзола. Включено превключва към двойката App ID и Access Token на старата конзола.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Старият режим се включва едва когато е зададен App ID; докато той е празен, данните за достъп все пак се изпращат като нов API ключ чрез X-Api-Key."
 }

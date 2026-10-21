@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Progresso da prévia de legendas",
   "Adjust timing": "Ajustar tempo",
   "Enter the required credentials for the selected dubbing service to continue.": "Insira as credenciais necessárias para o serviço de dublagem selecionado para continuar.",
-  "Save and continue composing": "Salvar e continuar a composição do vídeo"
+  "Save and continue composing": "Salvar e continuar a composição do vídeo",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Console do Doubao Voice: no console antigo, preencha o ID do aplicativo e o token de acesso; no console novo, deixe o ID do aplicativo vazio e use apenas a chave de API. O reconhecimento de arquivos, TTS V1 e TTS V3 compartilham essas credenciais; apenas os nomes dos campos HTTP são diferentes.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "O Doubao TTS 2.0 usa uma chave de API. Os modelos pequenos antigos usam o ID do aplicativo e o token de acesso. Escolha uma voz oficial ou insira um ID de alto-falante clonado começando com S_.",
+  "Use legacy credentials": "Usar credenciais antigas",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Desligado usa a chave de API única (X-Api-Key) do console novo. Ligado alterna para o par de ID do aplicativo e token de acesso do console antigo.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "O modo antigo só vale depois que o ID do aplicativo é definido; enquanto ele estiver vazio, a credencial continua sendo enviada como chave de API do console novo via X-Api-Key."
 }

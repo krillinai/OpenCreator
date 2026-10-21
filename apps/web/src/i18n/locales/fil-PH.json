@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Progreso ng preview ng subtitle",
   "Adjust timing": "Ayusin ang tiyempo",
   "Enter the required credentials for the selected dubbing service to continue.": "Ilagay ang mga kinakailangang kredensyal para sa napiling serbisyo ng dubbing upang magpatuloy.",
-  "Save and continue composing": "I-save at magpatuloy sa pagbuo ng video"
+  "Save and continue composing": "I-save at magpatuloy sa pagbuo ng video",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Doubao Voice console: para sa lumang console, punan ang App ID at Access Token; para sa bagong console, iwan ang App ID at gamitin lamang ang API Key. Ang pagkilala sa file, TTS V1, at TTS V3 ay nagbabahagi ng parehong kredensyal; tanging ang HTTP mga pangalan ng field ang naiiba.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Gumagamit ang Doubao TTS 2.0 ng API Key. Ang mga lumang maliit na modelong boses ay gumagamit ng App ID at Access Token. Pumili ng opisyal na boses o maglagay ng naka-clone na speaker ID na nagsisimula sa S_.",
+  "Use legacy credentials": "Gumamit ng lumang kredensyal",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Kapag naka-off, ginagamit ang iisang API Key (X-Api-Key) ng bagong console. Kapag naka-on, lumilipat sa pares ng App ID at Access Token ng lumang console.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Epektib lamang ang lumang mode kapag may naitakdang App ID; habang ito ay walang laman, ipinapadala pa rin ang kredensyal bilang API Key ng bagong console sa pamamagitan ng X-Api-Key."
 }

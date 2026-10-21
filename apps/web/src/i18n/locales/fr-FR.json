@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Progression de l’aperçu des sous-titres",
   "Adjust timing": "Ajuster le minutage",
   "Enter the required credentials for the selected dubbing service to continue.": "Saisissez les identifiants requis pour le service de doublage sélectionné afin de continuer.",
-  "Save and continue composing": "Enregistrer et poursuivre la composition vidéo"
+  "Save and continue composing": "Enregistrer et poursuivre la composition vidéo",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Console Doubao Voice : pour l'ancienne console, renseignez l'identifiant d'application et le jeton d'accès ; pour la nouvelle, laissez l'identifiant d'application vide et utilisez uniquement la clé API. La reconnaissance de fichiers, TTS V1 et TTS V3 partagent ces identifiants ; seuls les noms des champs HTTP diffèrent.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 utilise une clé API. Les anciens petits modèles utilisent l'identifiant d'application et le jeton d'accès. Choisissez une voix officielle ou entrez un identifiant de haut-parleur cloné commençant par S_.",
+  "Use legacy credentials": "Utiliser les identifiants hérités",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Désactivé utilise la clé API unique (X-Api-Key) de la nouvelle console. Activé bascule vers le couple identifiant d'application et jeton d'accès de l'ancienne console.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Le mode hérité ne s'applique qu'une fois l'identifiant d'application défini ; tant qu'il est vide, les identifiants sont toujours envoyés comme clé API de la nouvelle console via X-Api-Key."
 }

@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Tiến trình xem trước phụ đề",
   "Adjust timing": "Điều chỉnh thời gian",
   "Enter the required credentials for the selected dubbing service to continue.": "Nhập thông tin xác thực cần thiết cho dịch vụ lồng tiếng đã chọn để tiếp tục.",
-  "Save and continue composing": "Lưu và tiếp tục ghép video"
+  "Save and continue composing": "Lưu và tiếp tục ghép video",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Bảng điều khiển Doubao Voice: với bảng điều khiển cũ, nhập App ID và Access Token; với bảng điều khiển mới, để trống App ID và chỉ dùng API Key. Nhận dạng tệp, TTS V1 và TTS V3 dùng chung thông tin đăng nhập đó; chỉ khác tên trường HTTP.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 dùng API Key. Mô hình nhỏ thế hệ cũ dùng App ID và Access Token. Chọn giọng chính thức hoặc nhập ID người nói đã nhân bản bắt đầu bằng S_.",
+  "Use legacy credentials": "Dùng thông tin đăng nhập cũ",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Tắt sẽ dùng API Key đơn (X-Api-Key) của bảng điều khiển mới. Bật sẽ chuyển sang cặp App ID và Access Token của bảng điều khiển cũ.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Chế độ cũ chỉ có hiệu lực sau khi đặt App ID; khi còn trống, thông tin đăng nhập vẫn được gửi dưới dạng API Key của bảng điều khiển mới qua X-Api-Key."
 }

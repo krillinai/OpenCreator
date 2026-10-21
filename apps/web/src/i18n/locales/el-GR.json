@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Πρόοδος προεπισκόπησης υποτίτλων",
   "Adjust timing": "Προσαρμογή χρονισμού",
   "Enter the required credentials for the selected dubbing service to continue.": "Εισαγάγετε τα απαιτούμενα διαπιστευτήρια για την επιλεγμένη υπηρεσία μεταγλώττισης για να συνεχίσετε.",
-  "Save and continue composing": "Αποθήκευση και συνέχιση σύνθεσης βίντεο"
+  "Save and continue composing": "Αποθήκευση και συνέχιση σύνθεσης βίντεο",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Κονσόλα Doubao Voice: για την παλιά κονσόλα συμπληρώστε το App ID και το Access Token, ή για τη νέα κονσόλα αφήστε το App ID κενό και χρησιμοποιήστε μόνο το κλειδί API. Η αναγνώριση αρχείων, το TTS V1 και το TTS V3 μοιράζονται τα ίδια διαπιστευτήρια· μόνο τα ονόματα των πεδίων HTTP διαφέρουν.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Το Doubao TTS 2.0 χρησιμοποιεί κλειδί API. Τα παλιά μικρά μοντέλα χρησιμοποιούν App ID και Access Token. Επιλέξτε μια επίσημη φωνή ή εισαγάγετε ένα κλωνοποιημένο αναγνωριστικό ομιλητή που ξεκινά με S_.",
+  "Use legacy credentials": "Χρήση παλιών διαπιστευτηρίων",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Όταν είναι απενεργοποιημένο, χρησιμοποιείται το μοναδικό κλειδί API (X-Api-Key) της νέας κονσόλας. Όταν είναι ενεργοποιημένο, γίνεται εναλλαγή στο ζεύγος App ID και Access Token της παλιάς κονσόλας.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Η παλιά λειτουργία ισχύει μόνο αφού οριστεί το App ID· όσο παραμένει κενό, τα διαπιστευτήρια στέλνονται και πάλι ως κλειδί API της νέας κονσόλας μέσω X-Api-Key."
 }

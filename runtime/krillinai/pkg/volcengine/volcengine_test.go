@@ -96,6 +96,66 @@ func TestAsrTranscriptionSubmitsBase64AudioAndMapsUtterances(t *testing.T) {
 	}
 }
 
+func TestAsrTranscriptionUsesApiKeyHeaderWhenAppIDIsEmpty(t *testing.T) {
+	log.InitLogger()
+	originalProcess := processAudioFile
+	processAudioFile = func(filePath string) (string, error) {
+		return filePath, nil
+	}
+	t.Cleanup(func() { processAudioFile = originalProcess })
+
+	source := filepath.Join(t.TempDir(), "clip.mp3")
+	if err := os.WriteFile(source, []byte("fake-mp3"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Api-Key") != "api-key-1" {
+			t.Fatalf("api key = %q", r.Header.Get("X-Api-Key"))
+		}
+		if r.Header.Get("X-Api-App-Key") != "" || r.Header.Get("X-Api-Access-Key") != "" {
+			t.Fatal("legacy headers should be absent when no App ID is configured")
+		}
+		w.Header().Set("X-Api-Status-Code", statusSuccess)
+		if r.URL.Path == submitPath {
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(asrQueryResponse{
+			Result: &asrResult{Text: "你好", Utterances: []asrUtterance{{Text: "你好", StartTime: 0, EndTime: 1000}}},
+		})
+	}))
+	defer server.Close()
+
+	client := NewAsrClient(server.URL, "", "api-key-1", "", "")
+	client.pollInterval = 0
+	result, err := client.Transcription(source, "zh", t.TempDir())
+	if err != nil {
+		t.Fatalf("Transcription() error = %v", err)
+	}
+	if result.Text != "你好" {
+		t.Fatalf("text = %q", result.Text)
+	}
+}
+
+func TestAsrTranscriptionRequiresCredential(t *testing.T) {
+	log.InitLogger()
+	originalProcess := processAudioFile
+	processAudioFile = func(filePath string) (string, error) {
+		return filePath, nil
+	}
+	t.Cleanup(func() { processAudioFile = originalProcess })
+
+	source := filepath.Join(t.TempDir(), "clip.mp3")
+	if err := os.WriteFile(source, []byte("fake-mp3"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	client := NewAsrClient("http://127.0.0.1:1", "app-1", "", "", "")
+	if _, err := client.Transcription(source, "zh", t.TempDir()); err == nil ||
+		!strings.Contains(err.Error(), "api key or access token is empty") {
+		t.Fatalf("empty credential error = %v", err)
+	}
+}
+
 func TestVolcengineLanguageMapsCompactSourceCodes(t *testing.T) {
 	tests := map[string]string{
 		"es":   "es-MX",
@@ -254,6 +314,31 @@ func TestTtsSynthesizeUsesV3ForDoubaoTwoOhVoices(t *testing.T) {
 	}
 	if string(content) != "v3-bytes" {
 		t.Fatalf("audio = %q", content)
+	}
+}
+
+func TestTtsSynthesizeUsesApiKeyForDoubaoTwoOh(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "speech.mp3")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Api-Key") != "api-key-1" {
+			t.Fatalf("api key = %q", r.Header.Get("X-Api-Key"))
+		}
+		if r.Header.Get("X-Api-App-Id") != "" || r.Header.Get("X-Api-Access-Key") != "" {
+			t.Fatalf("legacy headers should be absent")
+		}
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`{"code":0,"data":"` + base64.StdEncoding.EncodeToString([]byte("v3-bytes")) + `"}`,
+			`{"code":20000000,"message":"OK"}`,
+		}, "\n")))
+	}))
+	defer server.Close()
+
+	client := NewTtsClient(server.URL, "", "api-key-1", "seed-tts-2.0", "")
+	if err := client.Synthesize(context.Background(), types.TTSSpeechOptions{
+		Text: "豆包语音二点零", Voice: "zh_female_cancan_uranus_bigtts",
+		OutputFile: output, Format: "mp3",
+	}); err != nil {
+		t.Fatalf("Synthesize() error = %v", err)
 	}
 }
 

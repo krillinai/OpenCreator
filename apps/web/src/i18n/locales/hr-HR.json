@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Napredak pretpregleda titlova",
   "Adjust timing": "Prilagodi vrijeme",
   "Enter the required credentials for the selected dubbing service to continue.": "Unesite potrebne vjerodajnice za odabranu uslugu sinkronizacije kako biste nastavili.",
-  "Save and continue composing": "Spremi i nastavi sastavljati video"
+  "Save and continue composing": "Spremi i nastavi sastavljati video",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Konzola Doubao Voice: za staru konzolu unesite ID aplikacije i pristupni token, a za novu konzolu ostavite ID aplikacije prazan i upotrijebite samo API ključ. Prepoznavanje datoteka, TTS V1 i TTS V3 dijele te vjerodajnice; razlikuju se samo imena polja HTTP.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 koristi API ključ. Starije male modeli koriste ID aplikacije i pristupni token. Odaberite službeni glas ili unesite ID kloniranog govornika koji počinje sa S_.",
+  "Use legacy credentials": "Korištenje starih vjerodajnica",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Isključeno koristi jedini API ključ (X-Api-Key) nove konzole. Uključeno prebacuje na par ID aplikacije i pristupnog tokena stare konzole.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Stari način rada primjenjuje se tek kad je postavljen ID aplikacije; dok je prazan, vjerodajnice se i dalje šalju kao API ključ nove konzole putem X-Api-Key."
 }

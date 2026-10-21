@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Altyazı önizleme ilerlemesi",
   "Adjust timing": "Zamanlamayı ayarla",
   "Enter the required credentials for the selected dubbing service to continue.": "Devam etmek için seçilen dublaj hizmetinin gerekli kimlik bilgilerini girin.",
-  "Save and continue composing": "Kaydet ve videoyu oluşturmaya devam et"
+  "Save and continue composing": "Kaydet ve videoyu oluşturmaya devam et",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Doubao Voice konsolu: eski konsol için App ID ve Access Token bilgilerini girin, yeni konsol için App ID alanını boş bırakıp yalnızca API anahtarını kullanın. Dosya tanıma, TTS V1 ve TTS V3 aynı kimlik bilgilerini paylaşır; yalnızca HTTP alan adları farklıdır.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 bir API anahtarı kullanır. Eski küçük modeller App ID ve Access Token kullanır. Resmi bir ses seçin veya S_ ile başlayan klonlanmış konuşmacı kimliğini girin.",
+  "Use legacy credentials": "Eski kimlik bilgilerini kullan",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Kapalıyken yeni konsolun tek API anahtarı (X-Api-Key) kullanılır. Açıkken eski konsolun App ID ve Access Token çiftine geçilir.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Eski mod yalnızca App ID girildikten sonra etkinleşir; App ID boşken kimlik bilgileri hâlâ X-Api-Key üzerinden yeni konsol API anahtarı olarak gönderilir."
 }

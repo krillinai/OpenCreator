@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Kemajuan pratonton sari kata",
   "Adjust timing": "Laraskan masa",
   "Enter the required credentials for the selected dubbing service to continue.": "Masukkan kelayakan yang diperlukan untuk perkhidmatan alih suara yang dipilih untuk meneruskan.",
-  "Save and continue composing": "Simpan dan teruskan penggabungan video"
+  "Save and continue composing": "Simpan dan teruskan penggabungan video",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Konsol Doubao Voice: untuk konsol lama masukkan ID Apl dan Token Akses, atau untuk konsol baru biarkan ID Apl kosong dan gunakan Kunci API sahaja. Pengecaman fail, TTS V1 dan TTS V3 berkongsi kelayakan yang sama; hanya nama medan HTTP berbeza.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 menggunakan Kunci API. Model kecil warisan menggunakan ID Apl dan Token Akses. Pilih suara rasmi atau masukkan ID pembesar suara klon bermula dengan S_.",
+  "Use legacy credentials": "Gunakan kelayakan warisan",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Mati menggunakan Kunci API tunggal (X-Api-Key) daripada konsol baharu. Hidup bertukar kepada pasangan ID Apl dan Token Akses konsol lama.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Mod warisan hanya berkuat kuasa selepas ID Apl ditetapkan; selagi ia kosong, kelayakan itu masih dihantar sebagai Kunci API konsol baharu melalui X-Api-Key."
 }

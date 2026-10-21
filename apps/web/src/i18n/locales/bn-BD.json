@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "সাবটাইটেল প্রিভিউয়ের অগ্রগতি",
   "Adjust timing": "সময় সমন্বয় করুন",
   "Enter the required credentials for the selected dubbing service to continue.": "চালিয়ে যেতে নির্বাচিত ডাবিং পরিষেবার প্রয়োজনীয় পরিচয়পত্র লিখুন।",
-  "Save and continue composing": "সংরক্ষণ করে ভিডিও তৈরি চালিয়ে যান"
+  "Save and continue composing": "সংরক্ষণ করে ভিডিও তৈরি চালিয়ে যান",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Doubao ভয়েস কনসোল: পুরোনো কনসোলের জন্য অ্যাপ আইডি এবং অ্যাক্সেস টোকেন দিন, অথবা নতুন কনসোলের জন্য অ্যাপ আইডি খালি রেখে শুধু API কী ব্যবহার করুন। ফাইল স্বীকৃতি, TTS V1, এবং TTS V3 একই ক্রেডেনশিয়াল ভাগ করে; শুধুমাত্র HTTP ক্ষেত্রের নাম আলাদা।",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 একটি API কী ব্যবহার করে। পুরোনো ছোট-মডেল ভয়েস অ্যাপ আইডি এবং অ্যাক্সেস টোকেন ব্যবহার করে। একটি অফিসিয়াল ভয়েস বেছে নিন বা S_ দিয়ে শুরু করে একটি ক্লোন করা স্পিকার আইডি লিখুন।",
+  "Use legacy credentials": "পুরোনো ক্রেডেনশিয়াল ব্যবহার করুন",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "বন্ধ থাকলে নতুন কনসোলের একক API কী (X-Api-Key) ব্যবহার হয়। চালু থাকলে পুরোনো কনসোলের অ্যাপ আইডি ও অ্যাক্সেস টোকেন ব্যবহার হয়।",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "পুরোনো মোড কেবল অ্যাপ আইডি দেওয়ার পরেই কার্যকর হয়; তা খালি থাকা অবস্থায় ক্রেডেনশিয়ালটি এখনও নতুন কনসোলের API কী হিসেবে X-Api-Key মাধ্যমে পাঠানো হয়।"
 }

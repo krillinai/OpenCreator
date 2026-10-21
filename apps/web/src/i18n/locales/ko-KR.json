@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "자막 미리보기 진행 상황",
   "Adjust timing": "타이밍 조정",
   "Enter the required credentials for the selected dubbing service to continue.": "계속하려면 선택한 더빙 서비스에 필요한 인증 정보를 입력하세요.",
-  "Save and continue composing": "저장하고 영상 합성 계속"
+  "Save and continue composing": "저장하고 영상 합성 계속",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Doubao Voice 콘솔: 구형 콘솔에서는 앱 ID와 액세스 토큰을 입력하고, 신규 콘솔에서는 앱 ID를 비워 둔 채 API 키만 사용하세요. 파일 인식, TTS V1 및 TTS V3는 동일한 자격 증명을 공유하며, HTTP 필드 이름만 다릅니다.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0은 API 키를 사용합니다. 구형 소형 모델은 앱 ID와 액세스 토큰을 사용합니다. 공식 음성을 선택하거나 S_로 시작하는 복제 스피커 ID를 입력하세요.",
+  "Use legacy credentials": "구형 자격 증명 사용",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "끄면 신규 콘솔의 단일 API 키(X-Api-Key)를 사용합니다. 켜면 구형 콘솔의 앱 ID와 액세스 토큰 쌍으로 전환됩니다.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "구형 모드는 앱 ID가 설정된 뒤에만 적용됩니다. 그전까지도 자격 증명은 X-Api-Key를 통해 신규 콘솔 API 키로 전송됩니다."
 }

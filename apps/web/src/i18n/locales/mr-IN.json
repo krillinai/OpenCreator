@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "उपशीर्षक पूर्वावलोकनाची प्रगती",
   "Adjust timing": "वेळ समायोजित करा",
   "Enter the required credentials for the selected dubbing service to continue.": "पुढे जाण्यासाठी निवडलेल्या डबिंग सेवेची आवश्यक ओळखपत्रे प्रविष्ट करा.",
-  "Save and continue composing": "जतन करा आणि व्हिडिओ तयार करणे सुरू ठेवा"
+  "Save and continue composing": "जतन करा आणि व्हिडिओ तयार करणे सुरू ठेवा",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Doubao व्हॉईस कन्सोल: जुन्या कन्सोलसाठी ॲप आयडी आणि प्रवेश टोकन भरा, किंवा नवीन कन्सोलसाठी ॲप आयडी रिकामी ठेवून फक्त API की वापरा. फाइल ओळख, TTS V1, आणि TTS V3 सामायिक करतात जे प्रवेश तपशीर; फक्त HTTP फील्डची नावे वेगळी आहेत.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 वापरते API की. जुनी स्मॉल-मॉडेल व्हॉईस ॲप आयडी आणि प्रवेश टोकन वापरतात. अधिकृत आवाज निवडा किंवा S_ ने सुरू होणारा क्लोन केलेला स्पीकर आयडी प्रविष्ट करा.",
+  "Use legacy credentials": "जुनी प्रवेश माहिती वापरा",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "बंद केल्यास नवीन कन्सोलचा एकच API की (X-Api-Key) वापरला जातो. चालू केल्यास जुन्या कन्सोलच्या ॲप आयडी आणि प्रवेश टोकनवर जाते.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "जुनी प्रवेश माहिती फक्त ॲप आयडी सेट केल्यावर लागू होते; ती रिकामी असताना ती नवीन कन्सोलच्या API की म्हणून X-Api-Keyद्वारे पाठवली जाते."
 }

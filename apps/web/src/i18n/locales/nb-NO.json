@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Fremdrift for forhåndsvisning av undertekster",
   "Adjust timing": "Juster timing",
   "Enter the required credentials for the selected dubbing service to continue.": "Skriv inn nødvendig påloggingsinformasjon for den valgte dubbingtjenesten for å fortsette.",
-  "Save and continue composing": "Lagre og fortsett å sette sammen videoen"
+  "Save and continue composing": "Lagre og fortsett å sette sammen videoen",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Doubao Voice-konsollen: for den gamle konsollen skriver du inn app-ID og tilgangstoken, eller for den nye konsollen lar du app-ID-et stå tomt og bruker bare API-nøkkelen. Filgjenkjenning, TTS V1 og TTS V3 deler de samme påloggingsopplysningene; bare HTTP-feltnavnene er forskjellige.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 bruker en API-nøkkel. Eldre småmodeller bruker app-ID og tilgangstoken. Velg en offisiell stemme eller skriv inn en klonet høyttaler-ID som starter med S_.",
+  "Use legacy credentials": "Bruk gamle påloggingsopplysninger",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Av bruker den ene API-nøkkelen (X-Api-Key) fra den nye konsollen. På bytter til app-ID og tilgangstoken fra den gamle konsollen.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Gammel modus trer i kraft først når app-ID er satt; mens det er tomt, sendes opplysningene fortsatt som API-nøkkel fra den nye konsollen via X-Api-Key."
 }

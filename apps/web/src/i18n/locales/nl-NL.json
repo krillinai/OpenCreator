@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Voortgang van ondertitelvoorbeeld",
   "Adjust timing": "Timing aanpassen",
   "Enter the required credentials for the selected dubbing service to continue.": "Voer de vereiste inloggegevens in voor de geselecteerde nasynchronisatiedienst om door te gaan.",
-  "Save and continue composing": "Opslaan en doorgaan met video samenstellen"
+  "Save and continue composing": "Opslaan en doorgaan met video samenstellen",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Doubao Voice-console: vul voor de oude console de app-ID en het toegangstoken in, of laat voor de nieuwe console de app-ID leeg en gebruik alleen de API-sleutel. Bestandsherkenning, TTS V1 en TTS V3 delen dezelfde inloggegevens; alleen de veldnamen HTTP verschillen.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 gebruikt een API-sleutel. Oudere kleine modellen gebruiken de app-ID en het toegangstoken. Kies een officiële stem of voer een gekloonde spreker-ID in die begint met S_.",
+  "Use legacy credentials": "Oude inloggegevens gebruiken",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Uit gebruikt de enkele API-sleutel (X-Api-Key) van de nieuwe console. Aan schakelt over naar de app-ID en het toegangstoken van de oude console.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "De oude modus geldt pas zodra een app-ID is ingesteld; zolang die leeg is, worden de inloggegevens nog steeds als API-sleutel van de nieuwe console via X-Api-Key verstuurd."
 }

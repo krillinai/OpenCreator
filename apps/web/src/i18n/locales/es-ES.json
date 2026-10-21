@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Progreso de la vista previa de subtítulos",
   "Adjust timing": "Ajustar tiempos",
   "Enter the required credentials for the selected dubbing service to continue.": "Introduce las credenciales necesarias para el servicio de doblaje seleccionado para continuar.",
-  "Save and continue composing": "Guardar y continuar componiendo el vídeo"
+  "Save and continue composing": "Guardar y continuar componiendo el vídeo",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Consola de Doubao Voice: para la consola antigua, introduzca el ID de la aplicación y el token de acceso; para la nueva, deje el ID de la aplicación vacío y use solo la clave API. El reconocimiento de archivos, TTS V1 y TTS V3 comparten esas credenciales; solo difieren los nombres de los campos HTTP.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 usa una clave API. Los modelos pequeños heredados usan el ID de la aplicación y el token de acceso. Elija una voz oficial o introduzca una identificación de altavoz clonada que comience con S_.",
+  "Use legacy credentials": "Usar credenciales heredadas",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Desactivado usa la única clave API (X-Api-Key) de la consola nueva. Activado cambia al par de ID de la aplicación y token de acceso de la consola antigua.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "El modo heredado solo se aplica cuando hay un ID de la aplicación; mientras esté vacío, la credencial se sigue enviando como clave API de la consola nueva mediante X-Api-Key."
 }

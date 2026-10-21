@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "字幕預覽進度",
   "Adjust timing": "調整時間",
   "Enter the required credentials for the selected dubbing service to continue.": "請輸入所選配音服務所需的憑證以繼續。",
-  "Save and continue composing": "儲存並繼續合成"
+  "Save and continue composing": "儲存並繼續合成",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "豆包語音主控台:舊版主控台請填寫 App ID 與 Access Token,新版主控台請將 App ID 留空,僅使用 API Key。檔案辨識、TTS V1 與 TTS V3 共用同一組憑證,僅 HTTP 欄位名稱不同。",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 使用 API Key。舊版小模型使用 App ID 與 Access Token。請選擇官方音色,或輸入以 S_ 開頭的複製 Speaker ID。",
+  "Use legacy credentials": "使用舊版憑證",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "關閉時使用新版主控台的單一 API Key(X-Api-Key);開啟時改用舊版主控台的 App ID 與 Access Token。",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "舊版模式需設定 App ID 後才會生效;App ID 留空期間,憑證仍會以新版 API Key 的形式透過 X-Api-Key 傳送。"
 }

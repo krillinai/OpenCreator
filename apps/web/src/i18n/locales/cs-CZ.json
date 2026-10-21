@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Průběh náhledu titulků",
   "Adjust timing": "Upravit časování",
   "Enter the required credentials for the selected dubbing service to continue.": "Chcete-li pokračovat, zadejte požadované přihlašovací údaje pro vybranou dabingovou službu.",
-  "Save and continue composing": "Uložit a pokračovat ve skládání videa"
+  "Save and continue composing": "Uložit a pokračovat ve skládání videa",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Konzole Doubao Voice: pro starou konzoli zadejte ID aplikace a přístupový token, pro novou konzoli nechte ID aplikace prázdné a použijte pouze klíč API. Rozpoznávání souborů, TTS V1 a TTS V3 sdílejí tyto přihlašovací údaje; liší se pouze názvy polí HTTP.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 používá klíč API. Staré malé modely používají ID aplikace a přístupový token. Vyberte oficiální hlas nebo zadejte klonované ID mluvčího začínající na S_.",
+  "Use legacy credentials": "Použít staré přihlašovací údaje",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Vypnutí používá jediný klíč API (X-Api-Key) nové konzole. Zapnutí přepne na dvojici ID aplikace a přístupový token staré konzole.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Starý režim se aktivuje až po zadání ID aplikace; dokud je prázdné, jsou tyto údaje stále odesílány jako klíč API nové konzole přes X-Api-Key."
 }

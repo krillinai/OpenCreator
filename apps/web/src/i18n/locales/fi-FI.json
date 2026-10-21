@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "Tekstityksen esikatselun edistyminen",
   "Adjust timing": "Säädä ajoitusta",
   "Enter the required credentials for the selected dubbing service to continue.": "Jatka antamalla valitun dubbauspalvelun vaatimat tunnistetiedot.",
-  "Save and continue composing": "Tallenna ja jatka videon koostamista"
+  "Save and continue composing": "Tallenna ja jatka videon koostamista",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "Doubao Voice -konsoli: vanhaa konsolia varten syötä sovellustunnus ja käyttötunnus, uutta konsolia varten jätä sovellustunnus tyhjäksi ja käytä vain API-avainta. Tiedostontunnistus, TTS V1 ja TTS V3 jakavat saman tunnisteen; vain HTTP-kenttien nimet eroavat.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 käyttää API-avainta. Vanhat pienmallit käyttävät sovellustunnusta ja käyttötunnusta. Valitse virallinen ääni tai anna kloonattu kaiuttimen tunnus, joka alkaa kirjaimella S_.",
+  "Use legacy credentials": "Käytä vanhoja tunnisteita",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "Päällä pois käytetään uuden konsolin yhtä API-avainta (X-Api-Key). Päällä käytetään vanhan konsolin sovellustunnusta ja käyttötunnusta.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "Vanha tila tulee voimaan vasta, kun sovellustunnus on asetettu; kun se on tyhjä, tunniste lähetetään yhä uuden konsolin API-avaimena X-Api-Key:n kautta."
 }

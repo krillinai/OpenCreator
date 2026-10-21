@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "پیشرفت پیش‌نمایش زیرنویس",
   "Adjust timing": "تنظیم زمان‌بندی",
   "Enter the required credentials for the selected dubbing service to continue.": "برای ادامه، اطلاعات احراز هویت موردنیاز سرویس دوبله انتخاب‌شده را وارد کنید.",
-  "Save and continue composing": "ذخیره و ادامه ساخت ویدیو"
+  "Save and continue composing": "ذخیره و ادامه ساخت ویدیو",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "کنسول صوتی Doubao: برای کنسول قدیمی شناسه برنامه و رمز دسترسی را وارد کنید، یا برای کنسول جدید شناسه برنامه را خالی بگذارید و فقط از کلید API استفاده کنید. شناسایی فایل، TTS V1 و TTS V3 همین اعتبارنامه را به اشتراک می گذارند؛ فقط نام فیلدهای HTTP متفاوت است.",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 از کلید API استفاده می کند. مدل های کوچک قدیمی از شناسه برنامه و رمز دسترسی استفاده می کنند. یک صدای رسمی انتخاب کنید یا شناسه بلندگوی شبیه سازی شده را که با S_ شروع می شود وارد کنید.",
+  "Use legacy credentials": "استفاده از اعتبارنامه های قدیمی",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "خاموش از کلید API تنها (X-Api-Key) کنسول جدید استفاده می کند. روشن به جفت شناسه برنامه و رمز دسترسی کنسول قدیمی تغییر می کند.",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "حالت قدیمی تنها پس از تعیین شناسه برنامه اعمال می شود؛ تا زمانی که خالی است، اعتبارنامه همچنان به عنوان کلید API کنسول جدید از طریق X-Api-Key ارسال می شود."
 }

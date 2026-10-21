@@ -3338,5 +3338,10 @@
   "Subtitle preview progress": "ความคืบหน้าการแสดงตัวอย่างคำบรรยาย",
   "Adjust timing": "ปรับเวลา",
   "Enter the required credentials for the selected dubbing service to continue.": "ป้อนข้อมูลรับรองที่จำเป็นสำหรับบริการพากย์เสียงที่เลือกเพื่อดำเนินการต่อ",
-  "Save and continue composing": "บันทึกและสร้างวิดีโอต่อ"
+  "Save and continue composing": "บันทึกและสร้างวิดีโอต่อ",
+  "Doubao Voice console: fill App ID plus Access Token for the old console, or leave App ID empty and use only the API Key for the new one. File recognition, TTS V1, and TTS V3 share that credential; only the HTTP field names differ.": "คอนโซล Doubao Voice: สำหรับคอนโซลเก่าให้กรอกรหัสแอปและโทเค็นการเข้าถึง สำหรับคอนโซลใหม่ให้เว้นรหัสแอปว่างและใช้เฉพาะคีย์ API การจดจำไฟล์ TTS V1 และ TTS V3 ใช้ข้อมูลรับรองชุดเดียวกัน มีเพียงชื่อฟิลด์ HTTP เท่านั้นที่แตกต่างกัน",
+  "Doubao TTS 2.0 uses an API key. Legacy small models use an App ID and Access Token. Pick an official voice or enter a cloned Speaker ID starting with S_.": "Doubao TTS 2.0 ใช้คีย์ API โมเดลขนาดเล็กรุ่นเก่าใช้รหัสแอปและโทเค็นการเข้าถึง เลือกเสียงอย่างเป็นทางการหรือป้อนรหัสผู้พูดโคลนที่ขึ้นต้นด้วย S_",
+  "Use legacy credentials": "ใช้ข้อมูลรับรองรุ่นเก่า",
+  "Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.": "เมื่อปิดจะใช้คีย์ API เดียว (X-Api-Key) ของคอนโซลใหม่ เมื่อเปิดจะสลับไปใช้รหัสแอปและโทเค็นการเข้าถึงของคอนโซลเก่า",
+  "Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.": "โหมดรุ่นเก่าจะมีผลเมื่อมีการตั้งรหัสแอปแล้วเท่านั้น ระหว่างที่ยังว่าง ข้อมูลรับรองจะยังถูกส่งเป็นคีย์ API ของคอนโซลใหม่ผ่าน X-Api-Key"
 }
