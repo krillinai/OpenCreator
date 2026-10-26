@@ -41,6 +41,39 @@ async function setup(activate = vi.fn(async () => undefined), close = vi.fn(asyn
   return { service, root, client, activate, close, probe };
 }
 
+it('caches only coarse recharge state and its observation time from order responses', async () => {
+  const f = await setup();
+  await seedSavedAccount(f);
+  const request = vi.spyOn(f.client, 'request').mockResolvedValue({
+    order: {
+      id: 'order-secret', amountUnits: '1000', status: 'completed',
+      paymentStatus: 'paid', creditStatus: 'ready'
+    }
+  });
+  try {
+    await f.service.billing('/api/v1/billing/orders/order-secret');
+    const snapshot = f.service.peekTelemetryRechargeState();
+    expect(snapshot.state).toBe('recharged');
+    expect(Number.isNaN(Date.parse(snapshot.observedAt))).toBe(false);
+    expect(JSON.stringify(snapshot)).not.toContain('order-secret');
+    expect(JSON.stringify(snapshot)).not.toContain('1000');
+    expect(request).toHaveBeenCalledOnce();
+    request.mockResolvedValue({ order: { status: 'failed' } });
+    await f.service.billing('/api/v1/billing/orders/order-secret');
+    expect(f.service.peekTelemetryRechargeState().state).toBe('recharged');
+  } finally { await f.service.close(); }
+});
+
+it('reports an authoritative empty order list as not recharged', async () => {
+  const f = await setup();
+  await seedSavedAccount(f);
+  vi.spyOn(f.client, 'request').mockResolvedValue({ items: [] });
+  try {
+    await f.service.billing('/api/v1/billing/orders');
+    expect(f.service.peekTelemetryRechargeState().state).toBe('not_recharged');
+  } finally { await f.service.close(); }
+});
+
 it('saves a compatible model choice without invoking the paid probe', async () => {
   const f = await setupCachedAccount({ models: [{ id: 'first', modality: 'text', capabilities: ['responses'] }, { id: 'second', modality: 'text', capabilities: ['responses'] }], defaults: { text: 'first' } });
   try {

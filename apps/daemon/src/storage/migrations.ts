@@ -241,6 +241,13 @@ export function migrate(db: Database.Database): void {
       acknowledged_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS telemetry_outbox (
+      event_id TEXT PRIMARY KEY,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      event_json TEXT NOT NULL CHECK (json_valid(event_json)),
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS memories (
       id TEXT PRIMARY KEY,
       content TEXT NOT NULL,

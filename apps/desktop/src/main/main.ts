@@ -177,6 +177,7 @@ async function launchDesktop(): Promise<void> {
     appVersion: app.getVersion(),
     isOfficialBuild: app.isPackaged && readOfficialBuildMarker(process.resourcesPath),
     isWindowActive: () => windowManager?.isActive() === true,
+    getDaemonConnection: () => daemon.currentConnection,
     fetchImpl: fetchDesktopRequest,
     endpointOverride: process.env.OPENCREATOR_TELEMETRY_URL
   });

@@ -36,6 +36,7 @@ import { getCreatorPresetModuleDefinition } from './presets/module-schemas.js';
 import { mergeCreatorPresetState } from './presets/requirements.js';
 import type { CreatorPresetRegistry } from './presets/types.js';
 import type { CreatorServicesConfigStore } from '../creator-services/config-store.js';
+import type { CreatorTelemetrySink } from '../telemetry/creator.js';
 
 export type CreatorService = ReturnType<typeof createCreatorService>;
 
@@ -57,6 +58,7 @@ export function createCreatorService(input: {
   jobsRoot?: string;
   presets?: CreatorPresetRegistry;
   creatorServicesConfig?: Pick<CreatorServicesConfigStore, 'read'>;
+  telemetry?: CreatorTelemetrySink;
 }) {
   const { repository, templates } = input;
   const providerRequestLedger = input.providerRequestLedger
@@ -1250,6 +1252,10 @@ export function createCreatorService(input: {
                 errorCode: 'creator_provider_scope_canceled',
                 errorMessage: 'Provider request scope was canceled by the user'
               });
+              const canceled = repository.getStageRun(stage.id);
+              if (canceled !== undefined) {
+                input.telemetry?.stageFinished(current, canceled, template.id, 'canceled');
+              }
             }
           } else if (decision === 'query') {
             nextStatus = ledger.status === 'failed' ? 'failed' : 'needs_input';

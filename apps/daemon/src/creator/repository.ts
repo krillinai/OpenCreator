@@ -187,6 +187,7 @@ export type CreatorRepository = {
     errorMessage?: string | null;
   }): void;
   listStageRuns(jobId: string): CreatorStageRun[];
+  listRecoveredInterruptedStageRuns?(): CreatorStageRun[];
   listDispatchableStageRuns(now: string, limit: number): CreatorStageRun[];
   claimStageRun(input: {
     id: string;
@@ -246,7 +247,7 @@ export function createCreatorRepository(
   const now = options.now ?? (() => new Date().toISOString());
   repairLeadingResultSnapshotGaps(db);
   repairLegacyVerticalSubtitleArtifacts(db);
-  recoverInterruptedStageRuns(db, now());
+  const recoveredInterruptedStageIds = recoverInterruptedStageRuns(db, now());
   recoverInterruptedIssues(db, now(), idFactory);
 
   const getJob = (id: string): CreatorJob | undefined => {
@@ -663,6 +664,12 @@ export function createCreatorRepository(
       );
     },
     listStageRuns,
+    listRecoveredInterruptedStageRuns() {
+      return recoveredInterruptedStageIds.flatMap(id => {
+        const stage = this.getStageRun(id);
+        return stage === undefined ? [] : [stage];
+      });
+    },
     listDispatchableStageRuns(timestamp: string, limit: number): CreatorStageRun[] {
       return (db.prepare(`
         SELECT id, job_id, stage_id, executor, status, dispatch_status,
@@ -1123,7 +1130,12 @@ function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function recoverInterruptedStageRuns(db: Database.Database, timestamp: string): void {
+function recoverInterruptedStageRuns(db: Database.Database, timestamp: string): string[] {
+  const affected = db.prepare(`
+    SELECT id FROM creator_stage_runs
+    WHERE status = 'running'
+    ORDER BY created_at ASC, rowid ASC
+  `).all() as Array<{ id: string }>;
   db.transaction(() => {
     const affectedJobs = db.prepare(`
       SELECT DISTINCT job_id
@@ -1151,6 +1163,7 @@ function recoverInterruptedStageRuns(db: Database.Database, timestamp: string): 
     `);
     for (const row of affectedJobs) updateJob.run(timestamp, row.job_id);
   })();
+  return affected.map(row => row.id);
 }
 
 function recoverInterruptedIssues(
