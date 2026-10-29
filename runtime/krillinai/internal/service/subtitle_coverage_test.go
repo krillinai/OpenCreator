@@ -52,7 +52,7 @@ func TestPairedTranslationRejectsInternalTargetSpaceChanges(t *testing.T) {
 	}
 }
 
-func TestPairedTranslationRestoresAlteredSourceSpacesLocally(t *testing.T) {
+func TestPairedTranslationRetriesAlteredSourceSpaces(t *testing.T) {
 	log.InitLogger()
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
@@ -71,7 +71,7 @@ func TestPairedTranslationRestoresAlteredSourceSpacesLocally(t *testing.T) {
 		return string(data), err
 	})}
 	result, err := translator.translatePairedSentences(context.Background(), []string{"Das ist nicht so."}, "de", "zh_cn", 50, 1, nil)
-	if err != nil || calls != 1 || len(result) != 1 || result[0].Source[0] != "Das ist nicht so." {
+	if err != nil || calls != 2 || len(result) != 1 || result[0].Source[0] != "Das ist nicht so." {
 		t.Fatalf("source was not corrected: calls=%d result=%+v error=%v", calls, result, err)
 	}
 }

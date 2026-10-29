@@ -8,7 +8,6 @@ import (
 	"krillin-ai/config"
 	"krillin-ai/internal/types"
 	"krillin-ai/pkg/util"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,28 +18,44 @@ import (
 	openaiapi "github.com/sashabaranov/go-openai"
 )
 
-func TestTranslationPersistentRequestErrorsStopAfterThreeAttempts(t *testing.T) {
-	previous := config.Conf
-	t.Cleanup(func() { config.Conf = previous })
-	config.Conf.App.TranslateMaxAttempts = 9 // 配置过大也不能绕过上限。
-	for _, status := range []int{http.StatusTooManyRequests, http.StatusInternalServerError} {
-		t.Run(fmt.Sprint(status), func(t *testing.T) {
-			calls := 0
-			translator := &Translator{chatCompleter: translationCompleterFunc(func(string) (string, error) {
-				calls++
-				return "", &openaiapi.APIError{HTTPStatusCode: status, Message: "provider unavailable"}
-			})}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_, err := translator.translatePairedSentences(ctx, []string{"Hello."}, "en", "zh_cn", 50, 1, nil)
-			if calls != 3 || err == nil || !strings.Contains(err.Error(), "全部1条正文字幕翻译失败") || !strings.Contains(err.Error(), "已用尽3次请求") {
-				t.Fatalf("接口故障未在三次后退出: calls=%d err=%v", calls, err)
-			}
-		})
+func TestTranslationRepairsTargetCommasWithoutRequest(t *testing.T) {
+	source := "Pick one phrase, a question, or a pattern and dig deeper into it."
+	target := "选一个短语、问题或模式，深入探究一番。"
+	calls := 0
+	translator := &Translator{chatCompleter: translationCompleterFunc(func(string) (string, error) {
+		calls++
+		return `{"sentences":[{"sentence_id":"1","target_text":"选一个短语、问题或模式，深入探究一番。","segments":[{"source":"Pick one phrase, a question,","target":"选一个短语、问题，"},{"source":"or a pattern","target":"或模式"},{"source":"and dig deeper into it.","target":"，深入探究一番。"}]}]}`, nil
+	})}
+	result, err := translator.translatePairedSentences(context.Background(), []string{source}, "en", "zh_cn", 40, 1, nil)
+	if err != nil || calls != 1 || len(result) != 1 || !subtitleSegmentsPreserveText(target, result[0].Target) ||
+		fmt.Sprint(result[0].Target) != "[选一个短语、问题 或模式， 深入探究一番。]" {
+		t.Fatalf("标点修复增加请求、改写内容或留下句首逗号: calls=%d result=%+v err=%v", calls, result, err)
 	}
 }
 
-func TestTranslationRepairsSubjectBoundaryLocally(t *testing.T) {
+func TestTranslationCommaRepairDoesNotHideContentChanges(t *testing.T) {
+	for _, tc := range []struct {
+		full  string
+		parts []string
+	}{
+		{"数字是1.5，不是15。", []string{"数字是15，", "不是15。"}},
+		{"这是a part，不是apart。", []string{"这是apart，", "不是apart。"}},
+		{"这不是建议，而是要求。", []string{"这是建议，", "而是要求。"}},
+	} {
+		item := pairedTranslationOutputSentence{FullTarget: tc.full}
+		for _, part := range tc.parts {
+			item.Segments = append(item.Segments, pairedTranslationSegment{Source: "source", Target: part})
+		}
+		fixed := repairPairedTargetCommas(item, 60)
+		for i, part := range tc.parts {
+			if fixed.Segments[i].Target != part {
+				t.Fatalf("错误内容被标点修复掩盖: full=%q parts=%v fixed=%+v", tc.full, tc.parts, fixed)
+			}
+		}
+	}
+}
+
+func TestTranslationPreservesInLimitPairsDespiteSubjectBoundaryAdvice(t *testing.T) {
 	source := "This is a long beginning that remains separate. And it is useful."
 	// 单独输入完整文本会按句号分成两句；以逗号连接以检验同一句中的局部边界。
 	source = strings.Replace(source, "separate.", "separate,", 1)
@@ -54,34 +69,25 @@ func TestTranslationRepairsSubjectBoundaryLocally(t *testing.T) {
 		return string(data), err
 	})}
 	result, err := translator.translatePairedSentences(context.Background(), []string{source}, "en", "zh_cn", 50, 1, nil)
-	if err != nil || calls != 1 || len(result) != 1 || len(result[0].Source) != 2 || result[0].Source[1] != "And it is useful." || !subtitleSegmentsPreserveText(target, result[0].Target) {
-		t.Fatalf("本地边界修复失败: calls=%d result=%+v err=%v", calls, result, err)
+	if err != nil || calls != 1 || len(result) != 1 || len(result[0].Source) != 3 || result[0].Source[1] != "And it" || result[0].Source[2] != "is useful." || !subtitleSegmentsPreserveText(target, result[0].Target) {
+		t.Fatalf("软边界建议改动了已符合长度的字幕: calls=%d result=%+v err=%v", calls, result, err)
 	}
 }
 
-func TestTranslationKeepsOriginalAndCheckpointWhenOverlongLayoutDisconnects(t *testing.T) {
+func TestTranslationContinuesWhenOnlyLayoutRequestDisconnects(t *testing.T) {
 	target := strings.Repeat("有效译文", 15)
 	calls := 0
-	translator := &Translator{checkpointDir: t.TempDir(), chatCompleter: translationCompleterFunc(func(string) (string, error) {
+	translator := &Translator{chatCompleter: translationCompleterFunc(func(string) (string, error) {
 		calls++
 		if calls > 1 {
 			return "", errors.New("LLM disconnected")
 		}
-		data, err := encodePairedTestResponse([]pairedSentence{{ID: "1", FullTarget: target, Source: []string{"Hello."}, Target: []string{target}}})
+		data, err := encodePairedTestResponse([]pairedSentence{{ID: "1", Source: []string{"Hello."}, Target: []string{target}}})
 		return string(data), err
 	})}
 	result, err := translator.translatePairedSentences(context.Background(), []string{"Hello."}, "en", "zh_cn", 50, 1, nil)
-	if err != nil || calls != 3 || len(result) != 1 || result[0].FullTarget != target || len(result[0].Source) != 1 || result[0].Source[0] != "Hello." || len(result[0].Target) != 1 || result[0].Target[0] != target || !result[0].LayoutFallback {
-		t.Fatalf("未保留原有完整字幕: calls=%d result=%+v err=%v", calls, result, err)
-	}
-	files, _ := filepath.Glob(filepath.Join(translator.checkpointDir, "translation-checkpoints", "*", "*.json"))
-	if len(files) != 1 {
-		t.Fatalf("已有完整译文没有保存: %v", files)
-	}
-	data, _ := os.ReadFile(files[0])
-	var saved pairedSentence
-	if json.Unmarshal(data, &saved) != nil || saved.FullTarget != target || !saved.LayoutFallback {
-		t.Fatalf("连接故障丢失完整译文: %+v", saved)
+	if err != nil || calls != 2 || len(result) != 1 || result[0].FullTarget != target {
+		t.Fatalf("已有完整译文仍因排版连接故障失败: calls=%d result=%+v err=%v", calls, result, err)
 	}
 }
 
@@ -89,10 +95,10 @@ func TestTranslationReducesConcurrencyAfterRateLimit(t *testing.T) {
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
 	config.Conf.App.TranslateParallelNum = 3
-	config.Conf.App.TranslateMaxAttempts = 2
+	config.Conf.App.TranslateMaxAttempts = 1
 	var mu sync.Mutex
 	limited, activeLater, peakLater := false, 0, 0
-	translator := &Translator{chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
+	translator := &Translator{recoveryDelay: time.Millisecond, chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 		input, err := decodePairedTestInput(prompt)
 		if err != nil {
 			return "", err
@@ -141,20 +147,18 @@ func TestShortSubtitleFallsBackWhenGraphemeOrTimingCannotBeSplit(t *testing.T) {
 	}
 }
 
-func TestTranslationRepairsConfiguredOverflowAndKeepsValidTarget(t *testing.T) {
-	for _, length := range []int{50, 51, 55, 56} {
+func TestTranslationRejectsSmallOverflowWithBoundedRecovery(t *testing.T) {
+	for _, length := range []int{50, 51, 55, 56, 150} {
 		t.Run(fmt.Sprint(length), func(t *testing.T) {
 			calls := 0
-			target := "译" + strings.Repeat("a", length-2)
+			target := "译" + strings.Repeat("a", length-1)
 			translator := &Translator{chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 				calls++
-				_, err := decodePairedTestInput(prompt)
+				input, err := decodePairedTestInput(prompt)
 				if err != nil {
 					return "", err
 				}
-				var request subtitleLengthSplitInput
-				_ = semanticTestPayload(prompt, &request)
-				if calls > 1 && request.OriginalTarget != target {
+				if calls > 1 && input.Sentences[0].TargetText != target {
 					t.Fatal("修复排版时没有冻结已完成的译文")
 				}
 				data, err := encodePairedTestResponse([]pairedSentence{{ID: "1", FullTarget: target, Source: []string{"Hello."}, Target: []string{target}}})
@@ -163,9 +167,9 @@ func TestTranslationRepairsConfiguredOverflowAndKeepsValidTarget(t *testing.T) {
 			result, err := translator.translatePairedSentences(context.Background(), []string{"Hello."}, "en", "zh_cn", 50, 1, nil)
 			wantCalls := 1
 			if length > 50 {
-				wantCalls = 4 // 一次初译，三轮有限拆分，失败保留原译。
+				wantCalls = 3
 			}
-			if err != nil || calls != wantCalls || len(result) != 1 || result[0].FullTarget != target || result[0].Target[0] != target || result[0].LayoutFallback != (length > 50) {
+			if err != nil || calls != wantCalls || len(result) != 1 || result[0].FullTarget != target || result[0].Target[0] != target {
 				t.Fatalf("calls=%d result=%+v error=%v", calls, result, err)
 			}
 		})
@@ -187,7 +191,7 @@ func TestTranslationRepairsOnlyFailedSentences(t *testing.T) {
 		for _, source := range input.Sentences {
 			target := "有效译文" + source.ID
 			if calls == 1 && source.ID == "2" {
-				target = "" // 未取得译文，只重试当前缺失句。
+				target = source.Text // 整句未译，必须修复。
 			}
 			sentences = append(sentences, pairedSentence{ID: source.ID, FullTarget: target, Source: []string{source.Text}, Target: []string{target}})
 		}
@@ -200,7 +204,7 @@ func TestTranslationRepairsOnlyFailedSentences(t *testing.T) {
 	}
 }
 
-func TestTranslationRestoresFullSentenceWithoutDroppingContent(t *testing.T) {
+func TestTranslationFallsBackToFullSentenceWithoutDroppingContent(t *testing.T) {
 	source := "We work hard, because we care."
 	target := "我们努力工作，因为我们在乎。"
 	calls := 0
@@ -211,18 +215,15 @@ func TestTranslationRestoresFullSentenceWithoutDroppingContent(t *testing.T) {
 		return string(data), err
 	})}
 	result, err := translator.translatePairedSentences(context.Background(), []string{source}, "en", "zh_cn", 50, 1, nil)
-	if err != nil || calls != 1 || len(result) != 1 || result[0].LayoutFallback || fmt.Sprint(result[0].Source) != "["+source+"]" || fmt.Sprint(result[0].Target) != "["+target+"]" {
+	if err != nil || calls != 2 || len(result) != 1 || !result[0].LayoutFallback || fmt.Sprint(result[0].Source) != "["+source+"]" || fmt.Sprint(result[0].Target) != "["+target+"]" {
 		t.Fatalf("calls=%d result=%+v error=%v", calls, result, err)
 	}
 }
 
 func TestTranslationRetainsValidTargetWhenLayoutRepairRewritesIt(t *testing.T) {
-	target := strings.Repeat("完整", 18)
+	target := strings.Repeat("完整", 30)
 	calls := 0
-	translator := &Translator{chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
-		if strings.HasPrefix(prompt, "任务：translation_length_rewrite_review\n") {
-			return `{"equivalent":false,"reason":"删减后的译文丢失原始含义"}`, nil
-		}
+	translator := &Translator{chatCompleter: translationCompleterFunc(func(string) (string, error) {
 		calls++
 		text := target
 		if calls > 1 {
@@ -232,7 +233,7 @@ func TestTranslationRetainsValidTargetWhenLayoutRepairRewritesIt(t *testing.T) {
 		return string(data), err
 	})}
 	result, err := translator.translatePairedSentences(context.Background(), []string{"Original."}, "en", "zh_cn", 50, 1, nil)
-	if err != nil || calls != 6 || result[0].FullTarget != target {
+	if err != nil || calls != 3 || result[0].FullTarget != target {
 		t.Fatalf("排版纠错改写了译文: %+v calls=%d err=%v", result, calls, err)
 	}
 }
@@ -241,28 +242,36 @@ func TestTranslationUsesPlainSentenceAfterStructuredAttempts(t *testing.T) {
 	calls := 0
 	translator := &Translator{chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 		calls++
-		if calls < 3 {
+		if calls <= 3 {
 			return "not-json", nil
 		}
-		if !strings.Contains(prompt, "不拆分、不配对") {
-			t.Fatal("最后一次尝试没有切换请求策略")
+		if !strings.HasPrefix(prompt, plainTranslationPrompt) {
+			t.Fatal("三次结构失败后没有切换请求策略")
 		}
 		return `{"sentence_id":"1","target_text":"这是完整的译文。"}`, nil
 	})}
 	result, err := translator.translatePairedSentences(context.Background(), []string{"This is a complete translation."}, "en", "zh_cn", 50, 1, nil)
-	if err != nil || calls != 3 || len(result) != 1 || result[0].Target[0] != "这是完整的译文。" {
+	if err != nil || calls != 4 || len(result) != 1 || result[0].Target[0] != "这是完整的译文。" {
 		t.Fatalf("calls=%d result=%+v err=%v", calls, result, err)
 	}
 }
 
-func TestTranslationExhaustionStopsAfterThreeAttemptsAndKeepsOtherSentences(t *testing.T) {
+func TestTranslationBadSentenceStopsAfterRecoveryBudget(t *testing.T) {
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
 	config.Conf.App.TranslateParallelNum = 1
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	notified := false
 	calls := make(map[string]int)
-	translator := &Translator{checkpointDir: t.TempDir(), chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
+	translator := &Translator{recoveryDelay: time.Millisecond, onRecovery: func(message string) {
+		if strings.Contains(message, "未获得有效译文") {
+			notified = true
+			if calls["2"] != 1 {
+				t.Error("失败句阻止了后面的字幕翻译")
+			}
+		}
+	}, chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 		input, err := decodePairedTestInput(prompt)
 		if err != nil {
 			return "", err
@@ -275,28 +284,22 @@ func TestTranslationExhaustionStopsAfterThreeAttemptsAndKeepsOtherSentences(t *t
 		return echoPairedTestResponse(input)
 	})}
 	result, err := translator.translatePairedSentences(ctx, []string{"First.", "Second."}, "en", "zh_cn", 50, 1, nil)
-	if err != nil || len(result) != 2 || result[0].FullTarget != "First." || result[0].TranslationFallbackReason == "" || calls["1"] != 3 || calls["2"] != 1 {
-		t.Fatalf("calls=%v result=%+v err=%v", calls, result, err)
-	}
-	files, _ := filepath.Glob(filepath.Join(translator.checkpointDir, "translation-checkpoints", "*", "2.json"))
-	if len(files) != 1 {
-		t.Fatalf("其他句子的翻译成果没有保存: %v", files)
+	if err != nil || !notified || calls["1"] != 4 || calls["2"] != 1 || len(result) != 2 ||
+		!result[0].Untranslated || result[0].FullTarget != "[待翻译] First." || result[1].Untranslated {
+		t.Fatalf("calls=%v result=%+v notified=%v err=%v", calls, result, notified, err)
 	}
 }
 
-func TestTranslationInvalidContentWaitHonorsCancellation(t *testing.T) {
+func TestTranslationInvalidContentFallbackHonorsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	calls := 0
-	translator := &Translator{chatCompleter: translationCompleterFunc(func(string) (string, error) {
+	translator := &Translator{onRecovery: func(string) { cancel() }, chatCompleter: translationCompleterFunc(func(string) (string, error) {
 		calls++
-		if calls == 3 {
-			cancel()
-		}
 		return `{"sentence_id":"1","target_text":"Original."}`, nil
 	})}
 	result, err := translator.translatePairedSentences(ctx, []string{"Original."}, "en", "zh_cn", 50, 1, nil)
-	if !errors.Is(err, context.Canceled) || result != nil || calls != 3 {
+	if !errors.Is(err, context.Canceled) || result != nil || calls != 4 {
 		t.Fatalf("无效译文被当成成功或等待不可取消: calls=%d result=%v err=%v", calls, result, err)
 	}
 }
@@ -305,7 +308,7 @@ func TestTranslationCheckpointSurvivesDisconnectDuringLayoutRepair(t *testing.T)
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	target := strings.Repeat("完整译文", 9)
+	target := strings.Repeat("完整译文", 15)
 	calls := 0
 	translator := &Translator{checkpointDir: dir, chatCompleter: translationCompleterFunc(func(string) (string, error) {
 		calls++
@@ -319,24 +322,18 @@ func TestTranslationCheckpointSurvivesDisconnectDuringLayoutRepair(t *testing.T)
 	if _, err := translator.translatePairedSentences(ctx, []string{"Hello."}, "en", "zh_cn", 50, 1, nil); err == nil {
 		t.Fatal("没有报告真实连接故障")
 	}
-	layoutCalls := 0
+	repairCalls := 0
 	translator.chatCompleter = translationCompleterFunc(func(prompt string) (string, error) {
-		layoutCalls++
+		repairCalls++
 		input, err := decodePairedTestInput(prompt)
-		if err != nil {
-			return "", err
+		if err != nil || len(input.Sentences) != 1 || input.Sentences[0].ID != "1.1" || input.Sentences[0].TargetText != target {
+			t.Fatalf("恢复时未冻结已有译文做局部拆分: %+v err=%v", input, err)
 		}
-		var request subtitleLengthSplitInput
-		_ = semanticTestPayload(prompt, &request)
-		if input.Sentences[0].TargetText != target && request.OriginalTarget != target {
-			t.Fatal("恢复时没有锁定已有的完整译文")
-		}
-		data, err := encodePairedTestResponse([]pairedSentence{{ID: "1", FullTarget: target, Source: []string{"Hello."}, Target: []string{target}}})
-		return string(data), err
+		return "", errors.New("LLM disconnected")
 	})
 	result, err := translator.translatePairedSentences(context.Background(), []string{"Hello."}, "en", "zh_cn", 20, 3, nil)
-	if err != nil || len(result) != 1 || result[0].FullTarget != target || calls != 2 || layoutCalls != 5 {
-		t.Fatalf("result=%+v calls=%d err=%v", result, calls, err)
+	if err != nil || len(result) != 1 || result[0].FullTarget != target || calls != 2 || repairCalls != 1 {
+		t.Fatalf("result=%+v calls=%d repairCalls=%d err=%v", result, calls, repairCalls, err)
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "translation-checkpoints", "*", "*.json"))
 	if len(files) != 1 {
@@ -362,13 +359,13 @@ func TestTranslationCheckpointSavesOtherConcurrentSuccesses(t *testing.T) {
 		}
 		return echoPairedTestResponse(input)
 	})}
-	partial, err := translator.translatePairedSentences(context.Background(), []string{"First.", "Second."}, "en", "zh_cn", 50, 1, nil, func(completed, total int) {
+	first, err := translator.translatePairedSentences(context.Background(), []string{"First.", "Second."}, "en", "zh_cn", 50, 1, nil, func(completed, total int) {
 		if completed == 1 {
 			once.Do(func() { close(saved) })
 		}
 	})
-	if err != nil || len(partial) != 2 || !strings.Contains(partial[0].TranslationFallbackReason, "LLM disconnected") {
-		t.Fatalf("单句连接故障未保留回退原因：%+v %v", partial, err)
+	if err != nil || len(first) != 2 || !first[0].Untranslated || first[1].Untranslated {
+		t.Fatalf("未保留并发成功句或未标记失败句: result=%+v err=%v", first, err)
 	}
 	var requested []string
 	translator.chatCompleter = translationCompleterFunc(func(prompt string) (string, error) {
@@ -462,11 +459,11 @@ func TestTranslationCheckpointRejectsInvalidCachedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := checkpoint.save(pairedSentence{ID: "1", FullTarget: "", Source: []string{"Original."}, Target: []string{""}}); err != nil {
+	if err := checkpoint.save(pairedSentence{ID: "1", FullTarget: "Original.", Source: []string{"Original."}, Target: []string{"Original."}}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := translator.translatePairedSentences(context.Background(), []string{"Original."}, "en", "zh_cn", 50, 1, nil)
-	if err != nil || len(result) != 1 || result[0].FullTarget == "" {
+	if err != nil || len(result) != 1 || result[0].FullTarget == "Original." {
 		data, _ := json.Marshal(result)
 		t.Fatalf("无效检查点被当作成功: %s err=%v", data, err)
 	}

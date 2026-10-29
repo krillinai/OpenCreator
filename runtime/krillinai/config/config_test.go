@@ -1,35 +1,13 @@
 package config
 
-import (
-	"os"
-	"path/filepath"
-	"testing"
-)
-
-func TestLoadConfigMigratesRetiredImageModel(t *testing.T) {
-	original := Conf
-	t.Cleanup(func() { Conf = original })
-	t.Chdir(t.TempDir())
-	if err := os.Mkdir("config", 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join("config", "config.toml"), []byte("[image.openai]\nmodel = 'gpt-image-1'\napi_key = 'image-secret'\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if !LoadConfig() {
-		t.Fatal("LoadConfig() failed")
-	}
-	if Conf.Image.Openai.Model != "gpt-image-2" || Conf.Image.Openai.ApiKey != "image-secret" {
-		t.Fatal("image model migration did not retain credentials and replace the retired model")
-	}
-}
+import "testing"
 
 func TestDefaultImageConfig(t *testing.T) {
 	if Conf.Image.Provider != "openai-compatible" {
 		t.Fatalf("Image.Provider = %q, want openai-compatible", Conf.Image.Provider)
 	}
-	if Conf.Image.Openai.Model != "gpt-image-2" {
-		t.Fatalf("Image.Openai.Model = %q, want gpt-image-2", Conf.Image.Openai.Model)
+	if Conf.Image.Openai.Model == "" {
+		t.Fatalf("Image.Openai.Model is empty")
 	}
 }
 

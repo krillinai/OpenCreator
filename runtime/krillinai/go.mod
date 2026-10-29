@@ -15,7 +15,6 @@ require (
 	github.com/sashabaranov/go-openai v1.42.0
 	github.com/texttheater/golang-levenshtein v1.0.1
 	go.uber.org/zap v1.25.0
-	golang.org/x/image v0.22.0
 	golang.org/x/sync v0.9.0
 	golang.org/x/text v0.20.0
 )

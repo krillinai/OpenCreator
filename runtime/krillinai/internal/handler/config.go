@@ -12,18 +12,9 @@ import (
 // 全局变量，用于标记配置是否需要重新初始化
 var configUpdated bool
 
-// GET 仅返回备用源是否已配置；真实密钥只接受写入，不回显。
-type LLMFallbackConfigRequest struct {
-	BaseUrl    string `json:"baseUrl"`
-	ApiKey     string `json:"apiKey,omitempty"`
-	Model      string `json:"model"`
-	Configured bool   `json:"configured"`
-}
-
 // ConfigRequest 定义前端发送的配置数据结构
 type ConfigRequest struct {
-	LlmFallback *LLMFallbackConfigRequest `json:"llmFallback,omitempty"`
-	App         struct {
+	App struct {
 		SegmentDuration       int    `json:"segmentDuration"`
 		TranscribeParallelNum int    `json:"transcribeParallelNum"`
 		TranslateParallelNum  int    `json:"translateParallelNum"`
@@ -99,11 +90,6 @@ func (h Handler) GetConfig(c *gin.Context) {
 
 	// 转换配置为前端需要的格式
 	configResponse := ConfigRequest{
-		LlmFallback: &LLMFallbackConfigRequest{
-			BaseUrl:    config.Conf.LlmFallback.BaseUrl,
-			Model:      config.Conf.LlmFallback.Model,
-			Configured: config.Conf.LlmFallback.ApiKey != "",
-		},
 		App: struct {
 			SegmentDuration       int    `json:"segmentDuration"`
 			TranscribeParallelNum int    `json:"transcribeParallelNum"`
@@ -212,18 +198,6 @@ func (h Handler) UpdateConfig(c *gin.Context) {
 	config.Conf.Llm.BaseUrl = req.Llm.BaseUrl
 	config.Conf.Llm.ApiKey = req.Llm.ApiKey
 	config.Conf.Llm.Model = req.Llm.Model
-	// 旧客户端不传该字段时保留备用源；回传 GET 结果时保留不回显的密钥。
-	if req.LlmFallback != nil {
-		fallback := config.OpenaiCompatibleConfig{
-			BaseUrl: req.LlmFallback.BaseUrl,
-			ApiKey:  req.LlmFallback.ApiKey,
-			Model:   req.LlmFallback.Model,
-		}
-		if fallback.ApiKey == "" && (fallback.BaseUrl != "" || fallback.Model != "") {
-			fallback.ApiKey = config.Conf.LlmFallback.ApiKey
-		}
-		config.Conf.LlmFallback = fallback
-	}
 
 	// 更新转录配置
 	config.Conf.Transcribe.Provider = req.Transcribe.Provider

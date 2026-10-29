@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestSubtitleUnicodeBoundariesAndDisplayUnits(t *testing.T) {
+func TestSubtitleUnicodeBoundariesAndCharacterCount(t *testing.T) {
 	for _, text := range []string{"中文。日本語。한국어.", "ภาษาไทยไม่มีช่องว่าง", "العَرَبِيَّة فارسی\u200cمتن", "हिन्दी क्षि नमस्ते", "cafe\u0301 déjà vu", "👩🏽‍💻👨‍👩‍👧‍👦🇨🇳 test", "English 中文 العربية हिन्दी"} {
 		t.Run(text, func(t *testing.T) {
 			parts, err := splitSubtitleText(text, func(s string) bool { return subtitleTargetLength(s) <= 8 })
@@ -49,23 +49,16 @@ func TestPairedTranslationProtectsUnpunctuatedInputAndBatchBudget(t *testing.T) 
 		if err != nil {
 			return "", err
 		}
-		if len(prompt) > translationRequestBytes || (input.MaxSourceChars != 0 && input.MaxSourceChars != 50) {
+		if len(prompt) > translationRequestBytes || input.MaxSourceChars != 50 {
 			t.Fatalf("请求超限: %d", len(prompt))
 		}
 		for _, sentence := range input.Sentences {
 			if len(sentence.Text) > translationSentenceBytes {
 				t.Fatalf("输入未保护: %d", len(sentence.Text))
 			}
-			if !strings.HasPrefix(prompt, "任务：translation_length_split") && input.MaxSourceChars > 0 && subtitleTargetLength(sentence.Text) > input.MaxSourceChars {
-				if len(sentence.SourceHint) < 2 || compactSubtitleText(strings.Join(sentence.SourceHint, "")) != compactSubtitleText(sentence.Text) || !subtitleSegmentsHaveSafeBoundaries(sentence.SourceHint) {
-					t.Fatalf("原文分段参考不完整或破坏字素: %q", sentence.SourceHint)
-				}
-				for _, part := range sentence.SourceHint {
-					if subtitleTargetLength(part) > input.MaxSourceChars {
-						t.Fatalf("原文分段参考超限: %q", part)
-					}
-				}
-			}
+		}
+		if strings.Contains(prompt, "source_segments_hint") {
+			t.Fatal("首译不应附带已停用的本地分段建议")
 		}
 		return echoPairedTestResponse(input)
 	})}
@@ -82,8 +75,8 @@ func TestPairedTranslationProtectsUnpunctuatedInputAndBatchBudget(t *testing.T) 
 	var restored strings.Builder
 	for _, sentence := range paired {
 		for _, part := range sentence.Source {
-			if subtitleLayoutNeedsSplit(part, 50) {
-				t.Fatal("原文仍有明显可改善的超长段")
+			if subtitleTargetLength(part) > 50 {
+				t.Fatal("原文超限")
 			}
 			restored.WriteString(part)
 		}
@@ -130,7 +123,7 @@ func TestShortSubtitleMergesTailWithinSingleLineLimits(t *testing.T) {
 		{"英文短尾回并", "And you can do this with almost anything.", 20, 50, 0, []string{"And you can do this", "with almost anything."}},
 		{"回并不得突破单行上限", "And you can do this with almost anything.", 20, 20, 0, []string{"And you can do this", "with almost", "anything."}},
 		{"词数限制仍生效", "one two three four five", 50, 50, 2, []string{"one two", "three four", "five"}},
-		{"无空格原文不插入空格", "甲乙丙丁戊己庚辛壬癸。", 8, 50, 0, []string{"甲乙丙丁", "戊己庚辛壬癸。"}},
+		{"无空格原文不插入空格", "甲乙丙丁戊己庚辛壬癸。", 8, 50, 0, []string{"甲乙丙丁戊己庚辛壬癸。"}},
 		{"长词内部回并不插入空格", strings.Repeat("a", 26) + ".", 20, 50, 0, []string{strings.Repeat("a", 26) + "."}},
 		{"短字幕配置不得放宽单行上限", "alpha beta gamma delta", 80, 16, 0, []string{"alpha beta gamma", "delta"}},
 		{"组合字符保持完整", "cafe\u0301cafe\u0301.", 6, 50, 0, []string{"cafe\u0301cafe\u0301."}},
@@ -188,10 +181,10 @@ func TestPairedTranslationRejectsSourceOverflowAndUnsafeBreaks(t *testing.T) {
 			t.Fatalf("未拒绝无效输出: %s", data)
 		}
 	}
-	if got := splitTranslationSentences("第一句。第二句！第三句？", "zh_cn"); len(got) != 3 {
+	if got := splitTranslationSentences("第一句。第二句！第三句？"); len(got) != 3 {
 		t.Fatalf("无空格语句未拆分: %q", got)
 	}
-	if got := splitTranslationSentences("Dr. Smith met Mr. Jones. Then they left.", "en"); len(got) != 2 {
+	if got := splitTranslationSentences("Dr. Smith met Mr. Jones. Then they left."); len(got) != 2 {
 		t.Fatalf("缩写被错误拆句: %q", got)
 	}
 }

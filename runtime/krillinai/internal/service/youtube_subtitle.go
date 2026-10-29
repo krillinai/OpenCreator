@@ -600,7 +600,7 @@ func (s *YouTubeSubtitleService) processYouTubeSubtitle(ctx context.Context, req
 	}
 
 	// 4. 批量翻译生成目标语言SRT（40%-90%进度）
-	srtBlocks, err = s.translator.withSemanticSourceUnits().withTranslationRecovery(req.TaskBasePath, req.TaskPtr).BatchTranslateSrtBlocks(ctx, srtBlocks, req.OriginLanguage, req.TargetLanguage, req.TaskPtr, vttWords)
+	srtBlocks, err = s.translator.withTranslationRecovery(req.TaskBasePath, req.TaskPtr).BatchTranslateSrtBlocks(ctx, srtBlocks, req.OriginLanguage, req.TargetLanguage, req.TaskPtr, vttWords)
 	if err != nil {
 		return "", fmt.Errorf("failed to batch translate: %w", err)
 	}
@@ -662,6 +662,9 @@ func (s *YouTubeSubtitleService) processYouTubeSubtitle(ctx context.Context, req
 	if err := s.writeYouTubeSubtitleTextFiles(srtBlocks, req); err != nil {
 		return "", err
 	}
+	if err := ReportSubtitleLengthFallbacks(originSrtFile, targetSrtFile, bilingualSrtFile, shortSrtFile); err != nil {
+		return "", err
+	}
 
 	// 更新进度：完成
 	if req.TaskPtr != nil {
@@ -703,10 +706,8 @@ func (s *YouTubeSubtitleService) ExtractWordsFromVtt(vttFile string) ([]VttWord,
 
 	// 用于跟踪已处理的单词，避免重复
 	processedWords := make(map[string]bool)
-	// YouTube 滚动字幕会在相邻 cue 重显上一行。只消除这种有时间和
-	// cue 结构证据的重复，不能按全文词表删除稍后真正再次说出的单词。
-	var cueLines, previousCueLines []string
-	var previousStart, previousEnd float64
+	// 单词行只有在时间相接的滚动字幕中才去重，不能吞掉后续真实复现。
+	seenWordEnds := make(map[string]float64)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -719,9 +720,6 @@ func (s *YouTubeSubtitleService) ExtractWordsFromVtt(vttFile string) ([]VttWord,
 
 		// 检查是否是时间戳行（可能包含align等属性）
 		if matches := timestampLineRegex.FindStringSubmatch(line); len(matches) >= 3 {
-			previousCueLines, cueLines = cueLines, nil
-			previousStart, _ = s.parseVttTime(blockStartTime)
-			previousEnd, _ = s.parseVttTime(blockEndTime)
 			blockStartTime = matches[1]
 			blockEndTime = matches[2]
 			log.GetLogger().Debug("发现时间戳", zap.String("开始", blockStartTime), zap.String("结束", blockEndTime))
@@ -737,8 +735,6 @@ func (s *YouTubeSubtitleService) ExtractWordsFromVtt(vttFile string) ([]VttWord,
 			if strings.TrimSpace(cleanedLine) == "" {
 				continue
 			}
-			visibleLine := strings.TrimSpace(wordTimeRegex.ReplaceAllString(styleTagRegex.ReplaceAllString(cleanedLine, ""), ""))
-			cueLines = append(cueLines, visibleLine)
 
 			// 优先处理包含内联时间戳的行（这些是真正的单词级时间戳数据）
 			if wordTimeRegex.MatchString(cleanedLine) {
@@ -765,6 +761,8 @@ func (s *YouTubeSubtitleService) ExtractWordsFromVtt(vttFile string) ([]VttWord,
 					if !processedWords[wordKey] {
 						words = append(words, word)
 						processedWords[wordKey] = true
+						end, _ := s.parseVttTime(word.End)
+						seenWordEnds[strings.ToLower(word.Text)] = end
 						log.GetLogger().Debug("添加带时间戳的单词",
 							zap.String("文本", word.Text),
 							zap.String("开始", word.Start),
@@ -783,16 +781,13 @@ func (s *YouTubeSubtitleService) ExtractWordsFromVtt(vttFile string) ([]VttWord,
 
 				// 检查是否为有效的单个单词
 				if s.isValidSingleWord(trimmedLine) {
+					// YouTube 滚动字幕常以 10ms 的过渡块重复上一行。
+					// 被跳过的延续行仍推进结束时间，后续离开的同词则保留。
+					wordTextLower := strings.ToLower(trimmedLine)
 					start, _ := s.parseVttTime(blockStartTime)
 					end, _ := s.parseVttTime(blockEndTime)
-					rollingRepeat := false
-					if start >= previousEnd && start-previousEnd <= 0.021 &&
-						(len(previousCueLines) > 1 || previousEnd-previousStart <= 0.021 || end-start <= 0.021) {
-						for _, previous := range previousCueLines {
-							rollingRepeat = rollingRepeat || previous == trimmedLine
-						}
-					}
-					if rollingRepeat {
+					if previousEnd, seen := seenWordEnds[wordTextLower]; seen && start <= previousEnd+0.010001 {
+						seenWordEnds[wordTextLower] = math.Max(previousEnd, end)
 						log.GetLogger().Debug("跳过重复单词",
 							zap.String("文本", trimmedLine),
 							zap.String("时间", blockStartTime+" -> "+blockEndTime))
@@ -817,6 +812,7 @@ func (s *YouTubeSubtitleService) ExtractWordsFromVtt(vttFile string) ([]VttWord,
 						}
 						words = append(words, word)
 						processedWords[wordKey] = true
+						seenWordEnds[wordTextLower] = end
 						log.GetLogger().Debug("添加单个单词",
 							zap.String("文本", trimmedLine),
 							zap.String("开始", blockStartTime),
@@ -1124,7 +1120,7 @@ func (s *YouTubeSubtitleService) writeVttWordsToSrt(vttWords []VttWord, srtFile 
 	if err != nil {
 		return err
 	}
-	blocks, err = s.translator.withSemanticSourceUnits().withTranslationRecovery(req.TaskBasePath, req.TaskPtr).BatchTranslateSrtBlocks(context.Background(), blocks, req.OriginLanguage, req.TargetLanguage, req.TaskPtr, vttWords)
+	blocks, err = s.translator.withTranslationRecovery(req.TaskBasePath, req.TaskPtr).BatchTranslateSrtBlocks(context.Background(), blocks, req.OriginLanguage, req.TargetLanguage, req.TaskPtr, vttWords)
 	if err != nil {
 		return err
 	}
@@ -3388,7 +3384,7 @@ func (s *YouTubeSubtitleService) ProcessBlockLevelVtt(ctx context.Context, req *
 	}
 
 	// 4. 批量翻译（40%-90%的进度在BatchTranslateSrtBlocks内部更新）
-	srtBlocks, err = s.translator.withSemanticSourceUnits().withTranslationRecovery(req.TaskBasePath, req.TaskPtr).BatchTranslateSrtBlocks(ctx, srtBlocks, req.OriginLanguage, req.TargetLanguage, req.TaskPtr)
+	srtBlocks, err = s.translator.withTranslationRecovery(req.TaskBasePath, req.TaskPtr).BatchTranslateSrtBlocks(ctx, srtBlocks, req.OriginLanguage, req.TargetLanguage, req.TaskPtr)
 	if err != nil {
 		return "", fmt.Errorf("批量翻译失败: %w", err)
 	}
@@ -3430,6 +3426,9 @@ func (s *YouTubeSubtitleService) ProcessBlockLevelVtt(ctx context.Context, req *
 		return "", err
 	}
 	if err := s.writeYouTubeSubtitleTextFiles(srtBlocks, req); err != nil {
+		return "", err
+	}
+	if err := ReportSubtitleLengthFallbacks(originSrtFile, targetSrtFile, bilingualSrtFile, shortSrtFile); err != nil {
 		return "", err
 	}
 

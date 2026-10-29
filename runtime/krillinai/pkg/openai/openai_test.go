@@ -58,24 +58,6 @@ func TestChatCompletionSendsRequestedOutputBudget(t *testing.T) {
 	}
 }
 
-func TestChatCompletionPreservesOriginalDefaultOutputBudget(t *testing.T) {
-	setTestModel(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var request struct {
-			MaxTokens int `json:"max_tokens"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.MaxTokens != 8192 {
-			t.Errorf("original default budget changed: max_tokens=%d err=%v", request.MaxTokens, err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"choices":[{"message":{"content":"完整译文。"}}]}`)
-	}))
-	defer server.Close()
-	if _, err := newClient(server.URL, "test-key", "", time.Second).ChatCompletion("translate"); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestChatCompletionRejectsEmptyResponse(t *testing.T) {
 	setTestModel(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -89,39 +71,11 @@ func TestChatCompletionRejectsEmptyResponse(t *testing.T) {
 	}
 }
 
-func TestChatCompletionDisablesThinkingForEveryModel(t *testing.T) {
-	for _, tc := range []struct {
-		model, name      string
-		deepSeekSampling bool
-	}{
-		{"deepseek-flash", "", true},
-		{"deepseek-v4-flash", "", true},
-		{"deepseek-v4-pro", "", true},
-		{"deepseek-v4.1-flash", "", true},
-		{"deepseek-v4-1-flash-261017", "", true},
-		{"deepseek/deepseek-v4.1-flash", "", true},
-		{"oc_708ac39a01ac1a51", "deepseek-v4.1-flash", true},
-		{"oc_fallback", " DeepSeek-V4.1-Pro ", true},
-		{"oc_unknown", "", false},
-		{"oc_other", "gpt-4o-mini", false},
-		{"deepseek-v4-flash", "test-model", false},
-		{"deepseek-chat", "", false},
-		{"deepseek-reasoner", "", false},
-		{"test-model", "", false},
-		{"gpt-5.5", "", false},
-		{"gpt-5.6-sol", "", false},
-		{"gpt-6-sol", "", false},
-		{"gpt-6-astra", "", false},
-		{"gpt-6-luna", "", false},
-		{"kimi-k3", "", false},
-		{"grok-4.5", "", false},
-		{"grok-4.6", "", false},
-		{"grok-4.7", "", false},
-	} {
-		t.Run(tc.model+"/"+tc.name, func(t *testing.T) {
+func TestChatCompletionDisablesDeepSeekV4Thinking(t *testing.T) {
+	for _, model := range []string{"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "test-model"} {
+		t.Run(model, func(t *testing.T) {
 			setTestModel(t)
-			config.Conf.Llm.Model = tc.model
-			config.Conf.Llm.ModelName = tc.name
+			config.Conf.Llm.Model = model
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var request struct {
 					Model           string   `json:"model"`
@@ -132,14 +86,17 @@ func TestChatCompletionDisablesThinkingForEveryModel(t *testing.T) {
 					t.Error(err)
 				}
 				want := "none"
-				if request.Model != tc.model || request.ReasoningEffort != want {
-					t.Errorf("model=%q reasoning_effort=%q, want %q %q", request.Model, request.ReasoningEffort, tc.model, want)
+				if model == "deepseek-chat" || model == "test-model" {
+					want = ""
 				}
-				if tc.deepSeekSampling && (request.Temperature == nil || *request.Temperature != 0.2) {
+				if request.Model != model || request.ReasoningEffort != want {
+					t.Errorf("model=%q reasoning_effort=%q, want %q %q", request.Model, request.ReasoningEffort, model, want)
+				}
+				if want == "none" && (request.Temperature == nil || *request.Temperature != 0.2) {
 					t.Errorf("DeepSeek V4 temperature = %v, want 0.2", request.Temperature)
 				}
-				if !tc.deepSeekSampling && request.Temperature != nil {
-					t.Errorf("model %q should use default sampling", tc.model)
+				if want == "" && request.Temperature != nil {
+					t.Errorf("model %q should use default sampling", model)
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"id":"translated","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"完整译文"}}]}`))
@@ -273,29 +230,7 @@ func TestNewClientUsesConfiguredProxy(t *testing.T) {
 func setTestModel(t *testing.T) {
 	t.Helper()
 	log.InitLogger()
-	previous := config.Conf.Llm
+	previous := config.Conf.Llm.Model
 	config.Conf.Llm.Model = "test-model"
-	config.Conf.Llm.ModelName = ""
-	t.Cleanup(func() { config.Conf.Llm = previous })
-}
-
-func TestChatCompletionPreservesBudgetForSDKValidatedModel(t *testing.T) {
-	setTestModel(t)
-	config.Conf.Llm.Model = "gpt-5.5"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var request map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
-		}
-		if request["reasoning_effort"] != "none" || request["max_completion_tokens"] != float64(2048) || request["max_tokens"] != nil {
-			t.Errorf("SDK-compatible request lost its non-reasoning setting or budget: %v", request)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"choices":[{"finish_reason":"stop","message":{"content":"完整译文"}}]}`)
-	}))
-	defer server.Close()
-	text, err := newClient(server.URL, "test-key", "", time.Second).ChatCompletionContextWithMaxTokens(context.Background(), "translate", 2048)
-	if err != nil || text != "完整译文" {
-		t.Fatalf("text=%q err=%v", text, err)
-	}
+	t.Cleanup(func() { config.Conf.Llm.Model = previous })
 }

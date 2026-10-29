@@ -10,6 +10,7 @@ import (
 	"krillin-ai/pkg/util"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -307,9 +308,6 @@ type echoBatchCompleter struct {
 }
 
 func (c *echoBatchCompleter) ChatCompletion(prompt string) (string, error) {
-	if response, ok := neutralSemanticTestResponse(prompt); ok {
-		return response, nil
-	}
 	input, err := decodePairedTestInput(prompt)
 	if err != nil {
 		return "", err
@@ -354,33 +352,15 @@ func TestSplitTextAndTranslateUsesBatchesAndReportsProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	total := 0
-	for _, size := range completer.batchSizes {
-		if size <= 0 || size > 10 {
-			t.Fatalf("batch exceeds the semantic translation limit: %v", completer.batchSizes)
-		}
-		total += size
+	sort.Ints(completer.batchSizes)
+	if fmt.Sprint(completer.batchSizes) != "[1 12]" {
+		t.Fatalf("batch sizes = %v, want [1 12]", completer.batchSizes)
 	}
-	if total != len(parts) {
-		t.Fatalf("batch coverage = %d, want %d", total, len(parts))
+	if len(progress) != 2 || progress[0] <= 0 || progress[0] >= 13 || progress[1] != 13 {
+		t.Fatalf("progress = %v, want [12 13]", progress)
 	}
-	last := 0
-	for _, completed := range progress {
-		if completed <= last || completed > len(parts) {
-			t.Fatalf("progress is not increasing: %v", progress)
-		}
-		last = completed
-	}
-	if len(progress) != len(completer.batchSizes) || last != len(parts) {
-		t.Fatalf("incomplete progress: %v", progress)
-	}
-	if len(results) != len(parts) {
+	if len(results) != 13 || results[12].TranslatedText == results[12].OriginText {
 		t.Fatalf("unexpected results: %+v", results)
-	}
-	for i, result := range results {
-		if result.OriginText != parts[i] || result.TranslatedText == result.OriginText || result.TranslatedText == "" {
-			t.Fatalf("sentence lost, reordered or untranslated: %+v", result)
-		}
 	}
 }
 
@@ -389,10 +369,7 @@ type scriptedCompleter struct {
 	calls     int
 }
 
-func (c *scriptedCompleter) ChatCompletion(prompt string) (string, error) {
-	if response, ok := neutralSemanticTestResponse(prompt); ok {
-		return response, nil
-	}
+func (c *scriptedCompleter) ChatCompletion(string) (string, error) {
 	if c.calls >= len(c.responses) {
 		return "", errors.New("unexpected call")
 	}

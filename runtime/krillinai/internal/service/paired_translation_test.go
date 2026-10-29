@@ -20,7 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func TestPairedTranslationRateLimitsDoNotConsumeOutputAttempts(t *testing.T) {
+func TestPairedTranslationRateLimitsShareSentenceRequestBudget(t *testing.T) {
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
 	config.Conf.App.TranslateParallelNum = 1
@@ -36,14 +36,13 @@ func TestPairedTranslationRateLimitsDoNotConsumeOutputAttempts(t *testing.T) {
 			return "", err
 		}
 		if calls == 3 {
-			response, _ := encodePairedTestResponse([]pairedSentence{{ID: "2", FullTarget: "你好。", Source: []string{"Hello."}, Target: []string{"你好。"}}})
+			response, _ := encodePairedTestResponse([]pairedSentence{{ID: "1", FullTarget: strings.Repeat("好", 56), Source: []string{"Hello."}, Target: []string{strings.Repeat("好", 56)}}})
 			return string(response), nil
 		}
-		if !strings.Contains(prompt, "句子1缺失或ID重复") || !strings.Contains(prompt, "第2/3次请求") {
+		if !strings.Contains(prompt, "计56字符") || !strings.Contains(prompt, "第2/3次请求") {
 			return "", fmt.Errorf("限流消耗了译文纠正机会")
 		}
-		response, err := encodePairedTestResponse([]pairedSentence{{ID: input.Sentences[0].ID, FullTarget: "你好。", Source: []string{"Hello."}, Target: []string{"你好。"}}})
-		return string(response), err
+		return echoPairedTestResponse(input)
 	})}
 	result, err := translator.translatePairedSentences(context.Background(), []string{"Hello."}, "en", "zh_cn", 50, 1, nil)
 	if err != nil || calls != 4 || len(result) != 1 {
@@ -70,25 +69,26 @@ func TestPairedTranslationRateLimitBackoffHonorsCancellation(t *testing.T) {
 	}
 }
 
-func TestPairedTranslationRateLimitStopsAtConfiguredLimit(t *testing.T) {
+func TestPairedTranslationRateLimitWaitsAndHonorsCancellation(t *testing.T) {
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
 	config.Conf.App.TranslateMaxAttempts = 1
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	calls := 0
-	translator := &Translator{chatCompleter: translationCompleterFunc(func(string) (string, error) {
+	translator := &Translator{onRecovery: func(string) { cancel() }, chatCompleter: translationCompleterFunc(func(string) (string, error) {
 		calls++
 		return "", &openaiapi.APIError{HTTPStatusCode: http.StatusTooManyRequests}
 	})}
-	_, err := translator.translatePairedSentences(context.Background(), []string{"Hello."}, "en", "zh_cn", 50, 1, nil)
-	var exhausted *allTranslationFailedError
-	if !errors.As(err, &exhausted) || exhausted.count != 1 || !strings.Contains(exhausted.reason, "429") || calls != 1 {
-		t.Fatalf("限流达到配置次数后没有退出: calls=%d error=%v", calls, err)
+	_, err := translator.translatePairedSentences(ctx, []string{"Hello."}, "en", "zh_cn", 50, 1, nil)
+	if !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("限流等待未响应取消: calls=%d error=%v", calls, err)
 	}
 }
 
 func decodePairedTestInput(prompt string) (pairedTranslationInput, error) {
 	var input pairedTranslationInput
-	_, payload, found := strings.Cut(prompt, "输入 JSON：\n")
+	_, payload, found := strings.Cut(prompt, "Input JSON:\n")
 	if !found {
 		return input, fmt.Errorf("missing paired input")
 	}
@@ -108,24 +108,25 @@ func TestPairedTranslationRetryReportsAllBatchIssues(t *testing.T) {
 			return "", err
 		}
 		if calls == 1 {
-			// 尚无完整译文，三类结构错误均需反馈，不能直接恢复为整句配对。
 			response, _ := encodePairedTestResponse([]pairedSentence{
-				{ID: "1", Source: []string{"Goodbye."}, Target: []string{"你好。"}},
-				{ID: "2", Source: []string{input.Sentences[1].Text}, Target: []string{""}},
-				{ID: "3", Source: []string{input.Sentences[2].Text}, Target: []string{"谢谢。\n"}},
+				{ID: "1", FullTarget: "这是我教给客户的一个方法。", Source: []string{"So, let me give you a model, that I teach my movement maker clients."}, Target: []string{"这是我教给客户的一个方法。"}},
+				{ID: "2", FullTarget: "他们每个人都可能为你的企业带来六位数或七位数的价值。", Source: []string{input.Sentences[1].Text}, Target: []string{"他们每个人都可能为你的企业带来六位数或七位数的价值。"}},
+				{ID: "3", FullTarget: strings.Repeat("好", 56), Source: []string{input.Sentences[2].Text}, Target: []string{strings.Repeat("好", 56)}},
 			})
 			return string(response), nil
 		}
-		for _, expected := range []string{"句子1原文覆盖错误", "句子2缺少有效的完整译文target_text", "句子3第1对存在换行"} {
+		for _, expected := range []string{"句子1原文覆盖错误", "句子2第1段", "计56字符", "句子3第1段", "该段至少拆成2段"} {
 			if !strings.Contains(prompt, expected) {
 				return "", fmt.Errorf("重试漏报批次问题: %s", expected)
 			}
 		}
 		return echoPairedTestResponse(input)
 	})}
-	inputs, _ := buildPairedTranslationBatches([]string{"Hello.", "Good morning.", "Thank you."}, "en", "zh_cn", 50, 3)
-	var result []pairedSentence
-	_, err := translator.translatePairedBatch(context.Background(), inputs[0], "en", "zh_cn", func(value pairedSentence, _ bool) error { result = append(result, value); return nil })
+	result, err := translator.translatePairedSentences(context.Background(), []string{
+		"So, let me give you a model that I teach my movement maker clients.",
+		"Make a list of 50 people who could each be worth six or seven figures to your business.",
+		"Not customers, connectors.",
+	}, "en", "zh_cn", 50, 3, nil)
 	if err != nil || calls != 2 || len(result) != 3 {
 		t.Fatalf("calls=%d result=%+v error=%v", calls, result, err)
 	}
@@ -153,13 +154,35 @@ func encodePairedTestResponse(sentences []pairedSentence) ([]byte, error) {
 func echoPairedTestResponse(input pairedTranslationInput) (string, error) {
 	var sentences []pairedSentence
 	for _, item := range input.Sentences {
-		parts, err := splitSubtitleText(item.Text, func(s string) bool { return subtitleTargetLength(s) <= max(50, input.MaxTargetChars) })
+		parts, err := splitSubtitleText(item.Text, func(s string) bool { return subtitleTargetLength(s) <= input.MaxTargetChars })
 		if err != nil {
 			return "", err
 		}
 		target := make([]string, len(parts))
 		for i := range target {
-			target[i] = "这是测试译文，"
+			target[i] = "测试"
+		}
+		if item.TargetText != "" {
+			// 排版重试的夹具同样必须保留已冻结译文；不能靠改写触发降级通过。
+			target, err = splitSubtitleText(item.TargetText, func(s string) bool { return subtitleTargetLength(s) <= input.MaxTargetChars })
+			if err != nil {
+				return "", err
+			}
+			count := max(len(parts), len(target))
+			splitFixture := func(text string) []string {
+				runes := []rune(text)
+				result := make([]string, count)
+				for i := range count {
+					result[i] = string(runes[i*len(runes)/count : (i+1)*len(runes)/count])
+				}
+				return result
+			}
+			if len(parts) < count {
+				parts = splitFixture(item.Text)
+			}
+			if len(target) < count {
+				target = splitFixture(item.TargetText)
+			}
 		}
 		sentences = append(sentences, pairedSentence{ID: item.ID, FullTarget: strings.Join(target, ""), Source: parts, Target: target})
 	}
@@ -266,14 +289,13 @@ func TestPairedTranslationProgressDoesNotWaitForSlowEarlierBatch(t *testing.T) {
 	}
 }
 
-func TestPairedTranslationPreservesFailedSentenceAndCommitsOtherWindows(t *testing.T) {
+func TestPairedTranslationCommitsMarkedSourceAfterFailedWindow(t *testing.T) {
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
 	config.Conf.App.TranslateParallelNum = 2
 	var mu sync.Mutex
 	calls := make(map[string]int)
-	task := &types.SubtitleTask{}
-	translator := &Translator{checkpointDir: t.TempDir(), translationTask: task, chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
+	translator := &Translator{chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 		input, err := decodePairedTestInput(prompt)
 		if err != nil {
 			return "", err
@@ -289,23 +311,9 @@ func TestPairedTranslationPreservesFailedSentenceAndCommitsOtherWindows(t *testi
 	})}
 	commits := 0
 	result, err := translator.translatePairedSentences(context.Background(), []string{"One.", "Two.", "Three."}, "en", "zh_cn", 20, 1, func([]pairedSentence, int, int) error { commits++; return nil })
-	if err != nil || len(result) != 3 || calls["1"] != 1 || calls["2"] != 1 || calls["3"] != 1 || commits != 3 {
-		t.Fatalf("calls=%v commits=%d result=%+v error=%v", calls, commits, result, err)
-	}
-	for i, sentence := range result {
-		if sentence.ID != fmt.Sprint(i+1) || sentence.FullSource != []string{"One.", "Two.", "Three."}[i] {
-			t.Fatalf("lost or reordered sentence: %+v", sentence)
-		}
-		if i == 1 {
-			if sentence.FullTarget != "Two." || !strings.Contains(sentence.TranslationFallbackReason, "LLM disconnected") {
-				t.Fatalf("missing original or failure reason: %+v", sentence)
-			}
-		} else if sentence.FullTarget != "这是测试译文，" || sentence.TranslationFallbackReason != "" {
-			t.Fatalf("successful translation was discarded: %+v", sentence)
-		}
-	}
-	if failures := task.TranslationFailures(); len(failures) != 1 || failures[0].SentenceID != "2" {
-		t.Fatalf("failure report was lost: %+v", failures)
+	if err != nil || len(result) != 3 || calls["2"] != 1 || calls["3"] != 1 || commits != 3 ||
+		!result[1].Untranslated || result[1].FullTarget != "[待翻译] Two." || result[0].Untranslated || result[2].Untranslated {
+		t.Fatalf("calls=%v commits=%d error=%v", calls, commits, err)
 	}
 }
 
@@ -318,7 +326,7 @@ func assertPairedOutput(t *testing.T, source, output []*util.SrtBlock, limit int
 	var lastEnd int64 = -1
 	for i, block := range output {
 		after.WriteString(compactSubtitleText(block.OriginLanguageSentence))
-		if block.Index != i+1 || !hasSubtitleContent(block.OriginLanguageSentence) || !hasSubtitleContent(block.TargetLanguageSentence) || subtitleLayoutNeedsSplit(block.TargetLanguageSentence, limit) || subtitleLayoutNeedsSplit(block.OriginLanguageSentence, limit) {
+		if block.Index != i+1 || !hasSubtitleContent(block.OriginLanguageSentence) || !hasSubtitleContent(block.TargetLanguageSentence) || subtitleTargetLength(block.TargetLanguageSentence) > limit || subtitleTargetLength(block.OriginLanguageSentence) > limit {
 			t.Fatalf("无效配对: %+v", block)
 		}
 		start, end, err := parseSRTTimeline(block.Timestamp)
@@ -340,7 +348,7 @@ func TestPairedTranslationRetriesOnlyInvalidBatchWithSpecificFeedback(t *testing
 		mutate func(*pairedSentence)
 	}{
 		{"超长英文专名", func(s *pairedSentence) { s.Target[1] = "《Drake's Tootsie Slide official》" }},
-		{"超长汉字", func(s *pairedSentence) { s.Target[1] = strings.Repeat("好", 40) }},
+		{"超长汉字", func(s *pairedSentence) { s.Target[1] = strings.Repeat("好", 25) }},
 		{"配对缺译文", func(s *pairedSentence) { s.Target = s.Target[:1] }},
 		{"原文改写", func(s *pairedSentence) { s.Source[0] = "We use Drake's Tootsie" }},
 		{"空译文", func(s *pairedSentence) { s.Target[1] = "" }},
@@ -355,8 +363,6 @@ func TestPairedTranslationRetriesOnlyInvalidBatchWithSpecificFeedback(t *testing
 			var invalid pairedSentence
 			_ = json.Unmarshal(data, &invalid)
 			tc.mutate(&invalid)
-			// 完整译文正确，仅片段结构错误；重试继续使用同一份译文。
-			invalid.FullTarget = valid.FullTarget
 			var prompts []string
 			translator := &Translator{chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 				prompts = append(prompts, prompt)
@@ -367,12 +373,11 @@ func TestPairedTranslationRetriesOnlyInvalidBatchWithSpecificFeedback(t *testing
 				data, err := encodePairedTestResponse([]pairedSentence{sentence})
 				return string(data), err
 			})}
-			inputs, _ := buildPairedTranslationBatches([]string{text}, "en", "zh_cn", 24, 3)
-			_, err := translator.translatePairedBatch(context.Background(), inputs[0], "en", "zh_cn", func(pairedSentence, bool) error { return nil })
+			_, err := translator.translatePairedSentences(context.Background(), []string{text}, "en", "zh_cn", 24, 3, nil)
 			if err != nil || len(prompts) != 2 {
 				t.Fatalf("calls=%d error=%v", len(prompts), err)
 			}
-			if strings.Contains(prompts[0], "检查发现的问题") || !strings.Contains(prompts[1], "检查发现的问题") || !strings.Contains(prompts[1], text) {
+			if strings.Contains(prompts[0], "Validation issues:") || !strings.Contains(prompts[1], "Validation issues:") || !strings.Contains(prompts[1], text) {
 				t.Fatal("失败反馈必须保留原始输入和具体错误")
 			}
 			if tc.name == "配对缺译文" && (!strings.Contains(prompts[1], `source="Tootsie Slide" target=""`) || !strings.Contains(prompts[1], "重新划分该句的全部segments")) {
@@ -393,8 +398,7 @@ func TestPairedTranslationRequiresFullTargetCoverage(t *testing.T) {
 		{"重复", "选一项技能，给全班讲解。", []string{"选一项技能，", "选一项技能，给全班讲解。"}, "译文分段覆盖错误"},
 		{"遗漏", "选一项技能，给全班讲解。", []string{"选一项技能，", "讲解。"}, "译文分段覆盖错误"},
 		{"乱序", "选一项技能，给全班讲解。", []string{"给全班讲解。", "选一项技能，"}, "译文分段覆盖错误"},
-		{"缺完整译文", "", []string{"选一项技能，", "给全班讲解。"}, "缺少有效的完整译文target_text"},
-		{"完整译文换行", "选一项技能，\n给全班讲解。", []string{"选一项技能，", "给全班讲解。"}, "缺少有效的完整译文target_text"},
+		{"完整译文换行", "选一项技能，\n给全班讲解。", []string{"选一项技能，", "给全班讲解。"}, "缺少有效的完整译文"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response, err := encodePairedTestResponse([]pairedSentence{{ID: "1", FullTarget: tc.full, Source: []string{"Take any skill and", "teach it to a class."}, Target: tc.target}})
@@ -412,15 +416,45 @@ func TestPairedTranslationRequiresFullTargetCoverage(t *testing.T) {
 	}
 }
 
-func TestPairedTranslationFullTargetAndSegmentsUseOneCall(t *testing.T) {
+func TestPairedTranslationDerivesFullTargetAndSegmentsInOneCall(t *testing.T) {
 	calls := 0
 	translator := &Translator{chatCompleter: translationCompleterFunc(func(string) (string, error) {
 		calls++
-		return `{"sentences":[{"sentence_id":"1","target_text":"选一项技能，给全班讲解。","segments":[{"source":"Take any skill and","target":"选一项技能，"},{"source":"teach it to a class.","target":"给全班讲解。"}]}]}`, nil
+		return `{"sentences":[{"sentence_id":"1","segments":[{"source":"Take any skill and","target":"选一项技能，"},{"source":"teach it to a class.","target":"给全班讲解。"}]}]}`, nil
 	})}
 	result, err := translator.translatePairedSentences(context.Background(), []string{"Take any skill and teach it to a class."}, "en", "zh_cn", 24, 1, nil)
-	if err != nil || calls != 1 || len(result) != 1 || len(result[0].Target) != 2 {
+	if err != nil || calls != 1 || len(result) != 1 || len(result[0].Target) != 2 || result[0].FullTarget != "选一项技能，给全班讲解。" {
 		t.Fatalf("完整翻译和分段应由一次调用完成: calls=%d result=%+v error=%v", calls, result, err)
+	}
+}
+
+func TestPairedTranslationDerivedTargetPreservesTextAndFrozenTranslation(t *testing.T) {
+	for _, tc := range []struct {
+		name, language string
+		target         []string
+	}{
+		{"英文词间空格", "en", []string{"Use AI ", "tools."}},
+		{"英文词内边界", "en", []string{"cafe", "teria."}},
+		{"中文混合拉丁词", "zh_cn", []string{"使用Open", "AI工具。"}},
+		{"小数和否定", "zh_cn", []string{"数字是1.5，", "不是15。"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			originLang, targetLang := types.LanguageNameSimplifiedChinese, types.StandardLanguageCode(tc.language)
+			input := pairedTranslationInput{MaxSourceChars: 60, MaxTargetChars: 60, Sentences: []pairedTranslationSource{{ID: "1", Text: "阅读内容。"}}}
+			data, err := encodePairedTestResponse([]pairedSentence{{ID: "1", Source: []string{"阅读", "内容。"}, Target: tc.target}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := (&Translator{}).parsePairedTranslation(string(data), input, originLang, targetLang)
+			if err != nil || len(parsed) != 1 || parsed[0].FullTarget != strings.Join(tc.target, "") {
+				t.Fatalf("派生译文改动了字符或空格: parsed=%+v err=%v", parsed, err)
+			}
+		})
+	}
+	input := pairedTranslationInput{MaxSourceChars: 60, MaxTargetChars: 60, Sentences: []pairedTranslationSource{{ID: "1", Text: "She did not agree.", TargetText: "她没有同意。"}}}
+	response := `{"sentences":[{"sentence_id":"1","segments":[{"source":"She did not agree.","target":"她同意了。"}]}]}`
+	if _, err := (&Translator{}).parsePairedTranslation(response, input, "en", "zh_cn"); err == nil {
+		t.Fatal("取消输出target_text不应允许改写输入中已冻结的译文")
 	}
 }
 
@@ -440,37 +474,9 @@ func TestPairedTranslationRejectsIncompletePairs(t *testing.T) {
 	}
 }
 
-func TestPairedSourceHintKeepsShortTailWithItsClause(t *testing.T) {
-	text := "No jargon, no notes, just explain it as simply as you can."
-	parts, err := splitSubtitleSourceHint(text, 50)
-	if err != nil || len(parts) != 2 || parts[0] != "No jargon, no notes," || parts[1] != "just explain it as simply as you can." {
-		t.Fatalf("短尾句应随意群保留: parts=%q error=%v", parts, err)
-	}
-	for _, text := range []string{
-		strings.Repeat("مرحبا بالعالم، ", 8),
-		strings.Repeat("नमस्ते दुनिया ", 8),
-		strings.Repeat("👨‍👩‍👧‍👦 café ", 8),
-		strings.Repeat("ภาษาไทย", 12),
-		strings.Repeat("a", 120),
-	} {
-		parts, err := splitSubtitleSourceHint(text, 30)
-		if err != nil || compactSubtitleText(strings.Join(parts, "")) != compactSubtitleText(text) || !subtitleSegmentsHaveSafeBoundaries(parts) {
-			t.Fatalf("参考分段必须完整覆盖且保留字素边界: parts=%q error=%v", parts, err)
-		}
-		for _, part := range parts {
-			if !hasSubtitleContent(part) || subtitleTargetLength(part) > 30 {
-				t.Fatalf("参考分段不得为空或超限: %q", part)
-			}
-		}
-	}
-}
-
 func TestPairedTranslationKeepsSubjectsWithPredicates(t *testing.T) {
 	text := "And the interesting part is that it isn't just a giant database of titles."
-	parts, err := splitSubtitleSourceHint(text, 70)
-	if err != nil || len(parts) != 2 || parts[0] != "And the interesting part is" || parts[1] != "that it isn't just a giant database of titles." {
-		t.Fatalf("参考分段应保留完整从句: %q %v", parts, err)
-	}
+	parts := []string{"And the interesting part is", "that it isn't just a giant database of titles."}
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
 	config.Conf.App.TranslateParallelNum = 1
@@ -479,8 +485,8 @@ func TestPairedTranslationKeepsSubjectsWithPredicates(t *testing.T) {
 		calls++
 		source, target := []string{"And the interesting part is that it", "isn't just a giant database of titles."}, []string{"而有意思的是，它", "不只是一个庞大的书名数据库。"}
 		if calls > 1 {
-			if !strings.Contains(prompt, "超过70必须继续拆分") {
-				t.Error("最终拆分请求必须说明配置长度")
+			if !strings.Contains(prompt, "拆开了主语和谓语") {
+				t.Error("纠错请求必须说明语义边界问题")
 			}
 			source, target = parts, []string{"而有意思的是，", "它不只是一个庞大的书名数据库。"}
 		}
@@ -488,7 +494,7 @@ func TestPairedTranslationKeepsSubjectsWithPredicates(t *testing.T) {
 		return string(response), err
 	})}
 	result, err := translator.translatePairedSentences(context.Background(), []string{text}, "en", "zh_cn", 70, 1, nil)
-	if err != nil || calls != 2 || len(result) != 1 || len(result[0].Target) != 2 || result[0].FullTarget != "而有意思的是，它不只是一个庞大的书名数据库。" || pairedFinalLengthIssueAtLimit(result[0], 70) != nil {
+	if err != nil || calls != 2 || len(result) != 1 || len(result[0].Target) != 2 || strings.Join(result[0].Target, "") != "而有意思的是，它不只是一个庞大的书名数据库。" || strings.Join(result[0].Source, "\n") != strings.Join(parts, "\n") {
 		t.Fatalf("不自然的分段应被纠正: calls=%d result=%+v err=%v", calls, result, err)
 	}
 }
@@ -530,9 +536,6 @@ type budgetedTranslationTestCompleter struct {
 }
 
 func (c budgetedTranslationTestCompleter) ChatCompletionContextWithMaxTokens(ctx context.Context, prompt string, limit int) (string, error) {
-	if response, ok := neutralSemanticTestResponse(prompt); ok {
-		return response, nil
-	}
 	return c.complete(ctx, prompt, limit)
 }
 
@@ -543,12 +546,12 @@ func TestPairedTranslationOutputBudgetGrowsOnlyAfterTruncation(t *testing.T) {
 	for _, truncate := range []bool{false, true} {
 		var budgets []int
 		translator := &Translator{chatCompleter: budgetedTranslationTestCompleter{complete: func(ctx context.Context, prompt string, limit int) (string, error) {
+			if strings.HasPrefix(prompt, translationSemanticReviewPrompt) {
+				return `{"corrections":[]}`, nil
+			}
 			budgets = append(budgets, limit)
 			if truncate && len(budgets) < 3 {
 				return "", fmt.Errorf("llm_translation_truncated: output budget exhausted")
-			}
-			if strings.Contains(prompt, "不拆分、不配对") {
-				return `{"sentence_id":"1","target_text":"你好。"}`, nil
 			}
 			input, err := decodePairedTestInput(prompt)
 			if err != nil {
@@ -566,20 +569,20 @@ func TestPairedTranslationOutputBudgetGrowsOnlyAfterTruncation(t *testing.T) {
 	}
 }
 
-func TestSubtitleTargetLengthUsesWeightedCharacters(t *testing.T) {
+func TestSubtitleTargetLengthUsesUnicodeCharacters(t *testing.T) {
 	for _, tc := range []struct {
 		text string
 		want int
 	}{
 		{"", 0},
-		{"中文", 4},
-		{"𠮷", 2},
-		{"，。！？《》", 12},
-		{"ＡＢ１２", 8},
+		{"中文", 2},
+		{"𠮷", 1},
+		{"，。！？《》", 6},
+		{"ＡＢ１２", 4},
 		{"Hello, AI 2024!", 15},
 		{"Tootsie Slide", 13},
-		{"《Tootsie Slide》", 17},
-		{"中文 AI 2024。", 14},
+		{"《Tootsie Slide》", 15},
+		{"中文 AI 2024。", 11},
 		{"café", 4},
 	} {
 		if got := subtitleTargetLength(tc.text); got != tc.want {
@@ -588,7 +591,7 @@ func TestSubtitleTargetLengthUsesWeightedCharacters(t *testing.T) {
 	}
 }
 
-func TestPairedTranslationWeightedCountIncludesSpacesAndPunctuation(t *testing.T) {
+func TestPairedTranslationUnicodeCountIncludesSpacesAndPunctuation(t *testing.T) {
 	for _, text := range []string{"测试译文：a b", "测试译文：𠮷"} {
 		translator := &Translator{chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 			input, _ := decodePairedTestInput(prompt)
@@ -622,11 +625,11 @@ func TestPairedTranslationMergesUnnecessarySegmentsLocally(t *testing.T) {
 		limit      int
 		want       string
 	}{
-		{"中文整句正好50", "zh_cn", []string{strings.Repeat("好", 12), strings.Repeat("好", 13)}, 50, strings.Repeat("好", 25)},
-		{"中文52配置允许整句", "zh_cn", []string{strings.Repeat("好", 13), strings.Repeat("好", 13)}, 52, strings.Repeat("好", 26)},
+		{"中文整句正好50", "zh_cn", []string{strings.Repeat("好", 24), strings.Repeat("好", 26)}, 50, strings.Repeat("好", 50)},
+		{"中文超长保留切分", "zh_cn", []string{strings.Repeat("好", 26), strings.Repeat("好", 26)}, 50, ""},
 		{"英文单词保留空格", "en", []string{"Use AI ", "tools today."}, 50, "Use AI tools today."},
 		{"中文中的英文词边界", "zh_cn", []string{"使用AI ", "tools提高效率。"}, 50, "使用AI tools提高效率。"},
-		{"从完整译文恢复词内边界", "en", []string{"cafe", "teria today."}, 50, "cafeteria today."},
+		{"无法确认词边界保留切分", "en", []string{"cafe", "teria today."}, 50, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -717,26 +720,14 @@ func TestNormalSubtitleLimitIsIndependentOfShortSubtitles(t *testing.T) {
 		translator := &Translator{chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 			calls++
 			input, err := decodePairedTestInput(prompt)
-			if err != nil || (!strings.HasPrefix(prompt, "任务：translation_content\n") && (input.MaxTargetChars != 50 || input.MaxSourceChars != 50 || input.MaxFullwidthChars != 25 || !strings.Contains(prompt, "每侧长度上限：50显示单位") && !strings.Contains(prompt, `"max_display_units":50`))) || strings.Contains(prompt, "SAFE_TARGET_CHARS") {
+			if err != nil || input.MaxTargetChars != 50 || input.MaxSourceChars != 50 || input.MaxFullwidthChars != 50 || !strings.Contains(prompt, "两侧整句都在上限内时保持一对") || !strings.Contains(prompt, "中英文、空格和标点各计1") || strings.Contains(prompt, "SAFE_TARGET_CHARS") {
 				t.Fatalf("普通字幕未使用独立50字符约束: %+v, %v", input, err)
 			}
-			item := pairedSentence{ID: "1", FullTarget: target, Source: []string{"The stress primarily comes from", "not taking action over something", "that you can have some control over."}, Target: []string{"压力主要源于", "没有采取行动，", "针对自己能够掌控的事情。"}}
-			if input.Sentences[0].Text != source {
-				if input.Sentences[0].Text != "The stress primarily comes from not taking action over something" {
-					t.Fatalf("请求了非预期片段: %s", input.Sentences[0].Text)
-				}
-				item.Source, item.Target = item.Source[:2], item.Target[:2]
-				item.FullTarget = strings.Join(item.Target, "")
-			}
-			data, err := encodePairedTestResponse([]pairedSentence{item})
+			data, err := encodePairedTestResponse([]pairedSentence{{ID: "1", FullTarget: "压力主要源于没有采取行动，针对自己能够掌控的事情。", Source: []string{"The stress primarily comes from", "not taking action over something", "that you can have some control over."}, Target: []string{"压力主要源于", "没有采取行动，", "针对自己能够掌控的事情。"}}})
 			return string(data), err
 		})}
 		blocks, err := translator.BatchTranslateSrtBlocks(context.Background(), []*util.SrtBlock{{Index: 1, Timestamp: "00:00:07,359 --> 00:00:15,430", OriginLanguageSentence: source}}, "en", "zh_cn", nil)
-		var targets []string
-		for _, block := range blocks {
-			targets = append(targets, block.TargetLanguageSentence)
-		}
-		if err != nil || len(blocks) != 3 || calls != 2 || strings.Join(targets, "") != target {
+		if err != nil || len(blocks) != 3 || calls != 1 || strings.Join([]string{blocks[0].TargetLanguageSentence, blocks[1].TargetLanguageSentence, blocks[2].TargetLanguageSentence}, "") != target {
 			t.Fatalf("短字幕参数%d影响普通字幕: %+v calls=%d error=%v", shortLimit, blocks, calls, err)
 		}
 	}
@@ -749,16 +740,15 @@ func TestNormalSubtitleFiftyCharacterBoundary(t *testing.T) {
 		name, text string
 		invalid    bool
 	}{
-		{"25个汉字", strings.Repeat("好", 25), false},
-		{"26个汉字", strings.Repeat("好", 26), false},
-		{"24个汉字加全角标点", strings.Repeat("好", 24) + "。", false},
-		{"25个汉字加全角标点", strings.Repeat("好", 25) + "。", false},
-		{"中英混排50", strings.Repeat("好", 24) + "ab", false},
-		{"中英混排51", strings.Repeat("好", 24) + "abc", false},
-		{"半角空格计入50", strings.Repeat("好", 24) + " a", false},
-		{"半角空格计入51", strings.Repeat("好", 24) + " ab", false},
-		{"容差55", strings.Repeat("好", 27) + "a", false},
-		{"超过旧容差仍接受56", strings.Repeat("好", 28), false},
+		{"50个汉字", strings.Repeat("好", 50), false},
+		{"51个汉字", strings.Repeat("好", 51), true},
+		{"49个汉字加全角标点", strings.Repeat("好", 49) + "。", false},
+		{"50个汉字加全角标点", strings.Repeat("好", 50) + "。", true},
+		{"中英混排50", strings.Repeat("好", 48) + "ab", false},
+		{"中英混排51", strings.Repeat("好", 48) + "abc", true},
+		{"半角空格计入50", strings.Repeat("好", 48) + " a", false},
+		{"半角空格计入51", strings.Repeat("好", 48) + " ab", true},
+		{"不再容忍55", strings.Repeat("好", 55), true},
 	} {
 		data, _ := encodePairedTestResponse([]pairedSentence{{ID: "1", FullTarget: tc.text, Source: []string{"Hello."}, Target: []string{tc.text}}})
 		_, err := translator.parsePairedTranslation(string(data), input, "en", "zh_cn")
@@ -909,27 +899,15 @@ func TestSubtitleWordTimingRejectsUnrecoverableInput(t *testing.T) {
 	}
 }
 
-func TestAudioTranslationWorkerStopsOnUpstreamFailure(t *testing.T) {
+func TestAudioTranslationWorkerExportsMarkedSourceOnUpstreamFailure(t *testing.T) {
 	log.InitLogger()
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
 	config.Conf.App.TranslateMaxAttempts = 9
 	for _, failure := range []bool{false, true} {
 		t.Run(fmt.Sprint(failure), func(t *testing.T) {
-			calls, splitCalls := 0, 0
+			calls := 0
 			svc := Service{ChatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
-				if strings.HasPrefix(prompt, "Task: translation_source_split\n") {
-					splitCalls++
-					_, payload, _ := strings.Cut(prompt, "Input JSON:\n")
-					var input struct {
-						Text string `json:"text"`
-					}
-					if err := json.Unmarshal([]byte(payload), &input); err != nil {
-						return "", err
-					}
-					data, err := json.Marshal(map[string]any{"segments": []string{input.Text}})
-					return string(data), err
-				}
 				calls++
 				if failure {
 					return "", fmt.Errorf("LLM disconnected")
@@ -948,13 +926,16 @@ func TestAudioTranslationWorkerStopsOnUpstreamFailure(t *testing.T) {
 			output := make(chan DataWithId[[]*TranslatedItem], 1)
 			svc.startTranslateWorker(ctx, group, &types.SubtitleTaskStepParam{TaskBasePath: t.TempDir(), OriginLanguage: "en", TargetLanguage: "zh_cn"}, pending, progress, output)
 			err := group.Wait()
-			// 初译成功后，音频意群的冻结排版最多再尝试两次；失败不重译。
-			want := 3
-			if failure {
-				want = 1
+			if calls != 1 || err != nil {
+				t.Fatalf("calls=%d error=%v", calls, err)
 			}
-			if calls != want || splitCalls != 0 || (err != nil) != failure {
-				t.Fatalf("translation calls=%d want=%d split calls=%d error=%v", calls, want, splitCalls, err)
+			select {
+			case got := <-output:
+				if len(got.Data) == 0 || strings.HasPrefix(got.Data[0].TranslatedText, "[待翻译] ") != failure {
+					t.Fatalf("失败状态未明确标记: output=%+v", got)
+				}
+			default:
+				t.Fatal("没有导出翻译结果")
 			}
 		})
 	}
@@ -966,20 +947,15 @@ func TestWordLevelSubtitleRouteExportsPairedNormalAndIndependentShortSubtitles(t
 	t.Cleanup(func() { config.Conf = previous })
 	config.Conf.App.MaxSentenceLength = 16
 	config.Conf.App.ShortSubtitleMaxChars = 8
-	fixture := "WEBVTT\n\n00:00:00.000 --> 00:00:02.500\nWe<00:00:00.200> read<00:00:00.500> books<00:00:01.000> and<00:00:01.500> learn.\n"
+	fixture := "WEBVTT\n\n00:00:00.000 --> 00:00:02.500\nWe<00:00:00.200> can<00:00:00.500> launch<00:00:01.000> after<00:00:01.500> review.\n"
 	req := subtitleRoutingTestRequest(t, fixture)
-	// 两个意群在两种语言中顺序一致。旧样例将“能发布”和“审核后”配反，
-	// 不能用它要求冻结排版保留错误配对。分句行为另有专测，此处固定父句。
-	completer := &scriptedCompleter{responses: []string{
-		`{"sentences":[{"sentence_id":"1","target_text":"我们读书并学习。"}]}`,
-		`{"sentences":[{"sentence_id":"1","segments":[{"source":"We read books","target":"我们读书"},{"source":"and learn.","target":"并学习。"}]}]}`,
-	}}
-	svc := &YouTubeSubtitleService{translator: &Translator{chatCompleter: completer, preparedTranslation: &preparedTranslationContext{Texts: []string{"We read books and learn."}}}}
+	completer := &scriptedCompleter{responses: []string{`{"sentences":[{"sentence_id":"1","target_text":"审核后，我们就能发布。","segments":[{"source":"We can launch","target":"审核后，"},{"source":"after review.","target":"我们就能发布。"}]}]}`}}
+	svc := &YouTubeSubtitleService{translator: &Translator{chatCompleter: completer}}
 	if _, err := svc.processYouTubeSubtitle(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
-	if completer.calls != 2 {
-		t.Fatalf("应分别完成内容翻译和冻结排版，实际%d", completer.calls)
+	if completer.calls != 1 {
+		t.Fatalf("翻译和分段只应调用一次模型，实际%d", completer.calls)
 	}
 	var timestamps []string
 	for _, name := range []string{types.SubtitleTaskOriginLanguageSrtFileName, types.SubtitleTaskTargetLanguageSrtFileName, types.SubtitleTaskBilingualSrtFileName} {
@@ -999,7 +975,7 @@ func TestWordLevelSubtitleRouteExportsPairedNormalAndIndependentShortSubtitles(t
 		}
 	}
 	short, err := util.ParseSrtFile(filepath.Join(req.TaskBasePath, types.SubtitleTaskShortOriginMixedSrtFileName))
-	if err != nil || len(short) <= 2 || short[0].OriginLanguageSentence != "我们读书" {
+	if err != nil || len(short) <= 2 || short[0].OriginLanguageSentence != "审核后，" {
 		t.Fatalf("短字幕未独立导出: %+v, %v", short, err)
 	}
 }
@@ -1008,7 +984,7 @@ func TestAudioModalFilterPreservesPairedSource(t *testing.T) {
 	calls := 0
 	svc := Service{ChatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 		calls++
-		if !strings.Contains(prompt, "仅译文忽略无实际语义") {
+		if !strings.Contains(prompt, "启用语气词过滤") || !strings.Contains(prompt, "原文仍须原样完整保留") {
 			t.Fatal("语气词过滤只能作用于译文")
 		}
 		return `{"sentences":[{"sentence_id":"1","target_text":"不，我可能会来。","segments":[{"source":"Um, no, I might come.","target":"不，我可能会来。"}]}]}`, nil
@@ -1016,20 +992,5 @@ func TestAudioModalFilterPreservesPairedSource(t *testing.T) {
 	items, err := svc.splitTextAndTranslateV2(context.Background(), "", "Um, no, I might come.", "en", "zh_cn", true, 0, nil)
 	if err != nil || calls != 1 || len(items) != 1 || items[0].OriginText != "Um, no, I might come." {
 		t.Fatalf("items=%+v calls=%d error=%v", items, calls, err)
-	}
-}
-
-func TestPairedTranslationRequestRateLimitStopsAtConfiguredLimit(t *testing.T) {
-	previous := config.Conf
-	t.Cleanup(func() { config.Conf = previous })
-	config.Conf.App.TranslateMaxAttempts = 1
-	calls := 0
-	translator := &Translator{chatCompleter: translationCompleterFunc(func(string) (string, error) {
-		calls++
-		return "", &openaiapi.APIError{HTTPStatusCode: http.StatusTooManyRequests}
-	})}
-	_, err := translator.requestTranslation(context.Background(), "translation request", 1024)
-	if translationRequestStatus(err) != http.StatusTooManyRequests || calls != 1 {
-		t.Fatalf("限流达到配置次数后没有退出: calls=%d error=%v", calls, err)
 	}
 }

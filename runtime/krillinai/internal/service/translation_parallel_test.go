@@ -29,9 +29,6 @@ func (c *blockingTranslationCompleter) ChatCompletion(prompt string) (string, er
 }
 
 func (c *blockingTranslationCompleter) ChatCompletionContext(ctx context.Context, prompt string) (string, error) {
-	if response, ok := neutralSemanticTestResponse(prompt); ok {
-		return response, nil
-	}
 	c.calls.Add(1)
 	active := c.active.Add(1)
 	defer c.active.Add(-1)

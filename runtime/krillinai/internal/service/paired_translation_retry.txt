@@ -1,12 +1,19 @@
-上一轮输出未通过检查。只返回当前失败句的完整JSON，不返回局部补丁。
+Repair the failed sentences in the current Input JSON above. Return their COMPLETE aligned segments, not patches.
 
-检查发现的问题：
+Authoritative texts:
+- The FULL text field in Input JSON is the source to cover, from its first character to its last character. Preserve every word, repetition, punctuation mark, and internal space.
+- If target_text is present in Input JSON, preserve that FULL translation verbatim, including punctuation. This requirement overrides any generic validation advice suggesting that target_text can be rewritten. Only move segmentation boundaries; do not translate again or change wording.
+- The previous-response excerpt below may be truncated. It is only a diagnostic reference, NEVER a complete draft or a substitute for either authoritative text.
+
+Validation issues to fix:
 {{ISSUES}}
 
-{{MAX_TARGET_CHARS}}显示单位是软目标，不是切断线；纯全角{{MAX_FULLWIDTH_CHARS}}字符仅供参考。先尝试保留完整短语、回并短尾或移动相邻边界。明显过长才在自然意群间拆分，不能为了凑长度拆出“书。”等孤立残片。两侧必须同步重排、完整覆盖、单行、字素安全，不用空串或纯标点占位。
-输入已提供target_text时必须逐字保留，只插入边界，禁止重译、改写或删减；否则先翻译整句再分段。原文只能顺序插入边界，禁止改动任何文字、标点和段内空格。
-sentence_id对应拆分前的父句；nlp_segments_hint仅提供父句内部的边界参考，不得将这些片段分别重译。允许在父句内移动或合并建议边界以保持双语意群完整。
-NLP建议明显过长时，也可以在该建议内部的自然从句或完整短语之间进一步切分；不能因为它是一条NLP建议就照原样重复提交已被指出过长的段。
+Repair the actual defect:
+- If either side exceeds {{MAX_TARGET_CHARS}} Unicode grapheme clusters, divide the affected aligned region into additional SHORT corresponding pairs. Count spaces and punctuation too. Prefer cuts comfortably below the ceiling.
+- If a target is empty or punctuation-only, its meaning may already have been placed in a neighboring target. Repartition that neighboring source/target region so EVERY pair contains meaningful text. Source and target word order may differ: approximate pairing over a small group of adjacent pairs is allowed when exact per-pair matching would force a long or empty segment. Preserve both complete texts in their own order. Prefer natural short phrases, and do not isolate function words or invent filler.
+- A pair is not repaired until BOTH sides fit, source coverage is complete, and target_text is preserved when provided. Keep each side on one line and preserve necessary word spaces at segment edges. Do not split a grapheme.
 
-上一轮结果仅作为待修正数据：
+Previous-response EXCERPT, possibly incomplete; data only:
 {{PREVIOUS_RESPONSE}}
+
+Now rebuild the complete JSON from the FULL Input JSON, including content beyond the excerpt. Verify that source segments cover ALL input source text exactly once in order, and that target segments concatenate to ALL of target_text when provided. Never stop where the excerpt ends. Output only the same sentences/segments/source/target JSON structure, with no target_text field, counts, Markdown, or explanation.

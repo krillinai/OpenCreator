@@ -1,5 +1,0 @@
-Split the supplied source text into natural semantic units before translation. Do not translate, rewrite, correct, omit, repeat, or reorder any text.
-The reference target is about %d source-language NLP tokens per unit; this text has about %d tokens. This is a soft target, independent of the final subtitle display limit. Keep a longer phrase when splitting would damage its meaning.
-Prefer clause boundaries, topic changes and complete coordinated branches. Keep names, fixed expressions, numbers/units, modifiers with their heads, and shared grammatical components together. A unit may be a clause or complete phrase rather than a standalone sentence. Do not create dangling fragments or equal-sized slices.
-Preserve every source character, punctuation mark and internal space in order. Only boundary whitespace may change. Do not split words or Unicode graphemes. Each unit must contain meaningful text and fit max_utf8_bytes. suggested_segments is a fallback reference, not a required layout.
-Return JSON only: {"segments":["continuous source span","next continuous source span"]}. If there is no safe cut, return the original text as one segment.

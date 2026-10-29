@@ -10,7 +10,6 @@ import (
 	"krillin-ai/pkg/util"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,65 +17,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 )
-
-// 用当前校验器复核真实父句检查点；不调用模型、不修改产物。
-func TestPairedParentTranslationAuditLive(t *testing.T) {
-	dir := os.Getenv("KRILLINAI_PARENT_TRANSLATION_AUDIT_DIR")
-	if dir == "" {
-		t.Skip("指定真实翻译产物目录后审计")
-	}
-	paths, err := filepath.Glob(filepath.Join(dir, "translation-checkpoints", "*", "*.json"))
-	if err != nil || len(paths) == 0 {
-		t.Fatalf("缺少父句检查点: %v", err)
-	}
-	translator := &Translator{}
-	parents := make(map[string]pairedSentence)
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		var sentence pairedSentence
-		if err != nil || json.Unmarshal(data, &sentence) != nil || parents[sentence.ID].ID != "" {
-			t.Fatalf("检查点损坏或存在多份父句: %s err=%v", path, err)
-		}
-		input := pairedTranslationInput{MaxTargetChars: sentence.LayoutTarget, PreserveFinalBoundaries: true, Sentences: []pairedTranslationSource{{ID: sentence.ID, Text: sentence.FullSource, TargetText: sentence.FullTarget, NLPSourceHint: sentence.NLPSourceHint}}}
-		encoded, _ := encodePairedSentenceForLayout(sentence)
-		parsed, err := translator.parsePairedTranslation(encoded, input, "en", "zh_cn")
-		if err != nil || len(parsed) != 1 || !slices.Equal(parsed[0].Source, sentence.Source) || !slices.Equal(parsed[0].Target, sentence.Target) {
-			t.Errorf("当前校验器未接受完整父句/冻结译文/最终边界: id=%s err=%v", sentence.ID, err)
-		}
-		if err := pairedFinalLengthIssue(sentence); err != nil {
-			t.Error(err)
-		}
-		parents[sentence.ID] = sentence
-	}
-	for _, output := range []struct {
-		name   string
-		source bool
-	}{{types.SubtitleTaskOriginLanguageSrtFileName, true}, {types.SubtitleTaskTargetLanguageSrtFileName, false}} {
-		blocks, err := util.ParseSrtFile(filepath.Join(dir, output.name))
-		if err != nil || len(blocks) == 0 {
-			t.Fatalf("缺少最终字幕: %s err=%v", output.name, err)
-		}
-		var actual, expected strings.Builder
-		for _, block := range blocks {
-			actual.WriteString(compactSubtitleText(block.OriginLanguageSentence))
-		}
-		for i := 1; i <= len(parents); i++ {
-			parent, ok := parents[strconv.Itoa(i)]
-			if !ok {
-				t.Fatalf("父句ID不连续: %d", i)
-			}
-			text := parent.FullTarget
-			if output.source {
-				text = parent.FullSource
-			}
-			expected.WriteString(compactSubtitleText(text))
-		}
-		if actual.String() != expected.String() {
-			t.Fatalf("最终字幕未保持父句完整内容与顺序: %s", output.name)
-		}
-	}
-	t.Logf("已审计%d个完整父句及最终原文/译文字幕", len(parents))
-}
 
 // 只审计已有产物，不调用模型，不修改字幕文件。
 func TestGeneratedWordSubtitleAuditLive(t *testing.T) {

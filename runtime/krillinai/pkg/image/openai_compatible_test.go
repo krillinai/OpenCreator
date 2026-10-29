@@ -60,7 +60,7 @@ func TestOpenAICompatibleGenerateOmitsResponseFormatForGPTImage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewOpenAICompatibleClient(server.URL, "test-key", "gpt-image-2")
+	client := NewOpenAICompatibleClient(server.URL, "test-key", "gpt-image-1")
 	_, err := client.Generate(context.Background(), GenerateRequest{Prompt: "cover"})
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
@@ -76,7 +76,7 @@ func TestOpenAICompatibleGenerateAcceptsURLResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewOpenAICompatibleClient(server.URL, "test-key", "gpt-image-2")
+	client := NewOpenAICompatibleClient(server.URL, "test-key", "gpt-image-1")
 	out, err := client.Generate(context.Background(), GenerateRequest{Prompt: "cover"})
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
@@ -92,40 +92,9 @@ func TestOpenAICompatibleGenerateReturnsHTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewOpenAICompatibleClient(server.URL, "test-key", "gpt-image-2")
+	client := NewOpenAICompatibleClient(server.URL, "test-key", "gpt-image-1")
 	_, err := client.Generate(context.Background(), GenerateRequest{Prompt: "cover"})
 	if err == nil {
 		t.Fatalf("Generate() error = nil, want error")
-	}
-}
-
-func TestOpenAICompatibleGenerateMigratesRetiredModels(t *testing.T) {
-	for _, tc := range []struct{ model, want string }{
-		{"gpt-image-1", "gpt-image-2"},
-		{"gpt-image-1-mini", "gpt-image-2"},
-		{" GPT-IMAGE-1-2025-04-15 ", "gpt-image-2"},
-		{"openai/gpt-image-1", "openai/gpt-image-2"},
-		{"gpt-image-1.5", "gpt-image-1.5"},
-	} {
-		t.Run(tc.model, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var body map[string]any
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					t.Fatal(err)
-				}
-				if body["model"] != tc.want {
-					t.Errorf("model = %v, want %s", body["model"], tc.want)
-				}
-				if _, ok := body["response_format"]; ok {
-					t.Error("GPT image requests must omit response_format")
-				}
-				_, _ = w.Write([]byte(`{"data":[{"b64_json":"abc123"}]}`))
-			}))
-			defer server.Close()
-			client := NewOpenAICompatibleClient(server.URL, "test-key", tc.model)
-			if _, err := client.Generate(context.Background(), GenerateRequest{Prompt: "cover"}); err != nil {
-				t.Fatal(err)
-			}
-		})
 	}
 }

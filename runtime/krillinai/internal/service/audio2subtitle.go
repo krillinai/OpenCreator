@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -40,8 +39,6 @@ func filterStandaloneQuotes(text string) string {
 type TranslatedItem struct {
 	OriginText     string
 	TranslatedText string
-	// First cue of a frozen parent; retained in audio checkpoints for export.
-	DisplayGroupSize int `json:",omitempty"`
 }
 
 // 泛型数据结构，用于携带ID的数据
@@ -422,16 +419,6 @@ func (s Service) transcribeAudio(
 			err = fmt.Errorf("audioToSubtitle transcribeAudio panic recovered: %v", r)
 		}
 	}()
-	cachePath := audioTranscriptionCheckpointPath(audioFilePath, taskBasePath, language)
-	if cachePath != "" {
-		var cached types.TranscriptionData
-		if data, readErr := os.ReadFile(cachePath); readErr == nil && json.Unmarshal(data, &cached) == nil && validAudioTranscriptionCheckpoint(&cached) {
-			if reportProgress != nil {
-				reportProgress(100)
-			}
-			return &cached, nil
-		}
-	}
 
 	if transcriber, ok := s.Transcriber.(types.ProgressTranscriber); ok {
 		transcriptionData, err = transcriber.TranscriptionWithProgress(
@@ -449,11 +436,6 @@ func (s Service) transcribeAudio(
 	}
 
 	_ = util.SaveToDisk(transcriptionData, filepath.Join(taskBasePath, fmt.Sprintf(types.SubtitleTaskAudioTranscriptionDataPersistenceFileNamePattern, id)))
-	if cachePath != "" && validAudioTranscriptionCheckpoint(transcriptionData) {
-		if cacheErr := saveTranslationPresegmentationJSON(cachePath, transcriptionData); cacheErr != nil {
-			log.GetLogger().Warn("转录检查点保存失败，当前转录结果仍可继续使用", zap.Error(cacheErr))
-		}
-	}
 
 	if transcriptionData.Text == "" {
 		log.GetLogger().Info("audioToSubtitle transcribeAudio TranscriptionData.Text is empty", zap.Any("audioFilePath", audioFilePath), zap.Any("taskBasePath", taskBasePath))
@@ -489,30 +471,10 @@ func (s Service) splitTextAndTranslateRecoverable(
 	reportProgress func(completed, total int) error,
 	onProgress ...func(completed, total int),
 ) ([]*TranslatedItem, error) {
-	return s.translatePreparedText(ctx, basePath, inputText, originLang, targetLang, enableModalFilter, id, task, nil, reportProgress, onProgress...)
-}
-
-func (s Service) translatePreparedText(ctx context.Context, basePath, inputText string, originLang, targetLang types.StandardLanguageCode, enableModalFilter bool, id int, task *types.SubtitleTask, prepared *preparedTranslationContext, reportProgress func(completed, total int) error, onProgress ...func(completed, total int)) ([]*TranslatedItem, error) {
-	translator := newTranslator(s.ChatCompleter).withSemanticSourceUnits()
-	translator.filterNonSemanticFillers, translator.preparedTranslation = enableModalFilter, prepared
-	translator = translator.withTranslationRecovery(basePath, task)
-	// 转录词时间已经落盘。仅在文本精确匹配时用于排版预算，缺失时仍可翻译。
-	if basePath != "" {
-		path := filepath.Join(basePath, fmt.Sprintf(types.SubtitleTaskAudioTranscriptionDataPersistenceFileNamePattern, id))
-		if data, err := os.ReadFile(path); err == nil {
-			var transcription types.TranscriptionData
-			if json.Unmarshal(data, &transcription) == nil {
-				var words []VttWord
-				for _, word := range transcription.Words {
-					words = append(words, VttWord{Text: word.Text, Start: formatSRTTime(int64(math.Round(word.Start * 1000))), End: formatSRTTime(int64(math.Round(word.End * 1000)))})
-				}
-				translator.subtitleTimings, _ = subtitleWordTimingSpans(words, inputText)
-			}
-		}
-	}
-	translator.translationReportScope = fmt.Sprintf("audio:%d", id)
+	sentences := splitTranslationSentences(inputText)
+	translator := (&Translator{chatCompleter: s.ChatCompleter, filterNonSemanticFillers: enableModalFilter}).withTranslationRecovery(basePath, task)
 	var results []*TranslatedItem
-	_, err := translator.translatePairedSentences(ctx, []string{inputText}, originLang, targetLang, subtitleTargetLimit(), translationBatchSize, func(batch []pairedSentence, completed, total int) error {
+	paired, err := translator.translatePairedSentences(ctx, sentences, originLang, targetLang, subtitleTargetLimit(), translationBatchSize, func(batch []pairedSentence, completed, total int) error {
 		results = append(results, flattenPairedSentences(batch)...)
 		if basePath != "" {
 			path := filepath.Join(basePath, fmt.Sprintf(types.SubtitleTaskTranslationDataPersistenceFileNamePattern, id))
@@ -526,12 +488,15 @@ func (s Service) translatePreparedText(ctx context.Context, basePath, inputText 
 		return nil
 	}, onProgress...)
 	if err != nil {
-		var allFailed *allTranslationFailedError
-		if errors.As(err, &allFailed) {
-			// 音频调用方需要先汇总其他片段，再判断是否整片翻译失败。
-			return results, err
-		}
 		return nil, err
+	}
+	// 流式回调保留初译检查点，最终输出使用限时语义检查后的配对结果。
+	results = flattenPairedSentences(paired)
+	if basePath != "" {
+		path := filepath.Join(basePath, fmt.Sprintf(types.SubtitleTaskTranslationDataPersistenceFileNamePattern, id))
+		if err := util.SaveToDisk(results, path); err != nil {
+			return nil, fmt.Errorf("save reviewed translation checkpoint: %w", err)
+		}
 	}
 	return results, nil
 }
@@ -763,7 +728,7 @@ func (s Service) processAudioSegments(ctx context.Context, stepParam *types.Subt
 	)
 
 	// 启动翻译协程
-	s.startTranslateWorker(ctx, eg, stepParam, pendingTranslationQueue, translationProgressQueue, translatedQueue, segmentNum)
+	s.startTranslateWorker(ctx, eg, stepParam, pendingTranslationQueue, translationProgressQueue, translatedQueue)
 
 	// 处理结果协程
 	s.startResultHandler(ctx, eg, stepParam, segmentNum, timePoints, audioSegments,
@@ -878,79 +843,46 @@ func (s Service) startTranscribeWorkers(ctx context.Context, eg *errgroup.Group,
 // 启动翻译工作协程
 func (s Service) startTranslateWorker(ctx context.Context, eg *errgroup.Group, stepParam *types.SubtitleTaskStepParam,
 	pendingTranslationQueue chan DataWithId[string], translationProgressQueue chan DataWithId[TranslationProgress],
-	translatedQueue chan DataWithId[[]*TranslatedItem], expectedSegments ...int) {
+	translatedQueue chan DataWithId[[]*TranslatedItem]) {
 
 	eg.Go(func() error {
-		count := 1
-		if len(expectedSegments) > 0 {
-			count = expectedSegments[0]
-		}
-		var pending []DataWithId[string]
-		for len(pending) < count {
+		for {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return nil
 			case translateItem, ok := <-pendingTranslationQueue:
 				if !ok {
-					return fmt.Errorf("转录片段不完整：收到%d段，需要%d段", len(pending), count)
+					return nil
 				}
-				pending = append(pending, translateItem)
-			}
-		}
-		sort.Slice(pending, func(i, j int) bool { return pending[i].Id < pending[j].Id })
-		var prepared map[int]*preparedTranslationContext
-		if count > 1 {
-			translator := newTranslator(s.ChatCompleter).withSemanticSourceUnits().withTranslationRecovery(stepParam.TaskBasePath, stepParam.TaskPtr)
-			var err error
-			prepared, err = translator.prepareAudioTranslationContexts(ctx, pending, stepParam.OriginLanguage, stepParam.TargetLanguage)
-			if err != nil {
-				return err
-			}
-		}
-		translatedContent := false
-		var allFailed *allTranslationFailedError
-		for _, translateItem := range pending {
-			var translatedResults []*TranslatedItem
-			var err error
-			// 翻译文本
-			log.GetLogger().Info("Begin to translate", zap.Any("taskId", stepParam.TaskId), zap.Any("splitId", translateItem.Id))
+				var translatedResults []*TranslatedItem
+				var err error
+				// 翻译文本
+				log.GetLogger().Info("Begin to translate", zap.Any("taskId", stepParam.TaskId), zap.Any("splitId", translateItem.Id))
 
-			reportProgress := func(completed, total int) {
-				fraction := scaledProgress(completed, total, 0, 1)
-				select {
-				case translationProgressQueue <- DataWithId[TranslationProgress]{
-					Data: TranslationProgress{Fraction: fraction, Completed: completed, Total: total},
-					Id:   translateItem.Id,
-				}:
-				case <-ctx.Done():
+				reportProgress := func(completed, total int) {
+					fraction := scaledProgress(completed, total, 0, 1)
+					select {
+					case translationProgressQueue <- DataWithId[TranslationProgress]{
+						Data: TranslationProgress{Fraction: fraction, Completed: completed, Total: total},
+						Id:   translateItem.Id,
+					}:
+					case <-ctx.Done():
+					}
 				}
-			}
-			translatedResults, err = s.translatePreparedText(ctx, stepParam.TaskBasePath, translateItem.Data, stepParam.OriginLanguage, stepParam.TargetLanguage, stepParam.EnableModalFilter, translateItem.Id, stepParam.TaskPtr, prepared[translateItem.Id], nil, reportProgress)
-			if err != nil {
-				var segmentFailed *allTranslationFailedError
-				if !errors.As(err, &segmentFailed) {
+				translatedResults, err = s.splitTextAndTranslateRecoverable(ctx, stepParam.TaskBasePath, translateItem.Data, stepParam.OriginLanguage, stepParam.TargetLanguage, stepParam.EnableModalFilter, translateItem.Id, stepParam.TaskPtr, nil, reportProgress)
+				if err != nil {
 					return fmt.Errorf("audioToSubtitle audioToSrt splitTextAndTranslate err: %w", err)
 				}
-				if allFailed == nil {
-					allFailed = &allTranslationFailedError{reason: segmentFailed.reason}
+				_ = util.SaveToDisk(translatedResults, filepath.Join(stepParam.TaskBasePath, fmt.Sprintf(types.SubtitleTaskTranslationDataPersistenceFileNamePattern, translateItem.Id)))
+				log.GetLogger().Info("Translate completed", zap.Any("taskId", stepParam.TaskId), zap.Any("splitId", translateItem.Id))
+				reportTranslationProgress(ctx, translationProgressQueue, translateItem.Id, 1)
+				select {
+				case translatedQueue <- DataWithId[[]*TranslatedItem]{Data: translatedResults, Id: translateItem.Id}:
+				case <-ctx.Done():
+					return ctx.Err()
 				}
-				allFailed.count += segmentFailed.count
-			} else if len(translatedResults) > 0 {
-				translatedContent = true
-			}
-			_ = util.SaveToDisk(translatedResults, filepath.Join(stepParam.TaskBasePath, fmt.Sprintf(types.SubtitleTaskTranslationDataPersistenceFileNamePattern, translateItem.Id)))
-			log.GetLogger().Info("Translate completed", zap.Any("taskId", stepParam.TaskId), zap.Any("splitId", translateItem.Id))
-			reportTranslationProgress(ctx, translationProgressQueue, translateItem.Id, 1)
-			select {
-			case translatedQueue <- DataWithId[[]*TranslatedItem]{Data: translatedResults, Id: translateItem.Id}:
-			case <-ctx.Done():
-				return ctx.Err()
 			}
 		}
-		if allFailed != nil && !translatedContent {
-			return allFailed
-		}
-		return nil
 	})
 }
 
@@ -1075,9 +1007,7 @@ func (s Service) startResultHandler(ctx context.Context, eg *errgroup.Group, ste
 				audioSegments[translatedItems.Id].SrtNoTsFile = originNoTsSrtFileName
 				// 生成时间戳
 				var srtBlocks []*util.SrtBlock
-				var displayGroups []int
 				for i, translatedItem := range translatedItems.Data {
-					displayGroups = append(displayGroups, translatedItem.DisplayGroupSize)
 					srtBlocks = append(srtBlocks, &util.SrtBlock{
 						Index:                  i + 1,
 						Timestamp:              "",
@@ -1088,7 +1018,7 @@ func (s Service) startResultHandler(ctx context.Context, eg *errgroup.Group, ste
 
 				segmentIdx := translatedItems.Id
 
-				err = generateSrtWithTimestamps(srtBlocks, timePoints[segmentIdx], audioSegments[segmentIdx].TranscriptionData.Words, segmentIdx, stepParam, displayGroups)
+				err = generateSrtWithTimestamps(srtBlocks, timePoints[segmentIdx], audioSegments[segmentIdx].TranscriptionData.Words, segmentIdx, stepParam)
 				if err != nil {
 					return fmt.Errorf("audioToSubtitle audioToSrt generateTimestamps err: %w", err)
 				}
@@ -1282,6 +1212,21 @@ func splitSrt(stepParam *types.SubtitleTaskStepParam) error {
 	if err = scanner.Err(); err != nil {
 		log.GetLogger().Error("audioToSubtitle splitSrt scan bilingual srt file error", zap.Any("taskId", stepParam.TaskId), zap.Error(err))
 		return fmt.Errorf("audioToSubtitle splitSrt scan bilingual srt file error: %w", err)
+	}
+	// 两种语言先按原始配对分离，再对最终文件换行；多行回退不能混入另一语言。
+	if err := originLanguageSrtFile.Close(); err != nil {
+		return err
+	}
+	if err := targetLanguageSrtFile.Close(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := ReportSubtitleLengthFallbacks(originLanguageSrtFilePath, targetLanguageSrtFilePath, stepParam.BilingualSrtFilePath,
+		filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskShortOriginSrtFileName),
+		filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskShortOriginMixedSrtFileName)); err != nil {
+		return err
 	}
 	// 添加原语言单语字幕
 	subtitleInfo := types.SubtitleFileInfo{
@@ -1602,21 +1547,16 @@ func jumpFindMaxIncreasingSubArray(words []types.Word) (int, int, []types.Word) 
 	return startIdx, endIdx, result
 }
 
-func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, words []types.Word, segmentIdx int, stepParam *types.SubtitleTaskStepParam, displayGroups ...[]int) error {
+func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, words []types.Word, segmentIdx int, stepParam *types.SubtitleTaskStepParam) error {
 	if len(srtBlocks) == 0 || len(words) == 0 {
 		return nil
 	}
-	blocks, spans, err := pairedAudioTiming(srtBlocks, words, stepParam.OriginLanguage, tsOffset, displayGroups...)
+	blocks, spans, err := pairedAudioTiming(srtBlocks, words, stepParam.OriginLanguage, tsOffset)
 	if err != nil {
 		return fmt.Errorf("generate paired subtitle timestamps: %w", err)
 	}
 	if err := normalizeSrtBlocks(blocks, false); err != nil {
 		return err
-	}
-	if len(displayGroups) > 0 {
-		if err := validateFrozenDisplayBlocks(blocks, subtitleTargetLimit()); err != nil {
-			return err
-		}
 	}
 	for i := range blocks {
 		srtBlocks[i].Timestamp = blocks[i].Timestamp

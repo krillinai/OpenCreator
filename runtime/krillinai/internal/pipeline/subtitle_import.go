@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"krillin-ai/internal/service"
 	"krillin-ai/internal/types"
 	"krillin-ai/pkg/util"
 	"os"
@@ -40,7 +41,10 @@ func importSubtitleFile(ctx context.Context, svc StageService, req SubtitleReque
 		// Import translation has no download/ASR work. Its progress must not use
 		// the video preparation reporter or the legacy 40–90 translation range.
 		step.TaskPtr.SetProgressReporter(nil)
-		forwardSubtitleTranslationProgress(step.TaskPtr, req.ReportProgress, startPercent, 95, "正在翻译导入的原文字幕")
+		step.TaskPtr.SetTranslationProgressReporter(func(completed, total int) {
+			percent := startPercent + completed*(95-startPercent)/total
+			reportSubtitleProgress(req, "translating_subtitles", percent, "正在翻译导入的原文字幕", ProgressCounts{Completed: completed, Total: total})
+		})
 		reportSubtitleProgress(req, "translating_subtitles", startPercent, "正在准备字幕翻译")
 		blocks, err = svc.TranslateSubtitleBlocks(ctx, blocks, step)
 		if err != nil {
@@ -72,6 +76,9 @@ func importSubtitleFile(ctx context.Context, svc StageService, req SubtitleReque
 	}
 	for path, content := range outputs {
 		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			return err
+		}
+		if err := service.ReportSubtitleLengthFallbacks(path); err != nil {
 			return err
 		}
 	}

@@ -8,7 +8,6 @@ import (
 
 	"github.com/clipperhouse/uax29/v2/graphemes"
 	"github.com/clipperhouse/uax29/v2/words"
-	"golang.org/x/text/width"
 )
 
 var subtitleAbbreviations = map[string]bool{
@@ -20,24 +19,13 @@ var subtitleAbbreviations = map[string]bool{
 	"i.e.": true, "e.g.": true, "cf.": true, "et.": true, "al.": true,
 }
 
-// 字素簇用于显示和切分；时间定位仍使用去空白后的 rune 坐标。
+// 按 Unicode 字素簇计字符，中英文、空格及标点各计 1；切分不破坏组合序列。
+// 时间定位仍使用去空白后的 rune 坐标。
 func subtitleTargetLength(text string) int {
 	length := 0
 	iter := graphemes.FromString(text)
 	for iter.Next() {
-		clusterWidth := 0
-		for _, r := range iter.Value() {
-			if unicode.IsMark(r) || unicode.Is(unicode.Cf, r) || r == 0xfe0f {
-				continue
-			}
-			units := 1
-			switch width.LookupRune(r).Kind() {
-			case width.EastAsianWide, width.EastAsianFullwidth:
-				units = 2
-			}
-			clusterWidth = max(clusterWidth, units)
-		}
-		length += clusterWidth
+		length++
 	}
 	return length
 }
@@ -137,58 +125,6 @@ func splitSubtitleTextAtBoundaries(text string, fits func(string) bool, canSplit
 	return parts, nil
 }
 
-func splitSubtitleSourceHint(text string, limit int) ([]string, error) {
-	parts, err := splitSubtitleText(text, func(s string) bool { return subtitleTargetLength(s) <= limit })
-	if err != nil || len(parts) < 2 {
-		return parts, err
-	}
-	// 调整末尾两段，避免贪心切分把助词或短尾句单独留给翻译。
-	tail := strings.TrimSpace(text)
-	for _, part := range parts[:len(parts)-2] {
-		tail = strings.TrimSpace(tail[len(part):])
-	}
-	bestCut, bestScore := 0, int(^uint(0)>>1)
-	iter := words.FromString(tail)
-	for iter.Next() {
-		cut := iter.End()
-		left, right := strings.TrimSpace(tail[:cut]), strings.TrimSpace(tail[cut:])
-		leftSize, rightSize := subtitleTargetLength(left), subtitleTargetLength(right)
-		if leftSize > limit {
-			break
-		}
-		if rightSize > limit || !hasSubtitleContent(left) || !hasSubtitleContent(right) {
-			continue
-		}
-		score := max(leftSize, rightSize) - min(leftSize, rightSize)
-		last, _ := utf8.DecodeLastRuneInString(left)
-		if unicode.IsPunct(last) && min(leftSize, rightSize)*4 >= leftSize+rightSize {
-			score -= limit
-		}
-		if subtitleBoundarySplitsSubject(left, right, limit) {
-			score += limit * 2
-		}
-		leftWords, rightWords := strings.Fields(strings.ToLower(left)), strings.Fields(strings.ToLower(right))
-		if len(leftWords) > 0 && len(rightWords) > 0 {
-			switch leftWords[len(leftWords)-1] {
-			case "that", "because", "although", "unless", "whereas":
-				score += limit
-			}
-			switch rightWords[0] {
-			case "that", "because", "although", "unless", "whereas":
-				score -= limit / 2
-			}
-		}
-		if score < bestScore && subtitleSegmentsHaveSafeBoundaries([]string{left, right}) {
-			bestCut, bestScore = cut, score
-		}
-	}
-	if bestCut > 0 {
-		parts[len(parts)-2] = strings.TrimSpace(tail[:bestCut])
-		parts[len(parts)-1] = strings.TrimSpace(tail[bestCut:])
-	}
-	return parts, nil
-}
-
 // Only flag clear dangling subjects when moving them can still satisfy the limit.
 func subtitleBoundarySplitsSubject(left, right string, limit int) bool {
 	left, right = strings.TrimSpace(left), strings.TrimSpace(right)
@@ -236,21 +172,33 @@ func subtitleTextPreview(text string, maxBytes int) string {
 }
 
 func subtitleSegmentsHaveSafeBoundaries(segments []string) bool {
-	text := compactSubtitleText(strings.Join(segments, ""))
+	return subtitleSegmentsHaveSafeBoundariesInText(strings.Join(segments, ""), segments)
+}
+
+// Validate against the complete text: removing spaces can create artificial
+// Indic conjuncts. Segment-edge spaces may be omitted, so locate both edges in
+// the original text rather than inferring its graphemes from trimmed segments.
+func subtitleSegmentsHaveSafeBoundariesInText(text string, segments []string) bool {
+	if !utf8.ValidString(text) {
+		return false
+	}
 	boundaries := map[int]bool{0: true}
 	iter := graphemes.FromString(text)
 	for iter.Next() {
 		boundaries[iter.End()] = true
 	}
-	position := 0
+	remaining := text
 	for _, segment := range segments {
 		if !utf8.ValidString(segment) {
 			return false
 		}
-		position += len(compactSubtitleText(segment))
-		if !boundaries[position] {
+		segment = strings.TrimSpace(segment)
+		remaining = strings.TrimLeftFunc(remaining, unicode.IsSpace)
+		start := len(text) - len(remaining)
+		if !strings.HasPrefix(remaining, segment) || !boundaries[start] || !boundaries[start+len(segment)] {
 			return false
 		}
+		remaining = remaining[len(segment):]
 	}
-	return true
+	return strings.TrimSpace(remaining) == ""
 }

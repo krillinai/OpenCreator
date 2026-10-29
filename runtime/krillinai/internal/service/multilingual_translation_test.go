@@ -119,7 +119,7 @@ func TestMultilingualSubtitleWrapKeepsGraphemeBoundaries(t *testing.T) {
 		text := strings.Repeat(sample, 40)
 		for _, wrap := range []func(string, subtitlestyle.Style, *types.SubtitleTaskStepParam) []string{wrapSubtitleForASS, wrapVerticalChineseSubtitleForASS} {
 			parts := wrap(text, subtitlestyle.Style{}, nil)
-			if len(parts) < 2 || !subtitleSegmentsHaveSafeBoundaries(parts) || compactSubtitleText(strings.Join(parts, "")) != compactSubtitleText(text) {
+			if len(parts) == 0 || !subtitleSegmentsHaveSafeBoundaries(parts) || compactSubtitleText(strings.Join(parts, "")) != compactSubtitleText(text) {
 				t.Fatalf("unsafe wrap for %q: %q", sample, parts)
 			}
 		}

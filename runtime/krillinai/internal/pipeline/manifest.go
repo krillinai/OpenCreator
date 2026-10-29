@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"encoding/json"
-	"krillin-ai/internal/types"
 	"os"
 	"path/filepath"
 )
@@ -16,18 +15,17 @@ type StageStatus struct {
 }
 
 type Manifest struct {
-	TaskID              string                             `json:"task_id"`
-	Workdir             string                             `json:"workdir"`
-	InputURL            string                             `json:"input_url,omitempty"`
-	OriginLanguage      string                             `json:"origin_language,omitempty"`
-	TargetLanguage      string                             `json:"target_language,omitempty"`
-	CaptionSource       string                             `json:"caption_source,omitempty"`
-	Provider            map[string]string                  `json:"provider,omitempty"`
-	Outputs             Outputs                            `json:"outputs"`
-	Warnings            []string                           `json:"warnings,omitempty"`
-	TranslationFailures []types.SubtitleTranslationFailure `json:"translation_failures,omitempty"`
-	FailedIndexes       []int                              `json:"failed_indexes,omitempty"`
-	Stages              map[string]StageStatus             `json:"stages"`
+	TaskID         string                 `json:"task_id"`
+	Workdir        string                 `json:"workdir"`
+	InputURL       string                 `json:"input_url,omitempty"`
+	OriginLanguage string                 `json:"origin_language,omitempty"`
+	TargetLanguage string                 `json:"target_language,omitempty"`
+	CaptionSource  string                 `json:"caption_source,omitempty"`
+	Provider       map[string]string      `json:"provider,omitempty"`
+	Outputs        Outputs                `json:"outputs"`
+	Warnings       []string               `json:"warnings,omitempty"`
+	FailedIndexes  []int                  `json:"failed_indexes,omitempty"`
+	Stages         map[string]StageStatus `json:"stages"`
 }
 
 func NewManifest(taskID, workdir string) *Manifest {

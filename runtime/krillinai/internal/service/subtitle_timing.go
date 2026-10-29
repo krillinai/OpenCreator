@@ -4,47 +4,23 @@ import (
 	"fmt"
 	"krillin-ai/internal/types"
 	"krillin-ai/pkg/util"
-	"math"
 	"strings"
 	"unicode/utf8"
 )
 
-func pairedAudioTiming(blocks []*util.SrtBlock, words []types.Word, language types.StandardLanguageCode, offset float64, displayGroups ...[]int) ([]*util.SrtBlock, []subtitleTimingSpan, error) {
-	var groups []int
-	if len(displayGroups) > 0 {
-		groups = displayGroups[0]
-		if len(groups) != len(blocks) {
-			return nil, nil, fmt.Errorf("音频字幕显示分组数量不一致")
-		}
-	}
+func pairedAudioTiming(blocks []*util.SrtBlock, words []types.Word, language types.StandardLanguageCode, offset float64) ([]*util.SrtBlock, []subtitleTimingSpan, error) {
 	var vttWords []VttWord
 	var expected strings.Builder
 	for _, block := range blocks {
 		expected.WriteString(block.OriginLanguageSentence)
 	}
 	for _, word := range words {
-		vttWords = append(vttWords, VttWord{Text: word.Text, Start: formatSRTTime(int64(math.Round((word.Start + offset) * 1000))), End: formatSRTTime(int64(math.Round((word.End + offset) * 1000)))})
+		vttWords = append(vttWords, VttWord{Text: word.Text, Start: strings.ReplaceAll(util.FormatTime(float32(word.Start+offset)), ",", "."), End: strings.ReplaceAll(util.FormatTime(float32(word.End+offset)), ",", ".")})
 	}
 	spans, err := subtitleWordTimingSpans(vttWords, expected.String())
 	if err != nil {
 		// 部分转录器的全文与词列表标点不同，沿用既有匹配器生成 cue 时间。
-		coarse := blocks
-		if len(groups) > 0 {
-			coarse = nil
-			for i := 0; i < len(blocks); {
-				count := max(1, groups[i])
-				if i+count > len(blocks) {
-					return nil, nil, fmt.Errorf("音频字幕显示分组越界")
-				}
-				var sources []string
-				for _, block := range blocks[i : i+count] {
-					sources = append(sources, block.OriginLanguageSentence)
-				}
-				coarse = append(coarse, &util.SrtBlock{Index: len(coarse) + 1, OriginLanguageSentence: joinPairedTargetSegments(sources, language)})
-				i += count
-			}
-		}
-		generated, err := NewTimestampGenerator().GenerateTimestamps(coarse, words, language, offset)
+		generated, err := NewTimestampGenerator().GenerateTimestamps(blocks, words, language, offset)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -52,36 +28,11 @@ func pairedAudioTiming(blocks []*util.SrtBlock, words []types.Word, language typ
 			return nil, nil, err
 		}
 		spans, _, err = subtitleBlockTimingSpans(generated)
-		if err != nil || len(groups) == 0 {
-			return generated, spans, err
-		}
+		return generated, spans, err
 	}
 	position := 0
 	generated := make([]*util.SrtBlock, 0, len(blocks))
-	for i := 0; i < len(blocks); {
-		if len(groups) > 0 && groups[i] > 1 {
-			count := groups[i]
-			if i+count > len(blocks) {
-				return nil, nil, fmt.Errorf("音频字幕显示分组越界")
-			}
-			var sources, targets []string
-			for _, block := range blocks[i : i+count] {
-				sources, targets = append(sources, block.OriginLanguageSentence), append(targets, block.TargetLanguageSentence)
-			}
-			timelines, err := frozenDisplayTimelines(sources, targets, spans, position)
-			if err != nil {
-				return nil, nil, err
-			}
-			for j, timestamp := range timelines {
-				copy := *blocks[i+j]
-				copy.Timestamp = timestamp
-				generated = append(generated, &copy)
-				position += subtitleRuneLength(sources[j])
-			}
-			i += count
-			continue
-		}
-		block := blocks[i]
+	for _, block := range blocks {
 		copy := *block
 		start := subtitlePositionTime(spans, position, false)
 		position += utf8.RuneCountInString(compactSubtitleText(block.OriginLanguageSentence))
@@ -91,7 +42,6 @@ func pairedAudioTiming(blocks []*util.SrtBlock, words []types.Word, language typ
 		}
 		copy.Timestamp = formatSRTTimeline(start, end)
 		generated = append(generated, &copy)
-		i++
 	}
 	return generated, spans, nil
 }

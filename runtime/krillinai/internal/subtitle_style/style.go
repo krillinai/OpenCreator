@@ -172,43 +172,6 @@ func DialogueTags(s Style) string {
 	return tags.String()
 }
 
-// ASS blurs the glyph fill when there is no outline. A UI shadow blur must
-// therefore be rendered separately from the readable text and its outline.
-func NeedsShadowLayer(s Style) bool {
-	if s.RawASSStyle != "" {
-		return false
-	}
-	blur := 0.0
-	x, y := floatValue(s.Shadow, 1.5), floatValue(s.Shadow, 1.5)
-	for _, match := range controlledOverrideTagPattern.FindAllStringSubmatch(s.OverrideTags, -1) {
-		value, _ := strconv.ParseFloat(match[2], 64) // Validate has checked the values.
-		switch match[1] {
-		case "blur":
-			blur = value
-		case "xshad":
-			x = value
-		case "yshad":
-			y = value
-		}
-	}
-	return blur > 0 && (x != 0 || y != 0)
-}
-
-func DialogueLayerTags(s Style, shadow bool) string {
-	tags := DialogueTags(s)
-	if !shadow {
-		return tags + `{\blur0\shad0}`
-	}
-	tags += `{\1a&HFF&\2a&HFF&\3a&HFF&`
-	if floatValue(s.Outline, 2.5) == 0 {
-		// libass omits the shadow mask when both fill and outline are invisible
-		// and the outline is exactly zero. Retain a subpixel mask in this hidden
-		// pass; the visible text still has the user's exact zero-width outline.
-		tags += `\bord0.01`
-	}
-	return tags + `}`
-}
-
 func Alignment(s Style) int {
 	if s.AlignmentValue == nil || *s.AlignmentValue < 1 || *s.AlignmentValue > 9 {
 		return 2

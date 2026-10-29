@@ -10,7 +10,6 @@ import (
 	"image/png"
 	subtitlestyle "krillin-ai/internal/subtitle_style"
 	"krillin-ai/internal/types"
-	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -18,17 +17,15 @@ import (
 )
 
 type RenderVideoRequest struct {
-	Workdir           string
-	InputVideo        string
-	AudioFile         string
-	SubtitleFile      string
-	DocumentFile      string
-	CompositionFilter string
-	OutputFile        string
-	Horizontal        bool
-	StepParam         *types.SubtitleTaskStepParam
-	PreviewWidth      int
-	PreviewHeight     int
+	Workdir       string
+	InputVideo    string
+	AudioFile     string
+	SubtitleFile  string
+	OutputFile    string
+	Horizontal    bool
+	StepParam     *types.SubtitleTaskStepParam
+	PreviewWidth  int
+	PreviewHeight int
 }
 
 type resolutionProbe func(inputVideo string) (int, int, error)
@@ -61,13 +58,6 @@ func escapeAssFilterPath(path string) string {
 func buildEmbedSubtitleArgs(req RenderVideoRequest) ([]string, string) {
 	assPath := renderAssPath(req)
 	filter := buildAssFilterExpression(assPath, packagedSubtitleFontsDir())
-	if req.PreviewWidth == 0 && req.StepParam != nil && req.StepParam.RenderWidth > 0 && req.StepParam.RenderHeight > 0 {
-		if req.CompositionFilter != "" {
-			filter = req.CompositionFilter + ",setsar=1," + filter
-		} else {
-			filter = fmt.Sprintf("scale=%d:%d,setsar=1,", req.StepParam.RenderWidth, req.StepParam.RenderHeight) + filter
-		}
-	}
 	if req.PreviewWidth > 0 && req.PreviewHeight > 0 {
 		// Recover straight alpha from opaque renders: libass alpha=1 differs at blended edges.
 		previewFilter := fmt.Sprintf("[0:v]split[black][white];[black]%s[b];[white]lutrgb=r=255:g=255:b=255,%s[w];[b][w]vstack", filter, filter)
@@ -130,43 +120,20 @@ func renderSubtitleFile(ctx context.Context, req RenderVideoRequest) (string, er
 		req.StepParam.RenderWidth = req.PreviewWidth
 		req.StepParam.RenderHeight = req.PreviewHeight
 	} else {
-		width, height, err := getResolution(req.InputVideo)
+		preparedReq, err := prepareSubtitleRenderLayout(req, getResolution, func(input, output, major, minor string) error {
+			return convertToVerticalProgress(ctx, input, output, major, minor, stepParam.TaskPtr)
+		})
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("renderSubtitleFile prepare subtitle layout error: %w", err)
 		}
-		if !req.Horizontal && width > height {
-			scaledHeight := int(math.Round(float64(height)*720/float64(width)/2)) * 2
-			req.CompositionFilter = fmt.Sprintf("scale=720:%d,pad=720:1280:0:250:black", scaledHeight)
-			width, height = 720, 1280
-		}
-		stepParam.RenderWidth, stepParam.RenderHeight = width, height
+		req = preparedReq
 	}
-
 	stepParam.TaskPtr.ReportProgress(types.TaskProgress{Phase: "preparing_render", Percent: 30, Message: "正在准备字幕样式和视频编码"})
 	if err := validatePackagedSubtitleFonts(req.StepParam.SubtitleStyle); err != nil {
 		return "", fmt.Errorf("renderSubtitleFile subtitle fonts error: %w", err)
 	}
-	var compileErr error
-	if req.DocumentFile != "" {
-		data, err := os.ReadFile(req.DocumentFile)
-		var doc SubtitleDocument
-		if err == nil {
-			err = json.Unmarshal(data, &doc)
-		}
-		if err == nil {
-			doc.Width, doc.Height, doc.Horizontal = stepParam.RenderWidth, stepParam.RenderHeight, req.Horizontal
-			var ass string
-			ass, err = CompileSubtitleDocument(doc, stepParam.SubtitleStyle)
-			if err == nil {
-				err = os.WriteFile(assPath, []byte(ass), 0600)
-			}
-		}
-		compileErr = err
-	} else {
-		compileErr = srtToAss(req.SubtitleFile, assPath, req.Horizontal, req.StepParam)
-	}
-	if compileErr != nil {
-		return "", fmt.Errorf("renderSubtitleFile srtToAss error: %w", compileErr)
+	if err := srtToAss(req.SubtitleFile, assPath, req.Horizontal, req.StepParam); err != nil {
+		return "", fmt.Errorf("renderSubtitleFile srtToAss error: %w", err)
 	}
 	args, _ := buildEmbedSubtitleArgs(req)
 	output, err := runFFmpegProgress(ctx, args, req.InputVideo, "rendering_video", "正在编码并合成字幕视频", stepParam.TaskPtr, 35, 98)

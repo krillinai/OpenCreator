@@ -41,6 +41,7 @@ func TestCatalogSourceTranslationIntegration(t *testing.T) {
 			target := []string{"测试译文2026。", "测试译文52。"}
 			var calls atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
 				var request struct {
 					Model    string                     `json:"model"`
 					Messages []struct{ Content string } `json:"messages"`
@@ -50,17 +51,6 @@ func TestCatalogSourceTranslationIntegration(t *testing.T) {
 					http.Error(w, "invalid LLM request", http.StatusBadRequest)
 					return
 				}
-				if strings.HasPrefix(request.Messages[1].Content, "任务：translation_context\n") {
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.NewEncoder(w).Encode(map[string]any{"id": "local-context-test", "choices": []map[string]any{{"finish_reason": "stop", "message": map[string]string{"role": "assistant", "content": `{"summary":"多语言字幕路由测试","terms":[]}`}}}})
-					return
-				}
-				if strings.HasPrefix(request.Messages[1].Content, "任务：translation_revision\n") {
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.NewEncoder(w).Encode(map[string]any{"id": "local-revision-test", "choices": []map[string]any{{"finish_reason": "stop", "message": map[string]string{"role": "assistant", "content": `{"corrections":[]}`}}}})
-					return
-				}
-				calls.Add(1)
 				_, payload, found := strings.Cut(request.Messages[1].Content, "输入 JSON：\n")
 				var input struct {
 					SourceLanguage string `json:"source_language"`

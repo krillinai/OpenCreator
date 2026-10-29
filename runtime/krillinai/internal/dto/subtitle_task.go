@@ -1,7 +1,5 @@
 package dto
 
-import "krillin-ai/internal/types"
-
 type StartVideoSubtitleTaskReq struct {
 	AppId                     uint32   `json:"app_id"`
 	Url                       string   `json:"url"`
@@ -50,14 +48,12 @@ type SubtitleInfo struct {
 }
 
 type GetVideoSubtitleTaskResData struct {
-	Warnings            []string                           `json:"warnings,omitempty"`
-	TranslationFailures []types.SubtitleTranslationFailure `json:"translation_failures,omitempty"`
-	TaskId              string                             `json:"task_id"`
-	ProcessPercent      uint8                              `json:"process_percent"`
-	VideoInfo           *VideoInfo                         `json:"video_info"`
-	SubtitleInfo        []*SubtitleInfo                    `json:"subtitle_info"`
-	TargetLanguage      string                             `json:"target_language"`
-	SpeechDownloadUrl   string                             `json:"speech_download_url"`
+	TaskId            string          `json:"task_id"`
+	ProcessPercent    uint8           `json:"process_percent"`
+	VideoInfo         *VideoInfo      `json:"video_info"`
+	SubtitleInfo      []*SubtitleInfo `json:"subtitle_info"`
+	TargetLanguage    string          `json:"target_language"`
+	SpeechDownloadUrl string          `json:"speech_download_url"`
 }
 
 type GetVideoSubtitleTaskRes struct {

@@ -19,7 +19,6 @@ type RenderRequest struct {
 	ReportProgress      ProgressReporter
 	Audio               string
 	Subtitle            string
-	DocumentFile        string
 	Horizontal          bool
 	Dubbed              bool
 	MajorTitle          string
@@ -65,15 +64,12 @@ func Render(ctx context.Context, svc StageService, req RenderRequest) (Response,
 		VerticalVideoMajorTitle: req.MajorTitle,
 		VerticalVideoMinorTitle: req.MinorTitle,
 		SubtitleStyle:           req.SubtitleStyle,
-		RenderLineMode:          string(req.LineMode),
 		SubtitleResultType:      types.SubtitleResultTypeBilingualTranslationOnTop,
 	}
 	if req.LineMode == LineModeBilingualTargetBottom {
 		stepParam.SubtitleResultType = types.SubtitleResultTypeBilingualTranslationOnBottom
 	}
-	if req.DocumentFile != "" {
-		// Structured editor cues already carry explicit language roles.
-	} else if req.MixedTargetSubtitle != "" {
+	if req.MixedTargetSubtitle != "" {
 		normalized := filepath.Join(req.Workdir, "render_subtitles.srt")
 		err = normalizeMixedRenderSRT(subtitle, req.MixedTargetSubtitle, normalized, req.LineMode, req.TargetOnly)
 		if err != nil {
@@ -93,7 +89,6 @@ func Render(ctx context.Context, svc StageService, req RenderRequest) (Response,
 		InputVideo:    inputVideo,
 		AudioFile:     req.Audio,
 		SubtitleFile:  subtitle,
-		DocumentFile:  req.DocumentFile,
 		OutputFile:    output,
 		Horizontal:    req.Horizontal,
 		StepParam:     stepParam,

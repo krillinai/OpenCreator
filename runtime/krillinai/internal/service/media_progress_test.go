@@ -64,43 +64,6 @@ func TestMediaDownloadUnknownTotalDoesNotInventPercent(t *testing.T) {
 	}
 }
 
-func TestLegacyLocalMediaPreparationProgressDoesNotRegress(t *testing.T) {
-	ffmpeg, probe := os.Getenv("KRILLIN_TEST_FFMPEG"), os.Getenv("KRILLIN_TEST_FFPROBE")
-	if ffmpeg == "" || probe == "" {
-		t.Skip("set KRILLIN_TEST_FFMPEG and KRILLIN_TEST_FFPROBE to run the local media check")
-	}
-	previousFFmpeg, previousProbe := storage.FfmpegPath, storage.FfprobePath
-	storage.FfmpegPath, storage.FfprobePath = ffmpeg, probe
-	t.Cleanup(func() { storage.FfmpegPath, storage.FfprobePath = previousFFmpeg, previousProbe })
-	dir := t.TempDir()
-	input := filepath.Join(dir, "input.wav")
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	if data, err := exec.CommandContext(ctx, ffmpeg, "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", input).CombinedOutput(); err != nil {
-		t.Fatalf("创建本地音频失败: %v: %s", err, data)
-	}
-	var reported []uint8
-	task := &types.SubtitleTask{Status: types.SubtitleTaskStatusProcessing}
-	task.SetProgressReporter(func(percent uint8) { reported = append(reported, percent) })
-	step := &types.SubtitleTaskStepParam{
-		TaskPtr: task, TaskBasePath: dir, Link: "local:" + input, EmbedSubtitleVideoType: "none",
-	}
-	if err := (Service{}).linkToFile(ctx, step); err != nil {
-		t.Fatal(err)
-	}
-	if len(reported) < 2 || reported[0] != 3 || task.ProcessPct != 10 {
-		t.Fatalf("媒体准备应从 3%% 推进到 10%%: %v", reported)
-	}
-	for i := 1; i < len(reported); i++ {
-		if reported[i] < reported[i-1] || reported[i] > 10 {
-			t.Fatalf("媒体准备进度不得回退或超过 10%%: %v", reported)
-		}
-	}
-	if info, err := os.Stat(step.AudioFilePath); err != nil || info.Size() == 0 {
-		t.Fatalf("未生成有效的提取音频: %v", err)
-	}
-}
-
 func TestFFmpegProgressRendersLocalVideo(t *testing.T) {
 	// Use installed media tools, without network, ASR or model requests.
 	ffmpeg, probe := os.Getenv("KRILLIN_TEST_FFMPEG"), os.Getenv("KRILLIN_TEST_FFPROBE")

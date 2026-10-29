@@ -2,223 +2,249 @@ package service
 
 import (
 	"context"
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"krillin-ai/internal/types"
+	"krillin-ai/pkg/util"
 	"strings"
+	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
-type translationSemanticCorrection struct {
-	ID         string `json:"sentence_id"`
-	TermSource string `json:"term_source"`
-	Reason     string `json:"reason"`
-	TargetText string `json:"target_text"`
+//go:embed translation_semantic_review.txt
+var translationSemanticReviewPrompt string
+
+const semanticReviewRequestBytes = 24000
+
+func (t *Translator) requestSemanticReview(ctx context.Context, prompt string) (string, error) {
+	if client, ok := t.chatCompleter.(budgetedChatCompleter); ok {
+		return client.ChatCompletionContextWithMaxTokens(ctx, prompt, 4096)
+	}
+	if client, ok := t.chatCompleter.(contextChatCompleter); ok {
+		return client.ChatCompletionContext(ctx, prompt)
+	}
+	return "", fmt.Errorf("语义检查需要支持上下文取消的模型接口")
 }
 
-// 未完成术语审校的完整译文也保存，恢复时仅审校/排版，避免重新翻译。
-func (t *Translator) translateSemanticBatch(ctx context.Context, input pairedTranslationInput, plan *translationSemanticPlan, originLang, targetLang types.StandardLanguageCode, save func(pairedSentence, bool) error) (pairedTranslationInput, error) {
-	if t.segmentTranslation {
-		remaining := input
-		remaining.Sentences = nil
-		return remaining, t.completeSegmentedBatch(ctx, input, nil, originLang, targetLang, save)
-	}
-	accepted := make(map[string]pairedSentence)
-	t.translationProgress.working(input.Sentences, "初译")
-	remaining, err := t.translateContentBatch(ctx, input, originLang, targetLang, func(sentence pairedSentence, complete bool) error {
-		if complete {
-			accepted[sentence.ID] = sentence
-		}
-		return save(sentence, false)
-	})
-	if err != nil {
-		return remaining, err
-	}
-	// 单句初译耗尽时明确标记沿用原文，其余句子继续审校和导出。
-	for _, source := range remaining.Sentences {
-		if err := ctx.Err(); err != nil {
-			return remaining, err
-		}
-		sentence := originalTranslationFallback(source, source.FailureReason)
-		accepted[source.ID] = sentence
-		if err := save(sentence, false); err != nil {
-			return remaining, err
-		}
-	}
-	remaining.Sentences = nil
-	if err := t.completeSemanticBatch(ctx, input, accepted, plan, originLang, targetLang, save); err != nil {
-		return remaining, err
-	}
-	return remaining, nil
+type semanticReviewSource struct {
+	ID     string `json:"sentence_id"`
+	Source string `json:"source_text"`
+	Target string `json:"target_text"`
 }
 
-func (t *Translator) completeSemanticBatch(ctx context.Context, input pairedTranslationInput, accepted map[string]pairedSentence, plan *translationSemanticPlan, originLang, targetLang types.StandardLanguageCode, save func(pairedSentence, bool) error) error {
-	if t.segmentTranslation {
-		return t.completeSegmentedBatch(ctx, input, accepted, originLang, targetLang, save)
-	}
-	var acceptedSources []pairedTranslationSource
-	for _, source := range input.Sentences {
-		if _, ok := accepted[source.ID]; ok {
-			acceptedSources = append(acceptedSources, source)
-		}
-	}
-	t.translationProgress.working(acceptedSources, "审校")
-	var err error
-	input, err = t.finishFallbackSentences(input, accepted, originLang, targetLang, save)
-	if err != nil {
-		return err
-	}
-	if t.reviseTranslation {
-		if err := t.reviseContentBatch(ctx, input, accepted, originLang, targetLang, save); err != nil {
-			return err
-		}
-		for _, source := range input.Sentences {
-			sentence, ok := accepted[source.ID]
-			if ok && sentence.RevisionVersion != revisionVersion() && unchangedTranslationNeedsReview(source, sentence, originLang, targetLang) {
-				fallback := originalTranslationFallback(source, "原样返回的文本未能完成翻译审校，已保留原文")
-				fallback.DraftTarget = sentence.DraftTarget
-				accepted[source.ID] = fallback
-			}
-		}
-		input, err = t.finishFallbackSentences(input, accepted, originLang, targetLang, save)
-		if err != nil {
-			return err
-		}
-	}
-	// 只审校有证据术语的句子；其他句子不增加第二遍翻译。
-	var reviewSources []pairedTranslationSource
-	for _, source := range input.Sentences {
-		sentence, exists := accepted[source.ID]
-		if !exists {
-			continue
-		}
-		semantic := plan.forSources([]pairedTranslationSource{source})
-		if !sentence.SemanticReviewed && semantic != nil && len(semantic.Terms) > 0 {
-			source.TargetText = sentence.FullTarget
-			source.SourceHint, source.NLPSourceHint = nil, nil
-			reviewSources = append(reviewSources, source)
-		}
-	}
-	corrections := make(map[string]translationSemanticCorrection)
-	reviewed := true
-	if len(reviewSources) > 0 {
-		var result struct {
-			Corrections []translationSemanticCorrection `json:"corrections"`
-		}
-		reviewInput := struct {
-			SourceLanguage  string                           `json:"source_language"`
-			TargetLanguage  string                           `json:"target_language"`
-			SemanticContext *translationBatchSemanticContext `json:"semantic_context"`
-			Sentences       []pairedTranslationSource        `json:"sentences"`
-		}{string(originLang), string(targetLang), plan.forSources(reviewSources), reviewSources}
+type semanticReviewInput struct {
+	SourceLanguage string                 `json:"source_language"`
+	TargetLanguage string                 `json:"target_language"`
+	Limit          int                    `json:"max_characters"`
+	Before         []semanticReviewSource `json:"context_before,omitempty"`
+	Sentences      []semanticReviewSource `json:"sentences"`
+	After          []semanticReviewSource `json:"context_after,omitempty"`
+}
+
+type semanticCorrection struct {
+	pairedTranslationOutputSentence
+	OriginalTarget string `json:"original_target"`
+	Kind           string `json:"kind"`
+	SourceQuote    string `json:"source_quote"`
+	Reason         string `json:"reason"`
+}
+
+// 语义修正后的译文已冻结；复用现有配对 Prompt，仅恢复切分，不重新翻译。
+// 最多三次请求，并与本轮审核共用超时预算；失败时由调用方保留原有字幕。
+func (t *Translator) segmentSemanticCorrection(ctx context.Context, input pairedTranslationInput, originLang, targetLang types.StandardLanguageCode) (pairedSentence, bool) {
+	feedback := ""
+	maxTokens := min(8192, max(2048, 1024+pairedTranslationResponseBudget(input.Sentences[0].Text, input.MaxTargetChars)))
+	for attempt := 0; attempt < 3 && ctx.Err() == nil; attempt++ {
+		prompt := t.pairedPrompt(input) + feedback
+		var response string
 		var err error
-		reviewed, err = t.semanticJSON(ctx, "translation_term_review", translationSemanticReviewPrompt, reviewInput, "corrections", &result, func() bool {
-			if result.Corrections == nil {
-				return false
-			}
-			seen := make(map[string]bool)
-			for _, correction := range result.Corrections {
-				sentence, exists := accepted[correction.ID]
-				if !exists || seen[correction.ID] || !hasSubtitleContent(correction.TargetText) || hasSubtitleLineBreak(correction.TargetText) ||
-					len(correction.TargetText) > 4*len(sentence.FullTarget)+1024 || strings.TrimSpace(correction.Reason) == "" {
-					return false
-				}
-				seen[correction.ID] = true
-				found := false
-				for _, source := range reviewSources {
-					if source.ID != correction.ID {
-						continue
-					}
-					for _, term := range plan.forSources([]pairedTranslationSource{source}).Terms {
-						found = found || term.Source == correction.TermSource
-					}
-					if !hasUsableTranslation(correction.TargetText) {
-						return false
-					}
-				}
-				if !found {
-					return false
-				}
-			}
-			return true
-		})
-		if err != nil {
-			return err
-		}
-		if !reviewed {
-			t.translationNotice("部分术语一致性检查暂未完成，已保留完整译文，恢复任务时可继续检查")
+		if client, ok := t.chatCompleter.(budgetedChatCompleter); ok {
+			response, err = client.ChatCompletionContextWithMaxTokens(ctx, prompt, maxTokens)
 		} else {
-			for _, correction := range result.Corrections {
-				corrections[correction.ID] = correction
-			}
+			response, err = chatCompletionWithContext(ctx, t.chatCompleter, prompt)
 		}
+		if err != nil || ctx.Err() != nil {
+			return pairedSentence{}, false
+		}
+		parsed, err := t.parsePairedTranslation(response, input, originLang, targetLang)
+		if err == nil {
+			return parsed[0], true
+		}
+		feedback = "\n\n" + strings.NewReplacer(
+			"{{ISSUES}}", subtitleTextPreview(err.Error(), 3500),
+			"{{PREVIOUS_RESPONSE}}", subtitleTextPreview(response, 1000),
+			"{{MAX_TARGET_CHARS}}", fmt.Sprint(input.MaxTargetChars),
+		).Replace(pairedTranslationRetry)
 	}
-	// 先应用内容修正，再把需要显示拆分的句子合批排版。
-	t.translationProgress.working(acceptedSources, "排版")
-	layout := input
-	layout.Sentences = nil
-	for _, source := range input.Sentences {
-		sentence, exists := accepted[source.ID]
-		if !exists {
-			continue
-		}
-		if correction, exists := corrections[source.ID]; exists && correction.TargetText != sentence.FullTarget {
-			sentence.FullTarget = correction.TargetText
-			sentence.Source, sentence.Target = []string{source.Text}, []string{correction.TargetText}
-			sentence.LayoutVersion, sentence.LayoutReviewed = 0, false
-			sentence.LayoutBaseTarget, sentence.LayoutAttempts = "", 0
-			sentence.LayoutApproximate = false
-		}
-		sentence.SemanticReviewed = sentence.SemanticReviewed || reviewed || plan.forSources([]pairedTranslationSource{source}) == nil
-		if t.semanticSourceUnits {
-			accepted[source.ID] = sentence
-			continue
-		}
-		if sentence.LayoutVersion != pairedLayoutVersion || sentence.LayoutTarget != input.MaxTargetChars {
-			source.TargetText = sentence.FullTarget
-			one := input
-			one.Sentences = []pairedTranslationSource{source}
-			encoded, _ := encodePairedSentenceForLayout(sentence)
-			// 多段NLP建议必须参与排版；短单段句由代码直接配对。
-			parsed, err := t.parsePairedTranslation(encoded, one, originLang, targetLang)
-			if err == nil && (len(source.NLPSourceHint) < 2 || len(parsed[0].Source) > 1) {
-				parsed[0].SemanticReviewed = sentence.SemanticReviewed
-				parsed[0].DraftTarget, parsed[0].RevisionVersion = sentence.DraftTarget, sentence.RevisionVersion
-				sentence = parsed[0]
-			} else {
-				layout.Sentences = append(layout.Sentences, source)
-			}
-		}
-		accepted[source.ID] = sentence
-		if err := save(sentence, false); err != nil {
-			return err
-		}
-	}
-	if t.semanticSourceUnits {
-		return t.layoutFrozenSubtitles(ctx, input, accepted, originLang, targetLang, save)
-	}
-	if len(layout.Sentences) > 0 {
-		// 排版不需要整批术语和前后文，完整父句与冻结译文已经足够。
-		layout.SemanticContext, layout.Before, layout.After = nil, nil, nil
-		groups, err := pairedLayoutBatches(layout)
-		if err != nil {
-			// 已保存的译文即使超出排版请求预算，也不能重新变成初译失败。
-			// 保留现有配对，交给后续有限拆分；仍不可处理时沿用原译。
-			t.translationNotice(fmt.Sprintf("字幕排版请求超过预算，已保留完整初译继续生成字幕：%v", err))
-		}
-		for _, group := range groups {
-			_, err := t.translatePairedBatch(ctx, group, originLang, targetLang, func(value pairedSentence, _ bool) error {
-				value.SemanticReviewed = accepted[value.ID].SemanticReviewed
-				value.DraftTarget, value.RevisionVersion = accepted[value.ID].DraftTarget, accepted[value.ID].RevisionVersion
-				accepted[value.ID] = value
-				return save(value, false)
-			})
-			if err != nil {
-				return fmt.Errorf("完整译文已保存，字幕排版未完成: %w", err)
-			}
-		}
-	}
+	return pairedSentence{}, false
+}
 
-	if err := t.reviewPairedLayouts(ctx, input, accepted, originLang, targetLang, func(sentence pairedSentence, _ bool) error { return save(sentence, false) }); err != nil {
-		return err
+func semanticReviewBatches(sentences []pairedSentence, originLang, targetLang types.StandardLanguageCode, limit int) []semanticReviewInput {
+	rows := make([]semanticReviewSource, len(sentences))
+	for i, sentence := range sentences {
+		rows[i] = semanticReviewSource{sentence.ID, sentence.FullSource, sentence.FullTarget}
 	}
-	return t.splitLongPairedSubtitles(ctx, input, accepted, originLang, targetLang, save)
+	var batches []semanticReviewInput
+	for start := 0; start < len(rows); {
+		input := semanticReviewInput{SourceLanguage: types.GetStandardLanguageName(originLang), TargetLanguage: types.GetStandardLanguageName(targetLang), Limit: limit}
+		input.Before = rows[max(0, start-2):start]
+		end := start
+		for end < len(rows) {
+			input.Sentences = append(input.Sentences, rows[end])
+			input.After = rows[end+1 : min(len(rows), end+3)]
+			payload, _ := json.Marshal(input)
+			if len(payload)+len(translationSemanticReviewPrompt) > semanticReviewRequestBytes {
+				input.Sentences = input.Sentences[:len(input.Sentences)-1]
+				input.After = rows[end:min(len(rows), end+2)]
+				break
+			}
+			end++
+		}
+		if len(input.Sentences) > 0 {
+			batches = append(batches, input)
+		}
+		// 异常扩写的单句也不能阻止交付或制造超预算审核请求。
+		start = max(start+1, end)
+	}
+	return batches
+}
+
+// 审核是一次有上限的改进；不复用翻译重试链，所有失败均保留已经完成的字幕。
+func (t *Translator) reviewPairedSemanticErrors(ctx context.Context, sentences []pairedSentence, originLang, targetLang types.StandardLanguageCode, limit int, persist func(pairedSentence) error) ([]pairedSentence, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// 没有上下文接口的第三方实现无法保证超时，跳过可选审核。
+	_, hasBudget := t.chatCompleter.(budgetedChatCompleter)
+	_, hasContext := t.chatCompleter.(contextChatCompleter)
+	if !hasBudget && !hasContext || len(sentences) == 0 || originLang == targetLang {
+		return sentences, nil
+	}
+	var eligible []pairedSentence
+	for _, sentence := range sentences {
+		if !sentence.Untranslated {
+			eligible = append(eligible, sentence)
+		}
+	}
+	batches := semanticReviewBatches(eligible, originLang, targetLang, limit)
+	if len(batches) == 0 {
+		return sentences, nil
+	}
+	t.translationNotice("译文已生成，正在限时检查必要的语义错误")
+	reviewCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	responses := make([]string, len(batches))
+	requestErrors := make([]error, len(batches))
+	var group errgroup.Group
+	group.SetLimit(translationParallelism())
+	for i, input := range batches {
+		group.Go(func() error {
+			if err := reviewCtx.Err(); err != nil {
+				requestErrors[i] = err
+				return nil
+			}
+			payload, _ := json.Marshal(input)
+			prompt := translationSemanticReviewPrompt + "\nInput JSON:\n" + string(payload)
+			responses[i], requestErrors[i] = t.requestSemanticReview(reviewCtx, prompt)
+			return nil
+		})
+	}
+	_ = group.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result := append([]pairedSentence(nil), sentences...)
+	indices := make(map[string]int, len(result))
+	for i, sentence := range result {
+		indices[sentence.ID] = i
+	}
+	applied, skipped := 0, 0
+	type pendingCorrection struct {
+		index      int
+		correction semanticCorrection
+		input      pairedTranslationInput
+		result     pairedSentence
+		accepted   bool
+	}
+	var pending []pendingCorrection
+	for i, input := range batches {
+		var output struct {
+			Corrections *[]semanticCorrection `json:"corrections"`
+		}
+		if requestErrors[i] != nil || json.Unmarshal([]byte(util.ExtractJSONObject(responses[i], "corrections")), &output) != nil || output.Corrections == nil {
+			skipped++
+			continue
+		}
+		allowed := make(map[string]bool, len(input.Sentences))
+		for _, row := range input.Sentences {
+			allowed[row.ID] = true
+		}
+		counts := make(map[string]int)
+		for _, correction := range *output.Corrections {
+			counts[correction.ID]++
+		}
+		for _, correction := range *output.Corrections {
+			index, exists := indices[correction.ID]
+			if !exists || !allowed[correction.ID] || counts[correction.ID] != 1 {
+				continue
+			}
+			original := result[index]
+			if original.Untranslated || correction.OriginalTarget != original.FullTarget ||
+				strings.TrimSpace(correction.Reason) == "" || strings.TrimSpace(correction.SourceQuote) == "" || !strings.Contains(original.FullSource, correction.SourceQuote) ||
+				(correction.Kind != "meaning" && correction.Kind != "omission" && correction.Kind != "addition") ||
+				subtitleSegmentsPreserveText(original.FullTarget, []string{correction.FullTarget}) {
+				continue
+			}
+			if !hasSubtitleContent(correction.FullTarget) || hasSubtitleLineBreak(correction.FullTarget) ||
+				!t.isTranslationValid(original.FullSource, correction.FullTarget, originLang, targetLang) {
+				continue
+			}
+			correction.Segments = []pairedTranslationSegment{{Source: original.FullSource, Target: correction.FullTarget}}
+			validation := pairedTranslationInput{SourceLanguage: types.GetStandardLanguageName(originLang), TargetLanguage: types.GetStandardLanguageName(targetLang), MaxSourceChars: limit, MaxTargetChars: limit, MaxFullwidthChars: limit / 2, Sentences: []pairedTranslationSource{{ID: original.ID, Text: original.FullSource, TargetText: correction.FullTarget}}}
+			pending = append(pending, pendingCorrection{index: index, correction: correction, input: validation})
+		}
+	}
+	var layoutGroup errgroup.Group
+	layoutGroup.SetLimit(translationParallelism())
+	for i := range pending {
+		layoutGroup.Go(func() error {
+			item := &pending[i]
+			if subtitleTargetLength(item.input.Sentences[0].Text) > limit || subtitleTargetLength(item.correction.FullTarget) > limit {
+				item.result, item.accepted = t.segmentSemanticCorrection(reviewCtx, item.input, originLang, targetLang)
+			} else {
+				data, _ := json.Marshal(pairedTranslationOutput{Sentences: []pairedTranslationOutputSentence{item.correction.pairedTranslationOutputSentence}})
+				parsed, err := t.parsePairedTranslation(string(data), item.input, originLang, targetLang)
+				if err == nil {
+					item.result, item.accepted = parsed[0], true
+				}
+			}
+			return nil
+		})
+	}
+	_ = layoutGroup.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	for _, item := range pending {
+		if !item.accepted {
+			t.translationNotice(fmt.Sprintf("第%s句语义修正后的分段未通过，已保留此前完整字幕；不使用换行兜底", item.correction.ID))
+			continue
+		}
+		if persist != nil {
+			if err := persist(item.result); err != nil {
+				t.translationNotice("语义修正未能保存，已保留此前完整译文")
+				continue
+			}
+		}
+		result[item.index] = item.result
+		applied++
+		t.translationNotice(fmt.Sprintf("第%s句已修正语义错误：%s", item.correction.ID, subtitleTextPreview(item.correction.Reason, 200)))
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	t.translationNotice(fmt.Sprintf("必要语义检查结束，已修正%d句，%d个窗口未取得有效审核结果；其余译文保留", applied, skipped))
+	return result, nil
 }

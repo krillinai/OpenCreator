@@ -18,26 +18,25 @@ import (
 )
 
 type fakeStageService struct {
-	downloadErr             error
-	processErr              error
-	calls                   []string
-	prepareVTT              []bool
-	prepareEmbedTypes       []string
-	lastPrepare             *types.SubtitleTaskStepParam
-	lastYouTube             *service.YoutubeSubtitleReq
-	lastSpeech              *types.SubtitleTaskStepParam
-	lastCoverPrompt         string
-	lastCoverSize           string
-	coverImageB64           string
-	preparedVideoPath       string
-	preparedAudioPath       string
-	audioProgress           []uint8
-	audioErr                error
-	omitPreparedVideo       bool
-	translatedBlocks        []*util.SrtBlock
-	translationProgress     []ProgressCounts
-	translationWorkProgress []types.TaskProgress
-	detailedProgress        []types.TaskProgress
+	downloadErr         error
+	processErr          error
+	calls               []string
+	prepareVTT          []bool
+	prepareEmbedTypes   []string
+	lastPrepare         *types.SubtitleTaskStepParam
+	lastYouTube         *service.YoutubeSubtitleReq
+	lastSpeech          *types.SubtitleTaskStepParam
+	lastCoverPrompt     string
+	lastCoverSize       string
+	coverImageB64       string
+	preparedVideoPath   string
+	preparedAudioPath   string
+	audioProgress       []uint8
+	audioErr            error
+	omitPreparedVideo   bool
+	translatedBlocks    []*util.SrtBlock
+	translationProgress []ProgressCounts
+	detailedProgress    []types.TaskProgress
 }
 
 func TestImportedSubtitlesSkipRecognitionAndPreserveMultilineText(t *testing.T) {
@@ -150,9 +149,6 @@ func fmtBool(value bool) string {
 
 func (f *fakeStageService) TranslateSubtitleBlocks(_ context.Context, blocks []*util.SrtBlock, step *types.SubtitleTaskStepParam) ([]*util.SrtBlock, error) {
 	f.calls = append(f.calls, "translate-import")
-	for _, progress := range f.translationWorkProgress {
-		step.TaskPtr.ReportTranslationWorkProgress(progress)
-	}
 	for _, counts := range f.translationProgress {
 		step.TaskPtr.SetProgress(40 + uint8(counts.Completed*50/counts.Total))
 		step.TaskPtr.SetTranslationProgress(counts.Completed, counts.Total)
@@ -230,9 +226,6 @@ func (f *fakeStageService) ProcessYouTubeSubtitle(_ context.Context, req *servic
 		}
 	}
 	if req.TaskPtr != nil {
-		for _, progress := range f.translationWorkProgress {
-			req.TaskPtr.ReportTranslationWorkProgress(progress)
-		}
 		req.TaskPtr.SetProgress(40)
 		req.TaskPtr.SetProgress(65)
 		for _, counts := range f.translationProgress {
@@ -575,7 +568,7 @@ func TestGenerateSubtitlesReportsPlatformTranslationAndMediaProgress(t *testing.
 		}
 		t.Fatalf("missing progress %s/%d in %+v", phase, percent, updates)
 	}
-	assertProgress("translating_subtitles", 45)
+	assertProgress("translating_subtitles", 50)
 	assertProgress("preparing_original_media", 88)
 	assertProgress("collecting_outputs", 98)
 }

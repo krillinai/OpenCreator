@@ -46,13 +46,8 @@ func TestAudioTranslationProgressDoesNotWaitForSlowEarlierRequest(t *testing.T) 
 			close(release)
 		}
 	})
-	if err != nil || len(result) != 13 || len(counts) < 3 || counts[0] != 0 || counts[1] != 1 || counts[len(counts)-1] != 13 {
+	if err != nil || len(result) != 13 || fmt.Sprint(counts) != "[0 1 13]" {
 		t.Fatalf("result=%d, counts=%v, error=%v", len(result), counts, err)
-	}
-	for i := 1; i < len(counts); i++ {
-		if counts[i] <= counts[i-1] {
-			t.Fatalf("翻译进度倒退或重复: %v", counts)
-		}
 	}
 }
 

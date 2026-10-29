@@ -4,7 +4,7 @@
     translate_parallel_num = 3 # 并发进行翻译的数量上限，建议值：3，倍于转录的并发量，如果使用TPM限制严格的API，可以适当调低
     transcribe_max_attempts = 3 # 转录最大尝试次数，建议值：3
     translate_max_attempts = 5 # 翻译最大尝试次数，建议值：5，如果模型参数量较少或翻译失败率较高可以适当调高
-    max_sentence_length = 60 # 原译单行软目标：宽字素簇计2，其余及空格计1；约30个汉字，完整意群可适度超出
+    max_sentence_length = 60 # 原译每行生成目标；60时验收允许至65，其他值按配置硬上限；每个Unicode字素簇计1，包含空格和标点
     enable_block_vtt_batch = false # 是否启用块级VTT批量翻译，建议值：false（默认关闭）
     vtt_batch_size = 10 # VTT批量翻译的批次大小，建议值：10
     target_language_first = true # 双语字幕中目标语言是否在上方，建议值：true（目标语言在上）
@@ -22,13 +22,6 @@
     api_key = "" # API密钥
     model = "" # 指定模型名，可通过此字段结合base_url使用外部任何与OpenAI API兼容的大模型服务，留空默认为gpt-4o-mini
     json = false # 所使用的llm接口是否支持json格式，如果支持请设置为true，若不知道这是什么，请保持为false
-
-# 可选备用 LLM；主源限流、接口失败、超时或空/截断响应时，同一请求自动改用备用源。
-# 三项留空时关闭；每次请求优先主源，取消任务不会触发备用请求。
-[llm_fallback]
-    base_url = "" # 例如 https://api.deepseek.com
-    api_key = "" # 仅写入本机配置，不要提交真实密钥
-    model = "" # 例如 deepseek-flash
 
 [transcribe] # 视频转文本支持多种方案，配置时先填provider，再填对应的配置
     provider = "openai" #语音识别，当前可选值：openai,fasterwhisper,whisperkit,whisper.cpp,aliyun,volcengine。(fasterwhisper不支持macOS,whisperkit只支持M芯片)
@@ -97,4 +90,4 @@
     [image.openai]
         base_url = "" # 生图接口base url，留空使用OpenAI官方接口；自定义转发站通常填写以/v1结尾的地址
         api_key = "" # 生图API密钥
-        model = "gpt-image-2" # 生图模型，例如gpt-image-2，或转发站支持的兼容模型
+        model = "gpt-image-1" # 生图模型，例如gpt-image-1，或转发站支持的兼容模型

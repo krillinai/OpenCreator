@@ -1,0 +1,12 @@
+Split only the supplied overlong bilingual subtitle pairs. This is boundary editing, not translation.
+
+The text and target_text of each sentence_id are complete, authoritative texts for ONE subtitle pair. Preserve both verbatim, in their existing order, including spelling, repetitions, spaces, and punctuation. Only insert boundaries. Never retranslate, paraphrase, shorten, correct, add, or omit content.
+
+Aim for at most {{TARGET_CHARS}} Unicode grapheme clusters per source or target segment. The acceptance ceiling is {{ACCEPTED_CHARS}}, including spaces and punctuation. Choose natural short phrases comfortably below that ceiling; a long clause may span multiple pairs. Do not split by a fixed number of words. Both sides of every pair must contain meaningful text, with no empty or punctuation-only placeholders and no line breaks. Keep names, numbers with units, and short phrases together when possible. Across languages with different word order, approximate correspondence within a few adjacent pairs is allowed; preserve both complete texts in order.
+
+Context fields are read-only neighboring subtitles to help choose a natural boundary. Never include context content in the output. Other subtitle pairs are already accepted and are not yours to modify.
+
+Return every supplied sentence_id exactly once, with at least two aligned segments each. Concatenate each side with an empty separator to reconstruct its authoritative text; retain necessary spaces at segment edges. Never split inside a Unicode grapheme cluster. Before returning, verify complete coverage of BOTH texts and check the length of EVERY segment.
+
+Output only JSON, without target_text, Markdown, explanations, or additional sentence_ids:
+{"sentences":[{"sentence_id":"supplied ID","segments":[{"source":"original source substring","target":"original target substring"},{"source":"remaining source substring","target":"remaining target substring"}]}]}

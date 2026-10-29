@@ -45,8 +45,8 @@ var subtitleScriptTables = map[string]*unicode.RangeTable{
 	"Armn": unicode.Armenian, "Sinh": unicode.Sinhala, "Tibt": unicode.Tibetan,
 }
 
-func subtitleFallbackFontTags(text, primary string, families map[string]string, coverage ...*subtitleFontCoverage) string {
-	if len(families) == 0 && len(coverage) == 0 {
+func subtitleFallbackFontTags(text, primary string, families map[string]string) string {
+	if len(families) == 0 {
 		return text
 	}
 	var result strings.Builder
@@ -74,9 +74,6 @@ func subtitleFallbackFontTags(text, primary string, families map[string]string, 
 				chosen = primary
 			}
 			break
-		}
-		if len(coverage) > 0 {
-			chosen = coverage[0].choose(cluster, chosen, primary)
 		}
 		if chosen != current {
 			result.WriteString(`{\fn` + chosen + `}`)

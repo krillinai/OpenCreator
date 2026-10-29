@@ -11,6 +11,7 @@ import (
 	"krillin-ai/pkg/util"
 	"strings"
 	"time"
+	"unicode"
 
 	"go.uber.org/zap"
 )
@@ -20,44 +21,19 @@ type Translator struct {
 	filterNonSemanticFillers bool
 	checkpointDir            string
 	onRecovery               func(string)
+	recoveryDelay            time.Duration
 	onRateLimit              func()
-	preparedTranslation      *preparedTranslationContext
-	nlpSegmenter             translationNLPSegmenter
-	nlpBoundaryChecker       translationNLPBoundaryChecker
-	nlpRuntime               *translationNLPRuntime
-	reviseTranslation        bool
-	segmentTranslation       bool
-	semanticSourceUnits      bool
-	sourceSegmentation       bool
-	translationProgress      *translationWorkProgress
-	translationTask          *types.SubtitleTask
-	translationReportScope   string
-	subtitleTimings          []subtitleTimingSpan
-	subtitleSourceOffsets    map[string]int
-}
-
-// 音频和平台字幕使用语义意群；原始 SRT 导入继续沿用原有入口。
-func (t *Translator) withSemanticSourceUnits() *Translator {
-	copy := *t
-	copy.semanticSourceUnits = true
-	return &copy
 }
 
 func NewTranslator() *Translator {
-	return newTranslator(openai.NewClient(config.Conf.Llm.BaseUrl, config.Conf.Llm.ApiKey, config.Conf.App.Proxy))
-}
-
-func newTranslator(completer types.ChatCompleter) *Translator {
 	return &Translator{
-		segmentTranslation: translationFlowDefault == "segmented",
-		reviseTranslation:  translationRevisionDefault == "revised",
-		chatCompleter:      completer,
-		sourceSegmentation: true,
+		chatCompleter: openai.NewClient(config.Conf.Llm.BaseUrl, config.Conf.Llm.ApiKey, config.Conf.App.Proxy),
 	}
 }
 
 func (t *Translator) SplitTextAndTranslate(inputText string, originLang, targetLang types.StandardLanguageCode) ([]*TranslatedItem, error) {
-	paired, err := t.translatePairedSentences(context.Background(), []string{inputText}, originLang, targetLang, subtitleTargetLimit(), 3, nil)
+	sentences := splitTranslationSentences(inputText)
+	paired, err := t.translatePairedSentences(context.Background(), sentences, originLang, targetLang, subtitleTargetLimit(), 3, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +154,7 @@ func (t *Translator) recursiveSplitSentence(sentence string, depth int) []string
 	return result
 }
 
-// translateWithRetry 只重试未取得可用文本的请求；内容质量由后续审校判断。
+// translateWithRetry 带重试和翻译质量检查的翻译方法
 func (t *Translator) translateWithRetry(prompt, originText string, originLang, targetLang types.StandardLanguageCode) (string, error) {
 	const maxRetries = 3
 	var lastErr error
@@ -198,8 +174,8 @@ func (t *Translator) translateWithRetry(prompt, originText string, originLang, t
 		translatedText = strings.TrimSpace(translatedText)
 		translatedText = strings.Trim(translatedText, `"'`)
 
-		// 检查文本可用性，不以语言特征拒绝已有初译。
-		if hasUsableTranslation(translatedText) {
+		// 检查翻译质量
+		if t.isTranslationValid(originText, translatedText, originLang, targetLang) {
 			log.GetLogger().Debug("translation successful",
 				zap.Int("attempt", attempt+1),
 				zap.String("originText", originText),
@@ -207,8 +183,7 @@ func (t *Translator) translateWithRetry(prompt, originText string, originLang, t
 			return translatedText, nil
 		}
 
-		log.GetLogger().Warn("translation text unavailable, retrying",
-			zap.String("reason", translationTextIssue(translatedText)),
+		log.GetLogger().Warn("translation quality check failed, retrying",
 			zap.Int("attempt", attempt+1),
 			zap.String("originText", originText),
 			zap.String("translatedText", translatedText))
@@ -223,19 +198,121 @@ func (t *Translator) translateWithRetry(prompt, originText string, originLang, t
 		return "", lastErr
 	}
 
-	return "", fmt.Errorf("translation text unavailable after %d attempts", maxRetries)
+	return "", fmt.Errorf("translation quality check failed after %d attempts", maxRetries)
+}
+
+// isTranslationValid 检查翻译是否有效
+func (t *Translator) isTranslationValid(originText, translatedText string, originLang, targetLang types.StandardLanguageCode) bool {
+	originText = strings.Join(strings.Fields(originText), " ")
+	translatedText = strings.Join(strings.Fields(translatedText), " ")
+	if translatedText == "" {
+		return false
+	}
+	if originLang == targetLang {
+		return true
+	}
+	if strings.EqualFold(originText, translatedText) {
+		return t.isSpecialContent(originText)
+	}
+
+	return t.hasTargetLanguageCharacteristics(translatedText, targetLang)
+}
+
+// isSpecialContent 检查是否是专有名词、数字等特殊内容
+func (t *Translator) isSpecialContent(text string) bool {
+	text = strings.TrimSpace(text)
+	if len(text) == 0 {
+		return false
+	}
+
+	letterCount := 0
+	allUpper := true
+	for _, r := range text {
+		if unicode.IsLetter(r) {
+			letterCount++
+			if r < 'A' || r > 'Z' {
+				allUpper = false
+			}
+		}
+	}
+	if letterCount == 0 {
+		return true
+	}
+	if allUpper && letterCount >= 2 && letterCount <= 10 && len(strings.Fields(text)) == 1 {
+		return true
+	}
+
+	// 仅允许完整的已知专名；句子包含专名不代表整句可以不翻译。
+	commonProperNouns := []string{
+		"Dr.", "Mr.", "Mrs.", "Ms.", "Prof.",
+		"Andrew", "Huberman", "OpenAI", "ChatGPT", "YouTube",
+	}
+	trimPunctuation := func(r rune) bool { return unicode.IsPunct(r) || unicode.IsSpace(r) }
+	for _, word := range strings.Fields(text) {
+		known := false
+		for _, noun := range commonProperNouns {
+			if strings.EqualFold(strings.TrimFunc(word, trimPunctuation), strings.TrimFunc(noun, trimPunctuation)) {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return false
+		}
+	}
+	return true
+}
+
+// hasTargetLanguageCharacteristics 检查文本是否具有目标语言特征
+func (t *Translator) hasTargetLanguageCharacteristics(text string, targetLang types.StandardLanguageCode) bool {
+	switch targetLang {
+	case types.LanguageNameSimplifiedChinese, types.LanguageNameTraditionalChinese: // 中文
+		// 检查是否包含中文字符
+		for _, r := range text {
+			if r >= '\u4e00' && r <= '\u9fff' { // 基本汉字范围
+				return true
+			}
+		}
+		return false
+
+	case types.LanguageNameEnglish: // 英文
+		// 检查是否主要包含拉丁字母
+		letterCount := 0
+		for _, r := range text {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				letterCount++
+			}
+		}
+		// 至少50%的字符应该是字母
+		return float64(letterCount) >= float64(len(strings.ReplaceAll(text, " ", "")))*0.5
+
+	case types.LanguageNameJapanese: // 日文
+		// 检查是否包含平假名、片假名或汉字
+		for _, r := range text {
+			if (r >= '\u3040' && r <= '\u309f') || // 平假名
+				(r >= '\u30a0' && r <= '\u30ff') || // 片假名
+				(r >= '\u4e00' && r <= '\u9fff') { // 汉字
+				return true
+			}
+		}
+		return false
+
+	default:
+		// 对于其他语言，暂时返回true
+		return true
+	}
 }
 
 // enhanceTranslationPrompt 增强翻译提示词
 func (t *Translator) enhanceTranslationPrompt(originalPrompt, originText, failedTranslation string, targetLang types.StandardLanguageCode) string {
 	enhancement := fmt.Sprintf(`
 
-IMPORTANT: The previous response did not provide usable subtitle text. Please ensure:
-1. Translate "%s" into %s
+IMPORTANT: The previous translation was inadequate. Please ensure:
+1. Translate "%s" into %s (NOT the same as original text)
 2. Previous failed attempt: "%s"
 3. Provide a natural, accurate %s translation
-4. Return nonempty, single-line subtitle text without formatting or analysis
-5. Numbers, names, URLs and words shared by both languages may correctly remain unchanged
+4. Do NOT return the original text unchanged
+5. Do NOT translate proper nouns like names, unless culturally appropriate
 
 `, originText, types.GetStandardLanguageName(targetLang), failedTranslation, types.GetStandardLanguageName(targetLang))
 
@@ -399,8 +476,8 @@ Required JSON format (output ONLY this structure):
 			}
 			// 空行会被 SRT 解析器当成字幕块边界，统一为单行文本。
 			translation := strings.Join(strings.Fields(trans.Text), " ")
-			if !hasUsableTranslation(translation) {
-				invalidResultErr = fmt.Errorf("第%d条未取得可用翻译文本：%s", trans.Index, translationTextIssue(translation))
+			if !t.isTranslationValid(texts[trans.Index-1], translation, originLang, targetLang) {
+				invalidResultErr = fmt.Errorf("第%d条译文未通过检查（原文未翻译、仅标点或目标语言不符）: 原文=%q, 译文=%q", trans.Index, texts[trans.Index-1], translation)
 				break
 			}
 			translations[trans.Index-1] = translation

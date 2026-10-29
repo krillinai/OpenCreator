@@ -36,7 +36,7 @@ func TestTranslationSentenceBoundaries(t *testing.T) {
 		{"空输入", " \n\t ", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := splitTranslationSentences(tc.text, "en")
+			got := splitTranslationSentences(tc.text)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("分句=%q，期望=%q", got, tc.want)
 			}
@@ -44,7 +44,7 @@ func TestTranslationSentenceBoundaries(t *testing.T) {
 				t.Fatalf("分句改变了原文: %q", got)
 			}
 			for _, sentence := range got {
-				if repeated := splitTranslationSentences(sentence, "en"); len(repeated) != 1 || repeated[0] != sentence {
+				if repeated := splitTranslationSentences(sentence); len(repeated) != 1 || repeated[0] != sentence {
 					t.Fatalf("重复分句改变边界: %q -> %q", sentence, repeated)
 				}
 			}
@@ -112,8 +112,8 @@ func TestTranslationSentenceBudgetKeepsInitialism(t *testing.T) {
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
 	config.Conf.App.TranslateParallelNum = 1
-	// 800 字节的请求片段边界恰好落在 D. 与 C. 之间。
-	source := strings.Repeat("word ", 159) + "a D. C."
+	// 让整句超过当前响应预算，仍须保留末尾完整缩写。
+	source := strings.Repeat("word ", 188) + "a D. C."
 	var got []string
 	translator := &Translator{chatCompleter: translationCompleterFunc(func(prompt string) (string, error) {
 		input, err := decodePairedTestInput(prompt)
@@ -133,7 +133,7 @@ func TestTranslationSentenceBudgetKeepsInitialism(t *testing.T) {
 		t.Fatalf("请求预算切开了缩写: %q", got)
 	}
 	for _, part := range got {
-		if len(part) > 800 {
+		if len(part) > translationSentenceBytes || pairedTranslationResponseBudget(part, 50) > translationOutputBudget {
 			t.Fatalf("片段超过输入预算: %d", len(part))
 		}
 	}

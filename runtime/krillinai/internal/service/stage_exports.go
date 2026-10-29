@@ -20,10 +20,7 @@ func (s Service) TranslateSubtitleBlocks(ctx context.Context, blocks []*util.Srt
 	if s.YouTubeSubtitleSrv == nil || s.YouTubeSubtitleSrv.translator == nil {
 		return nil, ErrYouTubeSubtitleServiceNotInitialized
 	}
-	translator := s.YouTubeSubtitleSrv.translator.withTranslationRecovery(p.TaskBasePath, p.TaskPtr)
-	// 原始 SRT 导入保持原有路径，本轮意群切分只启用在音频与平台 VTT。
-	translator.sourceSegmentation = false
-	return translator.BatchTranslateSrtBlocks(ctx, blocks, string(p.OriginLanguage), string(p.TargetLanguage), p.TaskPtr)
+	return s.YouTubeSubtitleSrv.translator.withTranslationRecovery(p.TaskBasePath, p.TaskPtr).BatchTranslateSrtBlocks(ctx, blocks, string(p.OriginLanguage), string(p.TargetLanguage), p.TaskPtr)
 }
 
 type DownloadMediaResult struct {
