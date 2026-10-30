@@ -62,6 +62,33 @@ describe('McpSettingsView', () => {
     expect(screen.queryByDisplayValue('super-secret-value')).not.toBeInTheDocument();
   });
 
+  it('prefills TrendPulse as a local stdio server rather than using the registry URL', async () => {
+    const user = userEvent.setup();
+    const addServer = vi.fn(async (_input: AddCodexMcpRequest): Promise<CodexMcpAddResponse> => ({
+      operation: operation('add')
+    }));
+    render(
+      <McpSettingsView
+        connected
+        service={createService({ addServer })}
+        data={mcpData()}
+        capabilities={allCapabilities()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '新增 MCP' }));
+    expect(screen.getByText(/Agent Finder 登记 URL 是服务元数据/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '填写 TrendPulse 配置' }));
+    await user.click(screen.getByRole('button', { name: '保存 MCP' }));
+
+    expect(addServer).toHaveBeenCalledWith({
+      name: 'mcp-trendpulse',
+      transport: 'stdio',
+      command: 'uvx',
+      args: ['mcp-trendpulse']
+    });
+  });
+
   it('disables unsupported operations from the capability matrix', () => {
     render(
       <McpSettingsView

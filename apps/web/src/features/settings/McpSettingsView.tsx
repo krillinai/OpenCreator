@@ -52,6 +52,13 @@ export type McpCapabilities = Partial<{
 
 type EnvEntry = { id: number; key: string; value: string };
 
+const TRENDPULSE_MCP_PRESET = {
+  name: 'mcp-trendpulse',
+  transport: 'stdio',
+  command: 'uvx',
+  args: ['mcp-trendpulse']
+} satisfies AddCodexMcpRequest;
+
 export function McpSettingsView(props: {
   connected: boolean;
   service: McpSettingsService | null;
@@ -378,6 +385,33 @@ export function McpEditor(props: {
         </button>
       </header>
       {formError ? <p className="settings-error" role="alert">{formError}</p> : null}
+      <div className="settings-notice">
+        <p>
+          {l(
+            "TrendPulse（Google News 和 Google Trends）通过本机 stdio 运行，需要已安装 uvx 和网络连接，不需要 API 密钥。Agent Finder 登记 URL 是服务元数据，不是 MCP 运行地址。",
+            "TrendPulse (Google News and Google Trends) runs over local stdio. It requires uvx and internet access, but no API key. The Agent Finder registration URL is metadata, not an MCP endpoint."
+          )}
+        </p>
+        <button
+          className="settings-text-button"
+          type="button"
+          disabled={saving}
+          onClick={() => {
+            setTransport(TRENDPULSE_MCP_PRESET.transport);
+            setName(TRENDPULSE_MCP_PRESET.name);
+            setCommand(TRENDPULSE_MCP_PRESET.command);
+            setArgs(TRENDPULSE_MCP_PRESET.args?.join('\n') ?? '');
+            setUrl('');
+            setBearerTokenEnvVar('');
+            setOauthClientId('');
+            setOauthResource('');
+            setEnvEntries([{ id: 1, key: '', value: '' }]);
+            setFormError(undefined);
+          }}
+        >
+          {l("填写 TrendPulse 配置", "Prefill TrendPulse configuration")}
+        </button>
+      </div>
       <div className="settings-form-grid">
         <label>
           <span>{l("名称", "Name")}</span>
