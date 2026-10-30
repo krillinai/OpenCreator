@@ -755,6 +755,10 @@ export function videoTranslationReportNotice(artifact: CreatorArtifact | undefin
       : l(`部分完成：${count} 条字幕尚未翻译，已保留原文。`, `Partially complete: ${count} subtitle items are untranslated and retain their source text.`);
     return [contentNotice, layoutNotice].filter(Boolean).join(' ');
   }
+  if (status === 'degraded') {
+    return l('字幕已生成，部分分段或双语对应未通过自动质量核验，请在编辑器复核。',
+      'Subtitles are ready. Some segmentation or bilingual alignment needs review in the editor.');
+  }
   if (status === 'layout_pending') {
     return l('翻译已完成。', 'Translation is complete. ') + layoutNotice;
   }

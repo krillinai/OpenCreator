@@ -47,7 +47,6 @@ import type {
 
 registerPrivilegedSchemes();
 app.setName('OpenCreator');
-app.commandLine.appendSwitch('lang', 'zh-CN');
 const APP_ENTRY_AT = Date.now();
 const DEVELOPMENT =
   process.env.OPENCREATOR_DESKTOP_DEV === '1' || !app.isPackaged;
@@ -156,6 +155,7 @@ async function launchDesktop(): Promise<void> {
     dataDir,
     codexRuntimeRoot,
     creatorRuntimeRoot,
+    creatorPresetAssetsRoot: development ? undefined : join(webRoot, 'creator-presets'),
     stickmanRuntimeRoot,
     defaultProjectRoot,
     development

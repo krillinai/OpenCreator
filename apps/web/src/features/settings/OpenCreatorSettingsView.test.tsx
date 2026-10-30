@@ -160,7 +160,9 @@ describe('OpenCreatorSettingsView', () => {
     expect(screen.queryByRole('button', { name: '订阅与积分' })).not.toBeInTheDocument();
   });
   it('renders default navigation and general settings without old work mode copy', () => {
-    render(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
+    render(<LanguageProvider initialPreference="system">
+      <OpenCreatorSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />
+    </LanguageProvider>);
 
     expect(screen.getByRole('button', { name: '返回应用' })).toBeInTheDocument();
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();

@@ -31,7 +31,6 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { treeSize } from './package-directory-size.mjs';
 import { verifyCreatorRuntimeBuild } from './creator-runtime-build.mjs';
-import { verifyCreatorNlpRuntime } from './creator-nlp-runtime.mjs';
 import { verifyCodexRuntime } from './codex-runtime-contract.mjs';
 import {
   hashDirectory as hashStickmanDirectory,
@@ -455,8 +454,14 @@ function assertCreatorPresetContents() {
     ) {
       throw new Error(`Creator preset manifest contains an invalid resource: ${manifestPath}`);
     }
-    expectedDaemonFiles.add(file.path);
-    const absolute = join(daemonCreatorPresetDir, ...file.path.split('/'));
+    const isAsset = file.path.startsWith('assets/');
+    if (isAsset && !/^assets\/[a-f0-9]{64}\.(?:png|jpe?g|webp|mp4)$/.test(file.path)) {
+      throw new Error(`Creator preset manifest contains an invalid asset path: ${file.path}`);
+    }
+    if (!isAsset) expectedDaemonFiles.add(file.path);
+    const absolute = isAsset
+      ? join(webCreatorPresetDir, basename(file.path))
+      : join(daemonCreatorPresetDir, ...file.path.split('/'));
     assertExists(absolute);
     const contents = readFileSync(absolute);
     if (contents.byteLength !== file.size || hashBuffer(contents) !== file.sha256) {
@@ -608,9 +613,8 @@ async function assertCreatorRuntime() {
   const runtime = verifyCreatorRuntimeBuild(creatorRuntimeDir, targetPlatform, targetArch, {
     allowSigned: manifest.macSigningMode === 'developer-id'
   });
-  if (runtime.nlp === undefined) throw new Error('Packaged Creator Runtime is missing spaCy');
+  if (runtime.nlp !== undefined) throw new Error('Packaged Creator Runtime unexpectedly contains the retired NLP runtime');
   if (targetPlatform === process.platform && targetArch === process.arch) {
-    verifyCreatorNlpRuntime(resolve(creatorRuntimeDir, runtime.nlp.executable), runtime.nlp);
     // Validate with the actual consumer as well as the packaging contract.
     const { readKrillinRuntimeManifest } = await import(pathToFileURL(
       join(daemonDir, 'dist', 'creator', 'krillin', 'manifest.js')

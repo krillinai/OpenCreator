@@ -6,7 +6,7 @@ import { languagePreferenceStorageKey } from '../../i18n/language.js';
 import { IssueList, IssuePresenter, PageIssueRoutingProvider } from './IssuePresenter.js';
 import { LanguageSwitchControls } from '../../test/LanguageSwitchControls.js';
 
-beforeEach(() => window.localStorage.removeItem(languagePreferenceStorageKey));
+beforeEach(() => window.localStorage.setItem(languagePreferenceStorageKey, 'zh-CN'));
 
 const issue = {
   id: 'issue-1',

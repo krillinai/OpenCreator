@@ -1546,6 +1546,19 @@ test('Creator Preset 在实际 Desktop 包中创建并重启恢复', async () =>
     expect(staticResources.font.status).toBe(200);
     expect(staticResources.font.contentType).toContain('font/woff2');
     expect(staticResources.font.bytes).toBeGreaterThan(10_000);
+    const daemonCover = await currentApp.page.evaluate(async coverUrl => {
+      const response = await fetch(`/.opencreator/runtime${coverUrl}`);
+      return {
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+        bytes: (await response.arrayBuffer()).byteLength
+      };
+    }, preset!.coverUrl);
+    expect(daemonCover).toMatchObject({
+      status: 200,
+      contentType: 'image/jpeg',
+      bytes: staticResources.cover.bytes
+    });
 
     const projectDir = join(fixture.root, 'creator-preset-workspace');
     mkdirSync(projectDir, { recursive: true });
@@ -1780,11 +1793,11 @@ async function waitForWorkspace(page: Page): Promise<void> {
   )?.phase).toBe('ready');
   const confirmed = await page.evaluate(() => window.localStorage.getItem('opencreator.agent-setup-confirmed.v1') !== null);
   if (!confirmed) {
-    const setup = page.getByRole('region', { name: '开始使用 Agent' });
+    const setup = page.getByRole('region', { name: /^(开始使用 Agent|Get started with Agent)$/ });
     await setup.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
     if (await setup.isVisible()) {
-      await page.getByRole('button', { name: '本地模式', exact: true }).click();
-      await page.getByRole('button', { name: '使用本机 Codex，继续' }).click();
+      await page.getByRole('button', { name: /^(本地模式|Local mode)$/ }).click();
+      await page.getByRole('button', { name: /^(使用本机 Codex，继续|Continue locally and set up later)$/ }).click();
       await expect(setup).toBeHidden();
     }
   }

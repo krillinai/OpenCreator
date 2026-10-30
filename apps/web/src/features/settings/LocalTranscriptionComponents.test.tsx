@@ -10,7 +10,7 @@ import { LanguageSwitchControls } from '../../test/LanguageSwitchControls.js';
 import { createLocalizedCopy } from '../../i18n/localized-copy.js';
 import { localComponentPreparationMessage } from './local-component-copy.js';
 
-beforeEach(() => window.localStorage.removeItem(languagePreferenceStorageKey));
+beforeEach(() => window.localStorage.setItem(languagePreferenceStorageKey, 'zh-CN'));
 
 function componentFixture(patch: Partial<CreatorLocalComponent> = {}): CreatorLocalComponent {
   return { id: 'whisperkit', name: 'WhisperKit', available: true, version: null, supportedVersion: '1.1.0', installedAt: null,

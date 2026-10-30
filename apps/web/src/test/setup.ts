@@ -2,6 +2,9 @@ import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
 import { appLanguageOptions } from '../i18n/language.js';
 import { loadLanguageCatalog } from '../i18n/translated-copy.js';
+import { beforeEach } from 'vitest';
+
+window.localStorage.setItem('opencreator.preferences.language', 'zh-CN');
 
 // Component tests exercise initialized copy; cold loading is covered separately.
 await Promise.all(appLanguageOptions.map(({ value }) => loadLanguageCatalog(value)));
@@ -14,6 +17,9 @@ Object.defineProperty(window.navigator, 'languages', {
   configurable: true,
   value: ['zh-CN']
 });
+
+// Most existing component fixtures explicitly exercise Chinese copy.
+beforeEach(() => { window.localStorage.setItem('opencreator.preferences.language', 'zh-CN'); });
 
 Object.defineProperty(window, 'confirm', {
   configurable: true,

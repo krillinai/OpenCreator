@@ -542,11 +542,13 @@ type LanguageContextValue = {
   t: Translate;
 };
 
+const fallbackPreference = readLanguagePreference();
+const fallbackLanguage = resolveAppLanguage(fallbackPreference);
 const defaultContext: LanguageContextValue = {
-  preference: 'system',
-  language: 'zh-CN',
+  preference: fallbackPreference,
+  language: fallbackLanguage,
   setPreference: () => undefined,
-  t: createTranslator('zh-CN')
+  t: createTranslator(fallbackLanguage)
 };
 
 const LanguageContext = createContext<LanguageContextValue>(defaultContext);

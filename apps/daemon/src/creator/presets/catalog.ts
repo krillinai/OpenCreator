@@ -26,10 +26,12 @@ import {
 
 export async function loadCreatorPresetCatalog(input: {
   root?: string;
+  assetsRoot?: string;
   templates: CreatorTemplateRegistry;
   verificationCachePath?: string;
 }): Promise<CreatorPresetRegistry> {
   const root = path.resolve(input.root ?? resolveCreatorPresetCatalogRoot());
+  const assetsRoot = path.resolve(input.assetsRoot ?? path.join(root, 'assets'));
   const catalogPath = path.join(root, 'catalog.json');
   const manifestPath = path.join(root, 'manifest.json');
   const [catalogBytes, manifestBytes] = await Promise.all([
@@ -51,17 +53,21 @@ export async function loadCreatorPresetCatalog(input: {
   }
   const verification = verifyFileIntegrityWithCache({
     cachePath: input.verificationCachePath,
-    identity: root,
+    identity: JSON.stringify([root, assetsRoot]),
     fingerprint: sha256(manifestBytes),
     files: manifest.files.map(file => ({
       key: file.path,
-      path: resolveCatalogFile(root, file.path),
+      path: file.path.startsWith('assets/')
+        ? resolveCreatorPresetAsset(root, file.path.slice('assets/'.length), assetsRoot)
+        : resolveCatalogFile(root, file.path),
       sha256: file.sha256,
       expectedSize: file.size
     }))
   });
   if (!verification.verified) {
-    const absolute = resolveCatalogFile(root, verification.key);
+    const absolute = verification.key.startsWith('assets/')
+      ? resolveCreatorPresetAsset(root, verification.key.slice('assets/'.length), assetsRoot)
+      : resolveCatalogFile(root, verification.key);
     throw new Error(`${absolute}: packaged creator preset resource hash mismatch`);
   }
   if (!knownFiles.has('catalog.json')) {
@@ -160,12 +166,13 @@ export function resolveCreatorPresetCatalogRoot(): string {
 
 export function resolveCreatorPresetAsset(
   root: string,
-  fileName: string
+  fileName: string,
+  assetsRoot = path.join(root, 'assets')
 ): string {
   if (!/^[a-f0-9]{64}\.(?:png|jpe?g|webp|mp4)$/.test(fileName)) {
     throw new Error('Invalid creator preset asset name');
   }
-  return resolveCatalogFile(root, `assets/${fileName}`);
+  return path.resolve(assetsRoot, fileName);
 }
 
 function parseCatalog(bytes: Buffer, file: string): CreatorPresetCatalog {

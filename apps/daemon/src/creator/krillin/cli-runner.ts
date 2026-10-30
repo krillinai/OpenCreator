@@ -42,6 +42,17 @@ type KrillinCliResponse = {
   task_id?: string;
   outputs?: Record<string, string>;
   warnings?: string[];
+  subtitle_quality?: {
+    status: 'qualified' | 'degraded' | 'failed';
+    approximate_layouts: number;
+    degraded_segmentation_units: number;
+    semantic_pending: number;
+    unresolved_errors?: number;
+    overflow_cues?: number;
+    timing_fallback?: boolean;
+    issues?: Array<{ sentence_id: string; cue?: number; output_cue?: number; timestamp?: string;
+      type: string; severity: string; source_evidence?: string; target_evidence?: string; reason: string }>;
+  };
   translation_failures?: Array<{ sentence_id: string; source_text: string; reason: string }>;
   error?: {
     kind?: string;
@@ -245,6 +256,8 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
       ...translationReport,
       ...(translationReport.translationStatus === 'partial'
         ? { message: `Translation finished with ${translationReport.translationFailedCount} untranslated items` }
+        : translationReport.translationStatus === 'degraded'
+        ? { message: 'Translation finished with automatic quality checks pending review' }
         : translationReport.translationStatus === 'layout_pending'
         ? { message: 'Translation finished; some subtitle layouts need adjustment' }
         : {}),
@@ -516,17 +529,19 @@ async function collectArtifacts(
   return result;
 }
 
-export function krillinTranslationReport(response: Pick<KrillinCliResponse, 'warnings' | 'translation_failures'>): Record<string, CreatorJson> {
+export function krillinTranslationReport(response: Pick<KrillinCliResponse, 'warnings' | 'translation_failures' | 'subtitle_quality'>): Record<string, CreatorJson> {
   const warnings = (response.warnings ?? []).filter(value => typeof value === 'string' && value.trim());
   const failures = (response.translation_failures ?? []).filter(value => value && typeof value.sentence_id === 'string'
     && typeof value.source_text === 'string' && typeof value.reason === 'string');
   return {
     translationStatus: failures.length > 0 ? 'partial'
+      : response.subtitle_quality?.status === 'degraded' || response.subtitle_quality?.status === 'failed' ? 'degraded'
       : warnings.some(value => value.startsWith('字幕排版待调整：')) ? 'layout_pending' : 'complete',
     translationFailedCount: failures.length,
     translationLayoutPending: warnings.some(value => value.startsWith('字幕排版待调整：')),
     translationFailures: failures.map(value => ({ sentenceId: value.sentence_id, sourceText: value.source_text, reason: value.reason })),
-    translationWarnings: warnings
+    translationWarnings: warnings,
+    ...(response.subtitle_quality === undefined ? {} : { subtitleQuality: { ...response.subtitle_quality } })
   };
 }
 

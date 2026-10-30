@@ -20,7 +20,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { creatorRuntimeReleases, resolveYtDlpRelease } from './creator-runtime-releases.mjs';
 import { verifyRuntimeExecutable } from './runtime-executable-check.mjs';
-import { installCreatorNlpDependencies } from './creator-nlp-runtime.mjs';
 import { retryWindowsFileOperation } from './windows-file-retry.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -71,13 +70,11 @@ verifyPortableYtDlpRuntime({
   certificateBundle: join(outputRoot, release.certificateBundle.fileName),
   expectedVersion: release.ytDlp.version
 });
-const nlp = installCreatorNlpDependencies({ vendorRoot: outputRoot, platform, arch, offline, proxy });
 writeFileSync(join(outputRoot, 'versions.json'), `${JSON.stringify({
   version: 1,
   platform,
   arch,
-  dependencies: installed,
-  nlp
+  dependencies: installed
 }, null, 2)}\n`);
 console.log(JSON.stringify({ ok: true, outputRoot, dependencies: installed }));
 

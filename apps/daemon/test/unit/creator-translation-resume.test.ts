@@ -56,6 +56,12 @@ describe('translation recovery and result report', () => {
         translationFailures: [{ sentenceId: '2', sourceText: 'Second.', reason: 'missing' }] });
     expect(krillinTranslationReport({ warnings: ['字幕排版待调整：1条已保留完整译文与时间区间'] }))
       .toMatchObject({ translationStatus: 'layout_pending', translationFailedCount: 0 });
+    expect(krillinTranslationReport({ subtitle_quality: { status: 'degraded', approximate_layouts: 1, degraded_segmentation_units: 0, semantic_pending: 0 } }))
+      .toMatchObject({ translationStatus: 'degraded', subtitleQuality: { status: 'degraded', approximate_layouts: 1 } });
+    const issue = { sentence_id: 'unit', type: 'negation', severity: 'error', reason: '否定反转', output_cue: 2, timestamp: '00:00:01,000 --> 00:00:03,000' };
+    expect(krillinTranslationReport({ subtitle_quality: { status: 'degraded', approximate_layouts: 0,
+      degraded_segmentation_units: 0, semantic_pending: 0, unresolved_errors: 1, overflow_cues: 2, issues: [issue] } }))
+      .toMatchObject({ translationStatus: 'degraded', subtitleQuality: { unresolved_errors: 1, overflow_cues: 2, issues: [issue] } });
     expect(krillinTranslationReport({})).toMatchObject({ translationStatus: 'complete', translationWarnings: [] });
   });
 });

@@ -71,7 +71,7 @@ describe('OpenCreator config', () => {
     tempDirs.push(root);
     const path = join(root, 'config.toml');
 
-    expect(resolveUiSettings(readOpenCreatorConfig(path)).accentColor).toBe('red');
+    expect(resolveUiSettings(readOpenCreatorConfig(path))).toMatchObject({ accentColor: 'red', language: 'en-US' });
 
     updateOpenCreatorUiSettings(path, { colorMode: 'light', language: 'sv-SE' });
 

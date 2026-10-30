@@ -20,7 +20,6 @@ import { fileURLToPath } from 'node:url';
 import * as fontkit from 'fontkit';
 import { verifyRuntimeExecutable } from './runtime-executable-check.mjs';
 import { stripMacNodeRuntime } from './prepare-creator-node.mjs';
-import { creatorNlpLockPath, prepareCreatorNlpRuntime } from './creator-nlp-runtime.mjs';
 import { krillinBuildIdentity, verifyKrillinBuild } from '../../../scripts/krillinai-build-contract.mjs';
 import { verifyCreatorRuntimeBuild } from './creator-runtime-build.mjs';
 
@@ -82,20 +81,6 @@ for (const [name, configured, vendored] of externalInputs) {
   copyExecutable(source, target);
 }
 const ytDlpRuntime = prepareYtDlpRuntime(vendorVersions);
-const nlpPythonRoot = ytDlpRuntime.descriptor.mode === 'python'
-  ? join(outputRoot, 'yt-dlp-runtime', 'python')
-  : join(outputRoot, 'nlp-runtime', 'python');
-if (ytDlpRuntime.descriptor.mode !== 'python') {
-  mkdirSync(dirname(nlpPythonRoot), { recursive: true });
-  extractPythonRuntime(join(vendorRoot, 'python-runtime.tar.gz'), dirname(nlpPythonRoot));
-  removePythonBytecodeCaches(nlpPythonRoot);
-  clearMacOSFileMetadata(nlpPythonRoot, true);
-}
-const nlpExecutable = portablePythonExecutable(nlpPythonRoot, targetPlatform);
-const nlpRuntime = prepareCreatorNlpRuntime({
-  vendorRoot, outputRoot, pythonRoot: nlpPythonRoot, pythonExecutable: nlpExecutable,
-  platform: targetPlatform, arch: targetArch
-});
 const javascriptRuntime = prepareYtDlpJavascriptRuntime(vendorVersions);
 ytDlpRuntime.descriptor.javascriptRuntime = javascriptRuntime.descriptor;
 ytDlpRuntime.resourcePaths.push(...javascriptRuntime.resourcePaths);
@@ -118,7 +103,6 @@ const buildRecord = {
   sourceSha256,
   krillinBuild: krillinBuildRecord,
   ytDlp: ytDlpRuntime.descriptor,
-  nlp: nlpRuntime.descriptor,
   subtitleFonts: {
     manifestSha256: subtitleFonts.manifestSha256,
     resourceCount: subtitleFonts.resourcePaths.length
@@ -132,9 +116,6 @@ const buildRecord = {
     join(scriptDir, 'creator-runtime-releases.mjs'),
     join(scriptDir, 'prepare-creator-runtime.mjs'),
     join(scriptDir, 'prepare-creator-node.mjs'),
-    join(scriptDir, 'creator-nlp-runtime.mjs'),
-    join(scriptDir, 'install-creator-nlp-wheels.py'),
-    creatorNlpLockPath,
     join(rootDir, 'apps', 'daemon', 'src', 'creator', 'krillin', 'adapter.ts'),
     join(rootDir, 'apps', 'daemon', 'src', 'creator', 'krillin', 'cli-runner.ts'),
     join(rootDir, 'apps', 'daemon', 'src', 'creator', 'krillin', 'config-bridge.ts'),
@@ -152,8 +133,6 @@ const resourcePaths = [...new Set([
   primaryExecutablePath,
   ...externalInputs.map(([name]) => join(binDir, `${name}${executableSuffix}`)),
   ...ytDlpRuntime.resourcePaths,
-  ...nlpRuntime.resourcePaths,
-  ...(ytDlpRuntime.descriptor.mode === 'python' ? [] : listFiles(dirname(nlpPythonRoot))),
   ...subtitleFonts.resourcePaths,
   subtitleStylePath,
   buildRecordPath
@@ -169,11 +148,10 @@ const manifest = {
   platform: targetPlatform,
   arch: targetArch,
   ytDlp: ytDlpRuntime.descriptor,
-  nlp: nlpRuntime.descriptor,
   resources: resourcePaths.map(path => ({
     path: relative(outputRoot, path).replaceAll('\\', '/'),
     sha256: hashFile(path),
-    kind: path.startsWith(binDir) || ytDlpRuntime.executablePaths.includes(path) || path === nlpExecutable
+    kind: path.startsWith(binDir) || ytDlpRuntime.executablePaths.includes(path)
       ? 'executable'
       : 'asset'
   }))

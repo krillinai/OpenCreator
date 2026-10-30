@@ -129,7 +129,10 @@ cpSync(
   { recursive: true }
 );
 rmSync(targetCreatorPresetRoot, { recursive: true, force: true });
-cpSync(creatorPresetBuildRoot, targetCreatorPresetRoot, { recursive: true });
+cpSync(creatorPresetBuildRoot, targetCreatorPresetRoot, {
+  recursive: true,
+  filter: source => source !== resolve(creatorPresetBuildRoot, 'assets')
+});
 pruneDependencyInstallMetadata();
 pruneDevelopmentArtifacts(targetDir);
 
@@ -139,6 +142,7 @@ assertExists(resolve(targetDir, 'runtime/opencreator-runtime/SKILL.md'));
 assertExists(resolve(targetDir, 'runtime/opencreator-runtime/manifest.json'));
 assertExists(resolve(targetDir, 'runtime/creator-presets/catalog.json'));
 assertExists(resolve(targetDir, 'runtime/creator-presets/manifest.json'));
+assertMissing(resolve(targetDir, 'runtime/creator-presets/assets'), 'Creator preset assets must use the shared Web copy');
 assertWorkspaceRuntimePackage('protocol', 'Protocol');
 assertWorkspaceRuntimePackage('config', 'Config');
 assertWorkspaceRuntimePackage('skill-market', 'Skill Market');

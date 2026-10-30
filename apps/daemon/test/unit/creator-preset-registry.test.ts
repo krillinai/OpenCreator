@@ -1,4 +1,5 @@
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -6,7 +7,7 @@ import {
   writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import {
@@ -17,7 +18,8 @@ import {
 } from '../../src/creator/presets/compiler.js';
 import {
   createCreatorPresetRegistry,
-  loadCreatorPresetCatalog
+  loadCreatorPresetCatalog,
+  resolveCreatorPresetAsset
 } from '../../src/creator/presets/catalog.js';
 import { createCreatorPresetDetails, createCreatorPresetTags } from '../../src/creator/presets/presentation.js';
 import { createDefaultCreatorTemplateRegistry } from '../../src/creator/templates/registry.js';
@@ -42,6 +44,35 @@ function setup() {
 }
 
 describe('creator preset registry', () => {
+  it('verifies shared assets outside the packaged catalog directory', async () => {
+    const fixture = setup();
+    copyOfficialPreset({
+      sourceRoot: fixture.sourceRoot,
+      module: 'image-generation',
+      sourceId: 'ecommerce-product'
+    });
+    await compileCreatorPresets(fixture);
+    const assetsRoot = join(tempDir, 'shared-assets');
+    cpSync(join(fixture.outputRoot, 'assets'), assetsRoot, { recursive: true });
+    rmSync(join(fixture.outputRoot, 'assets'), { recursive: true });
+
+    const manifest = JSON.parse(readFileSync(join(fixture.outputRoot, 'manifest.json'), 'utf8')) as {
+      files: Array<{ path: string }>;
+    };
+    const asset = manifest.files.find(file => file.path.startsWith('assets/'))!;
+    const file = resolveCreatorPresetAsset(fixture.outputRoot, basename(asset.path), assetsRoot);
+    expect(file).toBe(join(assetsRoot, basename(asset.path)));
+    const input = {
+      root: fixture.outputRoot,
+      assetsRoot,
+      templates: createDefaultCreatorTemplateRegistry()
+    };
+    expect((await loadCreatorPresetCatalog(input)).listPublished('en-US')).toHaveLength(1);
+
+    writeFileSync(file, 'broken');
+    await expect(loadCreatorPresetCatalog(input)).rejects.toThrow('resource hash mismatch');
+  });
+
   it('resolves model details from the selected service and localized template defaults', async () => {
     const fixture = setup();
     for (const [module, sourceId] of [

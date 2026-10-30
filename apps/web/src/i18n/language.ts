@@ -52,7 +52,7 @@ export const appLanguageOptions: ReadonlyArray<AppLanguageOption> = ([
 ] satisfies AppLanguageOption[]).sort((a, b) => a.englishName.localeCompare(b.englishName, 'en'));
 
 export const languagePreferenceStorageKey = 'opencreator.preferences.language';
-export const defaultLanguagePreference: AppLanguagePreference = 'system';
+export const defaultLanguagePreference: AppLanguagePreference = 'en-US';
 
 export function readLanguagePreference(): AppLanguagePreference {
   try {

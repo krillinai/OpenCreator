@@ -18,15 +18,12 @@ describe('Desktop deep links', () => {
     expect(deepLinkToRoute('opencreator://unknown')).toBeUndefined();
   });
 
-  it('forces Chinese application localization before Electron becomes ready', () => {
+  it('leaves application localization at the system default', () => {
     const mainSource = readFileSync('src/main/main.ts', 'utf8');
     const builderConfig = readFileSync('electron-builder.yml', 'utf8');
 
-    expect(mainSource).toMatch(
-      /app\.setName\('OpenCreator'\);\s*app\.commandLine\.appendSwitch\('lang', 'zh-CN'\);/
-    );
-    expect(builderConfig).toContain('CFBundleDevelopmentRegion: zh_CN');
-    expect(builderConfig).toContain('CFBundleLocalizations:');
-    expect(builderConfig).toContain('- zh-Hans');
+    expect(mainSource).not.toMatch(/app\.commandLine\.appendSwitch\(['"]lang['"]/);
+    expect(builderConfig).not.toContain('CFBundleDevelopmentRegion:');
+    expect(builderConfig).not.toContain('CFBundleLocalizations:');
   });
 });

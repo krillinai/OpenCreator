@@ -1,0 +1,47 @@
+{
+  "go_test_packages": {
+    "krillin-ai/internal/pipeline": {
+      "pass": 465,
+      "pass_top_level": 70
+    },
+    "krillin-ai/internal/types": {
+      "pass": 9,
+      "pass_top_level": 6
+    },
+    "krillin-ai/internal/service": {
+      "pass": 1185,
+      "pass_top_level": 441,
+      "skip": 23,
+      "skip_top_level": 23
+    },
+    "krillin-ai/pkg/openai": {
+      "pass": 62,
+      "pass_top_level": 23
+    }
+  },
+  "fallback_regression_log": "/tmp/opencreator-subtitle-fallback-tests.log",
+  "integration_log": "/tmp/opencreator-subtitle-final-integration.jsonl",
+  "packaged_app_e2e_tests": 4,
+  "web_targeted_tests": 16,
+  "daemon_targeted_tests": 35,
+  "desktop_runtime_tests": 30,
+  "web_typecheck": "passed",
+  "daemon_typecheck": "passed",
+  "package": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "package_root": "/Users/leggett/develop/github/open-creator/apps/desktop/release/mac-arm64/OpenCreator.app",
+    "nlp_descriptor_absent": true,
+    "python_module_probes": {
+      "spacy": false,
+      "numpy": false,
+      "en_core_web_md": false,
+      "thinc": false
+    },
+    "runtime_bytes": 363100977,
+    "runtime_source_sha256": "16cd527776e467bccb110862c6f7022a0eb906f32c069fd821db92ffeb911812",
+    "web_build_hash": "8bccf9eeb074ef246dae922ca4980e98cb66e3d1babc278cfe443e86f397d979",
+    "packaged_e2e_passed": 4,
+    "note": "Python is retained for yt-dlp; the NLP libraries and model are absent."
+  }
+}

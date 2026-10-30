@@ -121,6 +121,7 @@ describe('Daemon stdout parser', () => {
       codexVersion: '0.149.0',
       codexCommit: 'bundled-commit',
       dataDir: '/Users/demo/.opencreator/data',
+      creatorPresetAssetsRoot: '/app/web/creator-presets',
       defaultCwd: '/Users/demo',
       defaultProjectRoot: '/Users/demo/Documents',
       requireProbe: false,
@@ -130,6 +131,7 @@ describe('Daemon stdout parser', () => {
     expect(environment).toMatchObject({
       OPENCREATOR_HOME: '/Users/demo/.opencreator',
       OPENCREATOR_DATA_DIR: '/Users/demo/.opencreator/data',
+      OPENCREATOR_PRESET_ASSETS_ROOT: '/app/web/creator-presets',
       CODEX_HOME: '/Users/demo/.opencreator/runtime/codex',
       OPENCREATOR_LOCAL_CODEX_HOME: '/Users/demo/.codex-custom',
       OPENCREATOR_CODEX_VERSION: '0.149.0',

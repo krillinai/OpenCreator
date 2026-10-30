@@ -84,7 +84,7 @@ export type OpenCreatorConfigSnapshot = {
 };
 
 const defaultUiSettings: OpenCreatorUiSettings = {
-  language: 'system',
+  language: 'en-US',
   colorMode: 'dark',
   accentColor: 'red',
   customAccentColor: '#3b82f6',

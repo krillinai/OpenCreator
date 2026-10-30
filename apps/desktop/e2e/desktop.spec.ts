@@ -477,6 +477,68 @@ test('@package-smoke 全新账号启动时引导配置 Agent，跳过后可重�
   }
 });
 
+test('@package-smoke first run defaults to English and switches language across setup and settings', async ({}, testInfo) => {
+  const fixture = await launchPackagedDesktop('success', {
+    signedOut: true,
+    uiLanguage: null,
+    browserLanguage: 'zh-CN',
+    gatewayOrigin: 'http://127.0.0.1:9'
+  });
+  try {
+    await fixture.page.waitForURL(url => url.protocol === 'opencreator-app:' && url.hostname === 'app');
+    await expect.poll(async () => (await fixture.page.evaluate(() => window.opencreatorDesktop?.readBootstrapState()))?.phase).toBe('ready');
+    await expect(fixture.page.locator('html')).toHaveAttribute('lang', 'en-US');
+    await expect(fixture.page.getByRole('region', { name: 'Get started with Agent' })).toBeVisible();
+    await expect(fixture.page.getByRole('button', { name: 'Sign-in mode' })).toBeVisible();
+    await expect(fixture.page.getByRole('button', { name: 'Local mode' })).toBeVisible();
+    const englishSelector = fixture.page.getByRole('combobox', { name: 'Display language' });
+    await expect(englishSelector).toHaveValue('English');
+    await expect(englishSelector).toHaveAttribute('data-value', 'en-US');
+    await expect.poll(async () => (await runtimeRequest<{ settings: { language: string } }>(fixture.page, 'GET', '/settings/ui')).body.settings.language).toBe('en-US');
+    await fixture.page.screenshot({ path: testInfo.outputPath('first-run-english.png') });
+
+    await englishSelector.click();
+    await fixture.page.locator('[role="option"][data-value="zh-CN"]').click();
+    await expect(fixture.page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+    await expect(fixture.page.getByRole('button', { name: '登录模式' })).toBeVisible();
+    await expect(fixture.page.getByRole('button', { name: '本地模式', exact: true })).toBeVisible();
+    const chineseSelector = fixture.page.getByRole('combobox', { name: '显示语言' });
+    await expect(chineseSelector).toHaveValue('简体中文 · Chinese (Simplified)');
+    await fixture.page.screenshot({ path: testInfo.outputPath('first-run-chinese.png') });
+    const originalViewport = await fixture.page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    await fixture.page.setViewportSize({ width: 375, height: 812 });
+    await expect(chineseSelector).toBeVisible();
+    expect(await chineseSelector.evaluate(element => {
+      const input = element as HTMLInputElement;
+      const style = getComputedStyle(input);
+      const canvas = document.createElement('canvas').getContext('2d');
+      if (canvas === null) return false;
+      canvas.font = style.font;
+      return canvas.measureText(input.value).width <= input.clientWidth
+        - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    })).toBe(true);
+    expect(await fixture.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await fixture.page.screenshot({ path: testInfo.outputPath('first-run-chinese-narrow.png') });
+    await fixture.page.setViewportSize(originalViewport);
+    await expect.poll(async () => (await runtimeRequest<{ settings: { language: string } }>(fixture.page, 'GET', '/settings/ui')).body.settings.language).toBe('zh-CN');
+
+    await chineseSelector.click();
+    await fixture.page.locator('[role="option"][data-value="en-US"]').click();
+    await expect(fixture.page.locator('html')).toHaveAttribute('lang', 'en-US');
+    await expect.poll(async () => (await runtimeRequest<{ settings: { language: string } }>(fixture.page, 'GET', '/settings/ui')).body.settings.language).toBe('en-US');
+    await fixture.page.getByRole('button', { name: 'Sign-in mode' }).click();
+    await expect(fixture.page.getByRole('button', { name: 'Sign in to OpenCreator' })).toBeVisible();
+    await fixture.page.getByRole('button', { name: 'Back' }).click();
+    await fixture.page.getByRole('button', { name: 'Local mode' }).click();
+    await expect(fixture.page.getByRole('combobox', { name: 'Provider' })).toBeVisible();
+    await fixture.page.getByRole('button', { name: 'Continue locally and set up later' }).click();
+    await fixture.page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(fixture.page.getByRole('combobox', { name: 'Display language' })).toHaveValue('English');
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
 test('@package-smoke 已有 API 凭据时仍显示复用确认和手动填写入口', async () => {
   const fixture = await launchPackagedDesktop('success');
   try {
@@ -1863,6 +1925,8 @@ async function launchPackagedDesktop(
     gatewayCredentials?: GatewayCredentials;
     gatewaySelectedModels?: Record<string, string>;
     proxy?: string;
+    uiLanguage?: 'zh-CN' | null;
+    browserLanguage?: string;
   } = {}
 ): Promise<DesktopFixture> {
   const root = mkdtempSync(join(tmpdir(), 'opencreator-desktop-e2e-'));
@@ -1910,7 +1974,8 @@ async function launchPackagedDesktop(
     writeOpenCreatorConfig(
       join(root, '.opencreator'),
       join(binDir, process.platform === 'win32' ? 'codex.exe' : 'codex'),
-      options.runtimeMode ?? 'external'
+      options.runtimeMode ?? 'external',
+      options.uiLanguage === undefined ? 'zh-CN' : options.uiLanguage
     );
   }
   if (options.proxy) {
@@ -1939,7 +2004,8 @@ async function launchPackagedDesktop(
     executablePath: packagedExecutable(desktopDir),
     args: [
       `--user-data-dir=${userData}`,
-      '--disable-gpu'
+      '--disable-gpu',
+      ...(options.browserLanguage ? [`--lang=${options.browserLanguage}`] : [])
     ],
     env: {
       ...withoutElectronRunAsNode(process.env),
@@ -1982,7 +2048,8 @@ async function launchPackagedDesktop(
 function writeOpenCreatorConfig(
   productHome: string,
   codexBin: string,
-  runtimeMode: 'bundled' | 'external'
+  runtimeMode: 'bundled' | 'external',
+  uiLanguage: 'zh-CN' | null
 ): void {
   mkdirSync(productHome, { recursive: true });
   writeFileSync(join(productHome, 'config.toml'), [
@@ -1995,6 +2062,7 @@ function writeOpenCreatorConfig(
     '[runtime]',
     `codex_mode = ${JSON.stringify(runtimeMode)}`,
     `external_codex_bin = ${JSON.stringify(codexBin)}`,
+    ...(uiLanguage === null ? [] : ['', '[ui]', `language = ${JSON.stringify(uiLanguage)}`]),
     ''
   ].join('\n'));
 }
@@ -2064,16 +2132,16 @@ async function waitForRuntimeReady(page: Page, confirmSetup = true): Promise<voi
   })).toBe('ready');
   const confirmed = await page.evaluate(() => window.localStorage.getItem('opencreator.agent-setup-confirmed.v1') !== null);
   if (confirmed) return;
-  const setup = page.getByRole('region', { name: '开始使用 Agent' });
+  const setup = page.getByRole('region', { name: /^(开始使用 Agent|Get started with Agent)$/ });
   await setup.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
   if (!await setup.isVisible()) return;
-  const localMode = page.getByRole('button', { name: '本地模式', exact: true });
+  const localMode = page.getByRole('button', { name: /^(本地模式|Local mode)$/ });
   if (await localMode.isVisible()) await localMode.click();
   if (!confirmSetup) return;
-  const useLocalCodex = page.getByRole('button', { name: '使用本机 Codex，继续' });
+  const useLocalCodex = page.getByRole('button', { name: /^(使用本机 Codex，继续|Use local Codex and continue)$/ });
   if (await useLocalCodex.isVisible()) await useLocalCodex.click();
   await setup.waitFor({ state: 'hidden', timeout: 3_000 }).catch(() => undefined);
-  if (await setup.isVisible()) await page.getByRole('button', { name: '稍后配置，进入本地模式' }).click();
+  if (await setup.isVisible()) await page.getByRole('button', { name: /^(稍后配置，进入本地模式|Continue locally and set up later)$/ }).click();
 }
 
 async function runtimeRequest<T>(

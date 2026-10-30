@@ -322,6 +322,7 @@ export type BuildServerInput = {
   creatorService?: CreatorService;
   creatorPresetRegistry?: CreatorPresetRegistry;
   creatorPresetCatalogRoot?: string;
+  creatorPresetAssetsRoot?: string;
   creatorReferenceImageUploadService?: CreatorReferenceImageUploadService;
   creatorReferenceImageMaxSizeBytes?: number;
   creatorSourceUploadService?: CreatorSourceUploadService;
@@ -646,9 +647,15 @@ export async function buildServer(input: BuildServerInput) {
   const creatorPresetCatalogRoot = resolve(
     input.creatorPresetCatalogRoot ?? resolveCreatorPresetCatalogRoot()
   );
+  const creatorPresetAssetsRoot = resolve(
+    input.creatorPresetAssetsRoot
+      ?? (process.env.OPENCREATOR_PRESET_ASSETS_ROOT?.trim()
+        || join(creatorPresetCatalogRoot, 'assets'))
+  );
   const creatorPresetRegistry = input.creatorPresetRegistry
     ?? await loadCreatorPresetCatalog({
       root: creatorPresetCatalogRoot,
+      assetsRoot: creatorPresetAssetsRoot,
       templates: creatorTemplates,
       verificationCachePath: join(
         dataDir,
@@ -1695,6 +1702,7 @@ export async function buildServer(input: BuildServerInput) {
     stageRunner: creatorStageRunner,
     presets: creatorPresetRegistry,
     presetCatalogRoot: creatorPresetCatalogRoot,
+    presetAssetsRoot: creatorPresetAssetsRoot,
     readServicesConfig: () => creatorServicesConfigStore.read(),
     codexImageRuntime,
     preflight: creatorPreflight,

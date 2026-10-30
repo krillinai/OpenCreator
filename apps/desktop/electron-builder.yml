@@ -71,11 +71,6 @@ afterPack: ./scripts/sign-creator-runtime-after-pack.mjs
 afterSign: ./scripts/notarize-after-sign.mjs
 mac:
   category: public.app-category.developer-tools
-  extendInfo:
-    CFBundleDevelopmentRegion: zh_CN
-    CFBundleLocalizations:
-      - zh_CN
-      - zh-Hans
   target:
     - dmg
     - zip

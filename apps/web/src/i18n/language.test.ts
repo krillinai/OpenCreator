@@ -87,11 +87,17 @@ describe('display language preference', () => {
     }
   });
 
-  it('defaults to the system and ignores invalid stored values', () => {
+  it('defaults to English and ignores invalid stored values', () => {
     expect(readLanguagePreference()).toBe(defaultLanguagePreference);
+    expect(resolveAppLanguage(readLanguagePreference(), ['zh-CN'])).toBe('en-US');
 
     window.localStorage.setItem(languagePreferenceStorageKey, 'xx-XX');
-    expect(readLanguagePreference()).toBe('system');
+    expect(readLanguagePreference()).toBe('en-US');
+  });
+
+  it('keeps an existing system preference working on Chinese systems', () => {
+    writeLanguagePreference('system');
+    expect(resolveAppLanguage(readLanguagePreference(), ['zh-CN'])).toBe('zh-CN');
   });
 
   it('persists explicit choices and applies the resolved document language', () => {

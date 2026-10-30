@@ -2,12 +2,12 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { GatewayAccountState } from '@opencreator/protocol';
-import { LanguageProvider } from '../../i18n/LanguageProvider.js';
+import { LanguageProvider, useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { createLocalizedCopy } from '../../i18n/localized-copy.js';
 import type { GatewayAccountSettingsService, GatewayBillingSummary } from '../../services/gateway-account-service.js';
 import PersonalCenterPage from './PersonalCenterPage.js';
 
-afterEach(() => { cleanup(); sessionStorage.clear(); });
+afterEach(() => { cleanup(); sessionStorage.clear(); localStorage.clear(); });
 const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
 const signedIn: GatewayAccountState = { ...signedOut, source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true } };
 const summary: GatewayBillingSummary = { balance: { availableUnits: '123000000', reservedUnits: '0', periodEnd: null, asOf: '2026-10-05T01:00:00Z' }, subscription: null, billingAvailable: true };
@@ -24,6 +24,24 @@ it.each(['sv-SE', 'ja-JP'] as const)('localizes account actions in %s and keeps 
   expect(screen.getByRole('main', { name: l('个人中心', 'Account') })).toBeVisible();
   expect(screen.getByRole('heading', { name: 'a@example.test' })).toBeVisible();
   expect(screen.getByRole('button', { name: l('返回', 'Back') })).toBeEnabled();
+});
+
+it('switches the complete personal center from Chinese to English', async () => {
+  function SwitchLanguage() {
+    const { setPreference } = useAppLanguage();
+    return <button type="button" onClick={() => setPreference('en-US')}>Switch to English</button>;
+  }
+  render(<LanguageProvider initialPreference="zh-CN"><SwitchLanguage /><PersonalCenterPage service={createService()} accountState={signedIn} onBack={vi.fn()} /></LanguageProvider>);
+  expect(screen.getByRole('main', { name: '个人中心' })).toBeVisible();
+  expect(await screen.findByText('已登录', { exact: true })).toBeVisible();
+  await userEvent.setup().click(screen.getByRole('button', { name: 'Switch to English' }));
+  expect(screen.getByRole('main', { name: 'Account' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Credit balance' })).toBeVisible();
+  expect(screen.getByText('Signed in', { exact: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Buy credits' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Billing and recharge history' })).toBeVisible();
+  expect(screen.queryByText('个人中心')).not.toBeInTheDocument();
+  expect(screen.queryByText('充值积分')).not.toBeInTheDocument();
 });
 
 it('provides a single login action and a credits entry with no fabricated guest balance', async () => {

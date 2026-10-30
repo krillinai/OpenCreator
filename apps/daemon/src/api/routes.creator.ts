@@ -115,6 +115,7 @@ export async function registerCreatorRoutes(
     stageRunner?: Pick<CreatorStageRunner, 'cancel' | 'cancelJob' | 'pauseDownload' | 'resumeDownload'>;
     presets?: CreatorPresetRegistry;
     presetCatalogRoot?: string;
+    presetAssetsRoot?: string;
     readServicesConfig?(): Promise<CreatorServicesConfig>;
     codexImageRuntime?: CodexNativeImageRuntime;
     issueService?: CreatorIssueService;
@@ -259,7 +260,7 @@ export async function registerCreatorRoutes(
     server.get('/creator-presets/:fileName', async (request, reply) => {
     try {
       const { fileName } = request.params as { fileName: string };
-      const file = resolveCreatorPresetAsset(presetCatalogRoot, fileName);
+      const file = resolveCreatorPresetAsset(presetCatalogRoot, fileName, options.presetAssetsRoot);
       const info = await stat(file);
       if (!info.isFile()) throw new Error('Preset asset is not a file');
       const rangeHeader = typeof request.headers.range === 'string'

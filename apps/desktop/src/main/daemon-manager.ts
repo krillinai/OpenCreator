@@ -35,6 +35,7 @@ export type DaemonStartInput = {
   codexCommit: string | null;
   dataDir: string;
   creatorRuntimeRoot?: string;
+  creatorPresetAssetsRoot?: string;
   stickmanRuntimeRoot?: string;
   codexRuntimeRoot?: string;
   codexRuntimeMode?: 'bundled' | 'external';
@@ -329,6 +330,9 @@ export function buildDaemonEnvironment(
     ...(input.creatorRuntimeRoot === undefined
       ? {}
       : { OPENCREATOR_CREATOR_RUNTIME_ROOT: input.creatorRuntimeRoot }),
+    ...(input.creatorPresetAssetsRoot === undefined
+      ? {}
+      : { OPENCREATOR_PRESET_ASSETS_ROOT: input.creatorPresetAssetsRoot }),
     ...(input.stickmanRuntimeRoot === undefined
       ? {}
       : { OPENCREATOR_STICKMAN_RUNTIME_ROOT: input.stickmanRuntimeRoot }),

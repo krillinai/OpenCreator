@@ -29,7 +29,7 @@ function fixture() {
     logger: { info: vi.fn(), error: vi.fn() } as unknown as DesktopLogger,
     settings: { read: () => ({}), update: vi.fn() } as unknown as SettingsStore,
     daemonEntryPath: '/test/daemon', appHome: '/test', dataDir: '/test/data',
-    codexRuntimeRoot: '/test/codex', creatorRuntimeRoot: '/test/creator', stickmanRuntimeRoot: '/test/stickman',
+    codexRuntimeRoot: '/test/codex', creatorRuntimeRoot: '/test/creator', creatorPresetAssetsRoot: '/test/web/creator-presets', stickmanRuntimeRoot: '/test/stickman',
     defaultProjectRoot: '/test/projects', development: false, automaticRestartDelays: [10, 20, 30]
   });
   controller.on('ready', () => controller.markWorkspaceReady());
@@ -42,6 +42,9 @@ describe('Desktop Runtime recovery', () => {
     vi.useFakeTimers();
     const input = fixture();
     await input.controller.start();
+    expect(input.daemon.start).toHaveBeenCalledWith(expect.objectContaining({
+      creatorPresetAssetsRoot: '/test/web/creator-presets'
+    }));
     for (const delay of [10, 20, 30]) {
       input.crash();
       await vi.advanceTimersByTimeAsync(delay - 1);

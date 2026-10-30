@@ -188,6 +188,7 @@ describe('App', () => {
 
   it.each([['ready', 'browser'], ['blocked', 'browser'], ['loading', 'browser'], ['blocked', 'desktop']] as const)('enters the application after gateway sign-in with %s activation in %s and never asks for provider credentials', async (activationState, hostKind) => {
     window.localStorage.clear();
+    window.localStorage.setItem('opencreator.preferences.language', 'zh-CN');
     writeCachedModelCatalog({ models: [{ ...createCodexModelListResponse().models[0]!, id: 'personal-model', model: 'personal-model', displayName: 'Personal cached model', isDefault: true }] });
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
@@ -245,6 +246,7 @@ describe('App', () => {
 
   it('asks to confirm an existing ChatGPT login on first run, then remembers that choice while it remains valid', async () => {
     window.localStorage.clear();
+    window.localStorage.setItem('opencreator.preferences.language', 'zh-CN');
     const user = userEvent.setup();
     let signedIn = true;
     const hostBridge = createHostBridge();

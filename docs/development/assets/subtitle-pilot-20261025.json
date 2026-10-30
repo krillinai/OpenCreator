@@ -1,0 +1,576 @@
+[
+  {
+    "run": "after-pilot-r2",
+    "mode": "full-pilot",
+    "status": "degraded",
+    "requests": 683,
+    "tokens": 625150,
+    "elapsed_seconds": 2574.847686208,
+    "source_language": "en",
+    "input_sha256": "6898dea48ff3666855f3ae58d04bd09b2779fba9cf9f8b6410d2d98efb9bbfa5",
+    "source_revision": "a9488a14e79d5b2c0485f976777fb45be0f77c3d-worktree",
+    "units": 288,
+    "degraded_segmentation": 2,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 696,
+    "approximate": 30,
+    "stages": {
+      "Task: translation_source_index_segmentation": 123,
+      "任务：translation_context": 6,
+      "任务：translation_context_summary": 1,
+      "任务：translation_content": 45,
+      "任务：translation_revision": 49,
+      "任务：translation_revision_verify": 38,
+      "Task: translation_frozen_layout_v10": 249,
+      "任务：translation_layout_review": 172
+    },
+    "service_errors": 1,
+    "budget_exhausted": false,
+    "max_request_bytes": 9474,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "layout-replay-r4",
+    "mode": "frozen-content-selected-layout-replay",
+    "status": "degraded",
+    "requests": 18,
+    "tokens": 11146,
+    "elapsed_seconds": 59.459790833,
+    "source_language": "en",
+    "input_sha256": null,
+    "source_revision": "a9488a14-worktree-sha256:d1e00338c88bd13c6940bd14f22abea4be1fb4feebbf2987b92c85d24d2bcbde",
+    "units": 288,
+    "degraded_segmentation": 2,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "frozen_content_unchanged",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 700,
+    "approximate": 24,
+    "stages": {
+      "Task: translation_frozen_layout_v10": 10,
+      "Task: translation_layout_review": 8
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 2655,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "segmentation-r3",
+    "mode": "segmentation-only-cold-requests",
+    "status": "structurally_valid_unrated",
+    "requests": 31,
+    "tokens": 91224,
+    "elapsed_seconds": 102.554566083,
+    "source_language": "en",
+    "input_sha256": null,
+    "source_revision": "a9488a14-worktree-sha256:9e9592167df8f126b7a32ebcb5c5f20036330f6fdafc0048edc7c632e6fe44d0",
+    "units": 189,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget"
+    ],
+    "stages": {
+      "Task: translation_source_index_segmentation": 31
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 7062,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "不适用：只分段",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "segmentation-r4",
+    "mode": "segmentation-only-cold-requests",
+    "status": "structurally_valid_unrated",
+    "requests": 39,
+    "tokens": 152061,
+    "elapsed_seconds": 212.709777417,
+    "source_language": "en",
+    "input_sha256": null,
+    "source_revision": "a9488a14-worktree-sha256:b5a85972781859b0f9e04299aafe66593b7b1d64b96f9b2086ff0976a02de54e",
+    "units": 104,
+    "degraded_segmentation": 22,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget"
+    ],
+    "stages": {
+      "Task: translation_source_index_segmentation": 39
+    },
+    "service_errors": 0,
+    "budget_exhausted": true,
+    "max_request_bytes": 12890,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "不适用：只分段",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "segmentation-r5",
+    "mode": "segmentation-only-cold-requests",
+    "status": "degraded_unrated",
+    "requests": 31,
+    "tokens": 100743,
+    "elapsed_seconds": 161.980978,
+    "source_language": "en",
+    "input_sha256": null,
+    "source_revision": "a9488a14-worktree-sha256:10a3e5cdcce36aaa66a2facb9dd1506d78504de8c06bf0bbfb0e4cd730a1b4bb",
+    "units": 162,
+    "degraded_segmentation": 4,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget"
+    ],
+    "stages": {
+      "Task: translation_source_index_segmentation": 31
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 12608,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "不适用：只分段",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "segmentation-r6",
+    "mode": "segmentation-only-cold-requests",
+    "status": "structurally_valid_unrated",
+    "requests": 21,
+    "tokens": 63563,
+    "elapsed_seconds": 83.360764083,
+    "source_language": "en",
+    "input_sha256": null,
+    "source_revision": "a9488a14-worktree-sha256:f6475041d73861f80be4bda21d15d91065816b7fa43ff19636a07788b3b9c97d",
+    "units": 286,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget"
+    ],
+    "stages": {
+      "Task: translation_source_index_segmentation": 21
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 7093,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "不适用：只分段",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "multilingual-zh-en",
+    "mode": "full-pilot",
+    "status": "qualified",
+    "requests": 10,
+    "tokens": 8368,
+    "elapsed_seconds": 30.164396375,
+    "source_language": "zh_cn",
+    "input_sha256": "fff1465b6e83cf5928135ce3f90ebfffab358bb826406f3e20370cf0583989fc",
+    "source_revision": "worktree",
+    "units": 2,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 8,
+    "approximate": 0,
+    "stages": {
+      "Task: translation_source_index_segmentation": 2,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1,
+      "Task: translation_frozen_layout_v10": 3,
+      "任务：translation_layout_review": 2
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 3736,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "multilingual-ja-en",
+    "mode": "full-pilot",
+    "status": "qualified",
+    "requests": 9,
+    "tokens": 7029,
+    "elapsed_seconds": 26.840576334,
+    "source_language": "ja",
+    "input_sha256": "0a0b821ffb71183e3f0fa4d5fc6123c82eda8c1e0b50e51f8a002415f443c0dc",
+    "source_revision": "worktree",
+    "units": 2,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 7,
+    "approximate": 0,
+    "stages": {
+      "Task: translation_source_index_segmentation": 2,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1,
+      "Task: translation_frozen_layout_v10": 2,
+      "任务：translation_layout_review": 2
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 3527,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "multilingual-de-en",
+    "mode": "full-pilot",
+    "status": "qualified",
+    "requests": 8,
+    "tokens": 5968,
+    "elapsed_seconds": 22.483195417,
+    "source_language": "de",
+    "input_sha256": "a78e285dddbc19b2f8cbea9a189791e8ee37f3dad77d66eb9fe6d8695b4fe1de",
+    "source_revision": "worktree",
+    "units": 2,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 11,
+    "approximate": 0,
+    "stages": {
+      "Task: translation_source_index_segmentation": 1,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1,
+      "Task: translation_frozen_layout_v10": 2,
+      "任务：translation_layout_review": 2
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 3608,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "multilingual-ar-en",
+    "mode": "full-pilot",
+    "status": "qualified",
+    "requests": 8,
+    "tokens": 5938,
+    "elapsed_seconds": 23.523504667,
+    "source_language": "ar",
+    "input_sha256": "2127a390c97233914d1885525dadf147ab0cc6566b8791fdd08168b3cc5c2ee9",
+    "source_revision": "worktree",
+    "units": 2,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 9,
+    "approximate": 0,
+    "stages": {
+      "Task: translation_source_index_segmentation": 1,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1,
+      "Task: translation_frozen_layout_v10": 2,
+      "任务：translation_layout_review": 2
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 3640,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "multilingual-th-en",
+    "mode": "full-pilot",
+    "status": "qualified",
+    "requests": 6,
+    "tokens": 5764,
+    "elapsed_seconds": 16.6252465,
+    "source_language": "th",
+    "input_sha256": "a008ae5370d7a45429eda2a6c772f081881b040493945ad2f1a25e7a21a4a188",
+    "source_revision": "worktree",
+    "units": 9,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 9,
+    "approximate": 0,
+    "stages": {
+      "Task: translation_source_index_segmentation": 3,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 4498,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "independent-2-zh-r5",
+    "mode": "full-pilot",
+    "status": "degraded",
+    "requests": 9,
+    "tokens": 5997,
+    "elapsed_seconds": 27.404824417,
+    "source_language": "zh_cn",
+    "input_sha256": "8e998188cf5523d433c17dbc234b4e96d39c79fc5de9fc6c4607e49d83873c7c",
+    "source_revision": "a9488a14-worktree-sha256:f6475041d73861f80be4bda21d15d91065816b7fa43ff19636a07788b3b9c97d",
+    "units": 5,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 6,
+    "approximate": 1,
+    "stages": {
+      "Task: translation_source_index_segmentation": 1,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1,
+      "Task: translation_frozen_layout_v10": 2,
+      "Task: translation_layout_review": 2,
+      "Task: translation_display_compact": 1
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 3590,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "independent-2-ja-r5",
+    "mode": "full-pilot",
+    "status": "qualified",
+    "requests": 4,
+    "tokens": 3695,
+    "elapsed_seconds": 11.855661792,
+    "source_language": "ja",
+    "input_sha256": "76061182f991e7b4d5ce0051bf344114c02869195c81bc35251cc0eb77b3b408",
+    "source_revision": "a9488a14-worktree-sha256:f6475041d73861f80be4bda21d15d91065816b7fa43ff19636a07788b3b9c97d",
+    "units": 5,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 5,
+    "approximate": 0,
+    "stages": {
+      "Task: translation_source_index_segmentation": 1,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 3985,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "independent-2-de-r5",
+    "mode": "full-pilot",
+    "status": "qualified",
+    "requests": 8,
+    "tokens": 6023,
+    "elapsed_seconds": 27.180392708,
+    "source_language": "de",
+    "input_sha256": "ebaf1f69a1066c283fb0b6d817bbb64bb183fd87daecf15220b16f599c45f47f",
+    "source_revision": "a9488a14-worktree-sha256:f6475041d73861f80be4bda21d15d91065816b7fa43ff19636a07788b3b9c97d",
+    "units": 2,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 6,
+    "approximate": 0,
+    "stages": {
+      "Task: translation_source_index_segmentation": 1,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1,
+      "Task: translation_frozen_layout_v10": 2,
+      "Task: translation_layout_review": 2
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 4451,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "independent-2-ar-r5",
+    "mode": "full-pilot",
+    "status": "qualified",
+    "requests": 6,
+    "tokens": 4768,
+    "elapsed_seconds": 18.98629375,
+    "source_language": "ar",
+    "input_sha256": "a500d8d915300842ae903f04dcadc3972655c5128801160c06bc17502a25c549",
+    "source_revision": "a9488a14-worktree-sha256:f6475041d73861f80be4bda21d15d91065816b7fa43ff19636a07788b3b9c97d",
+    "units": 3,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 5,
+    "approximate": 0,
+    "stages": {
+      "Task: translation_source_index_segmentation": 1,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1,
+      "Task: translation_frozen_layout_v10": 1,
+      "Task: translation_layout_review": 1
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 4468,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  },
+  {
+    "run": "independent-2-th-r5",
+    "mode": "full-pilot",
+    "status": "qualified",
+    "requests": 4,
+    "tokens": 4224,
+    "elapsed_seconds": 11.731948875,
+    "source_language": "th",
+    "input_sha256": "c4a527cabce9eb152b4ef2b4c85e6f25ab0abd132c20558bedd919a0b423cb3b",
+    "source_revision": "a9488a14-worktree-sha256:f6475041d73861f80be4bda21d15d91065816b7fa43ff19636a07788b3b9c97d",
+    "units": 8,
+    "degraded_segmentation": 0,
+    "checks": [
+      "continuous_source_token_coverage",
+      "source_unit_byte_budget",
+      "display_compact_coverage",
+      "export_roles_1_1_2_lines",
+      "identical_export_timestamps",
+      "positive_nonoverlapping_times"
+    ],
+    "cues": 8,
+    "approximate": 0,
+    "stages": {
+      "Task: translation_source_index_segmentation": 1,
+      "任务：translation_context": 1,
+      "任务：translation_content": 1,
+      "任务：translation_revision": 1
+    },
+    "service_errors": 0,
+    "budget_exhausted": false,
+    "max_request_bytes": 4141,
+    "actual_models": [
+      "deepseek-v4-pro-0813"
+    ],
+    "width_check": "由 Go 执行器校验；本工具不独立测宽",
+    "semantic_rating": "未进行人工或母语评阅"
+  }
+]
