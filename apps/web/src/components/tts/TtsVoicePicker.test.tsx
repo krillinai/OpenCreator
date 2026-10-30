@@ -357,7 +357,7 @@ describe('TtsVoicePicker', () => {
     await waitFor(() => expect(tts.getTtsVoices).toHaveBeenCalledTimes(2));
   });
 
-  it('accepts a cloned Volcengine speaker ID', async () => {
+  it('accepts a cloned Volcengine speaker ID after enabling custom voice mode', async () => {
     const onChange = vi.fn();
     const tts = createService();
 
@@ -372,6 +372,8 @@ describe('TtsVoicePicker', () => {
       />
     );
 
+    expect(screen.queryByLabelText('克隆 / 自定义 Speaker ID')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: '使用克隆或自定义音色' }));
     const input = await screen.findByLabelText('克隆 / 自定义 Speaker ID');
     changeControl(input, { target: { value: 'S_cloned_speaker' } });
     fireEvent.blur(input);
@@ -380,6 +382,39 @@ describe('TtsVoicePicker', () => {
       id: 'S_cloned_speaker',
       kind: 'custom'
     }));
+  });
+
+  it('restores the official voice and preserves the custom draft when toggling modes', async () => {
+    const onChange = vi.fn();
+    const tts = createService();
+    const props = {
+      id: 'voice',
+      provider: 'volcengine' as const,
+      model: 'seed-tts-2.0',
+      service: tts.service,
+      onChange
+    };
+    const view = render(<TtsVoicePicker {...props} value="Cherry" />);
+    await screen.findByRole('combobox', { name: '默认音色' });
+    await waitFor(() => expect(tts.getTtsVoices).toHaveBeenCalled());
+
+    const toggle = screen.getByRole('checkbox', { name: '使用克隆或自定义音色' });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    const input = screen.getByLabelText('克隆 / 自定义 Speaker ID');
+    changeControl(input, { target: { value: 'S_cloned_speaker' } });
+    fireEvent.blur(input);
+    view.rerender(<TtsVoicePicker {...props} value="S_cloned_speaker" />);
+
+    expect(toggle).toBeChecked();
+    expect(input).toHaveValue('S_cloned_speaker');
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenLastCalledWith('Cherry', expect.objectContaining({ id: 'Cherry' }));
+    expect(screen.queryByLabelText('克隆 / 自定义 Speaker ID')).not.toBeInTheDocument();
+
+    view.rerender(<TtsVoicePicker {...props} value="Cherry" />);
+    fireEvent.click(toggle);
+    expect(screen.getByLabelText('克隆 / 自定义 Speaker ID')).toHaveValue('S_cloned_speaker');
   });
 
   it('filters the library by search, metadata and category, and resets an empty result', async () => {

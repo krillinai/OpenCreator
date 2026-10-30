@@ -415,7 +415,8 @@ describe('CreatorServicesSettingsView', () => {
       .toHaveTextContent('豆包语音 2.0（推荐音质）');
     expect(screen.getByLabelText('API Key')).toBeInTheDocument();
     expect(screen.queryByLabelText('App ID')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('克隆 / 自定义 Speaker ID')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '使用克隆或自定义音色' })).not.toBeChecked();
+    expect(screen.queryByLabelText('克隆 / 自定义 Speaker ID')).not.toBeInTheDocument();
     expect(screen.getByText(/豆包语音 2.0 使用 API Key/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('combobox', { name: '服务商' }));
@@ -440,6 +441,28 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.getByLabelText('App ID')).toBeInTheDocument();
     expect(screen.getByLabelText('Access Token')).toBeInTheDocument();
     expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+  });
+
+  it('clears a stored TTS App ID when switching to the API Key credential mode', async () => {
+    const user = userEvent.setup();
+    const service = createService(['tts.volcengine.appId', 'tts.volcengine.accessToken']);
+    render(<CreatorServicesSettingsView connected service={service} modelService={createModelService()} initialSection="tts" />);
+
+    await user.click(await screen.findByRole('combobox', { name: '服务商' }));
+    await user.click(screen.getByRole('option', { name: '火山引擎' }));
+    const legacyToggle = screen.getByRole('switch', { name: /使用旧版凭据/ });
+    expect(legacyToggle).toBeChecked();
+    expect(screen.getByLabelText('App ID')).toBeInTheDocument();
+    expect(screen.getByLabelText('Access Token')).toBeInTheDocument();
+
+    await user.click(legacyToggle);
+    expect(screen.queryByLabelText('App ID')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('API Key'), 'new-api-key');
+    await user.click(screen.getByRole('button', { name: '保存配置' }));
+
+    await waitFor(() => expect(service.saveConfig).toHaveBeenCalledOnce());
+    expect(vi.mocked(service.saveConfig).mock.calls[0]?.[0].tts.volcengine.appId).toBe('');
+    expect(vi.mocked(service.saveConfig).mock.calls[0]?.[1]).toEqual(['tts.volcengine.appId']);
   });
 
   it('confirms before saving a newly selected local Whisper provider', async () => {

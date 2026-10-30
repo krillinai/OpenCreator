@@ -278,6 +278,11 @@ export function volcengineTtsUsesApiKey(model: string): boolean {
   return model.trim().toLowerCase().startsWith('seed-');
 }
 
+export function volcengineTtsCredentialsReady(config: VolcengineTtsConfig): boolean {
+  return config.accessToken.trim().length > 0
+    && (volcengineTtsUsesApiKey(config.model) || config.appId.trim().length > 0);
+}
+
 /**
  * Newer Doubao Voice consoles issue a single API Key for file ASR; older ones
  * issue an App ID plus Access Token pair. Both live in `accessToken`, so a

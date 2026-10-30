@@ -1746,7 +1746,7 @@ test('本地 Whisper 在 Browser/Desktop Bridge 下遵守相同 Runtime 能力�
   }
 });
 
-test('火山引擎语音识别设置在 Browser/Desktop Bridge 下保持相同请求和持久状态', async ({
+test('火山引擎语音设置在 Browser/Desktop Bridge 下保持相同请求和持久状态', async ({
   browser,
   runtime
 }, testInfo) => {
@@ -1814,6 +1814,34 @@ test('火山引擎语音识别设置在 Browser/Desktop Bridge 下保持相同�
       );
       expect(apiKeySaved.configuredCredentials).not.toContain('transcription.volcengine.appId');
       expect(apiKeySaved.configuredCredentials).toContain('transcription.volcengine.accessToken');
+
+      await page.getByRole('tab', { name: '配音服务' }).click();
+      await page.getByRole('combobox', { name: '服务商' }).click();
+      await page.getByRole('option', { name: '火山引擎' }).click();
+      await page.getByRole('switch', { name: /使用旧版凭据/ }).click();
+      await page.getByLabel('App ID', { exact: true }).fill('parity-volcengine-tts-app');
+      await page.getByLabel('Access Token', { exact: true }).fill('parity-volcengine-tts-token');
+      const legacyTtsSaveResponse = page.waitForResponse(response =>
+        response.request().method() === 'PATCH'
+        && new URL(response.url()).pathname.endsWith('/creator-services/config')
+      );
+      await page.getByRole('button', { name: '保存配置' }).click();
+      expect((await legacyTtsSaveResponse).ok()).toBe(true);
+
+      await page.getByRole('switch', { name: /使用旧版凭据/ }).click();
+      await expect(page.getByLabel('App ID', { exact: true })).toHaveCount(0);
+      await page.getByLabel('API Key', { exact: true }).fill('parity-volcengine-tts-api-key');
+      const apiKeyTtsSaveResponse = page.waitForResponse(response =>
+        response.request().method() === 'PATCH'
+        && new URL(response.url()).pathname.endsWith('/creator-services/config')
+      );
+      await page.getByRole('button', { name: '保存配置' }).click();
+      expect((await apiKeyTtsSaveResponse).ok()).toBe(true);
+      const ttsApiKeySaved = await runtime.api<{ configuredCredentials: string[] }>(
+        'GET', '/creator-services/config'
+      );
+      expect(ttsApiKeySaved.configuredCredentials).not.toContain('tts.volcengine.appId');
+      expect(ttsApiKeySaved.configuredCredentials).toContain('tts.volcengine.accessToken');
     } finally {
       await context.close();
     }

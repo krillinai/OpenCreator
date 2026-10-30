@@ -481,6 +481,7 @@ export function CreatorServicesSettingsView(props: {
               update={updateConfig}
               configuredCredentials={configuredCredentials}
               service={props.service}
+              onCredentialClearChange={setCredentialCleared}
             />
           ) : null}
           {activeSection === 'image' ? (
@@ -948,7 +949,9 @@ function TranscriptionModeField(props: {
   );
 }
 
-function TtsSettings(props: SettingsGroupProps) {
+function TtsSettings(props: SettingsGroupProps & {
+  onCredentialClearChange(field: CreatorServicesCredentialField, cleared: boolean): void;
+}) {
   const l = useLocalizedCopy();
   const provider = props.config.tts.provider;
   return (
@@ -1026,6 +1029,10 @@ function TtsSettings(props: SettingsGroupProps) {
           <VolcengineTtsFields
             configuredCredentials={props.configuredCredentials}
             value={props.config.tts.volcengine}
+            onAppIdClearChange={cleared => props.onCredentialClearChange(
+              'tts.volcengine.appId',
+              cleared
+            )}
             onChange={value => props.update(config => {
               const previousModel = config.tts.volcengine.model;
               config.tts.volcengine = { ...config.tts.volcengine, ...value };
@@ -1315,10 +1322,15 @@ function VolcengineAsrFields(props: {
 function VolcengineTtsFields(props: {
   configuredCredentials: ReadonlySet<CreatorServicesCredentialField>;
   value: VolcengineTtsConfig;
+  onAppIdClearChange(cleared: boolean): void;
   onChange(value: VolcengineTtsConfig): void;
 }) {
   const l = useLocalizedCopy();
-  const usesApiKey = volcengineTtsUsesApiKey(props.value.model);
+  const supportsApiKey = volcengineTtsUsesApiKey(props.value.model);
+  const hasAppId = props.value.appId.trim().length > 0
+    || props.configuredCredentials.has('tts.volcengine.appId');
+  const [useLegacy, setUseLegacy] = useState(hasAppId);
+  const apiKeyActive = supportsApiKey && (!useLegacy || !hasAppId);
   return (
     <>
       <TextField
@@ -1329,7 +1341,22 @@ function VolcengineTtsFields(props: {
         onChange={baseUrl => props.onChange({ ...props.value, baseUrl })}
         wide
       />
-      {!usesApiKey ? (
+      {supportsApiKey ? (
+        <ToggleField
+          label={l('使用旧版凭据', 'Use legacy credentials')}
+          description={l(
+            '关闭时使用新版控制台的单个 API Key（X-Api-Key）；开启后填写旧版控制台的 App ID 与 Access Token。',
+            'Off uses the newer-console single API Key (X-Api-Key). On switches to the legacy console App ID and Access Token pair.'
+          )}
+          checked={useLegacy}
+          onChange={next => {
+            setUseLegacy(next);
+            props.onAppIdClearChange(!next);
+            if (!next) props.onChange({ ...props.value, appId: '' });
+          }}
+        />
+      ) : null}
+      {!supportsApiKey || useLegacy ? (
         <PasswordField
           id="tts-volcengine-app-id"
           label="App ID"
@@ -1340,11 +1367,19 @@ function VolcengineTtsFields(props: {
       ) : null}
       <PasswordField
         id="tts-volcengine-access-token"
-        label={usesApiKey ? 'API Key' : 'Access Token'}
+        label={apiKeyActive ? 'API Key' : 'Access Token'}
         value={props.value.accessToken}
         configured={props.configuredCredentials.has('tts.volcengine.accessToken')}
         onChange={accessToken => props.onChange({ ...props.value, accessToken })}
       />
+      {supportsApiKey && useLegacy && !hasAppId ? (
+        <p className="creator-services-inline-note">
+          {l(
+            '旧版模式需要 App ID 才会按旧版协议发送；App ID 留空时该凭据仍会作为新版 API Key 以 X-Api-Key 发送。',
+            'Legacy mode only takes effect once an App ID is set; while it is empty the credential is still sent as a newer-console API Key via X-Api-Key.'
+          )}
+        </p>
+      ) : null}
       <SelectField
         id="tts-volcengine-cluster"
         label={l('接口 / 集群', 'API / cluster')}

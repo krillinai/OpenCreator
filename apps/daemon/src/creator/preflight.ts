@@ -12,7 +12,7 @@ import type {
 import {
   creatorPreflightFailure,
   imagePromptRequiresReference,
-  volcengineTtsUsesApiKey,
+  volcengineTtsCredentialsReady,
   volcengineAsrCredentialsReady
 } from '@opencreator/protocol';
 import { access, mkdir, readFile } from 'node:fs/promises';
@@ -535,13 +535,7 @@ function checkOpenAi(
 
 function checkTts(config: CreatorServicesConfig, provider: Exclude<CreatorServicesConfig['tts']['provider'], 'edge-tts'>, add: Parameters<typeof checkProviderConfig>[5]) {
   const credentialsReady = provider === 'volcengine'
-    ? Boolean(
-        config.tts.volcengine.accessToken.trim()
-        && (
-          volcengineTtsUsesApiKey(config.tts.volcengine.model)
-          || config.tts.volcengine.appId.trim()
-        )
-      )
+    ? volcengineTtsCredentialsReady(config.tts.volcengine)
     : Boolean(config.tts[provider].apiKey.trim());
   const value = config.tts[provider];
   if (!value.baseUrl.trim() || !value.model.trim() || !credentialsReady) add('blocked', { id: 'tts', title: 'Speech service configuration incomplete', message: `Complete the Base URL, model, and credentials for ${provider}.`, executionMode: 'remote' }, { label: 'Open AI service settings', deepLink: '#/settings?tab=ai-services&section=tts' });

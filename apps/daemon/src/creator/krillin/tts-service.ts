@@ -7,7 +7,11 @@ import type {
   PublicErrorFacts,
   RuntimeErrorCode
 } from '@opencreator/protocol';
-import { gatewayDefaultVoiceId, volcengineTtsUsesApiKey } from '@opencreator/protocol';
+import {
+  gatewayDefaultVoiceId,
+  volcengineTtsCredentialsReady,
+  volcengineTtsUsesApiKey
+} from '@opencreator/protocol';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -327,9 +331,7 @@ function ensureCredentials(
 ): void {
   if (provider === 'volcengine') {
     const value = config.tts.volcengine;
-    if (value.accessToken.trim() && (
-      volcengineTtsUsesApiKey(value.model) || value.appId.trim()
-    )) return;
+    if (volcengineTtsCredentialsReady(value)) return;
     throw new KrillinTtsServiceError(
       'creator_tts_config_missing',
       volcengineTtsUsesApiKey(value.model)

@@ -45,7 +45,10 @@ export function TtsVoicePicker(props: {
   const [playing, setPlaying] = useState(false);
   const [previewVoiceId, setPreviewVoiceId] = useState('');
   const [reloadToken, setReloadToken] = useState(0);
-  const [customId, setCustomId] = useState(props.value);
+  const [customVoiceEnabled, setCustomVoiceEnabled] = useState(props.value.startsWith('S_'));
+  const [customId, setCustomId] = useState(props.value.startsWith('S_') ? props.value : '');
+  const customDraftRef = useRef(customId);
+  const officialVoiceRef = useRef('');
   const [previewLanguageOverride, setPreviewLanguageOverride] = useState('');
   const [sampleLanguage, setSampleLanguage] = useState('');
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -110,8 +113,19 @@ export function TtsVoicePicker(props: {
   }, []);
 
   useEffect(() => {
-    setCustomId(props.value);
-  }, [props.value]);
+    if (!allowCustomVoice) return;
+    const catalogVoice = voices.find(voice => voice.id === props.value);
+    if (catalogVoice) {
+      officialVoiceRef.current = catalogVoice.id;
+      setCustomVoiceEnabled(false);
+      return;
+    }
+    if (props.value && (props.value.startsWith('S_') || voices.length > 0)) {
+      setCustomVoiceEnabled(true);
+      setCustomId(props.value);
+      customDraftRef.current = props.value;
+    }
+  }, [allowCustomVoice, props.value, voices]);
 
   const options = useMemo(() => {
     if (!props.value || voices.some(voice => voice.id === props.value)) return voices;
@@ -187,13 +201,29 @@ export function TtsVoicePicker(props: {
   function selectVoice(voiceId: string) {
     stopPreview();
     const voice = options.find(candidate => candidate.id === voiceId);
-    setCustomId(voiceId);
+    officialVoiceRef.current = voiceId;
+    setCustomVoiceEnabled(false);
     if (voiceId !== props.value) props.onChange(voiceId, voice);
+  }
+
+  function toggleCustomVoice(enabled: boolean) {
+    stopPreview();
+    setCustomVoiceEnabled(enabled);
+    if (enabled) {
+      setCustomId(customDraftRef.current);
+      return;
+    }
+    const voiceId = voices.some(voice => voice.id === officialVoiceRef.current)
+      ? officialVoiceRef.current
+      : voices[0]?.id || officialVoiceRef.current;
+    if (!voiceId || voiceId === props.value) return;
+    props.onChange(voiceId, options.find(candidate => candidate.id === voiceId));
   }
 
   function commitCustomVoice(raw: string) {
     const voiceId = raw.trim();
     setCustomId(voiceId);
+    customDraftRef.current = voiceId;
     if (voiceId === props.value) return;
     stopPreview();
     const voice = options.find(candidate => candidate.id === voiceId);
@@ -281,6 +311,17 @@ export function TtsVoicePicker(props: {
 
   const voiceDetails = <>
     {allowCustomVoice ? (
+      <label className="tts-voice-picker-custom-toggle">
+        <input
+          type="checkbox"
+          checked={customVoiceEnabled}
+          disabled={props.disabled || props.provider === 'edge-tts'}
+          onChange={event => toggleCustomVoice(event.target.checked)}
+        />
+        <span>{l('使用克隆或自定义音色', 'Use a cloned or custom voice')}</span>
+      </label>
+    ) : null}
+    {allowCustomVoice && customVoiceEnabled ? (
       <label className="tts-voice-picker-custom" htmlFor={`${props.id}-custom`}>
         <span>{l('克隆 / 自定义 Speaker ID', 'Clone / custom speaker ID')}</span>
         <input
@@ -291,7 +332,10 @@ export function TtsVoicePicker(props: {
           spellCheck={false}
           autoComplete="off"
           disabled={props.disabled || props.provider === 'edge-tts'}
-          onChange={event => setCustomId(event.target.value)}
+          onChange={event => {
+            setCustomId(event.target.value);
+            customDraftRef.current = event.target.value;
+          }}
           onBlur={() => commitCustomVoice(customId)}
           onKeyDown={event => {
             if (event.key === 'Enter') {
@@ -302,7 +346,7 @@ export function TtsVoicePicker(props: {
         />
       </label>
     ) : null}
-    {!selected && allowCustomVoice && !loading ? (
+    {!selected && allowCustomVoice && customVoiceEnabled && !loading ? (
       <small className="tts-voice-picker-meta">
         {l(
           '声音复刻请填写控制台中的 Speaker ID（S_ 开头）。',

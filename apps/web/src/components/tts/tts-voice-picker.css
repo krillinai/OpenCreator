@@ -194,9 +194,26 @@
 }
 
 .tts-voice-picker-custom,
+.tts-voice-picker-custom-toggle,
 .tts-voice-picker-meta,
 .tts-voice-picker-error {
   grid-column: 1 / -1;
+}
+
+.tts-voice-picker-custom-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tts-voice-picker-custom-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .tts-voice-picker-custom {

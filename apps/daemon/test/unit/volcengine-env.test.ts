@@ -64,6 +64,27 @@ describe('volcengine environment overrides', () => {
     expect(result.transcription.provider).toBe('volcengine');
   });
 
+  it('prefers Volcengine TTS with a single API key only for API-key clusters', () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.tts.volcengine.accessToken = 'tts-api-key';
+
+    const result = applyVolcengineEnvironmentOverrides(config, {
+      VOLCENGINE_ACCESS_TOKEN: 'env-access-token'
+    });
+
+    expect(result.tts.provider).toBe('volcengine');
+    expect(result.tts.volcengine.appId).toBe('');
+    expect(result.tts.volcengine.accessToken).toBe('tts-api-key');
+
+    const legacy = createDefaultCreatorServicesConfig();
+    legacy.tts.volcengine.model = 'volcano_tts';
+    legacy.tts.volcengine.accessToken = 'legacy-access-token';
+    const legacyResult = applyVolcengineEnvironmentOverrides(legacy, {
+      VOLCENGINE_ACCESS_TOKEN: 'env-access-token'
+    });
+    expect(legacyResult.tts.provider).toBe('openai');
+  });
+
   it('does not replace saved credentials or a non-default provider', () => {
     const current = createDefaultCreatorServicesConfig();
     current.transcription.provider = 'aliyun';
