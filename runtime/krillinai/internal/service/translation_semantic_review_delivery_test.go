@@ -62,6 +62,11 @@ func runSemanticReviewDelivery(t *testing.T, tc semanticReviewDeliveryCase, rout
 	dir := t.TempDir()
 	translationCalls, reviewCalls := 0, 0
 	completer := semanticReviewTestCompleter(func(ctx context.Context, prompt string) (string, error) {
+		if strings.HasPrefix(prompt, translationTerminologyPrompt) {
+			// Audio translation enables the glossary pass. Keep it out of the
+			// semantic review call budget asserted by this fixture.
+			return `{"terms":[]}`, nil
+		}
 		if strings.HasPrefix(prompt, translationSemanticReviewPrompt) {
 			reviewCalls++
 			if !strings.Contains(prompt, `"target_text":"`+tc.previous+`"`) {

@@ -17,17 +17,26 @@ import (
 )
 
 type Translator struct {
-	chatCompleter            types.ChatCompleter
-	filterNonSemanticFillers bool
-	checkpointDir            string
-	onRecovery               func(string)
-	recoveryDelay            time.Duration
-	onRateLimit              func()
+	chatCompleter             types.ChatCompleter
+	filterNonSemanticFillers  bool
+	terminologyEnabled        bool
+	naturalizeEnabled         bool
+	durationShorteningEnabled bool
+	checkpointDir             string
+	onRecovery                func(string)
+	recoveryDelay             time.Duration
+	onRateLimit               func()
 }
 
 func NewTranslator() *Translator {
 	return &Translator{
-		chatCompleter: openai.NewClient(config.Conf.Llm.BaseUrl, config.Conf.Llm.ApiKey, config.Conf.App.Proxy),
+		chatCompleter:      openai.NewClient(config.Conf.Llm.BaseUrl, config.Conf.Llm.ApiKey, config.Conf.App.Proxy),
+		terminologyEnabled: true,
+		// The paired translation prompt now produces natural subtitle language
+		// directly. Keep the legacy full-document naturalizer opt-in so normal
+		// subtitle jobs do not pay for a second pass over every sentence.
+		naturalizeEnabled:         false,
+		durationShorteningEnabled: true,
 	}
 }
 

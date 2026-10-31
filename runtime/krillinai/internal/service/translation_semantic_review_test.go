@@ -42,6 +42,40 @@ func semanticReviewTestResponse(corrections ...semanticCorrection) string {
 	return string(data)
 }
 
+func TestSemanticReviewRiskOnlySelectsRiskyCues(t *testing.T) {
+	translator := &Translator{}
+	terms := []translationTerm{{Source: "3K", Target: "三公里", Note: "running distance"}}
+	ordinary := pairedSentence{
+		ID: "1", FullSource: "This is a normal sentence.", FullTarget: "这是一句普通的话。",
+		Source: []string{"This is a normal sentence."}, Target: []string{"这是一句普通的话。"},
+	}
+	termPreserved := pairedSentence{
+		ID: "2", FullSource: "This race is 3K.", FullTarget: "这场比赛是三公里。",
+		Source: []string{"This race is 3K."}, Target: []string{"这场比赛是三公里。"},
+	}
+	numberMissing := pairedSentence{
+		ID: "3", FullSource: "This race is 3K.", FullTarget: "这是一场比赛。",
+		Source: []string{"This race is 3K."}, Target: []string{"这是一场比赛。"},
+	}
+	negationMissing := pairedSentence{
+		ID: "4", FullSource: "This will not run.", FullTarget: "这会运行。",
+		Source: []string{"This will not run."}, Target: []string{"这会运行。"},
+	}
+	chineseNumber := pairedSentence{
+		ID: "5", FullSource: "请支付三十五美元，而不是五十美元。", FullTarget: "Please pay 50 dollars.",
+		Source: []string{"请支付三十五美元，而不是五十美元。"}, Target: []string{"Please pay 50 dollars."},
+	}
+	if semanticReviewRisk(translator, ordinary, "en", "zh_cn", 60, terms) {
+		t.Fatal("普通句子不应进入风险审查")
+	}
+	if semanticReviewRisk(translator, termPreserved, "en", "zh_cn", 60, terms) {
+		t.Fatal("已保留术语的句子不应因原文缩写进入风险审查")
+	}
+	if !semanticReviewRisk(translator, numberMissing, "en", "zh_cn", 60, terms) || !semanticReviewRisk(translator, negationMissing, "en", "zh_cn", 60, terms) || !semanticReviewRisk(translator, chineseNumber, "zh_cn", "en", 60, nil) {
+		t.Fatal("数字或否定丢失时必须进入风险审查")
+	}
+}
+
 func TestSemanticReviewCorrectionReachesNativeSRTAndAudioCheckpoint(t *testing.T) {
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })
@@ -51,6 +85,9 @@ func TestSemanticReviewCorrectionReachesNativeSRTAndAudioCheckpoint(t *testing.T
 			dir := t.TempDir()
 			translationCalls, reviewCalls := 0, 0
 			completer := semanticReviewTestCompleter(func(ctx context.Context, prompt string) (string, error) {
+				if strings.HasPrefix(prompt, translationTerminologyPrompt) {
+					return `{"terms":[]}`, nil
+				}
 				if strings.HasPrefix(prompt, translationSemanticReviewPrompt) {
 					reviewCalls++
 					if !strings.Contains(prompt, `"target_text":"她同意了。"`) {
@@ -148,7 +185,7 @@ func TestSemanticReviewFailureKeepsCompletedTranslation(t *testing.T) {
 			translator := &Translator{chatCompleter: semanticReviewTestCompleter(func(ctx context.Context, _ string) (string, error) {
 				calls++
 				deadline, ok := ctx.Deadline()
-				if !ok || time.Until(deadline) > 30*time.Second {
+				if !ok || time.Until(deadline) > semanticReviewTimeout {
 					t.Fatal("审核未设置时间预算")
 				}
 				return tc.response, tc.err

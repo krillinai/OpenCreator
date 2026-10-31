@@ -34,6 +34,7 @@ type pairedSentence struct {
 	Source         []string `json:"source_segments"`
 	LayoutFallback bool     `json:"layout_fallback,omitempty"`
 	Untranslated   bool     `json:"untranslated,omitempty"`
+	Naturalized    bool     `json:"naturalized,omitempty"`
 }
 
 type pairedTranslationOutput struct {
@@ -79,6 +80,7 @@ type pairedTranslationInput struct {
 	MaxTargetChars    int                       `json:"max_target_characters"`
 	MaxSourceChars    int                       `json:"max_source_characters"`
 	MaxFullwidthChars int                       `json:"max_fullwidth_chars"`
+	Terminology       []translationTerm         `json:"terminology,omitempty"`
 	Sentences         []pairedTranslationSource `json:"sentences"`
 }
 
@@ -104,7 +106,7 @@ func pairedTranslationResponseBudget(text string, limit int) int {
 	return 4*len(text) + (3*subtitleTargetLength(text)/max(40, limit)+1)*48
 }
 
-func buildPairedTranslationBatches(texts []string, originLang, targetLang types.StandardLanguageCode, limit, batchSize int) ([]pairedTranslationInput, error) {
+func buildPairedTranslationBatches(texts []string, originLang, targetLang types.StandardLanguageCode, limit, batchSize int, terms ...translationTerm) ([]pairedTranslationInput, error) {
 	var batches []pairedTranslationInput
 	for start := 0; start < len(texts); {
 		input := pairedTranslationInput{
@@ -129,12 +131,14 @@ func buildPairedTranslationBatches(texts []string, originLang, targetLang types.
 			}
 			estimate := pairedTranslationResponseBudget(texts[i], limit)
 			input.Sentences = append(input.Sentences, source)
+			input.Terminology = relevantTranslationTerms(terms, texts[start:i+1])
 			payload, err := json.Marshal(input)
 			if err != nil {
 				return nil, err
 			}
 			if len(payload)+len(pairedTranslationPrompt)+6000 > translationRequestBytes || outputBudget+estimate > translationOutputBudget {
 				input.Sentences = input.Sentences[:len(input.Sentences)-1]
+				input.Terminology = relevantTranslationTerms(terms, texts[start:start+len(input.Sentences)])
 				break
 			}
 			outputBudget += estimate
@@ -202,11 +206,15 @@ func (t *Translator) translatePairedSentences(ctx context.Context, texts []strin
 		}
 	}
 	texts = protected
-	inputs, err := buildPairedTranslationBatches(texts, originLang, targetLang, limit, batchSize)
+	terms, err := t.translationTerminology(ctx, texts, originLang, targetLang)
 	if err != nil {
 		return nil, err
 	}
-	checkpoint, err := t.openTranslationCheckpoint(texts, originLang, targetLang)
+	inputs, err := buildPairedTranslationBatches(texts, originLang, targetLang, limit, batchSize, terms...)
+	if err != nil {
+		return nil, err
+	}
+	checkpoint, err := t.openTranslationCheckpoint(texts, originLang, targetLang, terms...)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +371,11 @@ func (t *Translator) translatePairedSentences(ctx context.Context, texts []strin
 	for i := range result {
 		result[i] = resolved[strconv.Itoa(i+1)]
 	}
-	return t.reviewPairedSemanticErrors(ctx, result, originLang, targetLang, limit, checkpoint.save)
+	result, err = t.naturalizePairedSentences(ctx, result, originLang, targetLang, limit, checkpoint.save, terms...)
+	if err != nil {
+		return nil, err
+	}
+	return t.reviewPairedSemanticRisks(ctx, result, originLang, targetLang, limit, checkpoint.save, terms...)
 }
 
 func (t *Translator) parsePairedTranslation(response string, input pairedTranslationInput, originLang, targetLang types.StandardLanguageCode) ([]pairedSentence, error) {
@@ -642,6 +654,12 @@ func (t *Translator) BatchTranslateSrtBlocks(ctx context.Context, blocks []*util
 			}
 			output = append(output[:outputStart], &util.SrtBlock{Index: outputStart + 1, Timestamp: formatSRTTimeline(start, end), OriginLanguageSentence: sentence.FullSource, TargetLanguageSentence: sentence.FullTarget})
 			t.translationNotice(fmt.Sprintf("第%s句分段时间不足，已合并为完整句字幕继续处理", sentence.ID))
+		}
+	}
+	if t.durationShorteningEnabled {
+		output, err = t.shortenTimedSubtitleBlocks(ctx, output, originLang, targetLang)
+		if err != nil {
+			return nil, err
 		}
 	}
 	return output, nil

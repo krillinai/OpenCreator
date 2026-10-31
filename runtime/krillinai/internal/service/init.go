@@ -22,6 +22,7 @@ import (
 type Service struct {
 	Transcriber        types.Transcriber
 	ChatCompleter      types.ChatCompleter
+	TerminologyEnabled bool
 	TtsClient          types.Ttser
 	OssClient          *aliyun.OssClient
 	VoiceCloneClient   *aliyun.VoiceCloneClient
@@ -82,12 +83,13 @@ func NewService() *Service {
 	}
 
 	s := &Service{
-		Transcriber:      transcriber,
-		ChatCompleter:    chatCompleter,
-		TtsClient:        ttsClient,
-		OssClient:        aliyun.NewOssClient(config.Conf.Transcribe.Aliyun.Oss),
-		VoiceCloneClient: aliyun.NewVoiceCloneClient(config.Conf.Tts.Aliyun.Speech.AccessKeyId, config.Conf.Tts.Aliyun.Speech.AccessKeySecret, config.Conf.Tts.Aliyun.Speech.AppKey),
-		ImageClient:      pkgimage.NewOpenAICompatibleClient(config.Conf.Image.Openai.BaseUrl, config.Conf.Image.Openai.ApiKey, config.Conf.Image.Openai.Model),
+		Transcriber:        transcriber,
+		ChatCompleter:      chatCompleter,
+		TerminologyEnabled: true,
+		TtsClient:          ttsClient,
+		OssClient:          aliyun.NewOssClient(config.Conf.Transcribe.Aliyun.Oss),
+		VoiceCloneClient:   aliyun.NewVoiceCloneClient(config.Conf.Tts.Aliyun.Speech.AccessKeyId, config.Conf.Tts.Aliyun.Speech.AccessKeySecret, config.Conf.Tts.Aliyun.Speech.AppKey),
+		ImageClient:        pkgimage.NewOpenAICompatibleClient(config.Conf.Image.Openai.BaseUrl, config.Conf.Image.Openai.ApiKey, config.Conf.Image.Openai.Model),
 	}
 	s.YouTubeSubtitleSrv = NewYouTubeSubtitleService()
 

@@ -32,7 +32,7 @@ func (t *Translator) withTranslationRecovery(workdir string, task *types.Subtitl
 	return &copy
 }
 
-func (t *Translator) openTranslationCheckpoint(texts []string, originLang, targetLang types.StandardLanguageCode) (*translationCheckpoint, error) {
+func (t *Translator) openTranslationCheckpoint(texts []string, originLang, targetLang types.StandardLanguageCode, terms ...translationTerm) (*translationCheckpoint, error) {
 	checkpoint := &translationCheckpoint{sentences: make(map[string]pairedSentence)}
 	if t.checkpointDir == "" || len(texts) == 0 {
 		return checkpoint, nil
@@ -42,7 +42,8 @@ func (t *Translator) openTranslationCheckpoint(texts []string, originLang, targe
 		Version, SourceLanguage, TargetLanguage, Model, Endpoint, Prompt string
 		FilterFillers                                                    bool
 		Texts                                                            []string
-	}{"paired-recovery-v1", string(originLang), string(targetLang), config.Conf.Llm.Model, config.Conf.Llm.BaseUrl, pairedTranslationPrompt, t.filterNonSemanticFillers, texts})
+		Terminology                                                      []translationTerm
+	}{"paired-recovery-v2", string(originLang), string(targetLang), config.Conf.Llm.Model, config.Conf.Llm.BaseUrl, pairedTranslationPrompt, t.filterNonSemanticFillers, texts, terms})
 	if err != nil {
 		return nil, err
 	}

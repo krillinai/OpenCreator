@@ -472,7 +472,7 @@ func (s Service) splitTextAndTranslateRecoverable(
 	onProgress ...func(completed, total int),
 ) ([]*TranslatedItem, error) {
 	sentences := splitTranslationSentences(inputText)
-	translator := (&Translator{chatCompleter: s.ChatCompleter, filterNonSemanticFillers: enableModalFilter}).withTranslationRecovery(basePath, task)
+	translator := (&Translator{chatCompleter: s.ChatCompleter, filterNonSemanticFillers: enableModalFilter, terminologyEnabled: s.TerminologyEnabled, naturalizeEnabled: false}).withTranslationRecovery(basePath, task)
 	var results []*TranslatedItem
 	paired, err := translator.translatePairedSentences(ctx, sentences, originLang, targetLang, subtitleTargetLimit(), translationBatchSize, func(batch []pairedSentence, completed, total int) error {
 		results = append(results, flattenPairedSentences(batch)...)
