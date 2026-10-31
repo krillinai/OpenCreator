@@ -6,6 +6,7 @@ const indexHtml = readFileSync('index.html', 'utf8');
 describe('index html assets', () => {
   it('uses the OpenCreator title without legacy brand icons', () => {
     expect(indexHtml).toContain('<title>OpenCreator</title>');
+    expect(indexHtml).toContain('<link rel="icon" type="image/png" href="/opencreator-icon.png" />');
     expect(indexHtml).not.toContain('/logo-v2-white-logo.svg');
     expect(indexHtml).not.toContain('/logo-v2-white-logo.png');
     expect(indexHtml).not.toContain('/favicon.svg');
