@@ -917,6 +917,10 @@ func (s Service) startResultHandler(ctx context.Context, eg *errgroup.Group, ste
 				TRANSCRIBE_WEIGHT,
 				TRANSLATE_WEIGHT,
 			)
+			phase := "processing_audio"
+			if transcribed == segmentNum && translated < segmentNum {
+				phase = "translating_audio"
+			}
 			message := fmt.Sprintf("音频分段 %d/%d；语音识别 %d/%d 段；字幕翻译 %d/%d 段", splitCompleted, segmentNum, transcribed, segmentNum, translated, segmentNum)
 			for id := 0; id < segmentNum; id++ {
 				if fraction := transcriptionProgress[id]; fraction > 0 && fraction < 1 {
@@ -931,7 +935,7 @@ func (s Service) startResultHandler(ctx context.Context, eg *errgroup.Group, ste
 					break
 				}
 			}
-			stepParam.TaskPtr.ReportProgress(types.TaskProgress{Phase: "processing_audio", Percent: int(percent), Message: message, Completed: translated, Total: segmentNum})
+			stepParam.TaskPtr.ReportProgress(types.TaskProgress{Phase: phase, Percent: int(percent), Message: message, Completed: translated, Total: segmentNum})
 		}
 		updateProgress()
 		// 完成的任务数量

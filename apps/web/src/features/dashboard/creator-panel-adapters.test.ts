@@ -163,6 +163,19 @@ describe('video translation component progress', () => {
     if (language !== 'zh-CN') expect(progress.message).not.toMatch(/\p{Script=Han}/u);
   });
 
+  it.each(['zh-CN', 'en-US', 'sv-SE'] as const)('explains that audio translation is waiting for the next provider result in %s', language => {
+    const localize = createLocalizedCopy(language);
+    const running = { ...stage('subtitle', '', 'running', null, 'subtitle'), progress: {
+      phase: 'translating_audio', percent: 57, completed: 0, total: 1,
+      message: '音频分段 1/1；语音识别 1/1 段；字幕翻译 0/1 段'
+    } };
+    const progress = videoTranslationPanelAdapter.readStageProgress(running, localize);
+    expect(progress).toMatchObject({ showMessage: true, showTiming: true, percent: 57, completed: 0, total: 1 });
+    expect(videoTranslationPanelAdapter.runningProgressText?.(running, progress, localize)).toContain('0/1');
+    expect(progress.message).toContain(language === 'zh-CN' ? '等待翻译服务返回结果' : language === 'en-US' ? 'Waiting for the translation service' : 'Väntar på att översättningstjänsten');
+    if (language !== 'zh-CN') expect(progress.message).not.toMatch(/\p{Script=Han}/u);
+  });
+
   it.each([
     ['downloading_media', '正在下载视频：12.0 MiB / 24.0 MiB；2.0 MiB/s；预计剩余 6 秒', '12.0 MiB / 24.0 MiB'],
     ['extracting_audio', '正在提取音频；已处理 12 秒 / 60 秒', '12 s / 60 s'],

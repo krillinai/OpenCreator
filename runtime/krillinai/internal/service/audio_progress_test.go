@@ -80,3 +80,38 @@ func TestAudioProgressReportsOverlappingRecognitionAndTranslation(t *testing.T) 
 		t.Fatalf("missing real simultaneous progress: %+v, error=%v", last, err)
 	}
 }
+
+func TestAudioProgressMarksTranslationWaitAfterTranscription(t *testing.T) {
+	log.InitLogger()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	group, groupCtx := errgroup.WithContext(ctx)
+	split := make(chan DataWithId[string], 1)
+	transcribe := make(chan DataWithId[string], 1)
+	transcriptProgress := make(chan DataWithId[float64], 1)
+	transcribed := make(chan DataWithId[*types.TranscriptionData], 1)
+	translate := make(chan DataWithId[string], 1)
+	translationProgress := make(chan DataWithId[TranslationProgress], 1)
+	translated := make(chan DataWithId[[]*TranslatedItem], 1)
+	pendingSplit := make(chan DataWithId[[2]float64], 1)
+	split <- DataWithId[string]{Id: 0, Data: "audio.wav"}
+	go func() {
+		<-transcribe
+		transcribed <- DataWithId[*types.TranscriptionData]{Id: 0, Data: &types.TranscriptionData{Text: "Hello world."}}
+	}()
+	var waiting types.TaskProgress
+	task := &types.SubtitleTask{}
+	task.SetDetailedProgressReporter(func(progress types.TaskProgress) {
+		if progress.Phase == "translating_audio" {
+			waiting = progress
+			cancel()
+		}
+	})
+	(Service{}).startResultHandler(groupCtx, group, &types.SubtitleTaskStepParam{TaskPtr: task}, 1, []float64{0, 1}, make([]AudioSegment, 1), split, transcribe, transcriptProgress, transcribed, translate, translationProgress, translated, pendingSplit)
+	if err := group.Wait(); err != nil {
+		t.Fatalf("audio progress handler failed: %v", err)
+	}
+	if waiting.Phase != "translating_audio" || waiting.Percent != 52 || waiting.Completed != 0 || waiting.Total != 1 {
+		t.Fatalf("translation wait progress = %+v", waiting)
+	}
+}

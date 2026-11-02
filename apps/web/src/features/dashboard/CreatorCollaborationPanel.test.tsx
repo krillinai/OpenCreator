@@ -107,6 +107,7 @@ describe('shared video progress timing', () => {
 
   it.each([
     ['subtitle', 'processing_audio', '字幕翻译', '音频分段 4/4；语音识别 3/4 段；字幕翻译 1/4 段；第 2 段已翻译 5/12 句'],
+    ['subtitle', 'translating_audio', '字幕翻译', '音频分段 1/1；语音识别 1/1 段；字幕翻译 0/1 段'],
     ['tts', 'generating_voice', '配音生成', '已生成配音 1/4 段'],
     ['render-horizontal', 'rendering_video', '横屏成片', '正在编码并合成字幕视频；已处理 12 秒 / 60 秒']
   ])('shows video details and elapsed time for %s without advancing progress while waiting', (stageId, phase, label, message) => {
@@ -121,7 +122,10 @@ describe('shared video progress timing', () => {
           <CreatorCollaborationPanel adapter={videoTranslationPanelAdapter} stepLabel="视频翻译" contextSummary="英语 → 简体中文" />
         </CreatorSessionProvider>
       </LanguageProvider>);
-      expect(screen.getByText(message)).toBeVisible();
+      const messageElement = phase === 'translating_audio'
+        ? screen.getByText(message, { exact: false })
+        : screen.getByText(message);
+      expect(messageElement).toBeVisible();
       act(() => { vi.advanceTimersByTime(30_000); });
       expect(screen.getByText('已运行 0:35')).toBeVisible();
       expect(screen.getByRole('progressbar', { name: `${label}进度` })).toHaveAttribute('aria-valuenow', '45');

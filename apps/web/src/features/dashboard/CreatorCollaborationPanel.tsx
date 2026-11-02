@@ -710,11 +710,16 @@ function CreatorStageProgressDetails(props: { stage: CreatorStageRun; progress: 
   const elapsedSeconds = Math.max(0, Math.floor((now - (Number.isFinite(startedAt) ? startedAt : observedRef.current.firstSeenAt)) / 1_000));
   const receivedSeconds = Math.max(0, Math.floor((now - observedRef.current.receivedAt) / 1_000));
   const duration = `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
+  const waitingForTranslation = progress.phase === 'translating_audio' || progress.phase === 'translating_subtitles';
   const waitingForProvider = progress.phase === 'queued' || progress.phase === 'generating';
   const disconnected = session?.connection !== undefined && session.connection.status !== 'connected';
   const warning = !showTiming ? null : disconnected
     ? localize('任务连接已中断，正在尝试恢复；恢复后会同步最新状态。', 'The task connection is interrupted. Reconnecting to receive the latest status.', 'Anslutningen till uppgiften har brutits. Återansluter för att hämta den senaste statusen.')
-    : waitingForProvider && receivedSeconds >= 30
+    : waitingForTranslation && receivedSeconds >= 30
+      ? localize('翻译服务尚未返回新的结果，正在等待翻译完成。', 'No new translation result has arrived yet. Waiting for the translation service to finish.', 'Inget nytt översättningsresultat har kommit ännu. Väntar på att översättningstjänsten ska bli klar.')
+      : waitingForTranslation && elapsedSeconds >= 120
+        ? localize('仍在等待翻译服务返回结果，翻译时间由服务商决定。可以离开当前页面，任务会在后台继续。', 'Still waiting for the translation service. Translation time depends on the provider. You can leave this page; the task continues in the background.', 'Väntar fortfarande på översättningstjänsten. Översättningstiden beror på leverantören. Du kan lämna sidan; uppgiften fortsätter i bakgrunden.')
+        : waitingForProvider && receivedSeconds >= 30
       ? localize('暂未收到新的生成状态，仍在等待服务商响应。', 'No new generation status has arrived yet. Waiting for the provider to respond.', 'Ingen ny genereringsstatus har kommit ännu. Väntar på svar från leverantören.')
       : waitingForProvider && elapsedSeconds >= 120
         ? localize('仍在等待服务商返回结果，生成时间由服务商决定。可以离开当前页面，任务会在后台继续。', 'Still waiting for the provider result. Generation time depends on the provider. You can leave this page; the task continues in the background.', 'Väntar fortfarande på leverantörens resultat. Genereringstiden beror på leverantören. Du kan lämna sidan; uppgiften fortsätter i bakgrunden.')
