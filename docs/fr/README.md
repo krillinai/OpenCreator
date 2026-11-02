@@ -568,7 +568,7 @@ Le fichier `README.md` situé à la racine est le document anglais de référenc
 
 ## Communauté
 
-<p>OpenCreator a reçu des étoiles d’utilisateurs GitHub dans <strong>au moins 105 pays et régions</strong>.</p>
+<p>OpenCreator a reçu des étoiles d’utilisateurs GitHub dans <strong>au moins 107 pays et régions</strong>.</p>
 
 <img src="../images/star-coverage-map.svg" alt="Carte du monde indiquant les pays et régions des utilisateurs GitHub ayant attribué une étoile à OpenCreator" width="760" />
 

@@ -568,7 +568,7 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 
 ## 커뮤니티
 
-<p>OpenCreator는 <strong>최소 105개 국가 및 지역</strong>의 GitHub 사용자에게서 Star를 받았습니다.</p>
+<p>OpenCreator는 <strong>최소 107개 국가 및 지역</strong>의 GitHub 사용자에게서 Star를 받았습니다.</p>
 
 <img src="../images/star-coverage-map.svg" alt="OpenCreator에 Star를 준 GitHub 사용자의 국가와 지역을 표시한 세계 지도" width="760" />
 

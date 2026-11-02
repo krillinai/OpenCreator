@@ -542,7 +542,7 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 
 ## ชุมชน
 
-<p>ผู้ใช้ GitHub จาก<strong>อย่างน้อย 105 ประเทศและภูมิภาค</strong>ได้ให้ Star กับ OpenCreator</p>
+<p>ผู้ใช้ GitHub จาก<strong>อย่างน้อย 107 ประเทศและภูมิภาค</strong>ได้ให้ Star กับ OpenCreator</p>
 
 <img src="../images/star-coverage-map.svg" alt="แผนที่โลกแสดงประเทศและภูมิภาคที่มีผู้ให้ GitHub Star แก่ OpenCreator" width="760" />
 

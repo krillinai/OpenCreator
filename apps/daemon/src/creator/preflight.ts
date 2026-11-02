@@ -9,7 +9,12 @@ import type {
   CreatorServicesConfig,
   PublicErrorFacts
 } from '@opencreator/protocol';
-import { creatorPreflightFailure, imagePromptRequiresReference } from '@opencreator/protocol';
+import {
+  creatorPreflightFailure,
+  imagePromptRequiresReference,
+  volcengineTtsUsesApiKey,
+  volcengineAsrCredentialsReady
+} from '@opencreator/protocol';
 import { access, mkdir, readFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
@@ -500,7 +505,7 @@ async function checkProviderConfig(
       add('blocked', { id: 'transcription-config', title: 'Speech recognition credentials missing', message: 'Complete the Aliyun speech recognition credentials.', executionMode: 'remote' }, { label: 'Open AI service settings', deepLink: '#/settings?tab=ai-services&section=transcription' });
     } else if (config.transcription.provider === 'funasr' && (!config.transcription.funasr.baseUrl.trim() || !config.transcription.funasr.model.trim())) {
       add('blocked', { id: 'transcription-config', title: 'Speech recognition configuration missing', message: 'Complete the FunASR Base URL and model.', executionMode: 'remote' }, { label: 'Open AI service settings', deepLink: '#/settings?tab=ai-services&section=transcription' });
-    } else if (config.transcription.provider === 'volcengine' && (!config.transcription.volcengine.appId.trim() || !config.transcription.volcengine.accessToken.trim())) {
+    } else if (config.transcription.provider === 'volcengine' && !volcengineAsrCredentialsReady(config.transcription.volcengine)) {
       add('blocked', { id: 'transcription-config', title: 'Speech recognition credentials missing', message: 'Complete the Volcengine App ID and access token.', executionMode: 'remote' }, { label: 'Open AI service settings', deepLink: '#/settings?tab=ai-services&section=transcription' });
     } else add('ready', { id: 'transcription-config', title: 'Speech recognition', message: `${config.transcription.provider} is configured.`, executionMode: provider.kind === 'local' ? 'local' : 'remote' });
   }
@@ -530,7 +535,13 @@ function checkOpenAi(
 
 function checkTts(config: CreatorServicesConfig, provider: Exclude<CreatorServicesConfig['tts']['provider'], 'edge-tts'>, add: Parameters<typeof checkProviderConfig>[5]) {
   const credentialsReady = provider === 'volcengine'
-    ? Boolean(config.tts.volcengine.appId.trim() && config.tts.volcengine.accessToken.trim())
+    ? Boolean(
+        config.tts.volcengine.accessToken.trim()
+        && (
+          volcengineTtsUsesApiKey(config.tts.volcengine.model)
+          || config.tts.volcengine.appId.trim()
+        )
+      )
     : Boolean(config.tts[provider].apiKey.trim());
   const value = config.tts[provider];
   if (!value.baseUrl.trim() || !value.model.trim() || !credentialsReady) add('blocked', { id: 'tts', title: 'Speech service configuration incomplete', message: `Complete the Base URL, model, and credentials for ${provider}.`, executionMode: 'remote' }, { label: 'Open AI service settings', deepLink: '#/settings?tab=ai-services&section=tts' });

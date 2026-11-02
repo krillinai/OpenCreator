@@ -568,7 +568,7 @@ El archivo `README.md` de la raíz es el documento canónico en inglés. Las tra
 
 ## Comunidad
 
-<p>Usuarios de GitHub de <strong>al menos 105 países y regiones</strong> han dado una estrella a OpenCreator.</p>
+<p>Usuarios de GitHub de <strong>al menos 107 países y regiones</strong> han dado una estrella a OpenCreator.</p>
 
 <img src="../images/star-coverage-map.svg" alt="Mapa mundial con los países y regiones de usuarios de GitHub que dieron una estrella a OpenCreator" width="760" />
 

@@ -679,7 +679,7 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 
 ## কমিউনিটি
 
-<p><strong>অন্তত 105 দেশ ও অঞ্চলের</strong> GitHub ব্যবহারকারী OpenCreator-কে স্টার দিয়েছেন।</p>
+<p><strong>অন্তত 107 দেশ ও অঞ্চলের</strong> GitHub ব্যবহারকারী OpenCreator-কে স্টার দিয়েছেন।</p>
 
 <img src="../images/star-coverage-map.svg" alt="OpenCreator-কে GitHub স্টার দেওয়া দেশ ও অঞ্চলের মানচিত্র" width="760" />
 

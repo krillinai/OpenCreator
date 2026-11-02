@@ -3,6 +3,7 @@ import type {
   CodexProviderConfig,
   CreatorServicesCapabilitiesResponse,
   CreatorServicesConfig,
+  CreatorServicesCredentialField,
   CreatorServicesConfigResponse,
   CreatorTtsPreviewRequest,
   CreatorTtsProvider,
@@ -35,8 +36,13 @@ export function createCreatorServicesService(client: ClientLike) {
     getConfig(): Promise<CreatorServicesConfigResponse> {
       return client.get('/creator-services/config');
     },
-    saveConfig(config: CreatorServicesConfig): Promise<CreatorServicesConfigResponse> {
-      return client.patch('/creator-services/config', config);
+    saveConfig(
+      config: CreatorServicesConfig,
+      clearCredentials: CreatorServicesCredentialField[] = []
+    ): Promise<CreatorServicesConfigResponse> {
+      return client.patch('/creator-services/config', clearCredentials.length === 0
+        ? config
+        : { config, clearCredentials });
     },
     testTranscriptionConnection(config: CreatorServicesConfig['transcription']['funasr']): Promise<{ connected: boolean; model: string; models: string[]; capabilities: string[] }> { return client.rawRequest('/creator-services/transcription/test', { method: 'POST', body: config }).then(response => response.json()); },
     resetConfig(): Promise<CreatorServicesConfigResponse> {

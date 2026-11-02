@@ -569,7 +569,7 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 
 ## 社区
 
-<p>来自<strong>至少 105 个国家和地区</strong>的 GitHub 用户为 OpenCreator 点亮了 Star。</p>
+<p>来自<strong>至少 107 个国家和地区</strong>的 GitHub 用户为 OpenCreator 点亮了 Star。</p>
 
 <img src="../images/star-coverage-map.svg" alt="世界地图：标出有 GitHub 用户为 OpenCreator 点亮 Star 的国家和地区" width="760" />
 

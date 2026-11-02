@@ -1778,8 +1778,9 @@ test('火山引擎语音识别设置在 Browser/Desktop Bridge 下保持相同�
       await page.goto(`${runtime.origin}/#/settings?tab=ai-services&section=transcription`);
       await page.getByRole('combobox', { name: '语音识别服务' }).click();
       await page.getByRole('option', { name: '火山引擎' }).click();
-      await page.getByLabel('App ID').fill('parity-volcengine-app');
-      await page.getByLabel('Access Token').fill('parity-volcengine-token');
+      await page.getByRole('switch', { name: /使用旧版凭据/ }).click();
+      await page.getByLabel('App ID', { exact: true }).fill('parity-volcengine-app');
+      await page.getByLabel('Access Token', { exact: true }).fill('parity-volcengine-token');
       await page.getByRole('button', { name: '保存配置' }).click();
       await expect(page.getByText('配置已安全保存')).toBeVisible();
 
@@ -1796,6 +1797,23 @@ test('火山引擎语音识别设置在 Browser/Desktop Bridge 下保持相同�
         provider: 'volcengine',
         volcengine: { appId: '', accessToken: '' }
       });
+
+      // Switching to the new console must clear the stored legacy App ID,
+      // rather than treating the blank masked field as "keep existing".
+      await page.getByRole('switch', { name: /使用旧版凭据/ }).click();
+      await expect(page.getByLabel('App ID', { exact: true })).toHaveCount(0);
+      await page.getByLabel('API Key', { exact: true }).fill('parity-volcengine-api-key');
+      const saveResponse = page.waitForResponse(response =>
+        response.request().method() === 'PATCH'
+        && new URL(response.url()).pathname.endsWith('/creator-services/config')
+      );
+      await page.getByRole('button', { name: '保存配置' }).click();
+      expect((await saveResponse).ok()).toBe(true);
+      const apiKeySaved = await runtime.api<{ configuredCredentials: string[] }>(
+        'GET', '/creator-services/config'
+      );
+      expect(apiKeySaved.configuredCredentials).not.toContain('transcription.volcengine.appId');
+      expect(apiKeySaved.configuredCredentials).toContain('transcription.volcengine.accessToken');
     } finally {
       await context.close();
     }

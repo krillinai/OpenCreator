@@ -1,4 +1,5 @@
 import type { CreatorServicesConfig } from '@opencreator/protocol';
+import { volcengineAsrCredentialsReady } from '@opencreator/protocol';
 import {
   loadVolcengineEnvironment,
   type VolcengineEnvironment
@@ -34,7 +35,7 @@ export function applyVolcengineEnvironmentOverrides(
 
   const asr = next.transcription.volcengine;
   const tts = next.tts.volcengine;
-  const asrConfigured = Boolean(asr.appId.trim() && asr.accessToken.trim());
+  const asrConfigured = volcengineAsrCredentialsReady(asr);
   const ttsConfigured = Boolean(tts.appId.trim() && tts.accessToken.trim());
   if (asrConfigured && shouldPreferVolcengineTranscription(next)) {
     next.transcription.provider = 'volcengine';

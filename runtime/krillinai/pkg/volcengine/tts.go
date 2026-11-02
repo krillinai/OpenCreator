@@ -109,9 +109,6 @@ func (c *TtsClient) Text2Speech(text, voice, outputFile string) error {
 }
 
 func (c *TtsClient) Synthesize(ctx context.Context, options types.TTSSpeechOptions) error {
-	if c.AppID == "" || c.AccessToken == "" {
-		return fmt.Errorf("volcengine tts app id or access token is empty")
-	}
 	text := strings.TrimSpace(options.Text)
 	if text == "" {
 		return fmt.Errorf("volcengine tts text is empty")
@@ -130,7 +127,13 @@ func (c *TtsClient) Synthesize(ctx context.Context, options types.TTSSpeechOptio
 	format := speechFormat(options.Format, options.OutputFile)
 	api, resource := resolveTTSRoute(c.Cluster, voice)
 	if api == "v3" {
+		if c.AccessToken == "" {
+			return fmt.Errorf("volcengine tts api key is empty")
+		}
 		return c.synthesizeV3(ctx, options, voice, format, resource)
+	}
+	if c.AppID == "" || c.AccessToken == "" {
+		return fmt.Errorf("volcengine tts app id or access token is empty")
 	}
 	body, err := json.Marshal(ttsRequest{
 		App: ttsApp{
@@ -229,8 +232,12 @@ func (c *TtsClient) synthesizeV3(ctx context.Context, options types.TTSSpeechOpt
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-App-Id", c.AppID)
-	req.Header.Set("X-Api-Access-Key", c.AccessToken)
+	if c.AppID == "" {
+		req.Header.Set("X-Api-Key", c.AccessToken)
+	} else {
+		req.Header.Set("X-Api-App-Id", c.AppID)
+		req.Header.Set("X-Api-Access-Key", c.AccessToken)
+	}
 	req.Header.Set("X-Api-Resource-Id", resourceID)
 	req.Header.Set("X-Api-Request-Id", uuid.NewString())
 	response, err := c.httpClient.Do(req)

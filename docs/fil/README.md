@@ -679,7 +679,7 @@ Ang root na `README.md` ang pamantayang dokumento sa English. Nasa `docs/<locale
 
 ## Komunidad
 
-<p>May GitHub user mula sa <strong>hindi bababa sa 105 bansa at rehiyon</strong> na nag-star sa OpenCreator.</p>
+<p>May GitHub user mula sa <strong>hindi bababa sa 107 bansa at rehiyon</strong> na nag-star sa OpenCreator.</p>
 
 <img src="../images/star-coverage-map.svg" alt="Mapa ng mga bansa at rehiyon na may nag-star sa OpenCreator sa GitHub" width="760" />
 

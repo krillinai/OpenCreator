@@ -679,7 +679,7 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 
 ## Cộng đồng
 
-<p>Người dùng GitHub từ <strong>ít nhất 105 quốc gia và vùng lãnh thổ</strong> đã gắn sao OpenCreator.</p>
+<p>Người dùng GitHub từ <strong>ít nhất 107 quốc gia và vùng lãnh thổ</strong> đã gắn sao OpenCreator.</p>
 
 <img src="../images/star-coverage-map.svg" alt="Bản đồ quốc gia và vùng lãnh thổ có người gắn sao OpenCreator trên GitHub" width="760" />
 

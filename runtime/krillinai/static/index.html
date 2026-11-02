@@ -984,7 +984,7 @@
                 <input
                   type="text"
                   id="llm-model"
-                  value="gpt-3.5-turbo"
+                  value="gpt-5.6-terra"
                   class="form-input"
                 />
               </div>
@@ -1021,7 +1021,7 @@
 
                 <h4>3. 模型名称：</h4>
                 <ul>
-                  <li>OpenAI：gpt-3.5-turbo, gpt-4, gpt-4-turbo...</li>
+                  <li>OpenAI：gpt-5.6-terra, gpt-5.6-luna, gpt-5.6-sol...</li>
                   <li>阿里云：qwen-turbo, qwen-plus, qwen-max...</li>
                   <li>DeepSeek：deepseek-chat, deepseek-coder...</li>
                 </ul>
@@ -1190,7 +1190,7 @@
                 <input
                   type="text"
                   id="llm-model"
-                  value="gpt-3.5-turbo"
+                  value="gpt-5.6-terra"
                   class="form-input"
                 />
               </div>
@@ -1669,7 +1669,7 @@
           document.getElementById("llm-api-key").value =
             configData.llm.apiKey || "";
           document.getElementById("llm-model").value =
-            configData.llm.model || "gpt-3.5-turbo";
+            configData.llm.model || "gpt-5.6-terra";
           // 清空建议模型下拉
           const suggest = document.getElementById("llm-model-suggest");
           if (suggest) {

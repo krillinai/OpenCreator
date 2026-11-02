@@ -557,7 +557,7 @@ Kök `README.md` dosyası kanonik İngilizce belgedir. Bakımı yapılan çeviri
 
 ## Topluluk
 
-<p>GitHub'da OpenCreator'a <strong>en az 105 ülke ve bölgeden</strong> kullanıcı yıldız vermiştir.</p>
+<p>GitHub'da OpenCreator'a <strong>en az 107 ülke ve bölgeden</strong> kullanıcı yıldız vermiştir.</p>
 
 <img src="../images/star-coverage-map.svg" alt="OpenCreator GitHub yıldızlarının geldiği ülke ve bölgeleri gösteren dünya haritası" width="760" />
 

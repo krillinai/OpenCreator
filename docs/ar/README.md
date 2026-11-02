@@ -568,7 +568,7 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 
 ## المجتمع
 
-<p>منح مستخدمو GitHub من <strong>105 دولة ومنطقة على الأقل</strong> مشروع OpenCreator نجمة.</p>
+<p>منح مستخدمو GitHub من <strong>107 دولة ومنطقة على الأقل</strong> مشروع OpenCreator نجمة.</p>
 
 <img src="../images/star-coverage-map.svg" alt="خريطة عالمية تُبرز بلدان ومناطق مستخدمي GitHub الذين منحوا OpenCreator نجمة" width="760" />
 

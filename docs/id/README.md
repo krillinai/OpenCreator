@@ -568,7 +568,7 @@ File `README.md` di root adalah dokumen bahasa Inggris kanonis. Terjemahan yang 
 
 ## Komunitas
 
-<p>Pengguna GitHub dari <strong>setidaknya 105 negara dan wilayah</strong> telah memberi Star kepada OpenCreator.</p>
+<p>Pengguna GitHub dari <strong>setidaknya 107 negara dan wilayah</strong> telah memberi Star kepada OpenCreator.</p>
 
 <img src="../images/star-coverage-map.svg" alt="Peta dunia yang menandai negara dan wilayah pengguna GitHub yang memberi Star pada OpenCreator" width="760" />
 
