@@ -507,7 +507,9 @@ export function CreatorSessionProvider(props: {
     if (next.id === current.id) {
       const stages = next.stages.map(stage => {
         const previous = current.stages.find(candidate => candidate.id === stage.id);
-        return previous && olderDownloadProgress(stage, previous) ? previous : stage;
+        return previous
+          ? olderDownloadProgress(stage, previous) ? previous : mergeMonotonicStageProgress(stage, previous)
+          : stage;
       });
       if (stages.some((stage, index) => stage !== next.stages[index])) next = { ...next, stages };
     }
@@ -1076,9 +1078,10 @@ function mergeCreatorEvent(job: CreatorJob, event: CreatorEventEnvelope): Creato
     if (previous && olderDownloadProgress(stage, previous)) return job;
     if (previous !== undefined && terminalCreatorStage(previous.status)
       && (stage.status === 'queued' || stage.status === 'running') && event.revision <= job.revision) return job;
+    const mergedStage = previous ? mergeMonotonicStageProgress(stage, previous) : stage;
     const stages = index < 0
       ? [...job.stages, stage]
-      : job.stages.map(candidate => candidate.id === stage.id ? stage : candidate);
+      : job.stages.map(candidate => candidate.id === stage.id ? mergedStage : candidate);
     return {
       ...job,
       stages,
@@ -1113,6 +1116,30 @@ function terminalCreatorStage(status: string): boolean {
 function olderDownloadProgress(incoming: CreatorStageRun, current: CreatorStageRun): boolean {
   return incoming.stageId === 'download' && incoming.executor === 'download'
     && (Number(incoming.progress.downloadProgressSequence) || 0) < (Number(current.progress.downloadProgressSequence) || 0);
+}
+
+function mergeMonotonicStageProgress(incoming: CreatorStageRun, current: CreatorStageRun): CreatorStageRun {
+  const currentPercent = current.progress.percent;
+  const incomingPercent = incoming.progress.percent;
+  const currentPhasePercent = current.progress.phasePercent;
+  const incomingPhasePercent = incoming.progress.phasePercent;
+  const keepPercent = typeof currentPercent === 'number' && Number.isFinite(currentPercent)
+    && (incomingPercent === null
+      || (typeof incomingPercent === 'number' && Number.isFinite(incomingPercent) && incomingPercent < currentPercent));
+  const keepPhasePercent = current.progress.phase === 'normalizing_media'
+    && incoming.progress.phase === 'normalizing_media'
+    && typeof currentPhasePercent === 'number' && Number.isFinite(currentPhasePercent)
+    && (incomingPhasePercent === null
+      || (typeof incomingPhasePercent === 'number' && Number.isFinite(incomingPhasePercent) && incomingPhasePercent < currentPhasePercent));
+  if (!keepPercent && !keepPhasePercent) return incoming;
+  return {
+    ...incoming,
+    progress: {
+      ...incoming.progress,
+      ...(keepPercent ? { percent: currentPercent } : {}),
+      ...(keepPhasePercent ? { phasePercent: currentPhasePercent } : {})
+    }
+  };
 }
 
 function mergeIssueIntoJob(job: CreatorJob, issue: OpenCreatorIssue): CreatorJob {

@@ -143,6 +143,32 @@ describe('CreatorSessionStore', () => {
     expect(session.job.stages[0]!.progress.downloadControl).not.toBe('paused');
   });
 
+  it('retains a newer stage percent when a later phase reports a smaller value', async () => {
+    const stage: CreatorStageRun = {
+      id: 'subtitle_1', jobId: 'job_1', stageId: 'subtitle', executor: 'krillinai', status: 'running',
+      dispatchStatus: 'claimed', claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null,
+      scopeKey: null, inputFingerprint: null, progress: { phase: 'preparing_source', percent: 20 },
+      errorCode: null, errorMessage: null, startedAt: null, finishedAt: null
+    };
+    const initial = { ...job(2, {}), templateId: 'video-translation', status: 'running' as const, stages: [stage] };
+    let session!: ReturnType<typeof useCreatorSession>;
+    let emit!: (event: CreatorEventEnvelope) => void;
+    const subscribeJobEvents = vi.fn((_id, onEvent) => { emit = onEvent; return { close: vi.fn() }; });
+    function SnapshotHarness() { session = useCreatorSession(); return <Harness />; }
+    render(<CreatorSessionProvider initialJob={initial} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn(),
+      getJob: vi.fn(async () => ({ job: initial })), subscribeJobEvents } as never}><SnapshotHarness /></CreatorSessionProvider>);
+    await waitFor(() => expect(emit).toBeDefined());
+    const lower = { ...stage, progress: { phase: 'reading_platform_captions', percent: 5, message: '正在获取平台字幕' } };
+    act(() => session.applyRemoteSnapshot({ ...initial, stages: [lower] }));
+    expect(session.job.stages[0]!.progress).toMatchObject({ phase: 'reading_platform_captions', message: '正在获取平台字幕', percent: 20 });
+    act(() => emit({ id: 'subtitle:lower', jobId: initial.id, revision: 2, kind: 'stage_progress',
+      payload: { stage: lower as never }, createdAt: initial.updatedAt }));
+    expect(session.job.stages[0]!.progress).toMatchObject({ percent: 20 });
+    const unknown = { ...stage, progress: { phase: 'merging_media', percent: null } };
+    act(() => session.applyRemoteSnapshot({ ...initial, stages: [unknown] }));
+    expect(session.job.stages[0]!.progress).toMatchObject({ percent: 20 });
+  });
+
   it('does not overwrite a failed job with a delayed successful action response', async () => {
     let resolveAction!: (value: { job: CreatorJob }) => void;
     const applyAction = vi.fn(() => new Promise<{ job: CreatorJob }>(resolve => { resolveAction = resolve; }));

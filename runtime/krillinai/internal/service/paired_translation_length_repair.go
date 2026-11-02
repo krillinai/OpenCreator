@@ -8,6 +8,8 @@ import (
 	"krillin-ai/pkg/util"
 	"strconv"
 	"strings"
+
+	"github.com/clipperhouse/uax29/v2/graphemes"
 )
 
 //go:embed paired_translation_length_repair.txt
@@ -21,6 +23,79 @@ func longestPairedSegment(sentence pairedSentence) int {
 		}
 	}
 	return longest
+}
+
+// mechanicallySplitPairedText is the last layout fallback after the complete
+// translation has been frozen. It keeps both authoritative strings intact and
+// cuts only at grapheme boundaries; natural phrase boundaries are deliberately
+// not part of this fallback's contract.
+func mechanicallySplitPairedText(source, target string, limit int) ([]pairedTranslationSegment, bool) {
+	if limit < 1 || !hasSubtitleContent(source) || !hasSubtitleContent(target) {
+		return nil, false
+	}
+	parts := max(2, max((subtitleTargetLength(source)+limit-1)/limit, (subtitleTargetLength(target)+limit-1)/limit))
+	sources, ok := mechanicallySplitText(source, parts, limit)
+	if !ok {
+		return nil, false
+	}
+	targets, ok := mechanicallySplitText(target, parts, limit)
+	if !ok {
+		return nil, false
+	}
+	result := make([]pairedTranslationSegment, parts)
+	for i := range result {
+		result[i] = pairedTranslationSegment{Source: sources[i], Target: targets[i]}
+	}
+	return result, true
+}
+
+func mechanicallySplitText(text string, parts, limit int) ([]string, bool) {
+	if parts < 2 {
+		return nil, false
+	}
+	boundaries := []int{0}
+	iter := graphemes.FromString(text)
+	for iter.Next() {
+		boundaries = append(boundaries, iter.End())
+	}
+	total := len(boundaries) - 1
+	if total < parts || total > parts*limit {
+		return nil, false
+	}
+	cuts := make([]int, parts+1)
+	cuts[0], cuts[parts] = 0, total
+	previous := 0
+	for part := 1; part < parts; part++ {
+		minimum := previous + 1
+		maximum := total - (parts - part)
+		desired := total * part / parts
+		best := -1
+		bestDistance := total + 1
+		for candidate := minimum; candidate <= maximum; candidate++ {
+			if candidate-previous > limit || !hasSubtitleContent(text[boundaries[previous]:boundaries[candidate]]) {
+				continue
+			}
+			distance := candidate - desired
+			if distance < 0 {
+				distance = -distance
+			}
+			if distance < bestDistance {
+				best, bestDistance = candidate, distance
+			}
+		}
+		if best < 0 {
+			return nil, false
+		}
+		cuts[part], previous = best, best
+	}
+	result := make([]string, parts)
+	for i := range result {
+		result[i] = text[boundaries[cuts[i]]:boundaries[cuts[i+1]]]
+		if !hasSubtitleContent(result[i]) || subtitleTargetLength(result[i]) > limit {
+			return nil, false
+		}
+	}
+	return result, true
 }
 
 // 修复只插入切口；不审核或重新生成已冻结的译文。
@@ -144,11 +219,43 @@ func (t *Translator) repairPairedLengths(ctx context.Context, input pairedTransl
 		}
 		feedback = ""
 		if len(issues) > 0 {
+			t.translationNotice(fmt.Sprintf("第%s句局部拆分校验失败：%s", source.ID, subtitleTextPreview(strings.Join(issues, "\n"), 1500)))
 			feedback = "\nPrevious local validation issues:\n" + subtitleTextPreview(strings.Join(issues, "\n"), 1500)
 		}
 	}
 	if !pairedSentenceWithinLimit(sentence, input.MaxTargetChars) {
-		t.translationNotice(fmt.Sprintf("第%s句局部拆分未全部完成；已保留合格字幕和完整原译文，仅剩余超长对按单行交付", source.ID))
+		mechanical := sentence
+		mechanical.Source, mechanical.Target = nil, nil
+		mechanicalApplied := false
+		for i := range sentence.Source {
+			if max(subtitleTargetLength(sentence.Source[i]), subtitleTargetLength(sentence.Target[i])) <= acceptedLimit {
+				mechanical.Source = append(mechanical.Source, sentence.Source[i])
+				mechanical.Target = append(mechanical.Target, sentence.Target[i])
+				continue
+			}
+			parts, ok := mechanicallySplitPairedText(sentence.Source[i], sentence.Target[i], acceptedLimit)
+			if !ok {
+				mechanical.Source = append(mechanical.Source, sentence.Source[i])
+				mechanical.Target = append(mechanical.Target, sentence.Target[i])
+				continue
+			}
+			mechanicalApplied = true
+			for _, part := range parts {
+				mechanical.Source = append(mechanical.Source, part.Source)
+				mechanical.Target = append(mechanical.Target, part.Target)
+			}
+		}
+		if mechanicalApplied {
+			mechanical.LayoutFallback = true
+			if err := save(mechanical, false); err != nil {
+				return sentence, err
+			}
+			sentence = mechanical
+			t.translationNotice(fmt.Sprintf("第%s句模型拆分未通过硬校验，已按字素边界机械拆分；完整译文保留，语义质量降级", source.ID))
+		}
+	}
+	if !pairedSentenceWithinLimit(sentence, input.MaxTargetChars) {
+		t.translationNotice(fmt.Sprintf("第%s句局部拆分仍无法全部满足长度上限；已保留完整译文并按单行交付", source.ID))
 	}
 	return sentence, nil
 }

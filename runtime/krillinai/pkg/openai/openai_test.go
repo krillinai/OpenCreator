@@ -72,10 +72,31 @@ func TestChatCompletionRejectsEmptyResponse(t *testing.T) {
 }
 
 func TestChatCompletionDisablesDeepSeekV4Thinking(t *testing.T) {
-	for _, model := range []string{"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "test-model"} {
-		t.Run(model, func(t *testing.T) {
+	for _, testCase := range []struct {
+		model     string
+		modelName string
+		want      string
+	}{
+		{model: "deepseek-v4.1-flash", want: "none"},
+		{model: "deepseek-v4-1-flash-261017", want: "none"},
+		{model: "88api/deepseek-v4.1-flash", want: "none"},
+		{model: "deepseek-v4-pro", want: "none"},
+		{model: "88api/deepseek-v4-pro", want: "none"},
+		{model: "another-provider/deepseek-v4-pro", want: "none"},
+		{model: "oc_708ac39a01ac1a51", modelName: "deepseek-v4.1-flash", want: "none"},
+		{model: "deepseek-v4-flash"},
+		{model: "deepseek-flash"},
+		{model: "deepseek-chat"},
+		{model: "88api/gpt-5.5"},
+		{model: "88api/kimi-k3"},
+		{model: "grok-4.7"},
+		{model: "gpt-6-luna"},
+		{model: "test-model"},
+	} {
+		t.Run(testCase.model+"/"+testCase.modelName, func(t *testing.T) {
 			setTestModel(t)
-			config.Conf.Llm.Model = model
+			config.Conf.Llm.Model = testCase.model
+			config.Conf.Llm.ModelName = testCase.modelName
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var request struct {
 					Model           string   `json:"model"`
@@ -85,18 +106,14 @@ func TestChatCompletionDisablesDeepSeekV4Thinking(t *testing.T) {
 				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 					t.Error(err)
 				}
-				want := "none"
-				if model == "deepseek-chat" || model == "test-model" {
-					want = ""
+				if request.Model != testCase.model || request.ReasoningEffort != testCase.want {
+					t.Errorf("model=%q reasoning_effort=%q, want %q %q", request.Model, request.ReasoningEffort, testCase.model, testCase.want)
 				}
-				if request.Model != model || request.ReasoningEffort != want {
-					t.Errorf("model=%q reasoning_effort=%q, want %q %q", request.Model, request.ReasoningEffort, model, want)
-				}
-				if want == "none" && (request.Temperature == nil || *request.Temperature != 0.2) {
+				if testCase.want == "none" && (request.Temperature == nil || *request.Temperature != 0.2) {
 					t.Errorf("DeepSeek V4 temperature = %v, want 0.2", request.Temperature)
 				}
-				if want == "" && request.Temperature != nil {
-					t.Errorf("model %q should use default sampling", model)
+				if testCase.want == "" && request.Temperature != nil {
+					t.Errorf("model %q should use default sampling", testCase.model)
 				}
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"id":"translated","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"完整译文"}}]}`))
@@ -231,6 +248,11 @@ func setTestModel(t *testing.T) {
 	t.Helper()
 	log.InitLogger()
 	previous := config.Conf.Llm.Model
+	previousModelName := config.Conf.Llm.ModelName
 	config.Conf.Llm.Model = "test-model"
-	t.Cleanup(func() { config.Conf.Llm.Model = previous })
+	config.Conf.Llm.ModelName = ""
+	t.Cleanup(func() {
+		config.Conf.Llm.Model = previous
+		config.Conf.Llm.ModelName = previousModelName
+	})
 }

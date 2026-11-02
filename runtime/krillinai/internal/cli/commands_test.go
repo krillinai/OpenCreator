@@ -150,6 +150,22 @@ func TestParseRenderCommandAcceptsSubtitleStyleFile(t *testing.T) {
 	}
 }
 
+func TestParseRenderCommandAcceptsSubtitleDocument(t *testing.T) {
+	cmd, err := Parse([]string{
+		"render-horizontal",
+		"--workdir", "tasks/demo",
+		"--video", "origin.mp4",
+		"--subtitle", "bilingual.srt",
+		"--subtitle-document", "subtitle-document.json",
+	})
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if cmd.Render.SubtitleDocument != "subtitle-document.json" {
+		t.Fatalf("SubtitleDocument = %q", cmd.Render.SubtitleDocument)
+	}
+}
+
 func TestParseRenderPreviewAndLineMode(t *testing.T) {
 	cmd, err := Parse([]string{"render-vertical", "--workdir", "preview", "--subtitle", "preview.srt", "--line-mode", "bilingual-target-bottom", "--preview-width", "540", "--preview-height", "960"})
 	if err != nil {

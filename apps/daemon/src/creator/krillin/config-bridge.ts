@@ -10,7 +10,14 @@ export function createKrillinConfigToml(
 ): string {
   const llm = llmOverride ?? config.llm;
   const document = compact({
-    app: { proxy: officialTranscriptionModel ? '' : config.proxy },
+    // Keep media access on the user's configured proxy even when the
+    // transcription API is routed through the official gateway. The runtime
+    // uses a separate proxy for its YouTube/yt-dlp requests so local gateway
+    // calls do not have to go through the media proxy.
+    app: {
+      proxy: officialTranscriptionModel ? '' : config.proxy,
+      youtube_proxy: config.proxy
+    },
     llm: {
       base_url: llm.baseUrl,
       api_key: llm.apiKey,

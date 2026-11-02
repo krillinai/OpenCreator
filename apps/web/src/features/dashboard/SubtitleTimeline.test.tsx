@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SubtitleTimeline from './SubtitleTimeline.js';
 
@@ -87,5 +87,27 @@ describe('SubtitleTimeline playback controls', () => {
     fireEvent.pointerDown(ui.waveform, { button: 0, clientX: 150 });
     fireEvent.pointerUp(ui.slider, { clientX: 200 });
     expect(ui.onSeek).toHaveBeenLastCalledWith(6);
+  });
+
+  it('generates a waveform for a normal high-bitrate video above the old size limit', async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(bytes, {
+      headers: { 'content-length': String(128 * 1024 * 1024) }
+    })));
+    vi.stubGlobal('OfflineAudioContext', class {
+      async decodeAudioData() {
+        return {
+          duration: 20,
+          numberOfChannels: 1,
+          getChannelData: () => new Float32Array([0, .5, 0, -.25])
+        };
+      }
+    });
+    render(<SubtitleTimeline cues={[]} src="blob:large-video" currentTime={5} duration={20}
+      playing={false} readOnly onSelect={vi.fn()} onSeek={vi.fn()} onTogglePlay={vi.fn()}
+      onPlaybackChange={vi.fn()} onChange={vi.fn()} />);
+    await waitFor(() => expect(document.querySelector('.subtitle-timeline-waveform svg')).not.toBeNull());
+    expect(document.querySelector('.subtitle-timeline-waveform path')?.getAttribute('d')).toContain('v56.0');
+    expect(screen.queryByText('无法生成此媒体的波形，仍可调整字幕时间。')).toBeNull();
   });
 });

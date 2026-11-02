@@ -1559,7 +1559,7 @@ describe('DashboardPage', () => {
     })));
     expect(applyAction.mock.calls.flatMap(([, request]) => request.action === 'run-stage' ? [request.input.stageId] : [])).toEqual(['subtitle', 'render-horizontal']);
     expect(await screen.findByRole('button', { name: '项目 V2' })).toBeInTheDocument();
-    expect(screen.getByText('新版本已从“横屏成片”开始，旧版本和已有前置产物会继续保留')).toBeInTheDocument();
+    expect(screen.queryByText('新版本已从“横屏成片”开始，旧版本和已有前置产物会继续保留')).not.toBeInTheDocument();
   });
 
   it('does not bind a changed URL source to the selected version input artifacts', async () => {

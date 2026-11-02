@@ -1469,7 +1469,7 @@ function downloadProgressPercent(
   if (artifact !== undefined || stage?.status === 'succeeded') return 100;
   const percent = readNumber(stage?.progress.percent);
   if (percent === undefined) return 0;
-  return Math.min(100, Math.max(0, percent));
+  return Math.min(100, Math.max(0, Math.round(percent)));
 }
 
 function downloadPendingTitle(

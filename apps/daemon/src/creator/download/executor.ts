@@ -283,6 +283,7 @@ async function downloadSelectedOption(
     status: 'succeeded',
     phase: 'completed',
     percent: 100,
+    phasePercent: 100,
     message: option.mediaType === 'audio'
       ? 'Audio downloaded to the project'
       : 'Video downloaded to the project'
@@ -422,6 +423,7 @@ async function preparePreviewSource(
         progress: {
           phase: 'completed',
           percent: 100,
+          phasePercent: 100,
           message: 'Source video is ready; existing subtitles are preserved'
         }
       };
@@ -497,7 +499,7 @@ async function downloadPlaybackSource(
   stage.reportProgress({
     status: 'running',
     phase: 'validating_output',
-    percent: preview ? null : 97,
+    percent: 97,
     message: preview ? 'Checking the video for subtitle preview' : 'Checking the YouTube source'
   });
   const output = await normalizeVideoForPlayback(
@@ -519,6 +521,7 @@ async function downloadPlaybackSource(
     status: 'succeeded',
     phase: 'completed',
     percent: 100,
+    phasePercent: 100,
     message: preview ? 'Source video is ready; existing subtitles are preserved' : 'YouTube source downloaded'
   };
   stage.reportProgress(progress);
@@ -551,6 +554,16 @@ async function downloadPlaybackSource(
 }
 
 function createPreviewProgressReporter(stage: CreatorExecutorInput): (line: string) => void {
+  type PreviewResource = {
+    bytes: number;
+    total: number | null;
+    percent: number | null;
+  };
+
+  const resources = new Map<string, PreviewResource>();
+  let anonymousResourceKey = 'anonymous:0';
+  let reportedPercent = 2;
+
   return line => {
     const marker = line.indexOf('oc-preview:');
     if (marker >= 0) {
@@ -564,20 +577,64 @@ function createPreviewProgressReporter(stage: CreatorExecutorInput): (line: stri
           : typeof data.total_bytes_estimate === 'number' && Number.isFinite(data.total_bytes_estimate) && data.total_bytes_estimate > 0
             ? data.total_bytes_estimate
             : null;
+        const identifiedKey = previewResourceKey(data);
+        let resourceKey = identifiedKey ?? anonymousResourceKey;
+        const previous = resources.get(resourceKey);
+        if (identifiedKey === null
+          && previous !== undefined
+          && previous.percent !== null
+          && previous.percent >= 99
+          && bytes < previous.bytes) {
+          resourceKey = `anonymous:${resources.size}`;
+          anonymousResourceKey = resourceKey;
+        }
+        const existing = resources.get(resourceKey);
+        const resource: PreviewResource = {
+          bytes: Math.max(existing?.bytes ?? 0, bytes),
+          total: total ?? existing?.total ?? null,
+          percent: total === null ? existing?.percent ?? null : Math.min(100, Math.max(0, bytes / total * 100))
+        };
+        resources.set(resourceKey, resource);
+        const downloadedBytes = [...resources.values()]
+          .reduce((sum, current) => sum + current.bytes, 0);
+        const knownTotals = [...resources.values()].map(current => current.total);
+        const totalBytes = knownTotals.every(current => current !== null)
+          ? knownTotals.reduce((sum, current) => sum + (current ?? 0), 0)
+          : null;
+        const rawPercent = totalBytes === null || totalBytes <= 0
+          ? null
+          : Math.min(100, Math.max(0, downloadedBytes / totalBytes * 100));
+        // Keep a small amount of headroom for a later audio resource or the
+        // merge step, while allowing a single resource to reflect its bytes.
+        const combinedPercent = rawPercent === null
+          ? null
+          : Math.min(95, rawPercent);
+        if (combinedPercent !== null) reportedPercent = Math.max(reportedPercent, Math.round(combinedPercent));
         stage.reportProgress({
           phase: 'downloading',
-          percent: total === null ? null : Math.min(100, Math.max(0, bytes / total * 100)),
+          percent: combinedPercent === null
+            ? reportedPercent > 2 ? reportedPercent : null
+            : reportedPercent,
           message: 'Downloading the current original-video resource; existing subtitles are preserved',
-          downloadedBytes: bytes,
-          totalBytes: total
+          downloadedBytes,
+          totalBytes
         });
       } catch {}
       return;
     }
     if (/\[(?:Merger|VideoRemuxer)\]/.test(line)) {
-      stage.reportProgress({ phase: 'merging_media', percent: null, message: 'Merging video and audio for subtitle preview' });
+      reportedPercent = Math.max(reportedPercent, 96);
+      stage.reportProgress({ phase: 'merging_media', percent: reportedPercent, message: 'Merging video and audio for subtitle preview' });
     }
   };
+}
+
+function previewResourceKey(data: Record<string, unknown>): string | null {
+  for (const field of ['format_id', 'format', 'filename', 'tmpfilename']) {
+    const value = data[field];
+    if (typeof value === 'string' && value.trim()) return `resource:${value}`;
+  }
+  return null;
 }
 
 async function downloadLegacy(
@@ -880,10 +937,12 @@ async function normalizeVideoForPlayback(
     );
   }
 
+  const conversionDuration = duration ?? await readMediaDuration(path, input, stage);
   stage.reportProgress({
     status: 'running',
     phase: 'normalizing_media',
-    percent: isPreviewStage(stage) ? null : 98,
+    percent: 98,
+    phasePercent: 0,
     message: 'Converting video for local playback'
   });
   const outputPath = playbackOutputPath(path);
@@ -923,7 +982,7 @@ async function normalizeVideoForPlayback(
       input.ffmpegPath,
       [...(input.ffmpegPrefixArgs ?? []), ...args],
       stage,
-      line => reportPlaybackConversionProgress(stage, line, duration)
+      line => reportPlaybackConversionProgress(stage, line, conversionDuration)
     );
     await validateMediaFile(
       outputPath,
@@ -955,7 +1014,7 @@ function reportPlaybackConversionProgress(
   line: string,
   duration: number | null
 ): void {
-  if (duration === null || duration <= 0 || isPreviewStage(stage)) return;
+  if (duration === null || duration <= 0) return;
   const match = line.match(/^out_time=(\d+):(\d+):([\d.]+)$/);
   if (match === null) return;
   const elapsed = (
@@ -964,12 +1023,37 @@ function reportPlaybackConversionProgress(
     + Number(match[3])
   );
   if (!Number.isFinite(elapsed)) return;
+  const phasePercent = Math.min(100, Math.max(0, Math.round(elapsed / duration * 100)));
   stage.reportProgress({
     status: 'running',
     phase: 'normalizing_media',
-    percent: Math.min(99, 98 + Math.max(0, elapsed / duration)),
+    percent: Math.min(99, Math.max(98, Math.round(98 + elapsed / duration))),
+    phasePercent,
     message: 'Converting video for local playback'
   });
+}
+
+async function readMediaDuration(
+  path: string,
+  input: DownloadExecutorOptions,
+  stage: CreatorExecutorInput
+): Promise<number | null> {
+  try {
+    const stdout = await run(input.ffprobePath, [
+      ...(input.ffprobePrefixArgs ?? []),
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
+      path
+    ], stage);
+    const duration = Number(stdout.trim());
+    return Number.isFinite(duration) && duration > 0 ? duration : null;
+  } catch {
+    return null;
+  }
 }
 
 async function readPlaybackCodecs(
@@ -1055,7 +1139,7 @@ function createDownloadProgressReporter(
   let completedParts = 0;
   let previousPartPercent = 0;
   let reportedPercent = typeof stage.stageRun.progress.percent === 'number'
-    ? Math.min(95, Math.max(2, stage.stageRun.progress.percent)) : 2;
+    ? Math.min(95, Math.max(2, Math.round(stage.stageRun.progress.percent))) : 2;
   return line => {
     const match = line.match(/\[download\]\s+([\d.]+)%/);
     if (match !== null) {
@@ -1085,7 +1169,7 @@ function createDownloadProgressReporter(
       ) * 93;
       reportedPercent = Math.max(
         reportedPercent,
-        Math.min(95, combinedPercent)
+        Math.min(95, Math.round(combinedPercent))
       );
       stage.reportProgress({
         status: 'running',

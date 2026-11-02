@@ -28,6 +28,20 @@ it('accepts protocol 3 without supplier keys and pins the gateway origin', async
   await expect(client.bootstrap('device-access-token')).rejects.toMatchObject({ code: 'invalid_gateway_response' });
 });
 
+it('reports an expired gateway account as authentication failure before creating a creator binding', () => {
+  const manual = createDefaultCreatorServicesConfig();
+  const source = createGatewayCreatorSource({
+    account: {
+      peekState: () => ({ source: 'gateway', transport: 'gateway', authState: 'expired', activationState: 'inactive',
+        account: bootstrap.account, bindingVersion: null, models: bootstrap.models, activationError: null }),
+      modelCredentials: vi.fn()
+    },
+    manual: { read: async () => manual, write: async value => value, reset: async () => manual },
+    getLocalOrigin: () => 'http://127.0.0.1:39999'
+  });
+  expect(() => source.snapshot()).toThrow(expect.objectContaining({ code: 'auth_required', status: 401 }));
+});
+
 it('loads a gateway account, clears old supplier credentials and refreshes device authentication', async () => {
   const root = await mkdtemp(join(tmpdir(), 'oc-proxy-account-'));
   const store = createGatewayConfigStore(root);

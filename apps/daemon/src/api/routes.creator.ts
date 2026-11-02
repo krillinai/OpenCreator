@@ -92,6 +92,7 @@ import { readCodexImageConfiguration } from '../image-generation/codex-runtime.j
 import type { CodexNativeImageRuntime } from '../image-generation/provider.js';
 import type { CreatorIssueService } from '../creator/issues.js';
 import { registerCreatorThumbnailRoutes } from './routes.creator-thumbnail.js';
+import { GatewayError } from '../gateway/client.js';
 
 export async function registerCreatorRoutes(
   server: FastifyInstance,
@@ -1574,6 +1575,13 @@ function sendCreatorError(reply: FastifyReply, error: unknown, context?: Creator
     return reply.code(status).send(response(error.code as RuntimeErrorCode, error.message, {
       ...(error.latestRevision === undefined ? {} : { latestRevision: error.latestRevision })
     }));
+  }
+  if (error instanceof GatewayError && error.code === 'auth_required') {
+    return reply.code(401).send(response(
+      'GATEWAY_AUTH_REQUIRED',
+      'OpenCreator sign-in has expired. Sign in again before retrying.',
+      undefined
+    ));
   }
   if (error instanceof ZodError || error instanceof TypeError) {
     return reply.code(400).send(response('VALIDATION_FAILED', error.message));

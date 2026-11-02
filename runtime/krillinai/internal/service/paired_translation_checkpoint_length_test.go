@@ -173,8 +173,12 @@ func TestCheckpointLengthOldFallbackExportsSRTDespiteRepairFailure(t *testing.T)
 				wantCues = 4
 			} else if mode == "invalid_json" {
 				wantCalls = 3
+				wantCues = 3
+			} else if mode == "network" {
+				wantCues = 3
 			} else if mode == "budget" {
 				wantCalls = translationSentenceRequestLimit
+				wantCues = 3
 			}
 			if calls != wantCalls || len(cues) != wantCues {
 				t.Fatalf("请求预算或交付条数错误: calls=%d cues=%d", calls, len(cues))

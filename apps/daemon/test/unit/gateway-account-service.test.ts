@@ -25,7 +25,7 @@ async function setup(activate = vi.fn(async () => undefined), close = vi.fn(asyn
     async startDevice() { const id = String(++attempt); return { attemptId: id, deviceSecret: `private-${id}`, authorizationUrl: `https://gateway.example/device?attempt=${id}`, interval: 5, expiresIn: 600 }; },
     pollDevice: vi.fn(async (id: string) => ({ accessToken: `access-${id}`, refreshToken: `refresh-${id}`, expiresIn: 900 })),
     async cancelDevice() {},
-    refresh: vi.fn(async () => ({ accessToken: 'new-access', refreshToken: 'new-refresh', expiresIn: 900 })),
+    refresh: vi.fn(async (_refreshToken: string) => ({ accessToken: 'new-access', refreshToken: 'new-refresh', expiresIn: 900 })),
     async logout() {},
     avatar: vi.fn(async () => ({ data: new Uint8Array([1, 2, 3]), contentType: 'image/png' })),
     bootstrap: vi.fn(async (access: string): Promise<GatewayBootstrap> => { const id = access.split('-').at(-1)!; return { schemaVersion: 1 as const, account: { id, email: `${id}@example.test`, verified: true }, modelKey: `cloud-${id}`, keyVersion: '1', bindingVersion: `${id}:1`, baseUrl: 'https://gateway.example/v1', models: [{ id: 'gateway-text', modality: 'text' as const, capabilities: ['responses'] }], defaults: { text: 'gateway-text' } }; }),
@@ -1194,6 +1194,30 @@ it('revokes model readiness when account polling detects an expired session', as
     expect(selection.statusCode).toBe(401);
     expect(selection.json().error.code).toBe('GATEWAY_AUTH_REQUIRED');
   } finally { clock.mockRestore(); await server.close(); await f.service.close(); }
+});
+
+it('adopts a newer persisted refresh token after a stale token receives 401', async () => {
+  const f = await setup();
+  await seedSavedAccount(f);
+  const store = createGatewayConfigStore(f.root);
+  await f.service.initialize();
+  const original = await store.readCredentials();
+  if (!original) throw new Error('test credentials were not persisted');
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 16 * 60_000);
+  try {
+    f.client.refresh.mockImplementation(async refreshToken => {
+      if (refreshToken === original.refreshToken) {
+        await store.writeCredentials({ ...original, accessToken: 'persisted-access', refreshToken: 'persisted-refresh', expiresIn: 900, accessExpiresAt: new Date(Date.now() + 900_000).toISOString() });
+        throw new GatewayError('auth_required', 401);
+      }
+      return { accessToken: 'latest-access', refreshToken: 'latest-refresh', expiresIn: 900 };
+    });
+    await f.service.refresh();
+    expect(f.client.refresh).toHaveBeenNthCalledWith(1, original.refreshToken);
+    expect(f.client.refresh).toHaveBeenNthCalledWith(2, 'persisted-refresh');
+    expect(f.service.peekState().authState).toBe('signed_in');
+    await expect(store.readCredentials()).resolves.toMatchObject({ accessToken: 'latest-access', refreshToken: 'latest-refresh' });
+  } finally { clock.mockRestore(); await f.service.close(); }
 });
 
 it('clears an expired device session before starting reauthorization', async () => {

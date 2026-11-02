@@ -160,15 +160,33 @@ func TestPairedLengthRepairDoesNotCollapseAfterInvalidRepair(t *testing.T) {
 			if mode == "network_error" {
 				wantCalls = 2
 			}
-			if err != nil || calls != wantCalls || len(final.Source) != len(pairs) || !final.LayoutFallback {
-				t.Fatalf("局部失败被放大为整组回退: calls=%d final=%+v err=%v", calls, final, err)
+			if err != nil || calls != wantCalls || len(final.Source) != 4 || !final.LayoutFallback || !pairedSentenceWithinLimit(final, 60) || !pairedSentenceSegmentsValid(final, input.Sentences[0].Text) {
+				t.Fatalf("局部失败未按优先级机械拆短: calls=%d final=%+v err=%v", calls, final, err)
 			}
-			for i, pair := range pairs {
-				if final.Source[i] != pair.Source || final.Target[i] != pair.Target {
-					t.Fatalf("失败回复覆盖了原有字幕: %+v", final)
-				}
+			if final.Source[0] != pairs[0].Source || final.Source[3] != pairs[2].Source || final.Target[0] != pairs[0].Target || final.Target[3] != pairs[2].Target {
+				t.Fatalf("机械兜底改动了已合格字幕: %+v", final)
 			}
 		})
+	}
+}
+
+func TestPairedLengthRepairMechanicalFallbackPreservesBothTexts(t *testing.T) {
+	const source = "Everything at level four, including Pride and Prejudice, East of Eden, The Count of Monte Cristo, and The Goldfinch, could easily be read by someone in late high school, but of course, the older you get, the more you'll get out of these."
+	const target = "第四级的所有作品，包括《傲慢与偏见》《伊甸之东》《基督山伯爵》和《金翅雀》，高中后期的人都能轻松读懂，但当然，你年纪越大，从这些作品中获得的收获就越多。"
+	parts, ok := mechanicallySplitPairedText(source, target, 65)
+	if !ok || len(parts) < 2 {
+		t.Fatalf("机械兜底未能生成配对片段: ok=%v parts=%+v", ok, parts)
+	}
+	var sources, targets []string
+	for _, part := range parts {
+		sources = append(sources, part.Source)
+		targets = append(targets, part.Target)
+		if subtitleTargetLength(part.Source) > 65 || subtitleTargetLength(part.Target) > 65 || hasSubtitleLineBreak(part.Source) || hasSubtitleLineBreak(part.Target) {
+			t.Fatalf("机械兜底产生超长或折行片段: %+v", part)
+		}
+	}
+	if !subtitleSegmentsPreserveText(source, sources) || !subtitleSegmentsPreserveText(target, targets) || !subtitleSegmentsHaveSafeBoundariesInText(source, sources) || !subtitleSegmentsHaveSafeBoundariesInText(target, targets) {
+		t.Fatalf("机械兜底改动了完整文本: sources=%q targets=%q", sources, targets)
 	}
 }
 

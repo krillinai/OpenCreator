@@ -7093,6 +7093,12 @@
   flex: 0 0 auto;
 }
 
+.creator-task-progress-phase {
+  color: var(--subtle);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .creator-collaboration-stage-details {
   min-width: 0;
   display: grid;
@@ -14333,6 +14339,21 @@
   background: var(--surface);
   color: var(--muted);
   cursor: pointer;
+}
+
+.creator-collaboration-issue-actions .creator-collaboration-login-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 620;
+  text-decoration: none;
 }
 
 .creator-collaboration-stage[data-compact="true"] {

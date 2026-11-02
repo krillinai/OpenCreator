@@ -9,8 +9,12 @@ import (
 	"go.uber.org/zap"
 	"krillin-ai/config"
 	"krillin-ai/log"
+	"regexp"
 	"strings"
 )
+
+var deepSeekV41FlashModelPattern = regexp.MustCompile(`^(?:[^/]+/)?deepseek-v4(?:[.-]1)-flash(?:-[0-9]+)?$`)
+var deepSeekV4ProModelPattern = regexp.MustCompile(`^(?:[^/]+/)?deepseek-v4-pro$`)
 
 func (c *Client) ChatCompletion(query string) (string, error) {
 	return c.ChatCompletionContext(context.Background(), query)
@@ -47,8 +51,8 @@ func (c *Client) ChatCompletionContextWithMaxTokens(ctx context.Context, query s
 		ResponseFormat: responseFormat,
 	}
 	// DeepSeek V4 的推理可能耗尽字幕 JSON 的输出预算。
-	switch strings.ToLower(strings.TrimSpace(req.Model)) {
-	case "deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro":
+	modelNames := []string{req.Model, config.Conf.Llm.ModelName}
+	if disablesReasoning(modelNames...) {
 		req.ReasoningEffort = "none"
 		req.Temperature = 0.2
 	}
@@ -66,6 +70,16 @@ func (c *Client) ChatCompletionContextWithMaxTokens(ctx context.Context, query s
 		return "", fmt.Errorf("llm_translation_empty_response: response %s has no content", response.ID)
 	}
 	return response.Choices[0].Message.Content, nil
+}
+
+func disablesReasoning(modelNames ...string) bool {
+	for _, modelName := range modelNames {
+		normalized := strings.ToLower(strings.TrimSpace(modelName))
+		if deepSeekV41FlashModelPattern.MatchString(normalized) || deepSeekV4ProModelPattern.MatchString(normalized) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeChatCompletionError(err error) error {

@@ -51,7 +51,8 @@ export function createGatewayCreatorSource(input: {
   function snapshot(templateId?: string): CreatorServiceBinding {
     const state = input.account.peekState();
     if (state.source === 'manual') return { source: 'manual' };
-    if (state.authState !== 'signed_in' || state.activationState !== 'ready' || !state.account || !state.bindingVersion) throw new GatewayError('services_not_ready');
+    if (state.authState !== 'signed_in') throw new GatewayError('auth_required', 401);
+    if (state.activationState !== 'ready' || !state.account || !state.bindingVersion) throw new GatewayError('services_not_ready');
     const models: Record<string, string> = {};
     const caps: Record<string, string[]> = {};
     for (const model of state.models) {
@@ -76,7 +77,8 @@ export function createGatewayCreatorSource(input: {
   }
   function assertSnapshot(value: CreatorServiceBinding, recovery = false) {
     const state = input.account.peekState();
-    if (value.source === 'gateway' && (state.authState !== 'signed_in' || (!recovery && state.activationState !== 'ready'))) throw new GatewayError('services_not_ready');
+    if (value.source === 'gateway' && state.authState !== 'signed_in') throw new GatewayError('auth_required', 401);
+    if (value.source === 'gateway' && (!recovery && state.activationState !== 'ready')) throw new GatewayError('services_not_ready');
     if (value.source !== state.source || (value.source === 'gateway' && value.accountId !== state.account?.id)) throw new GatewayError('task_source_mismatch', 409);
     if (value.source === 'gateway' && state.supplier) {
       const supplier = value.supplier ?? (value.bindingVersion.startsWith(`${value.accountId}:88api:`) ? '88api'

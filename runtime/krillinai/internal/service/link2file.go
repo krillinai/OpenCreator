@@ -66,8 +66,8 @@ func (s Service) linkToFile(ctx context.Context, stepParam *types.SubtitleTaskSt
 				"-o", audioPath,
 				stepParam.Link,
 			}
-			if config.Conf.App.Proxy != "" {
-				cmdArgs = append(cmdArgs, "--proxy", config.Conf.App.Proxy)
+			if proxy := config.YouTubeProxy(); proxy != "" {
+				cmdArgs = append(cmdArgs, "--proxy", proxy)
 			}
 			cmdArgs = appendCookiesArgs(cmdArgs, youtubeCookiesPath)
 			if storage.FfmpegPath != "ffmpeg" {

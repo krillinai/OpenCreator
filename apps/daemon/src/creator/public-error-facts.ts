@@ -1,6 +1,8 @@
 import { isPublicErrorFacts, publicErrorKindForCode, sanitizePublicErrorFacts, type PublicErrorFacts } from '@opencreator/protocol';
 
 const ERROR_KINDS: Record<string, PublicErrorFacts['kind']> = {
+  auth_required: 'unauthorized',
+  services_not_ready: 'configuration',
   ERR_FS_FILE_TOO_LARGE: 'storage',
   EFBIG: 'storage',
   ENOTFOUND: 'dns',

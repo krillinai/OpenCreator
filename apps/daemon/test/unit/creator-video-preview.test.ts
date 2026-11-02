@@ -77,6 +77,25 @@ describe('video translation preview preparation', () => {
     } finally { await context.close(); }
   });
 
+  it('keeps stage progress monotonic when the phase changes', async () => {
+    const context = setup({ id: 'download', async run({ reportProgress, workdir }) {
+      reportProgress({ phase: 'preparing_source', percent: 20, message: '正在准备视频来源' });
+      reportProgress({ phase: 'reading_platform_captions', percent: 5, message: '正在获取平台字幕' });
+      reportProgress({ phase: 'merging_media', percent: null, message: '正在合并视频和音频' });
+      const path = join(workdir, 'preview.mp4');
+      writeFileSync(path, 'preview');
+      return { outputs: [{ kind: 'source_video', path, status: 'completed', sourceArtifactIds: [] }] };
+    } });
+    try {
+      const result = await context.runner.runStageRun(context.start());
+      expect(result.progress).toMatchObject({
+        phase: 'merging_media',
+        message: '正在合并视频和音频',
+        percent: 20
+      });
+    } finally { await context.close(); }
+  });
+
   it('preserves draft status on preview failure and rejects unsupported sources', async () => {
     const context = setup({ id: 'download', async run() { throw new CreatorExecutorError('network_unavailable', 'Preview download failed'); } });
     try {

@@ -548,11 +548,12 @@ export function createCreatorStageRunner(input: {
   ): CreatorStageRun {
     const current = input.repository.getStageRun(update.id);
     const download = current?.stageId === 'download' && current.executor === 'download';
+    const progress = mergeStageProgress(current, update.progress) ?? (download ? current?.progress : undefined);
     input.repository.updateStageRun({
       ...update,
-      ...(update.progress === undefined && !download
+      ...(progress === undefined && !download
         ? {}
-        : { progress: { ...(current?.progress ?? {}), ...update.progress,
+        : { progress: { ...(progress ?? {}),
           ...(download ? { downloadProgressSequence: (Number(current.progress.downloadProgressSequence) || 0) + 1 } : {}) } })
     });
     const stage = input.repository.getStageRun(update.id);
@@ -561,6 +562,33 @@ export function createCreatorStageRunner(input: {
     }
     input.onStageChanged?.(stage);
     return stage;
+  }
+
+  function mergeStageProgress(
+    current: CreatorStageRun | undefined,
+    incoming: Record<string, CreatorJson> | undefined
+  ): Record<string, CreatorJson> | undefined {
+    if (incoming === undefined) return undefined;
+    const progress = { ...(current?.progress ?? {}), ...incoming };
+    const currentPercent = current?.progress.percent;
+    const incomingPercent = incoming.percent;
+    if (typeof currentPercent === 'number' && Number.isFinite(currentPercent)
+      && (incomingPercent === null
+        || (typeof incomingPercent === 'number' && Number.isFinite(incomingPercent)
+          && incomingPercent < currentPercent))) {
+      progress.percent = currentPercent;
+    }
+    const currentPhasePercent = current?.progress.phasePercent;
+    const incomingPhasePercent = incoming.phasePercent;
+    if (current?.progress.phase === 'normalizing_media'
+      && incoming.phase === 'normalizing_media'
+      && typeof currentPhasePercent === 'number' && Number.isFinite(currentPhasePercent)
+      && (incomingPhasePercent === null
+        || (typeof incomingPhasePercent === 'number' && Number.isFinite(incomingPhasePercent)
+          && incomingPhasePercent < currentPhasePercent))) {
+      progress.phasePercent = currentPhasePercent;
+    }
+    return progress;
   }
 
   function finishStageIssueResolution(

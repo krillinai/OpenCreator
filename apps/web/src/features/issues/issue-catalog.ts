@@ -81,6 +81,7 @@ function issuePublicFacts(issue: OpenCreatorIssue): PublicErrorFacts | undefined
 }
 
 function localizedIssueSummary(issue: OpenCreatorIssue, localize: LocalizeCopy): string {
+  if (isOpenCreatorAuthIssue(issue.code)) return localize('OpenCreator 登录已过期。', 'OpenCreator sign-in has expired.', 'OpenCreator-inloggningen har gått ut.');
   if (issue.code === 'creator_codex_config_resynced') return localize('已重新同步本机 Codex 配置，请重试本次操作。', 'Local Codex configuration has been re-synchronized. Retry this operation.', 'Konfigurationen för lokala Codex har synkroniserats igen. Försök igen.');
   if (issue.code === 'creator_codex_config_check_failed') return localize('本机 Codex 配置检查失败，请检查配置文件和登录信息。', 'Local Codex configuration could not be checked. Check the configuration files and sign-in details.', 'Konfigurationen för lokala Codex kunde inte kontrolleras. Kontrollera konfigurationsfilerna och inloggningsuppgifterna.');
   if (issue.code === 'platform_request_signature_required') return localize('当前下载器尚未兼容抖音的请求签名校验。', 'The current downloader does not support Douyin request signature verification.', 'Den nuvarande nedladdaren stöder inte Douyins verifiering av begäranssignaturer.');
@@ -221,6 +222,8 @@ export function issueConversationText(
     ? localize('请先上传参考图；如需纯文字生图，请移除对上传图片或原图的要求后重试。', 'Upload a reference image, or remove the uploaded/original image requirements for text-only generation, then retry.', 'Ladda upp en referensbild, eller ta bort kraven på en uppladdad eller ursprunglig bild för textgenerering och försök igen.')
     : issue.code === 'creator_codex_config_resynced'
     ? localize('配置已同步，请重新发送刚才的请求。', 'The configuration is synchronized. Send the previous request again.', 'Konfigurationen är synkroniserad. Skicka den föregående begäran igen.')
+    : isOpenCreatorAuthIssue(issue.code)
+    ? localize('请在账户设置中重新登录 OpenCreator 后重试。', 'Sign in to OpenCreator again in Account settings, then retry.', 'Logga in på OpenCreator igen under Kontoinställningar och försök sedan igen.')
     : issue.code === 'creator_codex_config_check_failed'
     ? localize('请检查本机 Codex 的配置文件和登录信息，修正后重试。', 'Check local Codex configuration files and sign-in details, then retry.', 'Kontrollera konfigurationsfilerna och inloggningsuppgifterna för lokala Codex och försök igen.')
     : issue.code === 'creator_template_version_mismatch'
@@ -251,6 +254,10 @@ export function issueConversationText(
         message: `${detail}${nextStep}`,
         nextStep
       };
+}
+
+function isOpenCreatorAuthIssue(code: string): boolean {
+  return code === 'auth_required' || code === 'GATEWAY_AUTH_REQUIRED';
 }
 
 export function buildIssueAgentPrompt(

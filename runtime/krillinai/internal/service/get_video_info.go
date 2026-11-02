@@ -23,9 +23,9 @@ func (s Service) getVideoInfo(ctx context.Context, stepParam *types.SubtitleTask
 		descriptionCmdArgs := []string{"--no-playlist", "--skip-download", "--encoding", "utf-8", "--get-description", stepParam.Link}
 		titleCmdArgs = appendCookiesArgs(titleCmdArgs, youtubeCookiesPath)
 		descriptionCmdArgs = appendCookiesArgs(descriptionCmdArgs, youtubeCookiesPath)
-		if config.Conf.App.Proxy != "" {
-			titleCmdArgs = append(titleCmdArgs, "--proxy", config.Conf.App.Proxy)
-			descriptionCmdArgs = append(descriptionCmdArgs, "--proxy", config.Conf.App.Proxy)
+		if proxy := config.YouTubeProxy(); proxy != "" {
+			titleCmdArgs = append(titleCmdArgs, "--proxy", proxy)
+			descriptionCmdArgs = append(descriptionCmdArgs, "--proxy", proxy)
 		}
 		if storage.FfmpegPath != "ffmpeg" {
 			titleCmdArgs = append(titleCmdArgs, "--ffmpeg-location", storage.FfmpegPath)

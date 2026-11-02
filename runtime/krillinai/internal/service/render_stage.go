@@ -17,15 +17,16 @@ import (
 )
 
 type RenderVideoRequest struct {
-	Workdir       string
-	InputVideo    string
-	AudioFile     string
-	SubtitleFile  string
-	OutputFile    string
-	Horizontal    bool
-	StepParam     *types.SubtitleTaskStepParam
-	PreviewWidth  int
-	PreviewHeight int
+	Workdir          string
+	InputVideo       string
+	AudioFile        string
+	SubtitleFile     string
+	SubtitleDocument string
+	OutputFile       string
+	Horizontal       bool
+	StepParam        *types.SubtitleTaskStepParam
+	PreviewWidth     int
+	PreviewHeight    int
 }
 
 type resolutionProbe func(inputVideo string) (int, int, error)
@@ -132,7 +133,11 @@ func renderSubtitleFile(ctx context.Context, req RenderVideoRequest) (string, er
 	if err := validatePackagedSubtitleFonts(req.StepParam.SubtitleStyle); err != nil {
 		return "", fmt.Errorf("renderSubtitleFile subtitle fonts error: %w", err)
 	}
-	if err := srtToAss(req.SubtitleFile, assPath, req.Horizontal, req.StepParam); err != nil {
+	if req.SubtitleDocument != "" {
+		if err := CompileSubtitleDocument(req.SubtitleDocument, assPath, req.StepParam.SubtitleStyle); err != nil {
+			return "", fmt.Errorf("renderSubtitleFile compile subtitle document error: %w", err)
+		}
+	} else if err := srtToAss(req.SubtitleFile, assPath, req.Horizontal, req.StepParam); err != nil {
 		return "", fmt.Errorf("renderSubtitleFile srtToAss error: %w", err)
 	}
 	args, _ := buildEmbedSubtitleArgs(req)

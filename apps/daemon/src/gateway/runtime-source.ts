@@ -8,7 +8,8 @@ export function createRuntimeSource(manual: AppServerRuntimeManager, readState: 
     const state = readState();
     if (state.source === 'manual') return manual;
     const official = readOfficial();
-    if (state.authState !== 'signed_in' || state.activationState !== 'ready' || !official) throw new GatewayError('services_not_ready');
+    if (state.authState !== 'signed_in') throw new GatewayError('auth_required', 401);
+    if (state.activationState !== 'ready' || !official) throw new GatewayError('services_not_ready');
     return official;
   }
   function turn(input: AppServerRuntimeTurnInput): AppServerRuntimeExecution {

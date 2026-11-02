@@ -12,6 +12,7 @@ import {
   ChevronRight,
   CircleDot,
   LoaderCircle,
+  LogIn,
   MessageSquareText,
   MoreHorizontal,
   Play,
@@ -442,6 +443,12 @@ function CollaborationIssueView(props: {
       </div>
       {props.issue.status === 'open' ? (
         <div className="creator-collaboration-issue-actions">
+          {isOpenCreatorAuthIssue(props.issue) ? (
+            <a className="creator-collaboration-login-action" href="#/account">
+              <LogIn size={15} aria-hidden="true" />
+              {l('去登录', 'Sign in')}
+            </a>
+          ) : null}
           <button type="button" onClick={props.onFocus} title={l('询问这个问题', 'Ask about this issue')} aria-label={l('询问这个问题', 'Ask about this issue')}>
             <MessageSquareText size={15} aria-hidden="true" />
           </button>
@@ -450,6 +457,10 @@ function CollaborationIssueView(props: {
       ) : null}
     </article>
   );
+}
+
+function isOpenCreatorAuthIssue(issue: OpenCreatorIssue): boolean {
+  return issue.code === 'auth_required' || issue.code === 'GATEWAY_AUTH_REQUIRED';
 }
 
 function CollaborationMessageView(props: { message: CollaborationMessage }) {
@@ -505,12 +516,16 @@ export function CreatorTaskProgressNotice(props: { stageId?: string; stage?: Cre
   const adapter = creatorPanelAdapterFor(session?.job.templateId ?? '');
   const progress = adapter.readStageProgress(stage, localize);
   const percent = progress.percent === null ? null : Math.max(0, Math.min(100, Math.round(progress.percent)));
+  const phasePercent = progress.phase === 'normalizing_media' && progress.phasePercent !== null && progress.phasePercent !== undefined
+    ? Math.max(0, Math.min(100, Math.round(progress.phasePercent)))
+    : null;
   return (
     <section className="creator-task-progress-notice" role="status" aria-label={localize('任务进度', 'Task progress', 'Uppgiftsförlopp')}>
       <div className="creator-task-progress-notice-heading">
         {stageStatusIcon(stage)}
         <strong>{stageProgressText(stage, progress, adapter, localize)}{percent === null ? '' : ` · ${percent}%`}</strong>
       </div>
+      {phasePercent === null ? null : <small className="creator-task-progress-phase">{localize(`当前转换阶段 ${phasePercent}%`, `Current conversion phase ${phasePercent}%`, `Aktuell konverteringsfas ${phasePercent}%`)}</small>}
       <div className="creator-collaboration-stage-progress" data-indeterminate={progress.indeterminate || percent === null || undefined}
         role="progressbar" aria-label={props.stage ? localize('原视频下载进度', 'Source video download progress') : localize('任务进度', 'Task progress')}
         aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent ?? undefined}
@@ -553,8 +568,14 @@ export function useCreatorTaskProgress(options: {
   const status = starting ? 'starting' : needsInput ? 'needs_input' : workflow?.waitingForNext ? 'running' : stage!.status;
   const active = status === 'starting' || status === 'queued' || status === 'running';
   const progress = stage ? adapter.readStageProgress(stage, l) : undefined;
-  const indeterminate = starting || workflow?.waitingForNext || progress?.indeterminate === true || progress?.percent == null;
-  const percent = status === 'succeeded' ? 100 : indeterminate ? null : Math.max(0, Math.min(100, Math.round(progress!.percent!)));
+  const workflowPercent = workflow?.taskPercent ?? null;
+  const indeterminate = starting || (workflow?.waitingForNext === true && workflowPercent === null)
+    || progress?.indeterminate === true || (workflowPercent === null && progress?.percent == null);
+  const percent = status === 'succeeded'
+    ? 100
+    : indeterminate
+      ? null
+      : workflowPercent ?? Math.max(0, Math.min(100, Math.round(progress!.percent!)));
   const canceling = active && stage?.progress.cancelRequested === true;
   const label = workflow?.steps[workflow.stepIndex]?.label ?? l('创作任务', 'Creator task');
   const title = starting ? l('正在启动任务', 'Starting task')
@@ -630,6 +651,9 @@ export function CreatorTaskProgressBar(props: {
         <div><span title={task.controlError ?? task.summary}>{task.controlError ?? task.summary}</span>
           {task.active && !task.starting && task.stage && task.progress ? <CreatorStageProgressDetails stage={task.stage} progress={task.progress} compact /> : null}
         </div>
+        {task.progress?.phase === 'normalizing_media' && task.progress.phasePercent !== null && task.progress.phasePercent !== undefined
+          ? <span>{l(`当前转换阶段 ${Math.round(task.progress.phasePercent)}%`, `Current conversion phase ${Math.round(task.progress.phasePercent)}%`)}</span>
+          : null}
       </div>
       {!task.starting ? <ol className="creator-task-progress-bar-stages" aria-label={l('执行阶段', 'Workflow stages')}>
         {task.workflow?.steps.map((step, index) => <li key={step.id} aria-current={!success && index === phase ? 'step' : undefined} data-completed={index < phase || success || undefined}>
@@ -637,7 +661,7 @@ export function CreatorTaskProgressBar(props: {
           <span>{index < phase || success ? <CheckCircle2 size={12} /> : index + 1}</span>{step.label}
         </li>)}
       </ol> : null}
-      {task.percent !== null ? <strong className="creator-task-progress-bar-percent" title={l('当前阶段进度', 'Current stage progress')}>{task.percent}<span>%</span></strong> : null}
+      {task.percent !== null ? <strong className="creator-task-progress-bar-percent" title={l('当前任务进度', 'Current task progress')}>{task.percent}<span>%</span></strong> : null}
       <div className="creator-task-progress-bar-actions">
         {failed ? <button type="button" disabled={busy} onClick={() => void task.retry()}>{task.retryPending ? l('正在重试…', 'Retrying…') : l('重试当前阶段', 'Retry stage')}</button> : null}
         {stopped && props.onResume ? <button type="button" disabled={busy} onClick={props.onResume}>{props.controlPending === 'resuming' ? l('正在继续…', 'Resuming…') : l('继续任务', 'Resume task')}</button> : null}
@@ -655,7 +679,7 @@ export function CreatorTaskProgressBar(props: {
         {success ? <button type="button" aria-label={l('关闭完成提示', 'Dismiss completion notice')} onClick={task.dismiss}><X size={15} /></button> : null}
       </div>
     </div>
-    {task.active || success ? <div className="creator-task-progress-bar-track" role="progressbar" aria-label={l('当前阶段进度', 'Current stage progress')}
+    {task.active || success ? <div className="creator-task-progress-bar-track" role="progressbar" aria-label={l('当前任务进度', 'Current task progress')}
       data-indeterminate={task.percent === null || undefined} aria-valuemin={0} aria-valuemax={100} aria-valuenow={task.percent ?? undefined}
       aria-valuetext={task.percent === null ? task.title : `${task.percent}%`}><span style={{ width: `${task.percent ?? 30}%` }} /></div> : null}
   </section>;
@@ -747,6 +771,9 @@ function CollaborationStageView(props: {
         <div className="creator-collaboration-stage-copy">
           <small>{actorLabel(actor, l)} · {label}</small>
           <strong>{stageProgressText(stage, progress, adapter, l)}</strong>
+          {progress.phase === 'normalizing_media' && progress.phasePercent !== null && progress.phasePercent !== undefined
+            ? <small className="creator-task-progress-phase">{l(`当前转换阶段 ${Math.round(progress.phasePercent)}%`, `Current conversion phase ${Math.round(progress.phasePercent)}%`, `Aktuell konverteringsfas ${Math.round(progress.phasePercent)}%`)}</small>
+            : null}
         </div>
         <div className="creator-collaboration-stage-controls">
           {showPercent ? <b>{percent}%</b> : null}

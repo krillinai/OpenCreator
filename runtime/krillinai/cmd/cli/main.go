@@ -34,6 +34,10 @@ func main() {
 		writeAndExit(output, cli.Execute(context.Background(), nil, cmd))
 		return
 	}
+	if cmd.Name == "compile-subtitles" {
+		writeAndExit(output, cli.Execute(context.Background(), nil, cmd))
+		return
+	}
 	if cmd.DryRun {
 		writeAndExit(output, cli.Execute(context.Background(), nil, cmd))
 		return

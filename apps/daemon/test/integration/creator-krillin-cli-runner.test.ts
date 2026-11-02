@@ -408,6 +408,10 @@ describe('KrillinAI CLI runner', () => {
       providerStatus: 'running',
       message: 'Platform captions could not be processed. Switching to audio transcription.'
     }));
+    const runningPercents = progress
+      .filter(value => value.providerStatus === 'running' && typeof value.percent === 'number')
+      .map(value => value.percent as number);
+    expect(runningPercents).toEqual([...runningPercents].sort((left, right) => left - right));
     expect(progress.at(-1)).toMatchObject({
       krillinMode: 'cli',
       providerStatus: 'succeeded',

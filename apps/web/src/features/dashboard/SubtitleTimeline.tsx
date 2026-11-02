@@ -4,12 +4,17 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { SubtitleCue } from './VideoTranslationResultWorkspace.js';
 import { mergeSubtitle, retimeSubtitle, splitSubtitle, subtitleSeconds, subtitleTimestamp, waveformPeaks } from './subtitle-editing.js';
 
-const MAX_WAVEFORM_BYTES = 64 * 1024 * 1024;
+// Keep waveform decoding bounded while allowing normal high-bitrate videos.
+const MAX_WAVEFORM_BYTES = 256 * 1024 * 1024;
 
 function waveformSvgPath(peaks: number[]) {
+  const sortedPeaks = peaks.filter(Number.isFinite).sort((left, right) => left - right);
+  const reference = sortedPeaks[Math.floor(Math.max(0, sortedPeaks.length - 1) * .99)] ?? 0;
+  const scale = reference > 0 ? 1 / reference : 1;
   return peaks.map((peak, i, all) => {
     const x = i * 10000 / Math.max(1, all.length - 1);
-    return `M${x.toFixed(1)},${(30 - peak * 28).toFixed(1)}v${(peak * 56).toFixed(1)}`;
+    const normalized = Math.min(1, Math.max(0, peak * scale));
+    return `M${x.toFixed(1)},${(30 - normalized * 28).toFixed(1)}v${(normalized * 56).toFixed(1)}`;
   }).join('');
 }
 

@@ -29,6 +29,24 @@ describe('VideoTranslationAgentPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'sv-SE' }));
     expect(screen.getByText(/Laddar ned den aktuella videoresursen: 6.0 MiB/)).toBeVisible();
   });
+
+  it('keeps the overall percentage and labels the conversion phase separately', async () => {
+    const current = job();
+    current.status = 'running';
+    current.stages.push({
+      id: 'source-conversion', jobId: current.id, stageId: 'prepare-source-video', executor: 'download', status: 'running', dispatchStatus: 'claimed',
+      claimOwner: 'scheduler', claimExpiresAt: null, attempt: 1, idempotencyKey: 'source-conversion', scopeKey: null, inputFingerprint: null,
+      progress: { phase: 'normalizing_media', percent: 98.90059326924516, phasePercent: 90 },
+      errorCode: null, errorMessage: null, startedAt: '2026-10-02T00:00:00.000Z', finishedAt: null
+    });
+    renderPanel({ initialJob: current, getAgentTimeline: vi.fn(async () => emptyTimeline()) });
+    const progress = await screen.findByRole('progressbar');
+    expect(progress).toHaveAttribute('aria-valuenow', '99');
+    expect(screen.getByText('当前转换阶段 90%')).toBeVisible();
+    expect(screen.getByText('正在转换原视频为本机兼容格式，已有字幕会保留。')).toBeVisible();
+    expect(screen.queryByText(/98\.90059326924516/)).not.toBeInTheDocument();
+  });
+
   it('明确显示长时间模型下载的原因、真实进度和自动继续提示', async () => {
     const current = job();
     current.status = 'running';

@@ -220,7 +220,8 @@ describe('video translation component progress', () => {
     expect(videoTranslationPanelAdapter.normalizeActivity(activity('run-stage', { stageId: running.stageId }), zh))
       .toEqual({ label: '开始下载原视频预览', fields: [] });
     expect(videoTranslationPanelAdapter.readStageProgress(running, en)).toMatchObject({ percent: 40, indeterminate: false, message: 'Downloading the source video: 4.0 MiB / 10.0 MiB' });
-    expect(videoTranslationPanelAdapter.readStageProgress({ ...running, progress: { phase: 'normalizing_media', percent: 98 } }, zh)).toMatchObject({ percent: null, indeterminate: true });
+    expect(videoTranslationPanelAdapter.readStageProgress({ ...running, progress: { phase: 'normalizing_media', percent: 98, phasePercent: 50 } }, zh)).toMatchObject({ percent: 98, phasePercent: 50, indeterminate: false, message: '正在转换原视频为本机兼容格式' });
+    expect(videoTranslationPanelAdapter.readStageProgress({ ...running, progress: { phase: 'normalizing_media', percent: 98.90059326924516 } }, zh)).toMatchObject({ percent: 99, phasePercent: 90, indeterminate: false });
     expect(videoTranslationPanelAdapter.failedProgressText?.(running, zh)).toContain('可重试');
     expect(videoTranslationPanelAdapter.succeededProgressText?.(running, zh)).toContain('已就绪');
   });
@@ -263,7 +264,7 @@ describe('video translation component progress', () => {
     expect(videoTranslationPanelAdapter.readStageProgress(running, zh)).toMatchObject({ percent: 40, indeterminate: false, message: expect.stringContaining('4.0 MiB / 10.0 MiB') });
     expect(videoTranslationPanelAdapter.readStageProgress(running, en).message).toContain('subtitles will not be translated again');
     expect(videoTranslationPanelAdapter.readStageProgress({ ...running, progress: { phase: 'downloading', percent: null } }, zh)).toMatchObject({ percent: null, indeterminate: true });
-    expect(videoTranslationPanelAdapter.readStageProgress({ ...running, progress: { phase: 'normalizing_media', percent: 98 } }, zh)).toMatchObject({ percent: null, indeterminate: true });
+    expect(videoTranslationPanelAdapter.readStageProgress({ ...running, progress: { phase: 'normalizing_media', percent: 98, phasePercent: 50 } }, zh)).toMatchObject({ percent: 98, phasePercent: 50, indeterminate: false, message: '正在转换原视频为本机兼容格式，已有字幕会保留。' });
     expect(videoTranslationPanelAdapter.normalizeActivity(activity('run-stage', { stageId: 'prepare-source-video' }), zh))
       .toEqual({ label: '开始准备原视频预览，保留已有字幕', fields: [] });
   });

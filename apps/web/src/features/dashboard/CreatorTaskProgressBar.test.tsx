@@ -60,19 +60,19 @@ describe('shared persistent task progress', () => {
     expect(view.onCancel).toHaveBeenCalledOnce();
   });
 
-  it('keeps the bar between stages, resets per-stage progress and completes only after the final render', () => {
+  it('keeps the task progress monotonic between stages and completes only after the final render', () => {
     const initial = job();
     initial.state.videoFormat = 'all';
     const view = mount(initial);
     const tts = stage('tts', { status: 'succeeded', progress: { workflow: true, resultVersion: 2, percent: 100 } });
     view.push({ ...initial, status: 'completed', stages: [tts] });
     expect(screen.getByRole('region', { name: '当前任务进度' })).toHaveTextContent('正在准备合成横屏视频');
-    expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '33');
     expect(view.onCompleted).not.toHaveBeenCalled();
     const horizontal = stage('render-horizontal', { id: 'render_1', progress: { workflow: true, workflowParentStageRunId: tts.id, targetResultVersion: 2, phase: 'rendering_video', percent: 12 } });
     const background = stage('preview-source-video', { id: 'download_1', progress: { backgroundSourceDownload: true, percent: 90, phase: 'downloading' } });
     view.push({ ...initial, stages: [tts, horizontal, background] });
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '12');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '37');
     expect(screen.getByRole('region', { name: '当前任务进度' })).not.toHaveTextContent('下载原视频');
     const doneHorizontal = { ...horizontal, status: 'succeeded' as const };
     // Ignore the completed parallel download when following the render chain.
@@ -89,6 +89,37 @@ describe('shared persistent task progress', () => {
     expect(view.onDownload).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: '关闭完成提示' }));
     expect(screen.queryByRole('region', { name: '当前任务进度' })).toBeNull();
+  });
+
+  it('does not move the workflow bar backward when a later stage starts at five percent', () => {
+    const subtitle = stage('subtitle', { id: 'subtitle_1', progress: { workflow: true, percent: 25 } });
+    const initial = job([subtitle]);
+    initial.state.dubbing = false;
+    initial.state.composeVideo = true;
+    initial.state.videoFormat = 'horizontal';
+    const first = videoTranslationPanelAdapter.taskProgress?.(initial, (zh: string) => zh);
+    const render = stage('render-horizontal', { id: 'render_1', progress: {
+      workflow: true, workflowParentStageRunId: subtitle.id, percent: 5
+    } });
+    const next = videoTranslationPanelAdapter.taskProgress?.({ ...initial, stages: [
+      { ...subtitle, status: 'succeeded', progress: { workflow: true, percent: 100 } }, render
+    ] }, (zh: string) => zh);
+    expect(first?.taskPercent).toBe(25);
+    expect(next?.taskPercent).toBeGreaterThan(first?.taskPercent ?? 0);
+    expect(next?.taskPercent).toBe(53);
+  });
+
+  it('keeps the overall progress and labels the conversion phase separately', () => {
+    const source = stage('prepare-source-video', {
+      executor: 'download',
+      progress: { phase: 'normalizing_media', percent: 98.90059326924516, phasePercent: 50 }
+    });
+    const view = mount(job([source]));
+    const bar = screen.getByRole('region', { name: '当前任务进度' });
+    expect(within(bar).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '99');
+    expect(within(bar).getByText('当前转换阶段 50%')).toBeVisible();
+    expect(bar).not.toHaveTextContent('98.90059326924516');
+    view.unmount();
   });
 
   it('uses elapsed time and reconnect feedback without fabricating a percentage', () => {

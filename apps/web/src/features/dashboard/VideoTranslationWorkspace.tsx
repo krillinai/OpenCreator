@@ -40,6 +40,7 @@ import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import { CreatorTaskProgressBar, CreatorTaskProgressNotice, useCreatorTaskProgress } from './CreatorCollaborationPanel.js';
+import { creatorStageProgressPercent } from './creator-panel-adapters.js';
 import { clearTranslationContinuation, readTranslationContinuation, saveTranslationContinuation, ttsServiceConfigured, type TranslationEditorContext } from './video-translation-continuation.js';
 import VideoTranslationAgentPanel from './VideoTranslationAgentPanel.js';
 import CreatorResizableLayout from './CreatorResizableLayout.js';
@@ -2969,6 +2970,7 @@ export default function VideoTranslationWorkspace(props: {
 
   function requestOutput(type: 'video' | 'voice') {
     if (speechSyncing || submitting || subtitleSaving || activeStage || sourcePreviewPending || outputStartingRef.current || !selectedResult) return;
+    setResultNotice('');
     if (type === 'voice' && plannedStage === 'subtitle') {
       setResultNotice(l('翻译语言已修改，请先重新翻译字幕，再生成配音。', 'The translation languages changed. Retranslate the subtitles before generating dubbing.'));
       return;
@@ -3245,17 +3247,19 @@ export default function VideoTranslationWorkspace(props: {
       setWorkspacePhase('result');
       setResultTab('subtitles');
       setSubtitleImmersive(true);
-      setResultNotice(isRegeneration
-        ? stageId === undefined
-          ? l(
-              '修改已保存，本次无需重新转录或生成',
-              'Changes were saved without retranscribing or regenerating.'
-            )
-          : l(
-              `新版本已从“${translationStageLabel(stageId, l)}”开始，已有前置产物会直接复用`,
-              `The new version started from "${translationStageLabel(stageId, l)}" and will reuse existing upstream outputs.`
-            )
-        : translationStartedNotice);
+      setResultNotice(isRegeneration && isVideoCompositionStage(stageId)
+        ? ''
+        : isRegeneration
+          ? stageId === undefined
+            ? l(
+                '修改已保存，本次无需重新转录或生成',
+                'Changes were saved without retranscribing or regenerating.'
+              )
+            : l(
+                `新版本已从“${translationStageLabel(stageId, l)}”开始，已有前置产物会直接复用`,
+                `The new version started from "${translationStageLabel(stageId, l)}" and will reuse existing upstream outputs.`
+              )
+          : translationStartedNotice);
     } catch (cause) {
       if ((cause as { code?: unknown })?.code === 'creator_revision_conflict') {
         setStartRevisionConflict(true);
@@ -3502,6 +3506,7 @@ export default function VideoTranslationWorkspace(props: {
       return;
     }
     setSubmitting(true);
+    setResultNotice('');
     try {
       let speech = { ttsProvider, ttsModel, voiceCode, voiceName };
       if ((proposal === 'voice' || regenerationSettings.dubbing) && !officialSpeech.official) {
@@ -3538,15 +3543,17 @@ export default function VideoTranslationWorkspace(props: {
       setResultTab('subtitles');
       if (stageId === 'subtitle') setSubtitleAssistantOpen(true);
       setResultProposal(undefined);
-      setResultNotice(stageId === undefined
-        ? l(
-            '修改已保存，本次无需重新转录或生成',
-            'Changes were saved without retranscribing or regenerating.'
-          )
-        : l(
-            `新版本已从“${translationStageLabel(stageId, l)}”开始，旧版本和已有前置产物会继续保留`,
-            `The new version started from "${translationStageLabel(stageId, l)}"; previous versions and upstream outputs remain available.`
-          ));
+      setResultNotice(isVideoCompositionStage(stageId)
+        ? ''
+        : stageId === undefined
+          ? l(
+              '修改已保存，本次无需重新转录或生成',
+              'Changes were saved without retranscribing or regenerating.'
+            )
+          : l(
+              `新版本已从“${translationStageLabel(stageId, l)}”开始，旧版本和已有前置产物会继续保留`,
+              `The new version started from "${translationStageLabel(stageId, l)}"; previous versions and upstream outputs remain available.`
+            ));
     } catch (cause) {
       setResultNotice(creatorErrorMessage(cause, l));
     } finally {
@@ -4556,6 +4563,10 @@ function creatorErrorMessage(cause: unknown, l: LocalizeCopy): string {
   return l('启动翻译失败，请在 Agent 区域查看诊断后重试。', 'Failed to start translation. Review the diagnosis in the Agent panel and retry.');
 }
 
+function isVideoCompositionStage(stageId: TranslationStageId | undefined): boolean {
+  return stageId === 'render-horizontal' || stageId === 'render-vertical';
+}
+
 function translationStageLabel(stageId: string, l: LocalizeCopy): string {
   if (stageId === 'prepare-source-video') return l('原视频预览准备', 'Source video preview preparation');
   if (stageId === 'subtitle') return l('字幕翻译', 'Subtitle translation');
@@ -4610,17 +4621,6 @@ function stageResumeDescription(
         `已完成阶段和产物会保留。继续任务时，“${label}”会从头重新执行，当前 ${percent}% 的阶段内进度不会保留。`,
         `Completed stages and outputs are preserved. Resuming restarts "${label}" from the beginning; its current ${percent}% progress is not preserved.`
       );
-}
-
-function creatorStageProgressPercent(
-  stage: import('@opencreator/protocol').CreatorStageRun
-): number | null {
-  const value = typeof stage.progress.percent === 'number'
-    ? stage.progress.percent
-    : null;
-  return value === null || !Number.isFinite(value)
-    ? null
-    : Math.max(0, Math.min(100, Math.round(value)));
 }
 
 function stageErrorMessage(code: string | null, message: string | null, l: LocalizeCopy): string {

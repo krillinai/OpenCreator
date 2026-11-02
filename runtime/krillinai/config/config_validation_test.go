@@ -22,6 +22,22 @@ func TestBaseConfigDoesNotRequireTranscriptionCredentials(t *testing.T) {
 	}
 }
 
+func TestYouTubeProxyPrefersDedicatedProxyAndFallsBackToAppProxy(t *testing.T) {
+	previous := Conf
+	t.Cleanup(func() { Conf = previous })
+
+	Conf.App.Proxy = "http://fallback.example:7890"
+	Conf.App.YouTubeProxy = ""
+	if got := YouTubeProxy(); got != Conf.App.Proxy {
+		t.Fatalf("YouTubeProxy() fallback = %q, want %q", got, Conf.App.Proxy)
+	}
+
+	Conf.App.YouTubeProxy = " http://media.example:7891 "
+	if got := YouTubeProxy(); got != "http://media.example:7891" {
+		t.Fatalf("YouTubeProxy() dedicated = %q, want trimmed dedicated proxy", got)
+	}
+}
+
 func TestValidateTranscriptionConfigAcceptsTinyWhisperCpp(t *testing.T) {
 	previous := Conf
 	t.Cleanup(func() { Conf = previous })

@@ -75,6 +75,26 @@ func TestRenderPassesSubtitleStyleToService(t *testing.T) {
 	}
 }
 
+func TestRenderPassesSubtitleDocumentToService(t *testing.T) {
+	dir := t.TempDir()
+	fake := &renderFakeService{}
+	req := RenderRequest{
+		Workdir:          dir,
+		TaskID:           "demo",
+		Video:            "origin_video.mp4",
+		Subtitle:         "bilingual_srt.srt",
+		SubtitleDocument: "subtitle-document.json",
+		Horizontal:       true,
+	}
+
+	if _, err := Render(context.Background(), fake, req); err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if fake.lastRender.SubtitleDocument != req.SubtitleDocument {
+		t.Fatalf("SubtitleDocument = %q, want %q", fake.lastRender.SubtitleDocument, req.SubtitleDocument)
+	}
+}
+
 func TestRenderVerticalBilingualOutputName(t *testing.T) {
 	dir := t.TempDir()
 	fake := &renderFakeService{}

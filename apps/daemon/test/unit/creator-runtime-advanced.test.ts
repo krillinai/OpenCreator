@@ -90,6 +90,35 @@ describe('creator runtime advanced contracts', () => {
     await runner.close();
     db.close();
   });
+  it('keeps the latest stage percent when a subtitle phase reports a lower reset value', async () => {
+    const { db, repository, service, templates } = setup();
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      workRoot: join(tempDir, 'work'),
+      executors: [{
+        id: 'krillinai',
+        async run({ reportProgress }) {
+          reportProgress({ phase: 'preparing_source', percent: 25 });
+          reportProgress({ phase: 'reading_platform_captions', percent: 5 });
+          throw new Error('caption request failed');
+        }
+      }]
+    });
+    try {
+      const job = service.createJob({
+        projectId: 'p1',
+        templateId: 'video-translation',
+        state: { sourceType: 'url', sourceUrl: 'https://youtube.com/watch?v=progress-reset', sourceLanguage: 'en', targetLanguage: 'zh_cn' }
+      });
+      const stage = await runner.run(job.id, 'subtitle');
+      expect(stage.status).toBe('failed');
+      expect(stage.progress).toMatchObject({ phase: 'reading_platform_captions', percent: 25 });
+    } finally {
+      await runner.close();
+      db.close();
+    }
+  });
   it('does not treat generated subtitles from an older result snapshot as imported subtitles', async () => {
     const { db, repository, service, templates, dispatcher } = setup();
     const runner = createCreatorStageRunner({ repository, templates, workRoot: join(tempDir, 'work'), executors: [{

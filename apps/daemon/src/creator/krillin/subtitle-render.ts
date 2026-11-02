@@ -37,10 +37,18 @@ export function createSubtitleRenderService(input: {
         const output = join(workdir, 'subtitles.ass');
         await writeFile(document, JSON.stringify(request), { mode: 0o600 });
         await writeFile(stylePath, JSON.stringify(style), { mode: 0o600 });
-        await execute(resolveInside(input.resourceRoot, cli.path), ['compile-subtitles', '--input', document, '--output', output, '--subtitle-style-file', stylePath], {
-          env: { ...process.env, KRILLINAI_RESOURCE_ROOT: input.resourceRoot },
-          timeout: 15_000, maxBuffer: 1024 * 1024, windowsHide: true
-        });
+        try {
+          await execute(resolveInside(input.resourceRoot, cli.path), ['compile-subtitles', '--input', document, '--output', output, '--subtitle-style-file', stylePath], {
+            env: { ...process.env, KRILLINAI_RESOURCE_ROOT: input.resourceRoot },
+            timeout: 15_000, maxBuffer: 1024 * 1024, windowsHide: true
+          });
+        } catch (cause) {
+          const stdout = (cause as { stdout?: string }).stdout;
+          let response: { error?: { message?: string } } | undefined;
+          try { response = JSON.parse(stdout?.trim().split('\n').at(-1) ?? ''); } catch { /* Keep process failures without JSON diagnostics. */ }
+          if (response?.error?.message) throw new Error(response.error.message);
+          throw cause;
+        }
         const ass = await readFile(output, 'utf8');
         // Load only families selected by the compiled track, including explicit
         // script fallbacks. The native renderer reads the same TTF bytes.

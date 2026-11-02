@@ -56,7 +56,7 @@ VTT/SRT 文本读取允许单行最多 4 MiB，之后才进入上述模型输入
 
 审核请求失败、限流、截断、坏 JSON、超时及无效修正均保留已完成译文；用户取消仍终止任务。有效修正原子更新单句检查点，音频路径同时更新最终聚合检查点。模型证据并不构成语义正确性的确定保证，仍需检查实际最终字幕，不能用自评分替代质量判断。
 
-DeepSeek V4 的 `deepseek-flash`、`deepseek-v4-flash` 和 `deepseek-v4-pro` 使用 `temperature=0.2`，减少结构和分段的随机变化，并发送 `reasoning_effort=none`，避免推理耗尽字幕 JSON 的输出预算；实测其低强度推理也可能耗尽预算。其他模型保留默认采样，不附加这些参数。接口返回 `finish_reason=length` 时明确报 `llm_translation_truncated`，不把被截断的内容当成完整译文或普通空响应。
+DeepSeek V4 Flash 系列（包括 `deepseek-flash`、`deepseek-v4-flash`、`deepseek-v4.1-flash` 及带供应商前缀的模型 ID）和 `deepseek-v4-pro` 使用 `temperature=0.2`，减少结构和分段的随机变化，并发送 `reasoning_effort=none`，避免推理耗尽字幕 JSON 的输出预算；实测其低强度推理也可能耗尽预算。其他模型保留默认采样，不附加这些参数。接口返回 `finish_reason=length` 时明确报 `llm_translation_truncated`，不把被截断的内容当成完整译文或普通空响应。
 
 ## 时间与产物
 

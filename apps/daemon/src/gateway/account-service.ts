@@ -95,6 +95,22 @@ export function createGatewayAccountService(input: {
   }
   function assertIdle() { if (localUses > 0 || input.hasActiveTasks()) throw new GatewayError('active_tasks', 409); }
   function assertSignedIn() { if (!credentials || state.authState !== 'signed_in') throw new GatewayError('auth_required', 401); return credentials; }
+  function sameAccount(left: GatewayCredentials, right: GatewayCredentials) {
+    return !!left.account?.id && !!right.account?.id && left.account.id === right.account.id;
+  }
+  function persistedSessionIsNewer(current: GatewayCredentials, persisted: GatewayCredentials) {
+    if (!sameAccount(current, persisted) || persisted.refreshToken === current.refreshToken) return false;
+    const currentExpiry = Date.parse(current.accessExpiresAt);
+    const persistedExpiry = Date.parse(persisted.accessExpiresAt);
+    return !Number.isFinite(currentExpiry) || !Number.isFinite(persistedExpiry) || persistedExpiry >= currentExpiry;
+  }
+  async function adoptPersistedSession(current: GatewayCredentials) {
+    const persisted = await store.readCredentials().catch(() => undefined);
+    if (!persisted || !persistedSessionIsNewer(current, persisted)) return current;
+    credentials = { ...current, ...persisted };
+    state.account = credentials.account ?? state.account;
+    return credentials;
+  }
   function usesCachedModelKey() { return credentials?.modelUsePolicy === cachedModelUsePolicy && isDirectTransport(credentials.transport) && credentials.keyRotation === false; }
   function restoreModelAccessError(code: NonNullable<GatewayCredentials['modelAccessError']>) {
     if (code === 'auth_required') state = { ...state, authState: 'expired', activationState: 'inactive', bindingVersion: null, activationError: null };
@@ -251,23 +267,30 @@ export function createGatewayAccountService(input: {
   async function refresh() {
     if (refreshWork) return refreshWork;
     refreshWork = (async () => {
-      const original = assertSignedIn(); const expected = generation;
+      let original = assertSignedIn(); const expected = generation;
       if (Date.parse(original.accessExpiresAt) > Date.now() + 60_000) return;
-      try {
-        const tokens = await input.client.refresh(original.refreshToken);
-        if (closing || accessPaused || generation !== expected || credentials?.refreshToken !== original.refreshToken || state.authState !== 'signed_in') return;
-        // 同一登录会话内只更新令牌，保留并发同步的模型凭据。
-        credentials = { ...assertSignedIn(), ...tokens, accessExpiresAt: new Date(Date.now() + tokens.expiresIn * 1000).toISOString() };
-        await store.writeCredentials(credentials);
-      } catch (error) {
-        if (await blockConfirmedModelAccess(error, expected, original.account?.id)) throw error;
-        if (!closing && !accessPaused && error instanceof GatewayError && error.status === 401 && generation === expected && credentials?.refreshToken === original.refreshToken && state.authState === 'signed_in') {
-          state = { ...state, authState: 'expired', activationState: 'inactive', bindingVersion: null, activationError: null };
-          runtimeTextModel = undefined; accessController?.abort();
-          clearInterval(usageTimer); usageTimer = undefined;
-          await input.closeRuntime();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const tokens = await input.client.refresh(original.refreshToken);
+          if (closing || accessPaused || generation !== expected || credentials?.refreshToken !== original.refreshToken || state.authState !== 'signed_in') return;
+          // 同一登录会话内只更新令牌，保留并发同步的模型凭据。
+          credentials = { ...assertSignedIn(), ...tokens, accessExpiresAt: new Date(Date.now() + tokens.expiresIn * 1000).toISOString() };
+          await store.writeCredentials(credentials);
+          return;
+        } catch (error) {
+          if (await blockConfirmedModelAccess(error, expected, original.account?.id)) throw error;
+          if (error instanceof GatewayError && error.status === 401 && attempt === 0) {
+            const latest = await adoptPersistedSession(original);
+            if (latest.refreshToken !== original.refreshToken) { original = latest; continue; }
+          }
+          if (!closing && !accessPaused && error instanceof GatewayError && error.status === 401 && generation === expected && credentials?.refreshToken === original.refreshToken && state.authState === 'signed_in') {
+            state = { ...state, authState: 'expired', activationState: 'inactive', bindingVersion: null, activationError: null };
+            runtimeTextModel = undefined; accessController?.abort();
+            clearInterval(usageTimer); usageTimer = undefined;
+            await input.closeRuntime();
+          }
+          throw error;
         }
-        throw error;
       }
     })();
     try { await refreshWork; } finally { refreshWork = undefined; }

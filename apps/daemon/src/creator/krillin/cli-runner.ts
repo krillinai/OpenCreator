@@ -200,8 +200,15 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
     if (cues.length > 0) {
       const snapshot = source?.metadata.settingsSnapshot;
       const position = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) && snapshot.subtitlePosition === 'bottom' ? 'bottom' : 'top';
+      const sourceVideo = input.stage.inputArtifacts.find(artifact => artifact.kind === 'source_video');
+      const horizontal = args[0] === 'render-horizontal';
+      const width = typeof sourceVideo?.metadata.width === 'number' && Number.isInteger(sourceVideo.metadata.width) && sourceVideo.metadata.width >= 32
+        ? sourceVideo.metadata.width : horizontal ? 1920 : 1080;
+      const height = typeof sourceVideo?.metadata.height === 'number' && Number.isInteger(sourceVideo.metadata.height) && sourceVideo.metadata.height >= 32
+        ? sourceVideo.metadata.height : horizontal ? 1080 : 1920;
       const documentPath = join(configDir, 'subtitle-document.json');
       await writeFile(documentPath, JSON.stringify({
+        width, height, horizontal,
         bilingual: booleanOption(input.options, 'bilingual', false), subtitlePosition: booleanOption(input.options, 'bilingualTop', true) ? 'top' : 'bottom',
         majorTitle: args[0] === 'render-vertical' ? stringOption(input.options, 'verticalTitle') : undefined,
         minorTitle: args[0] === 'render-vertical' ? stringOption(input.options, 'verticalSubtitle') : undefined,
@@ -439,6 +446,7 @@ function executeCli(input: {
   signal: AbortSignal;
 }): Promise<KrillinCliResponse> {
   return new Promise((resolvePromise, reject) => {
+    const reportProgress = createMonotonicProgressReporter(input.reportProgress);
     const child = spawnCreatorProcess(input.executable, input.args, {
       cwd: input.cwd,
       env: createKrillinCliEnvironment(
@@ -459,7 +467,7 @@ function executeCli(input: {
       stdout = boundedAppend(stdout, value);
       pendingStdoutLine = consumeProgressLines(
         pendingStdoutLine + value,
-        input.reportProgress
+        reportProgress
       );
     });
     child.stderr?.on('data', chunk => { stderr = boundedAppend(stderr, String(chunk)); });
@@ -469,7 +477,7 @@ function executeCli(input: {
         reject(new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled'));
         return;
       }
-      reportProgressLine(pendingStdoutLine, input.reportProgress);
+      reportProgressLine(pendingStdoutLine, reportProgress);
       const response = parseResponse(stdout);
       if (response === undefined) {
         reject(new KrillinCliError(
@@ -490,6 +498,30 @@ function executeCli(input: {
       resolvePromise(response);
     });
   });
+}
+
+function createMonotonicProgressReporter(
+  reportProgress: (progress: Record<string, CreatorJson>) => void
+): (progress: Record<string, CreatorJson>) => void {
+  let lastPercent = 0;
+  return progress => {
+    const incomingPercent = progress.percent;
+    if (typeof incomingPercent !== 'number' || !Number.isFinite(incomingPercent)) {
+      reportProgress(progress);
+      return;
+    }
+    const percent = Math.max(lastPercent, Math.max(0, Math.min(99, Math.round(incomingPercent))));
+    lastPercent = percent;
+    const legacyPayload = progress.krillinEventPayload;
+    const nextLegacyPayload = legacyPayload && typeof legacyPayload === 'object' && !Array.isArray(legacyPayload)
+      ? { ...legacyPayload, percent }
+      : undefined;
+    reportProgress({
+      ...progress,
+      percent,
+      ...(nextLegacyPayload === undefined ? {} : { krillinEventPayload: nextLegacyPayload })
+    });
+  };
 }
 
 async function collectArtifacts(

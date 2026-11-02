@@ -79,7 +79,7 @@ describe('shared video progress timing', () => {
       </CreatorSessionProvider>
     </LanguageProvider>);
     expect(screen.getByText('初译 40/60；字幕完成 0/60；正在审校、排版')).toBeVisible();
-    expect(screen.getByRole('progressbar', { name: '当前阶段进度' })).toHaveAttribute('aria-valuenow', '48');
+    expect(screen.getByRole('progressbar', { name: '当前任务进度' })).toHaveAttribute('aria-valuenow', '48');
   });
 
   it('keeps subtitle translation progress fixed while waiting and shows real sentence counts', () => {
@@ -295,6 +295,29 @@ describe('CreatorCollaborationPanel', () => {
     expect(onAskPendingIssue).toHaveBeenCalledWith(issue, '为什么没有创建成功？');
     expect(screen.queryByText(/当前错误记录不足以判断更具体的根因/)).not.toBeInTheDocument();
     expect(ensureJob).not.toHaveBeenCalled();
+  });
+
+  it('offers a direct sign-in action for expired OpenCreator sessions', () => {
+    const issue = normalizePageIssue(
+      'creator-launch',
+      'creator-launch.create-job',
+      { code: 'GATEWAY_AUTH_REQUIRED' },
+      'OpenCreator sign-in has expired.'
+    );
+    const pendingJob = { ...videoGenerationJob(), id: 'pending:project_1:video-generation', stages: [], activities: [], issues: [] };
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          initialJob={pendingJob}
+          externalIssues={[issue]}
+          service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
+        >
+          <CreatorCollaborationPanel adapter={videoGenerationPanelAdapter} stepLabel="生成视频" contextSummary="Veo" />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    expect(screen.getByRole('link', { name: '去登录' })).toHaveAttribute('href', '#/account');
   });
 
   it('keeps entries in top-down order and follows new activity only while reading the latest entries', () => {
