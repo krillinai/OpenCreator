@@ -46,6 +46,7 @@ export async function normalizeSimplifiedChineseSubtitleOutputs(
           : 'mixed';
       const normalized = normalizeSrtContent(content, {
         role,
+        kind: output.kind === 'vertical_subtitle' ? 'vertical_subtitle' : 'bilingual_subtitle',
         sourceKeys,
         targetKeys,
         bilingualTop: options.bilingualTop,
@@ -60,6 +61,7 @@ export function normalizeSrtContent(
   content: string,
   options: {
     role: 'source' | 'target' | 'mixed' | 'none';
+    kind?: 'bilingual_subtitle' | 'vertical_subtitle';
     sourceKeys?: ReadonlySet<string>;
     targetKeys?: ReadonlySet<string>;
     bilingualTop?: boolean;
@@ -91,10 +93,13 @@ export function normalizeSrtContent(
           ? options.targetNeedsNormalization === true
           : false;
       if (options.role === 'mixed') {
-        const isSource = options.sourceKeys?.has(key) === true;
-        const isTarget = options.targetKeys?.has(key) === true;
+        const isSource = subtitleKeyMatches(options.sourceKeys, key);
+        const isTarget = subtitleKeyMatches(options.targetKeys, key);
         if (isSource && !isTarget) shouldNormalize = options.sourceNeedsNormalization === true;
         else if (isTarget && !isSource) shouldNormalize = options.targetNeedsNormalization === true;
+        else if (options.kind === 'vertical_subtitle' && textLines.length === 1) {
+          shouldNormalize = options.sourceNeedsNormalization === true;
+        }
         else {
           const targetOffset = options.bilingualTop === false ? textLines.length - 1 : 0;
           shouldNormalize = offset === targetOffset
@@ -134,6 +139,14 @@ function subtitleTextKeys(content: string): string[] {
 
 function subtitleTextKey(value: string): string {
   return value.replace(/<[^>]+>|\{\\[^}]+\}/g, '').trim();
+}
+
+function subtitleKeyMatches(keys: ReadonlySet<string> | undefined, value: string): boolean {
+  if (value === '' || keys === undefined) return false;
+  for (const key of keys) {
+    if (key === value || key.includes(value) || value.includes(key)) return true;
+  }
+  return false;
 }
 
 function isSrtTimestampLine(value: string): boolean {

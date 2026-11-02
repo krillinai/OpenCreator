@@ -29,6 +29,18 @@ describe('creator subtitle script normalization', () => {
     })).toContain('The filter works like this.\n这个滤光片的功能就是');
   });
 
+  it('normalizes a short source fragment in a vertical subtitle cue', () => {
+    const shortMixed = `1\n00:00:00,000 --> 00:00:01,000\n管帽管壳與管帽\n`;
+    expect(normalizeSrtContent(shortMixed, {
+      role: 'mixed',
+      kind: 'vertical_subtitle',
+      sourceKeys: new Set(['管帽管壳與管帽結合在一起的彩色部分']),
+      targetKeys: new Set(['The colored section']),
+      sourceNeedsNormalization: true,
+      targetNeedsNormalization: false
+    })).toContain('管帽管壳与管帽');
+  });
+
   it('leaves traditional Chinese untouched when it is the selected language', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'creator-subtitle-script-'));
     const path = join(directory, 'source.srt');
