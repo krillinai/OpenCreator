@@ -18,6 +18,7 @@ import {
   resolveInside,
   type KrillinRuntimeManifest
 } from './manifest.js';
+import { normalizeSimplifiedChineseSubtitleOutputs } from './subtitle-script.js';
 import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
 
 export type MaterializedKrillinArtifact = {
@@ -529,7 +530,7 @@ async function collectArtifacts(
   response: KrillinCliResponse
 ): Promise<KrillinResultArtifact[]> {
   const mappings = outputMappings(input.stage.stageRun.stageId);
-  const result: KrillinResultArtifact[] = [];
+  const candidates: Array<{ field: string; kind: string; path: string }> = [];
   const jobRoot = await realpath(resolve(input.jobsRoot, input.stage.job.id));
   for (const [field, kind] of mappings) {
     if (kind === 'source_video' && input.stage.stageRun.stageId !== 'subtitle' && input.artifacts.some(artifact => artifact.kind === 'source_video')) continue;
@@ -545,6 +546,17 @@ async function collectArtifacts(
     if (!isInside(jobRoot, path)) {
       throw new CreatorExecutorError('krillin_output_escape', `KrillinAI output escapes the current Job root: ${field}`);
     }
+    const info = await stat(path);
+    if (!info.isFile() || info.size === 0) continue;
+    candidates.push({ field, kind, path });
+  }
+  await normalizeSimplifiedChineseSubtitleOutputs(candidates, {
+    originLanguage: input.options.originLanguage,
+    targetLanguage: input.options.targetLanguage,
+    bilingualTop: booleanOption(input.options, 'bilingualTop', true)
+  });
+  const result: KrillinResultArtifact[] = [];
+  for (const { field, kind, path } of candidates) {
     const info = await stat(path);
     if (!info.isFile() || info.size === 0) continue;
     result.push({
