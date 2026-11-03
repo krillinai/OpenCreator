@@ -103,7 +103,10 @@ type budgetedChatCompleter interface {
 }
 
 func pairedTranslationResponseBudget(text string, limit int) int {
-	return 4*len(text) + (3*subtitleTargetLength(text)/max(40, limit)+1)*48
+	// UTF-8 byte length overestimates CJK input by roughly 3x and can trigger
+	// an unnecessary 800-byte semantic seam before the model sees the text.
+	sourceUnits := utf8.RuneCountInString(text)
+	return 4*sourceUnits + (3*subtitleTargetLength(text)/max(40, limit)+1)*48
 }
 
 func buildPairedTranslationBatches(texts []string, originLang, targetLang types.StandardLanguageCode, limit, batchSize int, terms ...translationTerm) ([]pairedTranslationInput, error) {

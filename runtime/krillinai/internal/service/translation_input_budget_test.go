@@ -17,6 +17,16 @@ func TestTranslationInputUsesAvailableResponseBudget(t *testing.T) {
 	}
 }
 
+func TestTranslationInputKeepsUnpunctuatedCJKSentenceTogether(t *testing.T) {
+	// This is approximately the shape of the reported transcript: it fits the
+	// 1600-byte input limit, but the old byte-based estimate forced an 800-byte cut.
+	text := strings.Repeat("中文无标点", 98)
+	parts, err := splitTranslationSentenceForBudget(text, translationSentenceBytes, 60)
+	if err != nil || len(parts) != 1 || parts[0] != text {
+		t.Fatalf("unpunctuated CJK sentence acquired a hard seam: parts=%d err=%v", len(parts), err)
+	}
+}
+
 func TestTranslationInputCutsStillRespectAllBudgets(t *testing.T) {
 	for _, text := range []string{
 		strings.Repeat("Please check No. 35 before sending it to J. R. Smith. ", 90),
