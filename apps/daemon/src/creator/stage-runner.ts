@@ -572,9 +572,13 @@ export function createCreatorStageRunner(input: {
     const progress = { ...(current?.progress ?? {}), ...incoming };
     const currentPercent = current?.progress.percent;
     const incomingPercent = incoming.percent;
+    const currentPhase = current?.progress.phase;
+    const incomingPhase = incoming.phase;
+    const phaseChanged = incomingPhase !== undefined && incomingPhase !== currentPhase;
     if (typeof currentPercent === 'number' && Number.isFinite(currentPercent)
       && (incomingPercent === null
-        || (typeof incomingPercent === 'number' && Number.isFinite(incomingPercent)
+        || (phaseChanged
+          && typeof incomingPercent === 'number' && Number.isFinite(incomingPercent)
           && incomingPercent < currentPercent))) {
       progress.percent = currentPercent;
     }

@@ -609,7 +609,7 @@ function createPreviewProgressReporter(stage: CreatorExecutorInput): (line: stri
         const combinedPercent = rawPercent === null
           ? null
           : Math.min(95, rawPercent);
-        if (combinedPercent !== null) reportedPercent = Math.max(reportedPercent, Math.round(combinedPercent));
+        if (combinedPercent !== null) reportedPercent = Math.round(combinedPercent);
         stage.reportProgress({
           phase: 'downloading',
           percent: combinedPercent === null

@@ -195,7 +195,7 @@ describe('creator download executor', () => {
     expect(reportProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'merging_media', percent: 96 }));
   });
 
-  it('keeps preview progress monotonic when yt-dlp switches from video to audio', async () => {
+  it('recomputes aggregate progress when yt-dlp switches from video to audio', async () => {
     const executor = createDownloadExecutor(await fakeBinaries({
       previewProgressEvents: [
         { downloaded_bytes: 100, total_bytes: 100, filename: 'video.mp4' },
@@ -216,9 +216,9 @@ describe('creator download executor', () => {
       .filter(value => value.phase === 'downloading');
     expect(progress).toEqual([
       expect.objectContaining({ percent: 95, downloadedBytes: 100, totalBytes: 100 }),
-      expect.objectContaining({ percent: 95, downloadedBytes: 125, totalBytes: 200 })
+      expect.objectContaining({ percent: 63, downloadedBytes: 125, totalBytes: 200 })
     ]);
-    expect(progress[1]!.percent).toBeGreaterThanOrEqual(progress[0]!.percent!);
+    expect(progress[1]!.percent).toBe(Math.round(progress[1]!.downloadedBytes! / progress[1]!.totalBytes! * 100));
   });
 
   it('reports the measured ratio for a single preview resource', async () => {

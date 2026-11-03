@@ -96,6 +96,29 @@ describe('video translation preview preparation', () => {
     } finally { await context.close(); }
   });
 
+  it('allows download progress to reflect a newly discovered media resource', async () => {
+    let release!: () => void;
+    const released = new Promise<void>(resolve => { release = resolve; });
+    const context = setup({ id: 'download', async run({ reportProgress, workdir }) {
+      reportProgress({ phase: 'downloading', percent: 95, downloadedBytes: 100, totalBytes: 100 });
+      reportProgress({ phase: 'downloading', percent: 63, downloadedBytes: 125, totalBytes: 200 });
+      await released;
+      const path = join(workdir, 'preview.mp4');
+      writeFileSync(path, 'preview');
+      return { outputs: [{ kind: 'source_video', path, status: 'completed', sourceArtifactIds: [] }] };
+    } });
+    try {
+      const stageId = context.start();
+      const execution = context.runner.runStageRun(stageId);
+      await expect.poll(() => context.repository.getStageRun(stageId)?.progress.totalBytes).toBe(200);
+      expect(context.repository.getStageRun(stageId)?.progress).toMatchObject({
+        phase: 'downloading', percent: 63, downloadedBytes: 125, totalBytes: 200
+      });
+      release();
+      expect((await execution).status).toBe('succeeded');
+    } finally { await context.close(); }
+  });
+
   it('preserves draft status on preview failure and rejects unsupported sources', async () => {
     const context = setup({ id: 'download', async run() { throw new CreatorExecutorError('network_unavailable', 'Preview download failed'); } });
     try {
