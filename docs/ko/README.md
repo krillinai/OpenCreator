@@ -262,6 +262,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > 이 동영상 사례와 자막 정렬 이미지는 OpenCreator가 KrillinAI라는 이름을 사용하던 시기에 제작되었습니다.
 
+#### 자막 편집기
+
+내장 자막 편집기는 원문과 번역문을 나란히 편집하고, 동기화된 동영상 미리 보기, 재생과 연동되는 파형 및 타임라인, 사용자 지정 자막 스타일을 제공합니다.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 ### 비디오 다운로드
 
 지원하는 10개 플랫폼의 공개 동영상 링크를 분석하고 사용 가능한 형식을 비교한 뒤 비디오 또는 오디오를 프로젝트로 직접 다운로드합니다.

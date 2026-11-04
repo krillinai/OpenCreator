@@ -304,6 +304,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > ভিডিও উদাহরণ ও সাবটাইটেল সারিবিন্যাসের ছবিটি KrillinAI নাম থাকার সময় তৈরি।
 
+#### সাবটাইটেল এডিটর
+
+বিল্ট-ইন সাবটাইটেল এডিটরে মূল লেখা ও অনুবাদ পাশাপাশি সম্পাদনা, সিঙ্ক্রোনাইজড ভিডিও প্রিভিউ, প্লেব্যাকের সঙ্গে যুক্ত ওয়েভফর্ম ও টাইমলাইন এবং কাস্টমাইজযোগ্য সাবটাইটেল স্টাইল ব্যবহার করা যায়।
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 <a id="video-downloader"></a>
 
 ### ভিডিও ডাউনলোড

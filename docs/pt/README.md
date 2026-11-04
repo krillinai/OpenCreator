@@ -262,6 +262,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > Estes exemplos de vídeo e a imagem de alinhamento de legendas foram produzidos quando o OpenCreator ainda usava o nome KrillinAI.
 
+#### Editor de legendas
+
+O editor de legendas integrado permite editar o texto original e a tradução lado a lado, visualizar o vídeo sincronizado, usar uma forma de onda e uma linha do tempo vinculadas à reprodução e personalizar os estilos das legendas.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 ### Download de vídeos
 
 Analise links de vídeo públicos de 10 plataformas compatíveis, compare os formatos disponíveis e baixe o vídeo ou o áudio diretamente para o projeto.

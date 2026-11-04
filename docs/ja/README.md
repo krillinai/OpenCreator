@@ -262,6 +262,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > これらの動画例と字幕位置合わせ画像は、OpenCreator が KrillinAI という名称を使用していた時期に制作されました。
 
+#### 字幕エディター
+
+内蔵の字幕エディターでは、原文と訳文を並べて編集し、動画を同期プレビューできます。再生と連動する波形・タイムラインや、カスタマイズ可能な字幕スタイルにも対応しています。
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 ### 動画ダウンロード
 
 対応する10のプラットフォームの公開動画リンクを解析し、利用可能な形式を比較して、動画または音声をプロジェクトへ直接ダウンロードできます。

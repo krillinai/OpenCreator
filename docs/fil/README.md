@@ -304,6 +304,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > Ginawa ang mga video at larawan ng subtitle alignment noong KrillinAI pa ang pangalan ng OpenCreator.
 
+#### Editor ng Subtitle
+
+Pinapayagan ng built-in na editor ng subtitle na mag-edit nang magkatabi ang orihinal at isinaling teksto, may synchronized na video preview, waveform at timeline na nakaugnay sa playback, at mga customizable na subtitle style.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 <a id="video-downloader"></a>
 
 ### Pag-download ng video

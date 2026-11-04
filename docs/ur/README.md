@@ -306,6 +306,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > یہ ویڈیو مثالیں اور سب ٹائٹل مطابقت کی تصویر KrillinAI نام کے دور کی ہیں۔
 
+#### سب ٹائٹل ایڈیٹر
+
+بلٹ اِن سب ٹائٹل ایڈیٹر اصل اور ترجمہ شدہ متن کی ساتھی ساتھی ترمیم، ہم آہنگ ویڈیو پری ویو، پلے بیک سے جُڑی ویو فارم اور ٹائم لائن، اور حسب ضرورت سب ٹائٹل اسٹائلز فراہم کرتا ہے۔
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 <a id="video-downloader"></a>
 
 ### ویڈیو ڈاؤن لوڈر

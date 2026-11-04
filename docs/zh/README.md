@@ -262,6 +262,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > 这些视频与字幕对齐图片制作于 OpenCreator 仍使用 KrillinAI 名称的阶段。
 
+#### 字幕编辑器
+
+内置字幕编辑器支持并排编辑原文与译文、同步视频预览、随播放联动的波形与时间轴，以及自定义字幕样式。
+
+![OpenCreator 字幕编辑器](../images/examples/video-translation-subtitle-editor-en.png)
+
 ### 视频下载
 
 支持 10 个视频来源平台，解析公开视频链接，比较可用格式，并将视频或音频直接下载到项目中。

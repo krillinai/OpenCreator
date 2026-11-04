@@ -242,6 +242,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > Bu video örnekleri ve altyazı hizalama görseli, OpenCreator hâlâ KrillinAI adını kullanırken üretildi.
 
+#### Altyazı Düzenleyici
+
+Yerleşik altyazı düzenleyici; özgün ve çevrilmiş metinleri yan yana düzenleme, eşzamanlı video önizleme, oynatmayla bağlantılı dalga formu ve zaman çizelgesi ve özelleştirilebilir altyazı stilleri sunar.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 ### Video İndirme
 
 Desteklenen 10 platformdaki herkese açık video bağlantılarını analiz edin, kullanılabilir formatları karşılaştırın ve video ya da sesi doğrudan projenize indirin.

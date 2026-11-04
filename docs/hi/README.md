@@ -304,6 +304,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > ये वीडियो उदाहरण और उपशीर्षक संरेखण चित्र KrillinAI नाम के समय बनाए गए थे।
 
+#### सबटाइटल एडिटर
+
+बिल्ट-इन सबटाइटल एडिटर में मूल और अनुवादित टेक्स्ट को साथ-साथ संपादित करने, सिंक्रोनाइज़्ड वीडियो प्रीव्यू, प्लेबैक से जुड़ी वेवफ़ॉर्म और टाइमलाइन तथा कस्टमाइज़ेबल सबटाइटल स्टाइल की सुविधा मिलती है।
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 <a id="video-downloader"></a>
 
 ### वीडियो डाउनलोडर

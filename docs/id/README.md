@@ -262,6 +262,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > Contoh video dan gambar penyelarasan subtitel ini dibuat saat OpenCreator masih menggunakan nama KrillinAI.
 
+#### Editor Subtitel
+
+Editor subtitel bawaan menyediakan pengeditan teks asli dan terjemahan secara berdampingan, pratinjau video tersinkronisasi, bentuk gelombang dan linimasa yang terhubung dengan pemutaran, serta gaya subtitel yang dapat disesuaikan.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 ### Pengunduh Video
 
 Analisis tautan video publik dari 10 platform yang didukung, bandingkan format yang tersedia, lalu unduh video atau audio langsung ke proyek.

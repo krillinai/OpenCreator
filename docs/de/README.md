@@ -262,6 +262,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > Diese Videobeispiele und das Bild zur Untertitelausrichtung entstanden, als OpenCreator noch den Namen KrillinAI verwendete.
 
+#### Untertitel-Editor
+
+Der integrierte Untertitel-Editor ermöglicht die nebeneinander angezeigte Bearbeitung von Original und Übersetzung, eine synchronisierte Videovorschau, eine mit der Wiedergabe verknüpfte Wellenform und Zeitleiste sowie anpassbare Untertitelstile.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 ### Video-Download
 
 Analysiere öffentliche Videolinks von 10 unterstützten Plattformen, vergleiche die verfügbaren Formate und lade Video oder Audio direkt in das Projekt herunter.

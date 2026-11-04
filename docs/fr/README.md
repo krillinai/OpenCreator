@@ -262,6 +262,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > Ces exemples vidéo et l'image d'alignement des sous-titres ont été produits lorsqu'OpenCreator utilisait encore le nom KrillinAI.
 
+#### Éditeur de sous-titres
+
+L'éditeur de sous-titres intégré permet de modifier côte à côte le texte original et sa traduction, de prévisualiser la vidéo en synchronisation, d'utiliser une forme d'onde et une chronologie liées à la lecture, et de personnaliser les styles de sous-titres.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 ### Téléchargement de vidéos
 
 Analysez des liens vidéo publics provenant de 10 plateformes prises en charge, comparez les formats disponibles, puis téléchargez la vidéo ou l'audio directement dans le projet.

@@ -262,6 +262,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > These video examples and the subtitle alignment image were produced while OpenCreator still used the KrillinAI name.
 
+#### Subtitle Editor
+
+The built-in subtitle editor provides side-by-side original and translated text, synchronized video preview, a playback-linked waveform and timeline, and customizable subtitle styles.
+
+![OpenCreator subtitle editor](./docs/images/examples/video-translation-subtitle-editor-en.png)
+
 ### Video Downloader
 
 Analyze public video links from 10 supported platforms, compare available formats, and download video or audio directly to your project.

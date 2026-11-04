@@ -304,6 +304,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > Các video ví dụ và ảnh căn chỉnh phụ đề được tạo khi OpenCreator còn dùng tên KrillinAI.
 
+#### Trình chỉnh sửa phụ đề
+
+Trình chỉnh sửa phụ đề tích hợp hỗ trợ chỉnh sửa văn bản gốc và bản dịch cạnh nhau, xem trước video đồng bộ, dạng sóng và dòng thởi gian liên kết với phát lại, cùng kiểu phụ đề tùy chỉnh.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
+
 <a id="video-downloader"></a>
 
 ### Tải video
