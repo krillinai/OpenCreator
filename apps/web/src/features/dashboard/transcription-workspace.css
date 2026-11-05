@@ -1,0 +1,53 @@
+.transcription-workspace-page .transcription-workspace-content { overflow-y: auto; }
+.transcription-workspace-page .transcription-workspace-content.transcription-editor-content { overflow: hidden; padding: 0; }
+.transcription-editor-content > .video-result-workspace { height: 100%; }
+.transcription-studio { align-content: start; gap: 24px; container: transcription / inline-size; }
+.transcription-composer, .transcription-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.transcription-steps { margin-bottom: 24px; }
+.transcription-source-field { min-width: 0; }
+.transcription-source-field .video-translation-source-step { height: 100%; }
+.transcription-source-field .video-translation-source-step .video-translation-url-field { width: min(592px, 100%); box-sizing: border-box; }
+.transcription-settings { min-width: 0; display: grid; gap: 20px; margin-top: 24px; }
+.transcription-setting-card { min-width: 0; }
+.transcription-wizard-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
+.transcription-wizard-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 18px; }
+.transcription-secondary-action { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.transcription-wizard-actions .transcription-submit { width: auto; min-width: 144px; }
+.transcription-configured-model { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.transcription-configured-model > svg { flex-shrink: 0; color: var(--muted); }
+.transcription-configured-model > div { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.transcription-configured-model span, .transcription-configured-model small { color: var(--muted); font-size: 11px; }
+.transcription-configured-model strong { overflow-wrap: anywhere; font-size: 14px; }
+.transcription-configured-model > a { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 4px; color: var(--muted); }
+.transcription-configured-model > a:hover { color: var(--text); background: var(--state-hover-bg); }
+.transcription-language-field { display: grid; gap: 8px; color: var(--text); font-size: 13px; font-weight: 500; }
+.transcription-language-field > span { color: var(--muted); font-size: 12px; }
+.transcription-language-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.transcription-submit { width: 100%; min-height: 44px; justify-content: center; }
+.transcription-output { min-width: 0; padding-top: 20px; border-top: 1px solid var(--border-hairline); }
+.transcription-output .creator-tool-panel-heading { align-items: center; gap: 16px; }
+.transcription-downloads { display: flex; flex-wrap: wrap; gap: 8px; }
+.transcription-downloads button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; }
+.transcription-result-pending { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 120px; color: var(--muted); font-size: 13px; }
+.transcription-text { max-height: min(56dvh, 560px); overflow-y: auto; padding: 8px 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.transcription-text p { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 14px; margin: 0; padding: 12px 0; border-bottom: 1px solid var(--border-hairline); line-height: 1.65; }
+.transcription-text p:last-child { border-bottom: 0; }
+.transcription-text time { color: var(--muted); font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; direction: ltr; }
+.transcription-text span { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.transcription-spinner { animation: transcription-spin 1s linear infinite; }
+.transcription-workspace-page .transcription-error { margin: 0; flex-wrap: wrap; }
+.transcription-composer :disabled { cursor: not-allowed; }
+
+@keyframes transcription-spin { to { transform: rotate(360deg); } }
+
+@container transcription (max-width: 480px) {
+  .transcription-output .creator-tool-panel-heading { align-items: flex-start; flex-direction: column; }
+  .transcription-downloads { width: 100%; }
+  .transcription-downloads button { flex: 1; }
+  .transcription-text { padding-inline: 12px; }
+  .transcription-text p { grid-template-columns: 54px minmax(0, 1fr); gap: 10px; }
+}
+
+@media (pointer: coarse) {
+  .transcription-configured-model > a, .transcription-downloads button { min-height: 44px; }
+}

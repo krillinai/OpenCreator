@@ -1,4 +1,3 @@
-import { selectListbox } from '../../test/select-option.js';
 import { changeControl } from '../../test/select-option.js';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { normalizePageIssue } from '../issues/page-issue-state.js';
@@ -26,9 +25,10 @@ describe('VideoGenerationWorkspace', () => {
     } }));
     const form = screen.getByRole('form', { name: '视频生成' });
     expect(within(form).getByRole('textbox', { name: '提示词' })).toHaveValue('A coastal tracking shot');
-    expect(within(form).getByRole('combobox', { name: '模型版本' })).toHaveValue('Veo 3.1');
-    expect(within(form).getByRole('combobox', { name: '画幅' })).toHaveValue('720x1280');
-    expect(within(form).getByRole('combobox', { name: '视频时长' })).toHaveValue('8');
+    expect(within(form).getByRole('combobox', { name: '模型' })).toHaveValue('Veo 3.1');
+    openVideoSettings();
+    expect(screen.getByRole('radio', { name: '9:16' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: '8 秒' })).toHaveAttribute('aria-checked', 'true');
     expect(within(form).getByRole('button', { name: '开始生成' })).toBeEnabled();
     const agent = screen.getByRole('complementary', { name: 'OpenCreator' });
     expect(within(agent).getByRole('complementary', { name: '任务摘要' })).toHaveTextContent('Veo 3.1 · 9:16 · 8s');
@@ -44,8 +44,9 @@ describe('VideoGenerationWorkspace', () => {
     expect(view.applyAction).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: '  The city at dusk  ' } });
-    changeControl(screen.getByRole('combobox', { name: '模型' }), { target: { value: 'veo' } });
-    changeControl(screen.getByRole('combobox', { name: '视频时长' }), { target: { value: '8' } });
+    await selectVideoModel('Veo', 'Veo 3.1');
+    openVideoSettings();
+    fireEvent.click(screen.getByRole('radio', { name: '8 秒' }));
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
 
     await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith('creator_video_workspace', expect.objectContaining({
@@ -65,10 +66,13 @@ describe('VideoGenerationWorkspace', () => {
     const image = new File(['image'], 'reference.png', { type: 'image/png' });
     changeControl(upload, { target: { files: [image] } });
     expect(await screen.findByRole('img', { name: '视频参考图预览' })).toBeVisible();
-    expect(screen.getByRole('combobox', { name: '画幅' })).toBeDisabled();
+    openVideoSettings();
+    expect(screen.getByRole('radio', { name: '16:9' })).toBeDisabled();
+    fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '移除参考图' }));
     expect(screen.queryByRole('img', { name: '视频参考图预览' })).not.toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: '画幅' })).toBeEnabled();
+    openVideoSettings();
+    expect(screen.getByRole('radio', { name: '16:9' })).toBeEnabled();
     changeControl(upload, { target: { files: [image] } });
     expect(await screen.findByRole('img', { name: '视频参考图预览' })).toBeVisible();
     expect(upload).toHaveValue('');
@@ -94,9 +98,9 @@ describe('VideoGenerationWorkspace', () => {
   });
 
   it.each([
-    { language: 'zh-CN' as const, form: '视频生成', prompt: '提示词', model: '模型版本', generate: '开始生成', clear: '清空提示词', summary: '任务摘要' },
-    { language: 'en-US' as const, form: 'Video Generation', prompt: 'Prompt', model: 'Model version', generate: 'Generate', clear: 'Clear prompt', summary: 'Task summary' },
-    { language: 'sv-SE' as const, form: 'Videogenerering', prompt: 'Prompt', model: 'Modellversion', generate: 'Generera', clear: 'Rensa prompt', summary: 'Uppgiftssammanfattning' }
+    { language: 'zh-CN' as const, form: '视频生成', prompt: '提示词', model: '模型', generate: '开始生成', clear: '清空提示词', summary: '任务摘要' },
+    { language: 'en-US' as const, form: 'Video Generation', prompt: 'Prompt', model: 'Model', generate: 'Generate', clear: 'Clear prompt', summary: 'Task summary' },
+    { language: 'sv-SE' as const, form: 'Videogenerering', prompt: 'Prompt', model: 'Modell', generate: 'Generera', clear: 'Rensa prompt', summary: 'Uppgiftssammanfattning' }
   ])('localizes the single-page controls and summary in $language', copy => {
     renderWorkspace(creatorJob({}), { language: copy.language });
     const form = screen.getByRole('form', { name: copy.form });
@@ -110,10 +114,9 @@ describe('VideoGenerationWorkspace', () => {
   it('shows model-native video sizes and durations beyond the custom provider presets', () => {
     const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', models: [{ id: 'vendor/video', modality: 'video', capabilities: [], resolutions: ['1080p', '720p'], aspectRatios: ['16:9', '9:16'], durations: [3, 12] }], activationError: null };
     renderWorkspace(creatorJob({ state: { prompt: 'city', currentStep: 1, furthestStep: 1 } }), { gatewayState });
-    const size = screen.getByRole('combobox', { name: '画幅' }) as HTMLSelectElement;
-    expect(within(selectListbox(size)).getAllByRole('option').map(option => option.getAttribute('data-value'))).toEqual(['1080p@16:9', '1080p@9:16', '720p@16:9', '720p@9:16']);
-    const duration = screen.getByRole('combobox', { name: '视频时长' }) as HTMLSelectElement;
-    expect(within(selectListbox(duration)).getAllByRole('option').map(option => option.getAttribute('data-value'))).toEqual(['3', '12']);
+    openVideoSettings();
+    expect(within(screen.getByRole('radiogroup', { name: '画幅' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['1080p@16:9', '1080p@9:16', '720p@16:9', '720p@9:16']);
+    expect(within(screen.getByRole('radiogroup', { name: '视频时长' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['3', '12']);
   });
   it('shows only the official video model and supported parameters while signed in', async () => {
     const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1', selectedModels: { video: 'bytedance/seedance-1-5-pro' }, models: [{ id: 'bytedance/seedance-1-5-pro', modality: 'video', capabilities: ['image_to_video'], sizes: ['1280x720', '720x1280'], durations: [4, 5] }], activationError: null };
@@ -122,8 +125,8 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.getByLabelText('视频模型')).toHaveTextContent('seedance-1-5-pro');
     expect(screen.queryByRole('combobox', { name: '模型' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: '模型版本' })).not.toBeInTheDocument();
-    const durations = screen.getByRole('combobox', { name: '视频时长' }) as HTMLSelectElement;
-    expect(within(selectListbox(durations)).getAllByRole('option').map(option => option.getAttribute('data-value'))).toEqual(['4', '5']);
+    openVideoSettings();
+    expect(within(screen.getByRole('radiogroup', { name: '视频时长' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['4', '5']);
     expect(screen.queryByRole('option', { name: /1024/ })).not.toBeInTheDocument();
     expect(getConfig).not.toHaveBeenCalled();
   });
@@ -721,9 +724,9 @@ describe('VideoGenerationWorkspace', () => {
     ));
     renderWorkspace(job, { openArtifact });
 
-    const format = screen.getByRole('combobox', { name: '画幅' });
-    expect(format).toBeDisabled();
-    expect(format).toHaveTextContent('跟随参考图');
+    openVideoSettings();
+    expect(screen.getByRole('radio', { name: '16:9' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '视频设置' })).toHaveTextContent('原图');
     await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(job.id, reference.id));
   });
 
@@ -743,7 +746,8 @@ describe('VideoGenerationWorkspace', () => {
 
     renderWorkspace(job, { language: 'en-US' });
 
-    expect(screen.getByRole('combobox', { name: 'Format' })).toBeInTheDocument();
+    openVideoSettings('Video settings');
+    expect(screen.getByRole('radiogroup', { name: 'Format' })).toBeInTheDocument();
     expect(within(screen.getByRole('complementary', { name: 'Task summary' })).getByText('Output format')).toBeInTheDocument();
   });
 
@@ -754,15 +758,23 @@ describe('VideoGenerationWorkspace', () => {
       provider: 'seedance', model: 'doubao-seedance-2-0-260128',
       duration: 5, currentStep: 1, furthestStep: 1
     } }), { creatorServicesService: { getConfig: () => pendingConfig } });
-    const provider = screen.getByRole('combobox', { name: '模型' });
-    const model = screen.getByRole('combobox', { name: '模型版本' });
-    const duration = screen.getByRole('combobox', { name: '视频时长' });
-    changeControl(provider, { target: { value: 'veo' } });
-    changeControl(duration, { target: { value: '8' } });
+    const model = screen.getByRole('combobox', { name: '模型' });
+    await selectVideoModel('Veo', 'Veo 3.1');
+    openVideoSettings();
+    fireEvent.click(screen.getByRole('radio', { name: '8 秒' }));
     await act(async () => { resolveConfig({ config: createVideoConfig(), configuredCredentials: [] }); });
-    expect(provider).toHaveValue('veo');
     expect(model).toHaveValue('Veo 3.1');
-    expect(duration).toHaveValue('8');
+    expect(screen.getByRole('radio', { name: '8 秒' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('defaults new video tasks to Seedance 2.5', async () => {
+    renderWorkspace(creatorJob({}), {
+      creatorServicesService: {
+        getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: [] })
+      }
+    });
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Seedance 2.5'));
   });
 
   it('uses the configured default model for a task and allows a task-level override', async () => {
@@ -797,13 +809,23 @@ describe('VideoGenerationWorkspace', () => {
       creatorServicesService: { getConfig } as never
     });
 
-    const model = await screen.findByRole('combobox', { name: '模型版本' });
+    const model = await screen.findByRole('combobox', { name: '模型' });
     await waitFor(() => expect(model).toHaveValue('Seedance 2.0'));
-    fireEvent.focus(model);
-    fireEvent.click(screen.getByRole('option', { name: 'Seedance 2.5' }));
+    await selectVideoModel('Seedance', 'Seedance 2.5');
     expect(model).toHaveValue('Seedance 2.5');
   });
 });
+
+async function selectVideoModel(provider: string, name: string) {
+  fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${provider}`) }));
+  fireEvent.click(await screen.findByRole('option', { name }));
+}
+
+function openVideoSettings(label = '视频设置') {
+  fireEvent.click(screen.getByRole('button', { name: label }));
+  return screen.getByRole('dialog', { name: label });
+}
 
 function renderWorkspace(
   initialJob: CreatorJob,

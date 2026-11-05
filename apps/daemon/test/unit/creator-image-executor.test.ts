@@ -459,8 +459,8 @@ describe('creator image executor', () => {
     expect(prompt).toContain('Do not return a text-free background');
     expect(prompt).not.toContain('young man');
   });
-});
 
+});
 function stageInput(
   state: Record<string, string | number>,
   jobPatch: Partial<CreatorJob> = {}

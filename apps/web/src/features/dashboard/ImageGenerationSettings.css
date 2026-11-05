@@ -1,0 +1,243 @@
+.image-generation-settings {
+  min-width: 0;
+  justify-self: start;
+  max-width: 100%;
+}
+
+.image-generation-settings-trigger {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow:
+    0 4px 12px color-mix(in srgb, var(--shadow-base) 40%, transparent),
+    inset 0 1px color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.image-generation-settings-trigger:hover:enabled,
+.image-generation-settings-trigger[aria-expanded="true"] {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow:
+    0 6px 16px color-mix(in srgb, var(--shadow-base) 46%, transparent),
+    inset 0 1px color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.image-generation-settings-trigger:focus-visible {
+  outline: 2px solid var(--state-focus-ring);
+  outline-offset: 2px;
+}
+
+.image-generation-settings-summary {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.image-generation-settings-summary::-webkit-scrollbar {
+  display: none;
+}
+
+.image-generation-settings-summary > span {
+  flex: 0 0 auto;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-inline-end: 1px solid var(--border);
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.image-generation-settings-summary > span:first-child {
+  padding-inline-start: 5px;
+}
+
+.image-generation-settings-summary > span:last-child {
+  padding-inline-end: 5px;
+  border-inline-end: 0;
+}
+
+.image-generation-settings-trigger > svg:last-child {
+  flex-shrink: 0;
+  transition: transform 140ms ease;
+}
+
+.image-generation-settings-trigger > svg:last-child.is-open {
+  transform: rotate(180deg);
+}
+
+.image-generation-settings-panel {
+  position: fixed;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-popover);
+  color: var(--text);
+  box-shadow: var(--shadow-dialog);
+  box-sizing: border-box;
+}
+
+.image-generation-settings-panel > header {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.image-generation-settings-panel > header > strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.image-generation-settings-panel > header > button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.image-generation-settings-panel > header > button:hover {
+  background: var(--state-hover-bg);
+  color: var(--text);
+}
+
+.image-generation-settings-sections {
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.image-generation-settings-sections > section {
+  min-width: 0;
+}
+
+.image-generation-settings-sections h3 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 16px;
+}
+
+.image-generation-ratio-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(48px, 1fr));
+  gap: 5px;
+}
+
+.image-generation-ratio-options > button {
+  min-width: 0;
+  min-height: 46px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 3px;
+  padding: 4px 3px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.image-generation-ratio-options > button:hover {
+  background: var(--state-hover-bg);
+  color: var(--text);
+}
+
+.image-generation-ratio-options > button[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.image-generation-ratio-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+}
+
+.image-generation-ratio-icon > span {
+  display: block;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+
+.image-generation-segment-options {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--conversation-bg);
+}
+
+.image-generation-segment-options > button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.image-generation-segment-options > button:hover {
+  color: var(--text);
+}
+
+.image-generation-segment-options > button[aria-checked="true"] {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.image-generation-settings-panel button:focus-visible {
+  outline: 2px solid var(--state-focus-ring);
+  outline-offset: 1px;
+}
+
+@media (pointer: coarse) {
+  .image-generation-settings-trigger {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-generation-settings-trigger > svg:last-child {
+    transition: none;
+  }
+}

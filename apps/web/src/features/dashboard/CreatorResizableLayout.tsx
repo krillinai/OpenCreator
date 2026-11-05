@@ -14,6 +14,7 @@ import { useOptionalCreatorSession } from './creator-session-store.js';
 
 const WORKSPACE_MIN_WIDTH = 390;
 const AGENT_MIN_WIDTH = 280;
+const DEFAULT_AGENT_WIDTH = 320;
 const RESIZE_HANDLE_WIDTH = 7;
 const RESIZE_KEY_STEP = 32;
 
@@ -56,7 +57,7 @@ export default function CreatorResizableLayout(props: {
     const rect = layoutRef.current?.getBoundingClientRect();
     const fallbackWidth = 900;
     return {
-      fallback: rect ? Math.round(rect.width * 0.68) : fallbackWidth,
+      fallback: rect ? Math.round(rect.width - DEFAULT_AGENT_WIDTH - RESIZE_HANDLE_WIDTH) : fallbackWidth,
       max: rect
         ? Math.max(WORKSPACE_MIN_WIDTH, rect.width - AGENT_MIN_WIDTH - RESIZE_HANDLE_WIDTH)
         : fallbackWidth

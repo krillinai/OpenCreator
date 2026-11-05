@@ -2306,6 +2306,8 @@
 }
 
 .creator-resizable-layout {
+  --creator-agent-pane-width: 320px;
+  --creator-content-max-width: 1120px;
   min-width: 680px;
   min-height: 0;
   display: grid;
@@ -2313,7 +2315,7 @@
     minmax(
       0,
       min(
-        var(--creator-workspace-pane-width, calc(75% - 3.5px)),
+        var(--creator-workspace-pane-width, calc(100% - var(--creator-agent-pane-width) - 7px)),
         calc(100% - 287px)
       )
     )
@@ -2473,14 +2475,10 @@
 }
 
 .creator-tool-stack {
-  width: min(1120px, 100%);
+  width: min(var(--creator-content-max-width), 100%);
   display: grid;
   gap: 14px;
   margin: 0 auto;
-}
-
-.video-download-workspace-page .creator-workspace-layout {
-  --creator-workspace-pane-width: calc(80% - 3.5px);
 }
 
 .auto-clip-tool-stack {
@@ -11801,7 +11799,7 @@
 }
 
 .auto-clip-detail-result {
-  width: min(1040px, 100%);
+  width: min(var(--creator-content-max-width), 100%);
   margin: 0 auto;
   box-sizing: border-box;
 }
@@ -13143,7 +13141,6 @@
 
 .video-translation-collab-layout {
   height: 100%;
-  --creator-workspace-pane-width: min(calc(68% - 3.5px), calc(100% - 287px));
 }
 
 .video-translation-wizard-main {
@@ -13363,13 +13360,8 @@
 
 .video-translation-wizard-main[data-phase="configure"]:is([data-step="1"], [data-step="2"]) .video-translation-wizard-body,
 .video-translation-wizard-main[data-phase="configure"]:is([data-step="1"], [data-step="2"]) .video-translation-actions-stack {
-  width: min(960px, calc(100% - 48px));
+  width: min(var(--creator-content-max-width), calc(100% - 48px));
   margin-inline: auto;
-}
-
-.video-translation-wizard-main[data-phase="configure"][data-step="2"] .video-translation-wizard-body,
-.video-translation-wizard-main[data-phase="configure"][data-step="2"] .video-translation-actions-stack {
-  width: min(1200px, calc(100% - 48px));
 }
 
 @container video-translation-workspace (max-width: 640px) {

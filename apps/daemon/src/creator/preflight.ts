@@ -327,7 +327,7 @@ export function createCreatorPreflight(input: {
         }, { label: 'Open local component settings', deepLink: '#/settings?tab=local-components' });
       }
     }
-    if (stage.executor === 'krillinai' && stage.id === 'subtitle' && job.state.sourceType !== 'subtitle' && !hasImportedSubtitle(job) && !canTryPlatformCaptions(job) && ['whisper.cpp', 'whisperkit', 'faster-whisper'].includes(config.transcription.provider)) {
+    if (stage.executor === 'krillinai' && (stage.id === 'subtitle' || stage.id === 'transcription') && job.state.sourceType !== 'subtitle' && !hasImportedSubtitle(job) && !canTryPlatformCaptions(job) && ['whisper.cpp', 'whisperkit', 'faster-whisper'].includes(config.transcription.provider)) {
       const provider = input.readCapabilities().transcription.providers.find(candidate => candidate.provider === config.transcription.provider);
       if (provider?.available !== true) add('blocked', {
         id: 'transcription-capability',
@@ -477,7 +477,7 @@ async function checkProviderConfig(
       else add('ready', { id: 'video-provider', title: 'Video service', message: `${provider} / ${settings.model} is configured.`, executionMode: 'remote' });
     }
   }
-  if (stage.executor === 'krillinai' && stage.id === 'subtitle' && job.state.sourceType !== 'subtitle' && !hasImportedSubtitle(job)) {
+  if (stage.executor === 'krillinai' && (stage.id === 'subtitle' || stage.id === 'transcription') && job.state.sourceType !== 'subtitle' && !hasImportedSubtitle(job)) {
     const choices = job.state.officialModels;
     const selectedModel = choices && typeof choices === 'object' && !Array.isArray(choices) && typeof choices.transcription === 'string' ? choices.transcription : undefined;
     const assessment = assessKrillinTranscription(config, typeof job.state.sourceLanguage === 'string' ? job.state.sourceLanguage : 'en', selectedModel);

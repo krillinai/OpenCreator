@@ -937,6 +937,50 @@ export const smartDubbingPanelAdapter: CreatorPanelAdapter = {
   }
 };
 
+export const transcriptionPanelAdapter: CreatorPanelAdapter = {
+  id: 'transcription',
+  composerPlaceholder: l => l(
+    '询问转录状态，或调整视频来源和源语言',
+    'Ask about transcription progress or adjust the media source and language'
+  ),
+  stageLabel(stageId, l) {
+    if (stageId === 'transcription') return l('视频转录', 'Video transcription');
+    return l('视频转录任务', 'Video transcription task');
+  },
+  phaseLabel(phase, l) {
+    const labels: Record<string, string> = {
+      preparing_dependencies: l('准备转录组件', 'Preparing transcription components'),
+      processing_audio: l('识别语音并生成时间轴', 'Recognizing speech and generating timestamps'),
+      collecting_outputs: l('整理转录文本和字幕', 'Finalizing the transcript and subtitles'),
+      completed: l('转录文本和字幕已生成', 'Transcript and subtitles generated')
+    };
+    return labels[phase] ?? genericPhaseLabel(phase, l);
+  },
+  activityStageId: readActivityStageId,
+  normalizeActivity(activity, l) {
+    return normalizeCommonActivity(
+      activity,
+      l,
+      transcriptionPanelAdapter,
+      {},
+      transcriptionFieldLabel
+    );
+  },
+  readStageProgress: readStandardProgress,
+  runningProgressText(stage, progress, l) {
+    const completed = progress.completed;
+    const total = progress.total;
+    if (completed !== null && total !== null) return l(
+      `正在转录，已完成 ${completed}/${total} 段`,
+      `Transcribing, ${completed}/${total} segments completed`
+    );
+    return progress.phase === null ? null : transcriptionPanelAdapter.phaseLabel(progress.phase, l);
+  },
+  succeededProgressText(_stage, l) {
+    return l('转录文本和 SRT 字幕已生成', 'Transcript and SRT subtitles generated');
+  }
+};
+
 export const xiaohongshuPostPanelAdapter: CreatorPanelAdapter = {
   id: 'xiaohongshu-post',
   composerPlaceholder: l => l(
@@ -1183,6 +1227,7 @@ export function creatorPanelAdapterFor(templateId: string): CreatorPanelAdapter 
   if (templateId === 'video-download') return videoDownloadPanelAdapter;
   if (templateId === 'auto-clip') return autoClipPanelAdapter;
   if (templateId === 'smart-dubbing') return smartDubbingPanelAdapter;
+  if (templateId === 'transcription') return transcriptionPanelAdapter;
   if (templateId === 'xiaohongshu-post') return xiaohongshuPostPanelAdapter;
   if (templateId === 'short-video-script') return shortVideoScriptPanelAdapter;
   if (templateId === 'wechat-article') return wechatArticlePanelAdapter;
@@ -1352,6 +1397,21 @@ function smartDubbingFieldLabel(
     style: l('表达风格', 'Delivery style'),
     speed: l('语速', 'Speaking rate'),
     format: l('音频格式', 'Audio format')
+  };
+  return labels[field] ?? null;
+}
+
+function transcriptionFieldLabel(
+  field: string,
+  l: CreatorPanelLocalize
+): string | null {
+  const labels: Record<string, string> = {
+    sourceType: l('来源类型', 'Source type'),
+    sourceUrl: l('视频链接', 'Video URL'),
+    sourceLanguage: l('源语言', 'Source language'),
+    targetLanguage: l('源语言', 'Source language'),
+    preferPlatformCaptions: l('平台字幕优先', 'Prefer platform captions'),
+    officialModels: l('语音识别模型', 'Transcription model')
   };
   return labels[field] ?? null;
 }

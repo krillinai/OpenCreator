@@ -981,7 +981,8 @@ export function createCreatorService(input: {
           const source = current.artifacts.find(artifact => artifact.id === artifactId);
           if (
             source === undefined
-            || (source.kind !== 'target_subtitle' && source.kind !== 'vertical_subtitle')
+            || (source.kind !== 'target_subtitle' && source.kind !== 'vertical_subtitle'
+              && !(current.templateId === 'transcription' && source.kind === 'source_subtitle'))
             || source.path === null
           ) {
             throw new CreatorServiceError(
@@ -1127,9 +1128,9 @@ export function createCreatorService(input: {
           }
           nextState = {
             ...nextState,
-            ...(source.kind === 'target_subtitle'
-              ? { subtitleArtifactId: nextSubtitle.id }
-              : { verticalSubtitleArtifactId: nextSubtitle.id }),
+            ...(source.kind === 'vertical_subtitle'
+              ? { verticalSubtitleArtifactId: nextSubtitle.id }
+              : { subtitleArtifactId: nextSubtitle.id }),
             ...appendCreatorResultSnapshot({
               job: current,
               version: resultVersion,
@@ -1146,7 +1147,9 @@ export function createCreatorService(input: {
               action: request.action,
               description: source.kind === 'target_subtitle'
                 ? 'Saved horizontal subtitle changes'
-                : 'Saved vertical subtitle changes',
+                : source.kind === 'source_subtitle'
+                  ? 'Saved source subtitle changes'
+                  : 'Saved vertical subtitle changes',
               state: nextState
             })
           };

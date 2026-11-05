@@ -60,6 +60,11 @@ const validDefaults = {
     style: 'calm',
     speed: 1,
     format: 'mp3'
+  },
+  'transcription': {
+    sourceType: 'url',
+    sourceUrl: 'https://www.youtube.com/watch?v=example',
+    sourceLanguage: 'en'
   }
 } as const;
 
@@ -237,7 +242,8 @@ describe('creator preset module schemas', () => {
       { module: 'image-generation', runtime: 'image-generation@2' },
       { module: 'video-generation', runtime: 'video-generation@1' },
       { module: 'cover-generator', runtime: 'cover@2' },
-      { module: 'smart-dubbing', runtime: 'smart-dubbing@1' }
+      { module: 'smart-dubbing', runtime: 'smart-dubbing@1' },
+      { module: 'transcription', runtime: 'transcription@1' }
     ]);
 
     expect(() => getCreatorPresetModuleDefinition('video-generation')

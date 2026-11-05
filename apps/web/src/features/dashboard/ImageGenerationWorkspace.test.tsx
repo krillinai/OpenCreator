@@ -1,4 +1,3 @@
-import { selectListbox } from '../../test/select-option.js';
 import { changeControl } from '../../test/select-option.js';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
@@ -33,12 +32,13 @@ describe('ImageGenerationWorkspace', () => {
     const getConfig = vi.fn(async () => ({ config }));
     renderWorkspace(fixture, { ...fixture.currentJob(), state: { prompt: 'A city', provider, providerSource: 'user' } }, { getConfig });
     await act(async () => { await Promise.resolve(); });
-    const format = screen.queryByRole('combobox', { name: '图片画幅' });
-    if (ratios) expect(within(selectListbox(format!)).getAllByRole('option')).toHaveLength(ratios);
+    const settings = openImageSettings();
+    const format = within(settings).queryByRole('radiogroup', { name: '图片画幅' });
+    if (ratios) expect(within(format!).getAllByRole('radio')).toHaveLength(ratios);
     else expect(format).not.toBeInTheDocument();
     for (const [label, values] of [['分辨率', resolutions], ['图片质量', qualities]] as const) {
-      const control = screen.queryByRole('combobox', { name: label });
-      if (values.length) expect(within(selectListbox(control!)).getAllByRole('option').map(option => option.getAttribute('data-value'))).toEqual(values);
+      const control = within(settings).queryByRole('radiogroup', { name: label });
+      if (values.length) expect(within(control!).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(values);
       else expect(control).not.toBeInTheDocument();
     }
     expect(getConfig).toHaveBeenCalledOnce();
@@ -50,18 +50,33 @@ describe('ImageGenerationWorkspace', () => {
     const config = createDefaultCreatorServicesConfig();
     config.image.gemini.model = 'gemini-3-pro-image-preview';
     renderWorkspace(fixture, { ...fixture.currentJob(), state: { prompt: 'A city', provider: 'gemini', providerSource: 'user' } }, { getConfig: async () => ({ config }) });
-    await screen.findByRole('combobox', { name: '分辨率' });
-    changeControl(screen.getByRole('combobox', { name: '图片画幅' }), { target: { value: '21:9' } });
-    changeControl(screen.getByRole('combobox', { name: '分辨率' }), { target: { value: '4K' } });
+    const settings = openImageSettings();
+    await within(settings).findByRole('radiogroup', { name: '分辨率' });
+    chooseImageSetting('图片画幅', '21:9');
+    chooseImageSetting('分辨率', '4K');
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
     expect(fixture.currentJob().state)
       .toMatchObject({ aspectRatio: '21:9', resolution: '4K', modelQuality: '' });
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    fireEvent.click(screen.getByRole('button', { name: 'OpenAI 2 个模型' }));
     fireEvent.click(screen.getByRole('option', { name: 'GPT Image' }));
-    expect(screen.getByRole('combobox', { name: '图片画幅' })).toHaveValue('1:1');
-    expect(screen.getByRole('combobox', { name: '分辨率' })).toHaveValue('1K');
-    expect(screen.getByRole('combobox', { name: '图片质量' })).toHaveValue('medium');
+    openImageSettings();
+    expect(screen.getByRole('radio', { name: '1:1' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: '1K' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: '标准' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('falls back to GPT when the default Codex provider is unavailable', async () => {
+    const fixture = createFixture({ pending: true });
+    const config = createDefaultCreatorServicesConfig();
+    renderWorkspace(fixture, fixture.currentJob(), {
+      getConfig: vi.fn(async () => ({ config, configuredCredentials: [] })),
+      getCodexImageStatus: vi.fn(async () => ({ ready: false }))
+    });
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('GPT Image'));
+    expect(fixture.ensureJob).not.toHaveBeenCalled();
   });
 
   it('persists an inherited provider together with its model parameters when generating an existing draft', async () => {
@@ -72,8 +87,9 @@ describe('ImageGenerationWorkspace', () => {
     renderWorkspace(fixture, fixture.currentJob(), { getConfig: async () => ({ config }) });
     await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Gemini'));
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: 'A city' } });
-    changeControl(screen.getByRole('combobox', { name: '图片画幅' }), { target: { value: '16:9' } });
-    changeControl(screen.getByRole('combobox', { name: '分辨率' }), { target: { value: '4K' } });
+    openImageSettings();
+    chooseImageSetting('图片画幅', '16:9');
+    chooseImageSetting('分辨率', '4K');
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
     expect(fixture.currentJob().state).toMatchObject({ provider: 'gemini', aspectRatio: '16:9', resolution: '4K' });
@@ -83,10 +99,11 @@ describe('ImageGenerationWorkspace', () => {
     const fixture = createFixture();
     const state: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', models: [{ id: 'vendor/image', modality: 'image', capabilities: [], imageOptions: { aspectRatios: ['16:9', '9:16'], resolutions: ['1K', '2K'], qualities: ['standard', 'hd'], outputFormats: ['jpeg'], maxImages: 1, maxReferences: 0 } }], activationError: null };
     renderWorkspace(fixture, { ...fixture.currentJob(), state: { prompt: 'city', currentStep: 1, furthestStep: 1 } }, { getConfig: vi.fn() }, state);
-    expect(screen.getByRole('combobox', { name: '图片画幅' })).toHaveValue('16:9');
-    expect(within(selectListbox(screen.getByRole('combobox', { name: '图片质量' }))).getAllByRole('option').map(option => option.textContent)).toEqual(['标准', '高清']);
-    changeControl(screen.getByRole('combobox', { name: '分辨率' }), { target: { value: '2K' } });
-    changeControl(screen.getByRole('combobox', { name: '图片质量' }), { target: { value: 'hd' } });
+    const settings = openImageSettings();
+    expect(screen.getByRole('radio', { name: '16:9' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(settings).getByRole('radiogroup', { name: '图片质量' })).toHaveTextContent('标准高清');
+    chooseImageSetting('分辨率', '2K');
+    chooseImageSetting('图片质量', '高清');
     expect(screen.queryByRole('radio', { name: '4 张' })).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: '1 张' })).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
@@ -99,6 +116,7 @@ describe('ImageGenerationWorkspace', () => {
     const state: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', models: [{ id: 'midjourney-v8.2', catalogSchema: 2, modality: 'image', capabilities: ['generate'], imageOptions: { maxImages: 1, imagesPerRequest: 4, maxReferences: 0 } }], activationError: null };
     const reference = { ...imageArtifact('creator_job_image_ui', 1, new Date().toISOString()), kind: 'reference_image' as const };
     renderWorkspace(fixture, { ...fixture.currentJob(), artifacts: [reference], state: { prompt: 'city', currentStep: 1, furthestStep: 1, referenceImageArtifactId: reference.id } }, { getConfig: vi.fn() }, state);
+    openImageSettings();
     expect(screen.getByRole('radio', { name: '4 张' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.queryByRole('radio', { name: '1 张' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('上传图像生成参考图')).not.toBeInTheDocument();
@@ -145,8 +163,9 @@ describe('ImageGenerationWorkspace', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('请先描述需要生成的画面');
     expect(fixture.applyAction).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: '  A coastal landscape  ' } });
-    changeControl(screen.getByRole('combobox', { name: '图片画幅' }), { target: { value: '3:2' } });
-    changeControl(screen.getByRole('combobox', { name: '图片质量' }), { target: { value: 'high' } });
+    openImageSettings();
+    chooseImageSetting('图片画幅', '3:2');
+    chooseImageSetting('图片质量', '高清');
     fireEvent.click(screen.getByRole('radio', { name: '4 张' }));
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith('creator_job_image_ui', expect.objectContaining({ action: 'run-stage' })));
@@ -193,7 +212,7 @@ describe('ImageGenerationWorkspace', () => {
     await waitFor(() => expect(fixture.uploadReferenceImage).toHaveBeenCalledOnce());
     expect(screen.getByRole('textbox', { name: '提示词' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '正在生成' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: '图片质量' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '图片设置' })).toBeDisabled();
     fireEvent.submit(form);
     await act(async () => { release(); });
     await waitFor(() => expect(fixture.applyAction.mock.calls.filter(([, request]) => request.action === 'run-stage')).toHaveLength(1));
@@ -202,21 +221,22 @@ describe('ImageGenerationWorkspace', () => {
   });
 
   it.each([
-    { language: 'zh-CN' as const, form: '图像生成', prompt: '提示词', format: '图片画幅', generate: '开始生成', clear: '清空提示词', summary: '任务摘要' },
-    { language: 'en-US' as const, form: 'Image Generation', prompt: 'Prompt', format: 'Image format', generate: 'Generate', clear: 'Clear prompt', summary: 'Task summary' },
-    { language: 'sv-SE' as const, form: 'Bildgenerering', prompt: 'Prompt', format: 'Bildformat', generate: 'Generera', clear: 'Rensa prompt', summary: 'Uppgiftssammanfattning' }
+    { language: 'zh-CN' as const, form: '图像生成', prompt: '提示词', format: '图片画幅', settings: '图片设置', generate: '开始生成', clear: '清空提示词', summary: '任务摘要' },
+    { language: 'en-US' as const, form: 'Image Generation', prompt: 'Prompt', format: 'Image format', settings: 'Image settings', generate: 'Generate', clear: 'Clear prompt', summary: 'Task summary' },
+    { language: 'sv-SE' as const, form: 'Bildgenerering', prompt: 'Prompt', format: 'Bildformat', settings: 'Bildinställningar', generate: 'Generera', clear: 'Rensa prompt', summary: 'Uppgiftssammanfattning' }
   ])('localizes the single-page controls and task summary in $language', copy => {
     const fixture = createFixture();
     renderWorkspace(fixture, fixture.currentJob(), undefined, undefined, copy.language);
     const form = screen.getByRole('form', { name: copy.form });
     expect(within(form).getByRole('textbox', { name: copy.prompt })).toBeInTheDocument();
-    expect(within(form).getByRole('combobox', { name: copy.format })).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: copy.settings })).toBeInTheDocument();
     expect(within(form).getByRole('button', { name: copy.generate })).toBeEnabled();
     expect(within(form).getByRole('button', { name: copy.clear })).toBeDisabled();
+    expect(within(openImageSettings(copy.settings)).getByRole('radiogroup', { name: copy.format })).toBeInTheDocument();
     expect(within(screen.getByRole('complementary', { name: 'OpenCreator' })).getByRole('complementary', { name: copy.summary })).toBeInTheDocument();
   });
 
-  it('places model selection before the editor and the reference banner above the prompt', () => {
+  it('places model selection in the bottom toolbar and the reference upload beside the prompt', () => {
     const fixture = createFixture({ pending: true });
     renderWorkspace(fixture);
     const workspace = screen.getByRole('region', { name: '图像生成 操作区' });
@@ -228,7 +248,7 @@ describe('ImageGenerationWorkspace', () => {
     expect(editor).toContainElement(referenceUpload);
     expect(editor).toHaveTextContent('JPG、PNG、WebP，最大 20 MB');
     expect(editor).toHaveTextContent('0/1');
-    expect(model.compareDocumentPosition(referenceUpload) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(model.closest('.image-generation-action-bar')).not.toBeNull();
     expect(prompt).toHaveAttribute('rows', '7');
     expect(referenceUpload.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING)
       .not.toBe(0);
@@ -245,11 +265,16 @@ describe('ImageGenerationWorkspace', () => {
     expect(model.tagName).toBe('INPUT');
     fireEvent.click(model);
     const options = within(screen.getByRole('listbox', { name: copy.model })).getAllByRole('option');
-    expect(options).toHaveLength(5);
+    expect(options).toHaveLength(2);
+    expect(options.every(option => option.querySelector('[data-brand="openai"] img'))).toBe(true);
+    const catalog = document.querySelector('.official-model-catalog-brands')!;
     for (const brand of ['openai', 'bytedance', 'kling', 'google']) {
-      expect(options.some(option => option.querySelector(`[data-brand="${brand}"] img`))).toBe(true);
+      expect(catalog.querySelector(`[data-brand="${brand}"] img`)).not.toBeNull();
     }
-    expect(options.filter(option => option.querySelector('[data-brand="openai"] img'))).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: /ByteDance/ }));
+    const byteDanceOptions = within(screen.getByRole('listbox', { name: copy.model })).getAllByRole('option');
+    expect(byteDanceOptions).toHaveLength(1);
+    expect(byteDanceOptions[0]).toHaveAccessibleName(copy.jimeng);
     changeControl(model, { target: { value: 'jimeng' } });
     expect(within(screen.getByRole('listbox', { name: copy.model })).getAllByRole('option')).toHaveLength(1);
     expect(model).toHaveValue('jimeng');
@@ -383,13 +408,15 @@ describe('ImageGenerationWorkspace', () => {
     const config = createDefaultCreatorServicesConfig();
     config.image.provider = 'codex-native';
     renderWorkspace(fixture, fixture.currentJob(), {
-      getConfig: vi.fn(async () => ({ config, configuredCredentials: [] }))
+      getConfig: vi.fn(async () => ({ config, configuredCredentials: [] })),
+      getCodexImageStatus: vi.fn(async () => ({ ready: true }))
     });
 
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
       target: { value: '使用默认 Codex 生成一张图片' }
     });
     await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本机 Codex 生图'));
+    openImageSettings();
     expect(screen.getByRole('radio', { name: '1 张' })).toHaveAttribute('aria-checked', 'true');
     expect(fixture.ensureJob).not.toHaveBeenCalled();
   });
@@ -445,7 +472,7 @@ describe('ImageGenerationWorkspace', () => {
 
     const workspace = screen.getByRole('region', { name: '图像生成 操作区' });
     expect(within(workspace).getByRole('textbox', { name: '提示词' })).toHaveValue('一张产品主视觉');
-    expect(within(workspace).getByRole('combobox', { name: '图片画幅' })).toBeInTheDocument();
+    expect(within(workspace).getByRole('button', { name: '图片设置' })).toBeInTheDocument();
     expect(within(workspace).getByRole('button', { name: '开始生成' })).toBeInTheDocument();
     expect(within(workspace).queryByRole('navigation', { name: '图像生成流程' })).not.toBeInTheDocument();
     expect(within(workspace).queryByRole('button', { name: '继续' })).not.toBeInTheDocument();
@@ -521,12 +548,31 @@ describe('ImageGenerationWorkspace', () => {
     const runOrder = fixture.applyAction.mock.invocationCallOrder.at(-1)!;
     expect(uploadOrder).toBeLessThan(runOrder);
   });
+
+  it('keeps the sample guide hidden', () => {
+    const fixture = createFixture();
+    renderWorkspace(fixture);
+    expect(screen.queryByRole('complementary', { name: '图像风格引导' })).not.toBeInTheDocument();
+  });
+
 });
+
+function openImageSettings(label = '图片设置') {
+  fireEvent.click(screen.getByRole('button', { name: label }));
+  return screen.getByRole('dialog', { name: label });
+}
+
+function chooseImageSetting(label: string, value: string) {
+  fireEvent.click(within(screen.getByRole('radiogroup', { name: label })).getByRole('radio', { name: value }));
+}
 
 function renderWorkspace(
   fixture: ReturnType<typeof createFixture>,
   initialJob = fixture.currentJob(),
-  creatorServicesService?: { getConfig(): Promise<unknown> },
+  creatorServicesService?: {
+    getConfig(): Promise<unknown>;
+    getCodexImageStatus?(): Promise<{ ready: boolean }>;
+  },
   gatewayState?: GatewayAccountState,
   language: AppLanguage = 'zh-CN'
 ) {

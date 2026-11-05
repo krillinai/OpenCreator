@@ -33,7 +33,8 @@ export function createCreatorPresetDetails(
     'image-generation': [['尺寸', 'Size'], ['质量', 'Quality'], ['数量', 'Count']],
     'video-generation': [['尺寸', 'Size'], ['时长', 'Duration']],
     'cover-generator': [['风格', 'Style'], ['比例', 'Aspect ratio'], ['文字语言', 'Text language'], ['数量', 'Count']],
-    'smart-dubbing': [['风格', 'Style'], ['语速', 'Speed'], ['格式', 'Format']]
+    'smart-dubbing': [['风格', 'Style'], ['语速', 'Speed'], ['格式', 'Format']],
+    'transcription': [['语言', 'Language'], ['输出', 'Output']]
   };
   const details = createCreatorPresetHighlights(preset, locale).map((highlight, index) => {
     const [zh, en] = labels[preset.module][index] ?? ['配置', 'Setting'];
@@ -176,6 +177,10 @@ const highlightBuilders: Record<
     textHighlight(dubbingStyleLabel(readString(defaults.style), locale)),
     textHighlight(`${formatSpeed(readNumber(defaults.speed))}x`),
     textHighlight((readString(defaults.format) ?? 'mp3').toUpperCase())
+  ],
+  'transcription': (defaults, locale) => [
+    textHighlight(languageLabel(readString(defaults.sourceLanguage), locale)),
+    textHighlight('SRT / TXT')
   ]
 };
 

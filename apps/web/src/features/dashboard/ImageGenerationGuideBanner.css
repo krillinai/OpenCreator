@@ -1,0 +1,140 @@
+.image-generation-guide-banner {
+  position: relative;
+  min-width: 0;
+  min-height: 116px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 34%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--shadow-base) 24%, transparent);
+}
+
+.image-generation-guide-copy {
+  z-index: 1;
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 7px;
+  padding: 18px 22px;
+}
+
+.image-generation-guide-copy > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.image-generation-guide-copy > strong {
+  max-width: 460px;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.image-generation-guide-copy > p {
+  max-width: 480px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.image-generation-guide-copy > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.image-generation-guide-copy > button:hover {
+  border-color: var(--border-strong);
+  background: var(--state-hover-bg);
+}
+
+.image-generation-guide-copy > button:focus-visible,
+.image-generation-guide-dismiss:focus-visible {
+  outline: 2px solid var(--state-focus-ring);
+  outline-offset: 2px;
+}
+
+.image-generation-guide-banner > img {
+  width: 100%;
+  height: 100%;
+  min-height: 116px;
+  display: block;
+  object-fit: cover;
+  object-position: center 42%;
+  mask-image: linear-gradient(to right, transparent, black 22%);
+}
+
+.image-generation-guide-dismiss {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  inset-inline-end: 8px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  color: var(--muted);
+}
+
+.image-generation-guide-dismiss:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+@container image-generation (max-width: 640px) {
+  .image-generation-guide-banner {
+    grid-template-columns: minmax(0, 1fr) 128px;
+  }
+
+  .image-generation-guide-copy {
+    padding: 16px;
+  }
+
+  .image-generation-guide-copy > strong {
+    font-size: 15px;
+  }
+}
+
+@container image-generation (max-width: 460px) {
+  .image-generation-guide-banner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .image-generation-guide-banner > img {
+    grid-row: 1;
+    height: 108px;
+    min-height: 108px;
+    mask-image: linear-gradient(to bottom, black 35%, transparent);
+  }
+
+  .image-generation-guide-copy {
+    grid-row: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-generation-guide-banner > img {
+    mask-image: none;
+  }
+}

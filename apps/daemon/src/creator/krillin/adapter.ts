@@ -209,7 +209,7 @@ function requiresTranscriptionDependency(
   stageId: string,
   options: Record<string, unknown>
 ): boolean {
-  return stageId === 'subtitle' && options.captionSource !== 'platform';
+  return (stageId === 'subtitle' || stageId === 'transcription') && options.captionSource !== 'platform';
 }
 
 async function ensureKrillinTranscriptionDependency(
@@ -284,8 +284,8 @@ export function buildKrillinStageOptions(input: CreatorExecutorInput): Record<st
       typeof state.targetLanguage === 'string' ? state.targetLanguage : undefined
     ),
     captionSource: state.preferPlatformCaptions === false ? 'whisper' : 'any',
-    sourceOnly: input.job.templateId === 'stickman-video'
-      && input.stageRun.stageId === 'source-transcript',
+    sourceOnly: input.job.templateId === 'transcription'
+      || input.job.templateId === 'stickman-video' && input.stageRun.stageId === 'source-transcript',
     prepareVideo: input.job.templateId !== 'video-translation',
     audioOnly: input.job.templateId === 'video-translation',
     bilingual: input.stageRun.stageId === 'subtitles' || state.bilingual === true,
@@ -567,6 +567,12 @@ export function resolveKrillinStageContract(
   input: Pick<CreatorExecutorInput, 'job' | 'stageRun'>
 ): KrillinStageContract {
   const stageId = input.stageRun.stageId;
+  if (input.job.templateId === 'transcription' && stageId === 'transcription') return {
+    stageType: 'subtitle',
+    allowedOutputKinds: new Set(['source_video', 'source_subtitle']),
+    outputAliases: { source_video: 'source_video', source_subtitle: 'source_subtitle' },
+    requiredOutputKinds: ['source_subtitle']
+  };
   if (input.job.templateId === 'stickman-video') {
     if (stageId === 'source-transcript') return {
       stageType: 'subtitle',

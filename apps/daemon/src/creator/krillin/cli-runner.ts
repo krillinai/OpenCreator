@@ -336,7 +336,7 @@ export function buildKrillinCliCommandArguments(
     return [
       'subtitle',
       ...(source ? [source] : []),
-      ...(!subtitleOnly && source && !sourceOnly && booleanOption(options, 'prepareVideo', true) ? ['--prepare-video'] : []),
+      ...(!subtitleOnly && source && (!sourceOnly || stage.job.templateId === 'transcription') && booleanOption(options, 'prepareVideo', true) ? ['--prepare-video'] : []),
       '--origin-lang', requiredOption(options, 'originLanguage'),
       '--target-lang', requiredOption(options, 'targetLanguage'),
       '--caption-source', stringOption(options, 'captionSource') ?? 'any',
@@ -591,6 +591,7 @@ export function krillinTranslationReport(response: Pick<KrillinCliResponse, 'war
 
 export function outputMappings(stageId: string): Array<[string, string]> {
   if (stageId === 'source-transcript') return [['origin_srt', 'source_subtitle']];
+  if (stageId === 'transcription') return [['origin_video', 'source_video'], ['origin_srt', 'source_subtitle']];
   if (stageId === 'narration') return [['tts_audio', 'narration_audio']];
   if (stageId === 'subtitles') return [['bilingual_srt', 'bilingual_subtitle']];
   if (stageId === 'bilingual-render') return [['horizontal_video', 'bilingual_video']];
@@ -610,7 +611,7 @@ export function outputMappings(stageId: string): Array<[string, string]> {
 }
 
 function krillinCliStageId(stageId: string): string {
-  if (stageId === 'source-transcript' || stageId === 'subtitles') return 'subtitle';
+  if (stageId === 'source-transcript' || stageId === 'subtitles' || stageId === 'transcription') return 'subtitle';
   if (stageId === 'narration') return 'tts';
   if (stageId === 'bilingual-render') return 'render-horizontal';
   return stageId;

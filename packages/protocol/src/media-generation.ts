@@ -4,7 +4,6 @@ export const imageGenerationSizes = ['1024x1024', '1536x1024', '1024x1536'] as c
 export type ImageGenerationSize = typeof imageGenerationSizes[number];
 export type ImageGenerationQuality = 'low' | 'medium' | 'high';
 export type ImageGenerationProvider = 'openai' | 'jimeng' | 'kling' | 'gemini' | 'codex-native';
-
 export const coverStyleIds = [
   'personal-growth',
   'psychology',

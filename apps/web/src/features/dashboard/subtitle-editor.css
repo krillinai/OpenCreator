@@ -146,7 +146,7 @@
 .video-result-workspace[data-workbench="true"][data-preview-unavailable="true"] .video-result-player-status {
   position: static; padding: 16px; min-height: 0; box-sizing: border-box;
 }
-.video-result-workspace[data-workbench="true"] .subtitle-download-menu { position: relative; }
+.subtitle-download-menu { position: relative; }
 .subtitle-download-menu > summary { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 7px 10px; box-sizing: border-box; cursor: pointer; list-style: none; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
 .subtitle-download-menu > summary::-webkit-details-marker { display: none; }
 .subtitle-download-menu > div { position: absolute; z-index: 8; inset-inline-end: 0; top: calc(100% + 6px); display: grid; gap: 4px; min-width: 150px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px #0002; }

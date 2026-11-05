@@ -16,13 +16,11 @@ import {
 } from '@opencreator/protocol';
 import {
   Clapperboard,
-  Clock3,
   Download,
   ImagePlus,
   LoaderCircle,
   Maximize2,
   Minimize2,
-  Ratio,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -32,14 +30,13 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { publicErrorReason } from '../issues/issue-catalog.js';
-import NativeSelect from '../../components/forms/NativeSelect.js';
-import ModelBrandIcon from '../../components/brand/ModelBrandIcon.js';
 import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
 import { OfficialModelField, useOfficialServices } from './official-services.js';
 import OfficialVideoReferences, { readVideoReferences, videoReferenceIssue } from './OfficialVideoReferences.js';
 import { formatGatewayCreditAmount } from '../account/billing-display.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
+import ImageGenerationSettings, { type ImageGenerationSettingSection } from './ImageGenerationSettings.js';
 import { CreatorTaskProgressNotice } from './CreatorCollaborationPanel.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
@@ -136,8 +133,12 @@ export default function VideoGenerationWorkspace(props: {
   const [taskControlPending, setTaskControlPending] = useState<'canceling' | 'resuming'>();
   const characterCount = useMemo(() => [...prompt.trim()].length, [prompt]);
   const selectedProvider = official.official ? { zh: '官方服务', en: 'Official service' } : providers.find(item => item.value === provider) ?? providers[0]!;
-  const modelOptions = useMemo(
-    () => createVideoModelOptions(provider, modelDefaults[provider], model),
+  const allModelOptions = useMemo(
+    () => providers.flatMap(item => createVideoModelOptions(
+      item.value,
+      modelDefaults[item.value],
+      item.value === provider ? model : ''
+    ).map(option => ({ ...option, vendor: item.en, durations: providerDurations[item.value] }))),
     [model, modelDefaults, provider]
   );
   const activeModel = official.official ? official.model?.id ?? '' : model;
@@ -382,6 +383,15 @@ export default function VideoGenerationWorkspace(props: {
     setError('');
   }
 
+  function updateModelAndProvider(nextModel: string) {
+    const nextProvider = providers.find(item => (
+      modelDefaults[item.value] === nextModel
+      || (videoGenerationModelIds[item.value] as readonly string[]).includes(nextModel)
+    ))?.value ?? provider;
+    if (nextProvider !== undefined && nextProvider !== provider) updateProvider(nextProvider);
+    updateModel(nextModel);
+  }
+
   function updateSize(nextSize: VideoGenerationSize) {
     setSize(nextSize);
     session?.updateDraft({ size: nextSize });
@@ -575,6 +585,28 @@ export default function VideoGenerationWorkspace(props: {
     return l('请描述主体动作、场景、镜头运动、光线和视觉风格。', 'Describe the action, scene, camera movement, lighting, and visual style.');
   }
 
+  const videoSettingSections: ImageGenerationSettingSection[] = [{
+    id: 'format',
+    label: l('画幅', 'Format'),
+    value: size,
+    options: availableSizes.map(item => ({ value: item.value, label: item.ratio })),
+    ratio: true,
+    disabled: followsReferenceRatio,
+    onChange: value => updateSize(value as VideoGenerationSize)
+  }, {
+    id: 'duration',
+    label: l('视频时长', 'Video duration'),
+    value: String(duration),
+    options: durations.map(value => ({ value: String(value), label: l(`${value} 秒`, `${value}s`, `${value} sekunder`) })),
+    onChange: value => updateDuration(Number(value) as VideoGenerationDuration)
+  }];
+  const videoSettingsSummary = {
+    aspectRatio: followsReferenceRatio ? l('原图', 'Source') : selectedSize.ratio,
+    count: l(`${duration} 秒`, `${duration}s`, `${duration} sekunder`),
+    resolution: followsReferenceRatio ? l('原图', 'Source') : videoSizeDisplay(size),
+    quality: 'MP4'
+  };
+
   return (
     <CreatorToolShell
       title={l('视频生成', 'Video Generation')}
@@ -638,41 +670,27 @@ export default function VideoGenerationWorkspace(props: {
       taskControlPending={taskControlPending}
     >
       <div className="creator-tool-stack video-generation-studio">
+        <section className="video-generation-intro" aria-label={l('视频生成功能说明', 'Video generation overview')}>
+          <p>{l(
+            '描述主体动作、镜头和光线，选择模型、画幅与时长，生成可下载的视频片段。',
+            'Describe the action, camera, and lighting, then choose a model, aspect ratio, and duration to generate a downloadable video clip.'
+          )}</p>
+          <div aria-label={l('功能特点', 'Features')}>
+            <span>{l('文字或参考图', 'Text or Reference')}</span>
+            <span>{l('多模型', 'Multi-Model')}</span>
+            <span>{l('自定义画幅', 'Custom Ratios')}</span>
+            <span>{l('MP4 输出', 'MP4 Output')}</span>
+          </div>
+        </section>
         <form className="video-generation-composer" aria-label={l('视频生成', 'Video Generation')} onSubmit={event => {
           event.preventDefault();
           void generate();
         }}>
           <fieldset className="video-generation-fields" disabled={busy}>
-            <div className="video-generation-model-row">
-              {official.official ? <OfficialModelField label={l('视频模型', 'Video model')} service={official} disabled={busy || uploadingVideoReference} /> : <>
-                <label className="creator-tool-field video-generation-provider-picker">
-                  <ModelBrandIcon model={{ id: provider, name: selectedProvider.en }} />
-                  <span>{l('模型', 'Model')}</span>
-                  <NativeSelect aria-label={l('模型', 'Model')} value={provider} disabled={busy} onChange={event => updateProvider(event.target.value as VideoGenerationProvider)}>
-                    {providers.map(item => <option key={item.value} value={item.value}>{l(item.zh, item.en)}</option>)}
-                  </NativeSelect>
-                </label>
-                <label className="creator-tool-field">
-                  <span>{l('模型版本', 'Model version')}</span>
-                  <OfficialModelSelect
-                    label={l('模型版本', 'Model version')}
-                    value={model}
-                    disabled={busy}
-                    onChange={updateModel}
-                    models={modelOptions.map(item => ({
-                      id: item.value,
-                      name: item.label,
-                      modality: 'video',
-                      capabilities: [],
-                      durations: providerDurations[provider]
-                    }))}
-                  />
-                </label>
-              </>}
-            </div>
             <div className={`video-generation-editor${promptExpanded ? ' is-expanded' : ''}`}>
               <div className="video-generation-composer-heading">
-                <h2 id="video-prompt-title"><Clapperboard size={18} strokeWidth={1.7} aria-hidden="true" />{l('视频描述', 'Video prompt')}</h2>
+                <h2 id="video-prompt-title"><Clapperboard size={18} strokeWidth={1.7} aria-hidden="true" />{l('视频', 'Video')}</h2>
+                <span>{l('文字或参考图生成视频', 'Text or image to video')}</span>
                 <button type="button" className="video-generation-expand" aria-expanded={promptExpanded} aria-controls="video-prompt-input"
                   aria-label={promptExpanded ? l('收起编辑区', 'Collapse editor', 'Minska redigeringsytan') : l('展开编辑区', 'Expand editor', 'Utöka redigeringsytan')}
                   title={promptExpanded ? l('收起编辑区', 'Collapse editor', 'Minska redigeringsytan') : l('展开编辑区', 'Expand editor', 'Utöka redigeringsytan')}
@@ -698,7 +716,7 @@ export default function VideoGenerationWorkspace(props: {
                         : <ImagePlus size={24} strokeWidth={1.5} />}
                     </span>
                     <span className="video-generation-reference-copy">
-                      <span><strong>{currentReferenceName ?? l('添加视觉参考', 'Add visual reference', 'Lägg till visuell referens')}</strong>
+                      <span><strong>{currentReferenceName ?? l('参考图', 'Reference', 'Referens')}</strong>
                         {!currentReferenceName ? <small>{l('选填', 'Optional')}</small> : null}</span>
                       <small>{currentReferenceName ? l('更换参考图', 'Replace reference') : l('支持 JPG、PNG、WebP，最大 5MB', 'JPG, PNG, or WebP, up to 5 MB')}</small>
                     </span>
@@ -743,45 +761,52 @@ export default function VideoGenerationWorkspace(props: {
                 <small>{characterCount} / {creatorPromptMaxLength}</small>
               </div>
             </div>
-            <div className={`video-generation-settings-grid${official.official ? ' is-official' : ''}`}>
-              <label className="creator-tool-field">
-                <span><Ratio size={15} aria-hidden="true" />{l('画幅', 'Format')}</span>
-                <NativeSelect
-                  value={size}
-                  disabled={busy || followsReferenceRatio || !serviceReady}
-                  title={followsReferenceRatio
-                    ? l('Seedance 参考图模式会跟随参考图画幅', 'Seedance matches the reference image aspect ratio')
-                    : undefined}
-                  onChange={event => updateSize(event.target.value as VideoGenerationSize)}
-                >
-                  {followsReferenceRatio ? (
-                    <option value={size}>{l('跟随参考图', 'Match reference image')}</option>
-                  ) : availableSizes.length ? availableSizes.map(item => <option key={item.value} value={item.value}>{item.value.includes('@') ? videoSizeDisplay(item.value) : `${l(item.zh, item.en)} · ${item.ratio} · ${item.value}`}</option>) : <option value="">{l('暂不可用', 'Unavailable')}</option>}
-                </NativeSelect>
-              </label>
-              <label className="creator-tool-field">
-                <span><Clock3 size={15} aria-hidden="true" />{l('视频时长', 'Video duration')}</span>
-                <NativeSelect value={duration} disabled={busy || !serviceReady} onChange={event => updateDuration(Number(event.target.value) as VideoGenerationDuration)}>
-                  {durations.length ? durations.map(value => <option key={value} value={value}>{value} {l('秒', 'seconds')}</option>) : <option value="">{l('暂不可用', 'Unavailable')}</option>}
-                </NativeSelect>
-              </label>
+            <div className="video-generation-action-bar">
+              <div className="video-generation-model-row">
+                {official.official ? <OfficialModelField label={l('视频模型', 'Video model')} service={official} disabled={busy || uploadingVideoReference} /> : (
+                  <label className="creator-tool-field">
+                    <OfficialModelSelect
+                      label={l('模型', 'Model')}
+                      value={model}
+                      disabled={busy}
+                      layout="catalog"
+                      onChange={updateModelAndProvider}
+                      models={allModelOptions.map(item => ({
+                        id: item.value,
+                        name: item.label,
+                        modality: 'video',
+                        capabilities: [],
+                        vendor: item.vendor,
+                        durations: item.durations
+                      }))}
+                    />
+                  </label>
+                )}
+              </div>
+              <ImageGenerationSettings
+                label={l('视频设置', 'Video settings', 'Videoinställningar')}
+                summary={videoSettingsSummary}
+                sections={videoSettingSections}
+                countIcon="clock"
+                disabled={busy || !serviceReady}
+              />
+              <div className="video-generation-submit-row">
+                {resumable ? (
+                  <button className="creator-tool-primary" type="button" onClick={() => void resumeTask()} disabled={taskControlPending !== undefined}>
+                    {taskControlPending === 'resuming' ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}
+                    {l('继续任务', 'Resume task')}
+                  </button>
+                ) : (
+                  <button className="creator-tool-primary" type="submit" disabled={busy || !serviceReady}>
+                    {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : selectedResult ? <RotateCcw size={16} /> : <Sparkles size={16} />}
+                    {busy ? l('正在生成', 'Generating') : selectedResult ? l('重新生成', 'Regenerate') : l('开始生成', 'Generate')}
+                  </button>
+                )}
+              </div>
             </div>
             {official.official && official.model?.videoOptions?.generateAudio ? <label className="official-video-audio"><input type="checkbox" checked={session?.state.generateAudio !== false} disabled={busy} onChange={event => session?.updateDraft({ generateAudio: event.target.checked }, { semantic: true })} />{l('生成音频', 'Generate audio')}</label> : null}
             {quotedCredits !== undefined ? <output className="official-video-quote" aria-label={l('积分报价', 'Credit quote')}>{l(`本次消耗 ${formatGatewayCreditAmount(quotedCredits)} 积分`, `This generation costs ${formatGatewayCreditAmount(quotedCredits)} credits`)}</output> : null}
           </fieldset>
-          <div className="video-generation-submit-row">
-            {resumable ? (
-              <button className="creator-tool-primary" type="button" onClick={() => void resumeTask()} disabled={taskControlPending !== undefined}>
-                {taskControlPending === 'resuming' ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}
-                {l('继续任务', 'Resume task')}
-              </button>
-            ) : (
-              <button className="creator-tool-primary" type="submit" disabled={busy || !serviceReady}>
-                {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : selectedResult ? <RotateCcw size={16} /> : <Sparkles size={16} />}
-                {busy ? l('正在生成', 'Generating') : selectedResult ? l('重新生成', 'Regenerate') : l('开始生成', 'Generate')}
-              </button>
-            )}
-          </div>
         </form>
 
         {selectedResult || generating ? (

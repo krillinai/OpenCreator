@@ -7,6 +7,7 @@ import { createLocalizedCopy } from '../../i18n/localized-copy.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import {
   ArrowUpRight,
+  Captions,
   Clapperboard,
   Download,
   FilePenLine,
@@ -30,6 +31,7 @@ import DigitalAvatarWorkspace from './DigitalAvatarWorkspace.js';
 import ImageGenerationWorkspace from './ImageGenerationWorkspace.js';
 import ShortVideoScriptWorkspace from './ShortVideoScriptWorkspace.js';
 import SmartDubbingWorkspace from './SmartDubbingWorkspace.js';
+import TranscriptionWorkspace from './TranscriptionWorkspace.js';
 import XiaohongshuPostWorkspace from './XiaohongshuPostWorkspace.js';
 import WechatArticleWorkspace from './WechatArticleWorkspace.js';
 import StickmanVideoWorkspace from './StickmanVideoWorkspace.js';
@@ -193,6 +195,15 @@ const creatorTools: DashboardEntry[] = [
     category: '音频处理',
     icon: Mic2,
     workspace: 'smart-dubbing'
+  },
+  {
+    title: '视频转录',
+    description: '视频语音转文字与 SRT 字幕',
+    prompt: '帮我转录这个视频，保留原文并生成可下载的文本和 SRT 字幕。',
+    category: '音频处理',
+    icon: Captions,
+    badge: 'NEW',
+    workspace: 'transcription'
   },
   {
     title: '数字人口播',
@@ -383,6 +394,16 @@ export default function DashboardPage(props: {
   if (activeWorkspace === 'smart-dubbing') {
     return renderCreatorWorkspace('smart-dubbing', (
       <SmartDubbingWorkspace
+        promptHint={activePromptHint}
+        creatorServicesService={props.creatorServicesService}
+        onBack={closeWorkspace}
+      />
+    ));
+  }
+
+  if (activeWorkspace === 'transcription') {
+    return renderCreatorWorkspace('transcription', (
+      <TranscriptionWorkspace
         promptHint={activePromptHint}
         creatorServicesService={props.creatorServicesService}
         onBack={closeWorkspace}
@@ -1046,6 +1067,8 @@ const englishDashboardLabels: Record<string, string> = {
   视频切片: 'Video Clips',
   'AI 识别长视频高光片段': 'Find the strongest moments in long videos with AI',
   文本转语音: 'Text to Speech',
+  视频转录: 'Video Transcription',
+  '视频语音转文字与 SRT 字幕': 'Turn video speech into text and SRT subtitles',
   小红书帖子: 'Xiaohongshu Posts',
   从主题和素材生成完整帖子: 'Turn a topic or source material into a complete post',
   自然音色与情绪表达: 'Natural voices with expressive delivery',

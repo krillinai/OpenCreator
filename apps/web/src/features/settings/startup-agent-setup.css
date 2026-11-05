@@ -5,7 +5,7 @@
   padding: 24px;
 }
 
-.startup-agent-setup__language { justify-self: end; width: min(280px, 100%); }
+.startup-agent-setup__language { justify-self: stretch; width: 100%; }
 .startup-agent-setup__language .language-select { width: 100%; }
 .startup-agent-setup__language .language-select-control input { height: 40px; padding-inline: 10px 38px; }
 .startup-agent-setup__language .language-select-control button {
@@ -19,8 +19,8 @@
 .startup-agent-setup__language .language-select-search-icon { top: 13px; }
 
 .startup-agent-setup__eyebrow { color: var(--accent-strong); font-size: 13px; font-weight: 700; }
-.startup-agent-setup__card h1 { margin: 0; font-size: 27px; }
-.startup-agent-setup__card > .opencreator-mark { color: var(--accent-strong); }
+.startup-agent-setup__card h1 { margin: 0; font-size: 27px; text-align: center; }
+.startup-agent-setup__card > .opencreator-mark { justify-self: center; color: var(--accent-strong); }
 .startup-agent-setup__entry { display: grid; gap: 12px; margin: 16px 0; }
 .startup-agent-setup__entry button, .startup-agent-setup__back { display: flex; align-items: center; justify-content: center; gap: 10px; }
 .startup-agent-setup__card .startup-agent-setup__back { justify-self: start; padding-left: 0; border: 0; background: transparent; }

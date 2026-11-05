@@ -23,9 +23,6 @@ import {
   LoaderCircle,
   Maximize2,
   Minimize2,
-  RectangleHorizontal,
-  ScanLine,
-  SlidersHorizontal,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -34,9 +31,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
-import NativeSelect from '../../components/forms/NativeSelect.js';
 import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
+import ImageGenerationSettings, { type ImageGenerationSettingSection } from './ImageGenerationSettings.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
 import { publicErrorReason } from '../issues/issue-catalog.js';
@@ -99,6 +96,7 @@ export default function ImageGenerationWorkspace(props: {
   const [officialQuality, setOfficialQuality] = useState(() => readString(session?.state.officialQuality));
   const [modelQuality, setModelQuality] = useState(() => readString(session?.state.modelQuality));
   const [imageConfig, setImageConfig] = useState<CreatorServicesConfig['image'] | null>(null);
+  const [codexImageReady, setCodexImageReady] = useState<boolean>();
   const configuredModel = provider === 'codex-native' ? '' : (imageConfig ?? defaultImageConfig)[provider].model;
   const imageOptions = useMemo(() => official.official
     ? official.model?.imageOptions ?? {}
@@ -213,10 +211,30 @@ export default function ImageGenerationWorkspace(props: {
     );
 
   useEffect(() => {
+    setCodexImageReady(undefined);
+    if (official.official || !shouldLoadDefaultProvider || imageConfig?.provider !== 'codex-native') return;
+    const service = props.creatorServicesService;
+    if (!service?.getCodexImageStatus) {
+      setCodexImageReady(false);
+      return;
+    }
+    let active = true;
+    void service.getCodexImageStatus().then(status => {
+      if (active) setCodexImageReady(status.ready);
+    }).catch(() => {
+      if (active) setCodexImageReady(false);
+    });
+    return () => { active = false; };
+  }, [imageConfig?.provider, official.official, props.creatorServicesService, shouldLoadDefaultProvider]);
+
+  useEffect(() => {
     if (official.official) return;
     if (session === null || !shouldLoadDefaultProvider) return;
     if (!imageConfig) return;
-    const nextProvider = imageConfig.provider;
+    if (imageConfig.provider === 'codex-native' && codexImageReady === undefined) return;
+    const nextProvider = imageConfig.provider === 'codex-native' && !codexImageReady
+      ? 'openai'
+      : imageConfig.provider;
     const nextCount = nextProvider === 'codex-native' ? 1 : count;
     setProvider(nextProvider);
     setCount(nextCount);
@@ -224,7 +242,7 @@ export default function ImageGenerationWorkspace(props: {
       { providerSource: 'default' },
       { persist: false }
     );
-  }, [count, imageConfig, session, shouldLoadDefaultProvider, official.official]);
+  }, [codexImageReady, count, imageConfig, session, shouldLoadDefaultProvider, official.official]);
 
   useEffect(() => {
     const { session, l } = previewContext.current;
@@ -498,6 +516,85 @@ export default function ImageGenerationWorkspace(props: {
     return l('请描述画面主体、环境、风格、光线和构图。', 'Describe the subject, setting, style, lighting, and composition.');
   }
 
+  const imageSettingSections: ImageGenerationSettingSection[] = [{
+    id: 'aspect-ratio',
+    label: l('图片画幅', 'Image format'),
+    value: imageOptions ? aspectRatio : size,
+    options: imageOptions
+      ? (imageOptions.aspectRatios ?? []).map(value => ({ value, label: value }))
+      : sizes.map(item => ({ value: item.value, label: item.ratio })),
+    ratio: true,
+    onChange: value => {
+      if (imageOptions) {
+        setAspectRatio(value);
+        session?.updateDraft({ aspectRatio: value });
+      } else updateSize(readSize(value));
+    }
+  }];
+  if (imageOptions?.resolutions?.length) {
+    imageSettingSections.push({
+      id: 'resolution',
+      label: l('分辨率', 'Resolution'),
+      value: resolution,
+      options: imageOptions.resolutions.map(value => ({ value, label: value })),
+      onChange: value => {
+        setResolution(value);
+        session?.updateDraft({ resolution: value });
+      }
+    });
+  }
+  imageSettingSections.push({
+    id: 'quality',
+    label: l('图片质量', 'Image quality'),
+    value: imageOptions ? activeQuality : quality,
+    options: imageOptions
+      ? (imageOptions.qualities ?? []).map(value => ({ value, label: imageQualityLabel(value, l) }))
+      : qualities.map(item => ({ value: item.value, label: l(item.zh, item.en) })),
+    onChange: value => {
+      if (!imageOptions) {
+        updateQuality(readQuality(value));
+      } else if (official.official) {
+        setOfficialQuality(value);
+        session?.updateDraft({ officialQuality: value });
+      } else {
+        setModelQuality(value);
+        session?.updateDraft({ modelQuality: value });
+      }
+    }
+  }, {
+    id: 'count',
+    label: l('生成数量', 'Number of images'),
+    value: String(count),
+    options: (!official.official && provider === 'codex-native' ? [1] : [1, 2, 4]
+      .filter(value => value <= (official.official ? official.model?.imageOptions?.maxImages ?? 4 : 4)))
+      .map(value => ({
+        value: String(value),
+        label: `${value * outputBatchSize} ${l('张', value * outputBatchSize === 1 ? 'image' : 'images')}`
+      })),
+    onChange: value => updateCount(Number(value))
+  });
+  const imageSettingsSummary = {
+    aspectRatio: selectedSize.ratio,
+    count: String(count * outputBatchSize),
+    resolution: imageOptions ? resolution || l('默认', 'Default') : size,
+    quality: l(selectedQuality.zh, selectedQuality.en)
+  };
+  const promptField = <div className="creator-tool-field image-generation-prompt-field">
+    <span id="image-prompt-label" className="image-generation-visually-hidden">{l('提示词', 'Prompt')}</span>
+    <textarea
+      id="image-prompt-input"
+      rows={promptExpanded ? 14 : 7}
+      maxLength={creatorPromptMaxLength}
+      value={prompt}
+      onChange={event => updatePrompt(event.target.value)}
+      aria-labelledby="image-prompt-label"
+      aria-invalid={missingReference}
+      aria-describedby={missingReference ? 'image-reference-validation' : undefined}
+      placeholder={l('例如：一位产品设计师站在明亮的工作室中，真实摄影，柔和侧光，画面简洁', 'For example: A product designer in a bright studio, realistic photography, soft side lighting, clean composition')}
+    />
+    {missingReference ? <p id="image-reference-validation" className="creator-services-inline-note" role="status">{referenceValidationMessage}</p> : null}
+  </div>;
+
   return (
     <CreatorToolShell
       title={l('图像生成', 'Image Generation')}
@@ -539,33 +636,27 @@ export default function ImageGenerationWorkspace(props: {
       contentClassName="media-generation-workspace-content"
     >
       <div className="creator-tool-stack image-generation-studio">
+        <section className="image-generation-intro" aria-label={l('图像生成功能说明', 'Image generation overview')}>
+          <p>{l(
+            '使用 GPT Image、Nano Banana、Seedream 等模型，从文字生成图像。选择模型、设置画幅，并下载高清结果。',
+            'Generate images from text with GPT Image 2, Nano Banana 2, Seedream 5, and Seedream 3.5 Pro — choose a model, set your aspect ratio, and download HD results.'
+          )}</p>
+          <div aria-label={l('功能特点', 'Features')}>
+            <span>{l('文字生图', 'Text to Image')}</span>
+            <span>{l('多模型', 'Multi-Model')}</span>
+            <span>{l('自定义画幅', 'Custom Ratios')}</span>
+            <span>{l('高清输出', 'HD Output')}</span>
+          </div>
+        </section>
         <form className="image-generation-composer" aria-label={l('图像生成', 'Image Generation')} onSubmit={event => {
           event.preventDefault();
           void generate();
         }}>
           <fieldset className="image-generation-fields" disabled={busy}>
-            <div className="image-generation-model-row">
-              {official.official ? <OfficialModelField label={l('图片模型', 'Image model')} service={official} disabled={busy} /> : (
-                <label className="creator-tool-field image-generation-provider-picker">
-                  <span>{l('模型', 'Model')}</span>
-                  <OfficialModelSelect
-                    label={l('模型', 'Model')}
-                    value={provider}
-                    disabled={busy}
-                    onChange={value => updateProvider(readProvider(value))}
-                    models={providers.map(item => ({
-                      id: item.value,
-                      name: l(item.zh, item.en),
-                      modality: 'image',
-                      capabilities: []
-                    }))}
-                  />
-                </label>
-              )}
-            </div>
             <div className={`image-generation-editor${promptExpanded ? ' is-expanded' : ''}`}>
               <div className="image-generation-composer-heading">
-                <h2 id="image-prompt-title"><ImageIcon size={18} strokeWidth={1.7} aria-hidden="true" />{l('画面描述', 'Image prompt')}</h2>
+                <h2 id="image-prompt-title"><ImageIcon size={17} strokeWidth={1.7} aria-hidden="true" />{l('图像', 'Image', 'Bild')}</h2>
+                <span>{l('文字生成图像', 'Text to image', 'Text till bild')}</span>
                 <button type="button" className="image-generation-expand" aria-expanded={promptExpanded} aria-controls="image-prompt-input"
                   aria-label={promptExpanded ? l('收起编辑区', 'Collapse editor', 'Minska redigeringsytan') : l('展开编辑区', 'Expand editor', 'Utöka redigeringsytan')}
                   title={promptExpanded ? l('收起编辑区', 'Collapse editor', 'Minska redigeringsytan') : l('展开编辑区', 'Expand editor', 'Utöka redigeringsytan')}
@@ -590,7 +681,7 @@ export default function ImageGenerationWorkspace(props: {
                       {referencePreview ? <img src={referencePreview} alt={l('图像生成参考图', 'Image generation reference')} /> : <ImagePlus size={24} strokeWidth={1.5} />}
                     </span>
                     <span className="image-generation-reference-copy">
-                      <span><strong>{currentReferenceName ?? l('添加视觉参考', 'Add visual reference', 'Lägg till visuell referens')}</strong>
+                      <span><strong>{currentReferenceName ?? l('参考图', 'Reference', 'Referens')}</strong>
                         {!currentReferenceName ? <small>{l('选填', 'Optional')}</small> : null}</span>
                       <small>{currentReferenceName ? l('更换参考图', 'Replace reference') : l('JPG、PNG、WebP，最大 20 MB', 'JPG, PNG, WebP, up to 20 MB', 'JPG, PNG, WebP, högst 20 MB')}</small>
                     </span>
@@ -602,21 +693,7 @@ export default function ImageGenerationWorkspace(props: {
                   </button> : null}
                 </div>
               ) : null}
-              <div className="creator-tool-field image-generation-prompt-field">
-                <span id="image-prompt-label" className="image-generation-visually-hidden">{l('提示词', 'Prompt')}</span>
-                <textarea
-                  id="image-prompt-input"
-                  rows={promptExpanded ? 14 : 7}
-                  maxLength={creatorPromptMaxLength}
-                  value={prompt}
-                  onChange={event => updatePrompt(event.target.value)}
-                  aria-labelledby="image-prompt-label"
-                  aria-invalid={missingReference}
-                  aria-describedby={missingReference ? 'image-reference-validation' : undefined}
-                  placeholder={l('例如：一位产品设计师站在明亮的工作室中，真实摄影，柔和侧光，画面简洁', 'For example: A product designer in a bright studio, realistic photography, soft side lighting, clean composition')}
-                />
-                {missingReference ? <p id="image-reference-validation" className="creator-services-inline-note" role="status">{referenceValidationMessage}</p> : null}
-              </div>
+              {promptField}
               <div className="image-generation-prompt-tools">
                 <button type="button" title={l('填入示例提示词', 'Use sample prompt')} aria-label={l('填入示例提示词', 'Use sample prompt')} onClick={() => updatePrompt(l(samplePromptZh, samplePromptEn, samplePromptSv))}>
                   <WandSparkles size={16} strokeWidth={1.8} />
@@ -631,49 +708,38 @@ export default function ImageGenerationWorkspace(props: {
               '使用本机 Codex 生成图像，无需额外配置；每次任务生成 1 张。',
               'Use local Codex to generate images with no additional configuration; each task generates 1 image.'
             )}</p> : null}
-            <div className={`image-generation-settings-grid${official.official ? ' is-official' : ''}`}>
-              {imageOptions ? <>
-                {[
-                  { key: 'aspectRatio', icon: RectangleHorizontal, label: l('图片画幅', 'Image format'), values: imageOptions.aspectRatios, value: aspectRatio, set: setAspectRatio },
-                  { key: 'resolution', icon: ScanLine, label: l('分辨率', 'Resolution'), values: imageOptions.resolutions, value: resolution, set: setResolution },
-                  { key: official.official ? 'officialQuality' : 'modelQuality', icon: SlidersHorizontal, label: l('图片质量', 'Image quality'), values: imageOptions.qualities, value: activeQuality, set: official.official ? setOfficialQuality : setModelQuality }
-                ].filter(option => option.values?.length).map(option => <label className="creator-tool-field" key={option.key}>
-                  <span><option.icon size={15} strokeWidth={1.7} aria-hidden="true" />{option.label}</span>
-                  <NativeSelect aria-label={option.label} value={option.value} disabled={busy || official.taskRunning || (official.official && !official.ready)}
-                    onChange={event => { option.set(event.target.value); session?.updateDraft({ [option.key]: event.target.value }); }}>
-                    {option.values?.map(value => <option key={value} value={value}>{option.key.endsWith('Quality') ? imageQualityLabel(value, l) : value}</option>)}
-                  </NativeSelect>
-                </label>)}
-              </> : <>
-                <label className="creator-tool-field">
-                  <span><RectangleHorizontal size={15} strokeWidth={1.7} aria-hidden="true" />{l('图片画幅', 'Image format')}</span>
-                  <NativeSelect aria-label={l('图片画幅', 'Image format')} value={size} onChange={event => updateSize(readSize(event.target.value))}>
-                    {sizes.map(item => <option key={item.value} value={item.value}>{l(item.zh, item.en)} · {item.ratio} · {item.value}</option>)}
-                  </NativeSelect>
-                </label>
-                <label className="creator-tool-field">
-                  <span><SlidersHorizontal size={15} strokeWidth={1.7} aria-hidden="true" />{l('图片质量', 'Image quality')}</span>
-                  <NativeSelect aria-label={l('图片质量', 'Image quality')} value={quality} onChange={event => updateQuality(readQuality(event.target.value))}>
-                    {qualities.map(item => <option key={item.value} value={item.value}>{l(item.zh, item.en)}</option>)}
-                  </NativeSelect>
-                </label>
-              </>}
-              <div className="media-generation-control">
-                <span><Images size={15} strokeWidth={1.7} aria-hidden="true" />{l('生成数量', 'Number of images')}</span>
-                <div className="creator-tool-segmented" role="radiogroup" aria-label={l('生成数量', 'Number of images')}>
-                  {(!official.official && provider === 'codex-native' ? [1] : [1, 2, 4].filter(value => value <= (official.official ? official.model?.imageOptions?.maxImages ?? 4 : 4))).map(value => (
-                    <button type="button" role="radio" aria-checked={count === value} aria-selected={count === value} key={value} onClick={() => updateCount(value)}>
-                      {value * outputBatchSize} {l('张', value * outputBatchSize === 1 ? 'image' : 'images')}
-                    </button>
-                  ))}
-                </div>
+            <div className="image-generation-action-bar">
+              <div className="image-generation-model-row">
+                {official.official ? <OfficialModelField label={l('图片模型', 'Image model')} service={official} disabled={busy} /> : (
+                  <label className="creator-tool-field image-generation-provider-picker">
+                    <OfficialModelSelect
+                      label={l('模型', 'Model')}
+                      value={provider}
+                      disabled={busy}
+                      layout="catalog"
+                      onChange={value => updateProvider(readProvider(value))}
+                      models={providers.map(item => ({
+                        id: item.value,
+                        name: l(item.zh, item.en),
+                        modality: 'image',
+                        capabilities: []
+                      }))}
+                    />
+                  </label>
+                )}
               </div>
-            </div>
-            <div className="image-generation-submit-row">
-              <button className="creator-tool-primary" type="submit" disabled={busy || (official.official && !official.ready)}>
-                {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : selectedResult ? <RotateCcw size={16} /> : <Sparkles size={16} />}
-                {busy ? l('正在生成', 'Generating') : selectedResult ? l('重新生成', 'Regenerate') : l('开始生成', 'Generate')}
-              </button>
+              <ImageGenerationSettings
+                label={l('图片设置', 'Image settings', 'Bildinställningar')}
+                summary={imageSettingsSummary}
+                sections={imageSettingSections.filter(section => section.options.length > 0)}
+                disabled={busy || official.taskRunning || (official.official && !official.ready)}
+              />
+              <div className="image-generation-submit-row">
+                <button className="creator-tool-primary" type="submit" disabled={busy || (official.official && !official.ready)}>
+                  {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : selectedResult ? <RotateCcw size={16} /> : <Sparkles size={16} />}
+                  {busy ? l('正在生成', 'Generating') : selectedResult ? l('重新生成', 'Regenerate') : l('开始生成', 'Generate')}
+                </button>
+              </div>
             </div>
           </fieldset>
         </form>

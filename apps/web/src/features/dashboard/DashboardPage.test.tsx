@@ -931,14 +931,14 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('tab', { name: '全部' })).toHaveAttribute('aria-selected', 'true');
     expect(Array.from(container.querySelectorAll('.dashboard-app-card strong')).map(card => card.textContent))
       .toEqual([
-        '视频下载', '视频翻译', '视频生成', '图像生成', '文章写作', '火柴人动画',
-        '视频切片', '封面生成', '小红书帖子', '短视频脚本', '文本转语音'
+        '视频下载', '视频翻译', '视频生成', '图像生成', '火柴人动画',
+        '视频切片', '封面生成', '短视频脚本', '文本转语音', '视频转录'
       ]);
     expect(screen.queryByRole('button', { name: /^数字人口播/ })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索应用' }), { target: { value: '小红书' } });
-    expect(container.querySelectorAll('.dashboard-app-card')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /^小红书帖子/ })).toBeInTheDocument();
+    expect(container.querySelectorAll('.dashboard-app-card')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /^小红书帖子/ })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索应用' }), { target: { value: '' } });
     fireEvent.click(screen.getByRole('tab', { name: '推荐' }));
@@ -946,10 +946,8 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('button', { name: /^小红书帖子/ })).not.toBeInTheDocument();
   });
 
-  it('opens the WeChat article writer from the app directory', () => {
-    const { container } = render(<DashboardPage onSelectPrompt={vi.fn()} />);
-    fireEvent.click(screen.getByRole('tab', { name: '文案创作' }));
-    fireEvent.click(screen.getByRole('button', { name: /^文章写作/ }));
+  it('opens the WeChat article writer directly while hiding its directory entry', () => {
+    const { container } = render(<DashboardPage workspace="wechat-article" onSelectPrompt={vi.fn()} />);
     expect(screen.getByRole('heading', { name: '文章写作' })).toBeInTheDocument();
     expect(screen.getByText('公众号、X 等平台文章')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: '文章写作流程' })).toBeInTheDocument();
@@ -1867,12 +1865,34 @@ describe('DashboardPage', () => {
     expect(screen.getByText('没有找到相关应用')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '查看全部应用' }));
     expect(screen.getByRole('tab', { name: '全部' })).toHaveAttribute('aria-selected', 'true');
-    expect(directory.querySelectorAll('.dashboard-app-card')).toHaveLength(11);
+    expect(directory.querySelectorAll('.dashboard-app-card')).toHaveLength(10);
     expect(within(directory).getByRole('button', { name: /^封面生成/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: '音频处理' }));
     expect(within(directory).getByRole('button', { name: /^文本转语音/ })).toBeInTheDocument();
-    expect(directory.querySelectorAll('.dashboard-app-card')).toHaveLength(1);
+    expect(within(directory).getByRole('button', { name: /^视频转录/ })).toBeInTheDocument();
+    expect(directory.querySelectorAll('.dashboard-app-card')).toHaveLength(2);
+  });
+
+  it('opens video transcription from the audio tools directory', async () => {
+    const creatorService = createInMemoryCreatorService();
+    const createJob = vi.spyOn(creatorService, 'createJob');
+    render(<DashboardPage onSelectPrompt={vi.fn()} creatorService={creatorService} />);
+
+    fireEvent.click(screen.getByRole('tab', { name: '音频处理' }));
+    openBlankWorkspace('视频转录', '空白视频转录');
+    expect(screen.getByRole('heading', { name: '视频转录' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=transcription-entry' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    expect(screen.getByRole('heading', { name: '设置转录语言与模型' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '开始转录' }));
+
+    await waitFor(() => expect(createJob).toHaveBeenCalledWith(expect.objectContaining({
+      templateId: 'transcription',
+      templateVersion: 1
+    })));
   });
 
   it('creates downloadable audio in the smart dubbing workspace', async () => {
@@ -2136,8 +2156,9 @@ describe('DashboardPage', () => {
       target: { value: prompt }
     });
     expect(screen.getByRole('combobox', { name: /^模型$/ })).toHaveValue('GPT Image');
-    changeControl(screen.getByRole('combobox', { name: '图片画幅' }), { target: { value: '3:2' } });
-    changeControl(screen.getByRole('combobox', { name: '图片质量' }), { target: { value: 'high' } });
+    fireEvent.click(screen.getByRole('button', { name: '图片设置' }));
+    fireEvent.click(screen.getByRole('radio', { name: '3:2' }));
+    fireEvent.click(screen.getByRole('radio', { name: '高清' }));
 
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('3:2');
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('高清');
@@ -2367,18 +2388,17 @@ describe('DashboardPage', () => {
     changeControl(referenceImageInput, {
       target: { files: [referenceImage] }
     });
-    const providerSelect = screen.getByRole('combobox', { name: /^模型$/ });
-    const modelSelect = screen.getByRole('combobox', { name: '模型版本' });
-    const formatSelect = screen.getByRole('combobox', { name: '画幅' });
-    const durationSelect = screen.getByRole('combobox', { name: '视频时长' });
-    expect(providerSelect).toHaveValue('seedance');
+    const modelSelect = screen.getByRole('combobox', { name: /^模型$/ });
     expect(modelSelect).toHaveValue('Seedance 2.5');
-    changeControl(providerSelect, { target: { value: 'veo' } });
-    expect(providerSelect).toHaveValue('veo');
+    fireEvent.click(modelSelect);
+    fireEvent.click(screen.getByRole('button', { name: /^Veo/ }));
+    fireEvent.click(screen.getByRole('option', { name: 'Veo 3.1' }));
     expect(modelSelect).toHaveValue('Veo 3.1');
-    expect(durationSelect).toHaveValue('4');
-    changeControl(formatSelect, { target: { value: '720x1280' } });
-    changeControl(durationSelect, { target: { value: '8' } });
+    fireEvent.click(screen.getByRole('button', { name: '视频设置' }));
+    expect(screen.getByRole('radio', { name: '4 秒' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('radio', { name: '9:16' }));
+    fireEvent.click(screen.getByRole('radio', { name: '8 秒' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('竖屏 · 9:16');
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('Veo 3.1');

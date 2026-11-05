@@ -89,5 +89,7 @@ describe('CreatorResizableLayout', () => {
 
     fireEvent.doubleClick(separator);
     expect(layout.style.getPropertyValue('--creator-workspace-pane-width')).toBe('');
+    fireEvent.keyDown(separator, { key: 'ArrowLeft' });
+    expect(layout).toHaveStyle({ '--creator-workspace-pane-width': '841px' });
   });
 });

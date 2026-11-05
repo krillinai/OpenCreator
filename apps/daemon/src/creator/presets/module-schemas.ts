@@ -123,6 +123,12 @@ const smartDubbingLocaleSchema = z.object({
   text: z.string().max(5000).optional()
 }).strict();
 
+const transcriptionDefaultsSchema = z.object({
+  sourceType: z.enum(['url', 'file']).default('file'),
+  sourceUrl: z.string().default(''),
+  sourceLanguage: shortTextSchema.default('zh_cn')
+}).strict();
+
 const emptyLocaleSchema = z.object({}).strict();
 
 const bindingByModule: Record<CreatorRuntimeWorkspace, { id: string; version: number }> = {
@@ -131,7 +137,8 @@ const bindingByModule: Record<CreatorRuntimeWorkspace, { id: string; version: nu
   'image-generation': { id: 'image-generation', version: 2 },
   'video-generation': { id: 'video-generation', version: 1 },
   'cover-generator': { id: 'cover', version: 2 },
-  'smart-dubbing': { id: 'smart-dubbing', version: 1 }
+  'smart-dubbing': { id: 'smart-dubbing', version: 1 },
+  'transcription': { id: 'transcription', version: 1 }
 };
 
 export const creatorPresetModuleDefinitions: readonly CreatorPresetModuleDefinition[] = [
@@ -143,7 +150,8 @@ export const creatorPresetModuleDefinitions: readonly CreatorPresetModuleDefinit
     ...state,
     sourceType: 'prompt'
   })),
-  createDefinition('smart-dubbing', smartDubbingDefaultsSchema, smartDubbingLocaleSchema)
+  createDefinition('smart-dubbing', smartDubbingDefaultsSchema, smartDubbingLocaleSchema),
+  createDefinition('transcription', transcriptionDefaultsSchema, emptyLocaleSchema)
 ];
 
 export function getCreatorPresetModuleDefinition(

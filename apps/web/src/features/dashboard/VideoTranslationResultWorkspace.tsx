@@ -128,6 +128,7 @@ export default function VideoTranslationResultWorkspace(props: {
   subtitleSaveError?: string;
   subtitleOnly?: boolean;
   subtitleDownloads?: Array<{ artifactId: string; label: string }>;
+  subtitleExportMenu?: { label: string; items: Array<{ id: string; label: string; onSelect(): void }> };
   activeTab: VideoTranslationResultTab;
   version: number;
   versions: VersionItem[];
@@ -894,7 +895,15 @@ export default function VideoTranslationResultWorkspace(props: {
               </> : props.subtitleOnly && activeSubtitleOutput && props.onImmersiveChange ? <button ref={immersiveButtonRef} type="button" onClick={() => props.onImmersiveChange?.(true)}>
                 <Maximize2 size={15} />{l('深度编辑', 'Advanced editing')}
               </button> : null}
-              {props.immersive && !props.subtitleDownloads?.length && activeSubtitleOutput ? <button type="button" className="subtitle-editor-export"
+              {props.immersive && props.subtitleExportMenu && activeSubtitleOutput ? <details className="subtitle-download-menu">
+                <summary><Download size={15} aria-hidden="true" />{props.subtitleExportMenu.label}</summary>
+                <div>{props.subtitleExportMenu.items.map(item => <button key={item.id} type="button"
+                  disabled={hasSubtitleDrafts || props.subtitleSavePending} onClick={event => {
+                    event.currentTarget.closest('details')?.removeAttribute('open');
+                    item.onSelect();
+                  }}>{item.label}</button>)}</div>
+              </details> : null}
+              {props.immersive && !props.subtitleExportMenu && !props.subtitleDownloads?.length && activeSubtitleOutput ? <button type="button" className="subtitle-editor-export"
                 aria-label={props.workbench ? l('下载字幕', 'Download subtitles') : l('导出字幕', 'Export subtitles')}
                 title={props.workbench ? l('下载字幕', 'Download subtitles') : l('导出字幕', 'Export subtitles')} disabled={hasSubtitleDrafts || props.subtitleSavePending}
                 onClick={() => props.onExport('subtitles', activeSubtitleOutput.artifactId)}><Download size={15} /><span>{props.workbench ? l('下载字幕', 'Download subtitles') : l('导出字幕', 'Export subtitles')}</span></button> : null}

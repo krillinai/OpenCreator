@@ -4004,7 +4004,7 @@ export default function VideoTranslationWorkspace(props: {
                 </button>
               </div>
             ) : null}
-            <nav className="video-translation-steps" aria-label={l('翻译流程', 'Translation steps')}>
+            <nav className="video-translation-steps creator-tool-steps-two" aria-label={l('翻译流程', 'Translation steps')}>
               <ol>
                 {steps.map((step, index) => {
                   const completed = index < currentStep;
