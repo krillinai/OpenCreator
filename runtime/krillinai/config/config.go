@@ -126,15 +126,16 @@ type Tts struct {
 }
 
 type Dubbing struct {
-	MinSubtitleDuration float64 `toml:"min_subtitle_duration"`
-	MaxChunkSize        int     `toml:"max_chunk_size"`
-	GapTolerance        float64 `toml:"gap_tolerance"`
-	SpeedMin            float64 `toml:"speed_min"`
-	SpeedAccept         float64 `toml:"speed_accept"`
-	SpeedMax            float64 `toml:"speed_max"`
-	EnableTextRewrite   bool    `toml:"enable_text_rewrite"`
-	RewriteMaxAttempts  int     `toml:"rewrite_max_attempts"`
-	Estimator           string  `toml:"estimator"`
+	MinSubtitleDuration   float64 `toml:"min_subtitle_duration"`
+	MaxChunkSize          int     `toml:"max_chunk_size"`
+	GapTolerance          float64 `toml:"gap_tolerance"`
+	SpeedMin              float64 `toml:"speed_min"`
+	SpeedAccept           float64 `toml:"speed_accept"`
+	SpeedMax              float64 `toml:"speed_max"`
+	MaxTimingOverrunRatio float64 `toml:"max_timing_overrun_ratio"`
+	EnableTextRewrite     bool    `toml:"enable_text_rewrite"`
+	RewriteMaxAttempts    int     `toml:"rewrite_max_attempts"`
+	Estimator             string  `toml:"estimator"`
 }
 
 type Image struct {
@@ -216,15 +217,16 @@ var Conf = Config{
 		},
 	},
 	Dubbing: Dubbing{
-		MinSubtitleDuration: 2.5,
-		MaxChunkSize:        5,
-		GapTolerance:        1.5,
-		SpeedMin:            0.95,
-		SpeedAccept:         1.15,
-		SpeedMax:            1.30,
-		EnableTextRewrite:   true,
-		RewriteMaxAttempts:  2,
-		Estimator:           "statistical",
+		MinSubtitleDuration:   2.5,
+		MaxChunkSize:          5,
+		GapTolerance:          1.5,
+		SpeedMin:              0.95,
+		SpeedAccept:           1.15,
+		SpeedMax:              1.30,
+		MaxTimingOverrunRatio: 0.10,
+		EnableTextRewrite:     true,
+		RewriteMaxAttempts:    3,
+		Estimator:             "statistical",
 	},
 	Image: Image{
 		Provider: "openai-compatible",

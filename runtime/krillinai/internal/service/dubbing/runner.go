@@ -9,6 +9,7 @@ import (
 	"krillin-ai/pkg/util"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Result struct {
@@ -25,8 +26,19 @@ type Runner struct {
 }
 
 func NewRunner(deps Dependencies) *Runner {
-	if deps.Config.MaxChunkSize <= 0 {
+	if deps.Config == (Config{}) {
 		deps.Config = DefaultConfig()
+	} else {
+		defaults := DefaultConfig()
+		if deps.Config.RewriteMaxAttempts <= 0 {
+			deps.Config.RewriteMaxAttempts = defaults.RewriteMaxAttempts
+		}
+		if deps.Config.Estimator == "" {
+			deps.Config.Estimator = defaults.Estimator
+		}
+		if deps.Config.MaxTimingOverrunRatio <= 0 {
+			deps.Config.MaxTimingOverrunRatio = defaults.MaxTimingOverrunRatio
+		}
 	}
 	if deps.FFmpeg == nil {
 		deps.FFmpeg = defaultFFmpegRunner
@@ -71,18 +83,23 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 	}
 
 	r.reportPhase("planning_voice")
-	planner := NewPlanner(r.deps.Config, NewStatisticalEstimator(), NewLLMOptimizer(r.deps.Chat))
-	plan, chunks, err := planner.Plan(cues, r.deps.Language)
+	optimizer := NewLLMOptimizer(r.deps.Chat)
+	planner := NewPlanner(r.deps.Config, NewStatisticalEstimator(), optimizer)
+	plan, err := planner.PlanContext(ctx, cues, r.deps.Language)
 	if err != nil {
 		return Result{}, err
 	}
+	if r.deps.SourceSRT != "" {
+		if err := attachSourceTexts(plan, r.deps.SourceSRT); err != nil {
+			return Result{}, err
+		}
+	}
 
 	r.reportPhase("generating_voice")
-	plan, chunks, err = GenerateRawChunkSegments(
+	plan, err = GenerateRawSegmentsWithProgress(
 		ctx,
 		r.deps.TTS,
 		plan,
-		chunks,
 		r.deps.Voice,
 		segmentsDir,
 		r.deps.FFmpeg,
@@ -93,14 +110,26 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 
-	r.reportPhase("fitting_voice")
-	fitted, fittedChunks, report, err := FitTimeline(plan, chunks, r.deps.Config)
+	plan, err = r.rewriteOverlongSegments(ctx, plan, planner.estimator, optimizer, segmentsDir)
 	if err != nil {
 		return Result{}, err
 	}
 
+	r.reportPhase("fitting_voice")
+	fitted, report, err := FitSegmentsWithConfig(plan, r.deps.Config)
+	if err != nil {
+		// Preserve the measured mismatch so a failed job explains whether the
+		// source speech window or the target TTS duration caused the overflow.
+		_ = writeJSON(filepath.Join(dubbingDir, DubbingReportName), report)
+		return Result{}, err
+	}
+
 	dubSRT := filepath.Join(dubbingDir, DubSubtitleFileName)
-	if err := WriteSRTFile(dubSRT, BuildDubCues(fitted)); err != nil {
+	finalCues := BuildDubCues(fitted)
+	if err := WriteSRTFile(r.deps.InputSRT, finalCues); err != nil {
+		return Result{}, fmt.Errorf("write final target subtitles: %w", err)
+	}
+	if err := WriteSRTFile(dubSRT, finalCues); err != nil {
 		return Result{}, err
 	}
 	if err := writeJSON(filepath.Join(dubbingDir, DubbingPlanFileName), fitted); err != nil {
@@ -114,7 +143,7 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	r.reportPhase("assembling_voice")
-	if err := AssembleChunkAudio(fitted, fittedChunks, segmentsDir, r.deps.OutputAudio, r.deps.FFmpeg); err != nil {
+	if err := AssembleAudio(fitted, segmentsDir, r.deps.OutputAudio, r.deps.FFmpeg); err != nil {
 		return Result{}, err
 	}
 	if err := ensureNonEmptyFile(r.deps.OutputAudio, "output audio"); err != nil {
@@ -138,12 +167,166 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 
 	return Result{
 		Plan:   fitted,
-		Chunks: fittedChunks,
+		Chunks: nil,
 		Report: report,
 		DubSRT: dubSRT,
 		Audio:  r.deps.OutputAudio,
 		Video:  r.deps.OutputVideo,
 	}, nil
+}
+
+func (r *Runner) rewriteOverlongSegments(ctx context.Context, plan []PlanItem, estimator DurationEstimator, optimizer TextOptimizer, segmentsDir string) ([]PlanItem, error) {
+	maxAttempts := r.deps.Config.RewriteMaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = DefaultConfig().RewriteMaxAttempts
+	}
+	maxAcceptedRatio := 1 + normalizeTimingConfig(r.deps.Config).MaxTimingOverrunRatio
+
+	for {
+		overlong := overlongPlanIndexes(plan)
+		pending := make([]int, 0, len(overlong))
+		for _, index := range overlong {
+			item := plan[index]
+			slot := item.OriginalEnd - item.OriginalStart
+			ratio := item.ActualDuration / slot
+			// The first overrun must be sent to LLM. After a rewrite, a result
+			// within the configured tolerance is eligible for atempo fitting.
+			if item.RewriteAttempts > 0 && ratio <= maxAcceptedRatio+timelineComparisonEpsilon {
+				continue
+			}
+			pending = append(pending, index)
+		}
+		if len(pending) == 0 {
+			return plan, nil
+		}
+		if !r.deps.Config.EnableTextRewrite || optimizer == nil {
+			return nil, timingOverflowError(plan, overlong[0])
+		}
+
+		for _, index := range pending {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			item := &plan[index]
+			slot := item.OriginalEnd - item.OriginalStart
+			if item.RewriteAttempts >= maxAttempts {
+				return nil, timingOverflowError(plan, index)
+			}
+			reason := fmt.Sprintf("measured_too_long: actual_duration=%.3f, slot_duration=%.3f", item.ActualDuration, slot)
+			previousTarget := item.SpokenText
+			if strings.TrimSpace(item.SourceText) != "" {
+				var rewritten string
+				var rewriteErr error
+				if measuredOptimizer, ok := optimizer.(MeasuredSourceAwareTextOptimizer); ok {
+					rewritten, rewriteErr = measuredOptimizer.OptimizeWithSourceMeasured(ctx, item.SourceText, item.SpokenText, slot, item.ActualDuration, reason)
+				} else if sourceOptimizer, ok := optimizer.(SourceAwareTextOptimizer); ok {
+					rewritten, rewriteErr = sourceOptimizer.OptimizeWithSource(ctx, item.SourceText, item.SpokenText, slot, reason)
+				} else {
+					rewriteErr = fmt.Errorf("source-aware optimizer is unavailable")
+				}
+				rewritten = strings.TrimSpace(rewritten)
+				if rewriteErr != nil || rewritten == "" || rewritten == previousTarget {
+					// A source-aware response can fail strict JSON parsing or repeat the
+					// existing target. Give the target-only prompt one chance in this
+					// attempt, then let the bounded retry loop try again.
+					fallback, fallbackErr := optimizer.Optimize(ctx, item.SpokenText, slot, reason+"; source-aware rewrite unavailable")
+					fallback = strings.TrimSpace(fallback)
+					if fallbackErr == nil && fallback != "" && fallback != previousTarget && optimizerTextIsShorter(fallback, previousTarget) {
+						rewritten = fallback
+					} else {
+						item.RewriteAttempts++
+						if item.RewriteAttempts >= maxAttempts {
+							return nil, timingOverflowError(plan, index)
+						}
+						continue
+					}
+				}
+				item.SpokenText = rewritten
+			} else {
+				rewritten, rewriteErr := optimizer.Optimize(ctx, item.SpokenText, slot, reason)
+				if rewriteErr != nil {
+					if ctxErr := ctx.Err(); ctxErr != nil {
+						return nil, ctxErr
+					}
+					item.RewriteAttempts++
+					if item.RewriteAttempts >= maxAttempts {
+						return nil, timingOverflowError(plan, index)
+					}
+					continue
+				}
+				rewritten = strings.TrimSpace(rewritten)
+				if rewritten == "" || rewritten == previousTarget {
+					item.RewriteAttempts++
+					if item.RewriteAttempts >= maxAttempts {
+						return nil, timingOverflowError(plan, index)
+					}
+					continue
+				}
+				item.SpokenText = rewritten
+			}
+			item.RewriteAttempts++
+			if estimator != nil {
+				estimate, confidence, estimateErr := estimator.Estimate(item.SpokenText, r.deps.Language)
+				if estimateErr != nil {
+					return nil, fmt.Errorf("estimate rewritten subtitle %d: %w", item.Index, estimateErr)
+				}
+				item.EstimatedDuration = estimate
+				item.EstimateConfidence = confidence
+			}
+			if err := regenerateRawSegment(ctx, r.deps.TTS, item, r.deps.Voice, segmentsDir, r.deps.FFmpeg, r.deps.Duration); err != nil {
+				return nil, err
+			}
+		}
+	}
+}
+
+func attachSourceTexts(plan []PlanItem, sourcePath string) error {
+	cues, err := ParseSRTFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("parse source subtitles for dubbing: %w", err)
+	}
+	byIndex := make(map[int]Cue, len(cues))
+	for _, cue := range cues {
+		byIndex[cue.Index] = cue
+	}
+	for i := range plan {
+		indexes := plan[i].CueIndexes
+		if len(indexes) == 0 {
+			indexes = []int{plan[i].Index}
+		}
+		parts := make([]string, 0, len(indexes))
+		for _, index := range indexes {
+			cue, ok := byIndex[index]
+			if !ok {
+				return fmt.Errorf("source subtitle cue %d missing for target cue %d", index, plan[i].Index)
+			}
+			text := strings.TrimSpace(cue.Text)
+			if text != "" {
+				parts = append(parts, text)
+			}
+		}
+		plan[i].SourceText = strings.Join(parts, " ")
+	}
+	return nil
+}
+
+func overlongPlanIndexes(plan []PlanItem) []int {
+	overlong := make([]int, 0)
+	for i, item := range plan {
+		slot := item.OriginalEnd - item.OriginalStart
+		if slot > 0 && item.ActualDuration > slot+timelineComparisonEpsilon {
+			overlong = append(overlong, i)
+		}
+	}
+	return overlong
+}
+
+func timingOverflowError(plan []PlanItem, index int) error {
+	if index < 0 || index >= len(plan) {
+		return fmt.Errorf("subtitle timing overflow at plan index %d", index)
+	}
+	item := plan[index]
+	return fmt.Errorf("subtitle %d audio duration %.3fs exceeds time slot %.3fs after %d rewrite attempts", item.Index, item.ActualDuration, item.OriginalEnd-item.OriginalStart, item.RewriteAttempts)
 }
 
 func (r *Runner) validate() error {

@@ -65,6 +65,7 @@ func buildMuxArgs(inputVideo, inputAudio, outputVideo string) []string {
 		"-map", "1:a:0",
 		"-c:a", "aac",
 		"-b:a", "192k",
+		"-af", "apad",
 		"-shortest",
 		outputVideo,
 	}
@@ -73,10 +74,14 @@ func buildMuxArgs(inputVideo, inputAudio, outputVideo string) []string {
 func BuildDubCues(plan []PlanItem) []Cue {
 	cues := make([]Cue, len(plan))
 	for i, item := range plan {
+		index := item.Index
+		if index <= 0 {
+			index = i + 1
+		}
 		cues[i] = Cue{
-			Index: i + 1,
-			Start: item.NewStart,
-			End:   item.NewEnd,
+			Index: index,
+			Start: item.OriginalStart,
+			End:   item.OriginalEnd,
 			Text:  item.SpokenText,
 		}
 	}

@@ -35,8 +35,11 @@ func NewTranslator() *Translator {
 		// The paired translation prompt now produces natural subtitle language
 		// directly. Keep the legacy full-document naturalizer opt-in so normal
 		// subtitle jobs do not pay for a second pass over every sentence.
-		naturalizeEnabled:         false,
-		durationShorteningEnabled: true,
+		naturalizeEnabled: false,
+		// The paired translation prompt now receives source speech timing and
+		// controls duration in the single translation pass. A second cue-window
+		// rewrite can move the wording away from the actual spoken duration.
+		durationShorteningEnabled: false,
 	}
 }
 

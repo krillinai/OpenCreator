@@ -1,11 +1,12 @@
 package dubbing
 
 import (
+	"context"
 	"krillin-ai/internal/types"
 	"testing"
 )
 
-func TestPlannerMergesShortAdjacentCues(t *testing.T) {
+func TestPlannerKeepsOnePlanItemPerCue(t *testing.T) {
 	cfg := DefaultConfig()
 	cues := []Cue{
 		{Index: 1, Start: 0, End: 0.8, Text: "你好"},
@@ -13,41 +14,32 @@ func TestPlannerMergesShortAdjacentCues(t *testing.T) {
 		{Index: 3, Start: 5.0, End: 6.0, Text: "下一段"},
 	}
 	planner := NewPlanner(cfg, NewStatisticalEstimator(), nil)
-	plan, chunks, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
+	plan, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
 	if err != nil {
 		t.Fatalf("Plan() error = %v", err)
 	}
-	if len(plan) != 3 || len(chunks) != 2 {
-		t.Fatalf("plan=%+v chunks=%+v", plan, chunks)
-	}
-	if plan[0].ChunkID != plan[1].ChunkID {
-		t.Fatalf("first short cue should merge with second: %+v", plan)
-	}
-	if plan[2].ChunkID == plan[1].ChunkID {
-		t.Fatalf("large gap should start a new chunk: %+v", plan)
+	if len(plan) != 3 {
+		t.Fatalf("plan=%+v", plan)
 	}
 }
 
-func TestPlannerDoesNotMergeLongAdjacentCuesOnlyBecauseGapIsSmall(t *testing.T) {
+func TestPlannerKeepsAdjacentCuesIndependent(t *testing.T) {
 	cfg := DefaultConfig()
 	cues := []Cue{
 		{Index: 1, Start: 0, End: 3.0, Text: "这是第一句已经足够长的字幕"},
 		{Index: 2, Start: 3.2, End: 6.2, Text: "这是第二句同样足够长的字幕"},
 	}
 	planner := NewPlanner(cfg, NewStatisticalEstimator(), nil)
-	plan, chunks, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
+	plan, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
 	if err != nil {
 		t.Fatalf("Plan() error = %v", err)
 	}
-	if len(plan) != 2 || len(chunks) != 2 {
-		t.Fatalf("long adjacent cues should not merge only because gap is small: plan=%+v chunks=%+v", plan, chunks)
-	}
-	if plan[0].ChunkID == plan[1].ChunkID {
-		t.Fatalf("long adjacent cues share chunk: %+v", plan)
+	if len(plan) != 2 {
+		t.Fatalf("plan=%+v", plan)
 	}
 }
 
-func TestPlannerRespectsMaxChunkSizeWhenMergingShortCues(t *testing.T) {
+func TestPlannerDoesNotCreateChunkPlan(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.MaxChunkSize = 2
 	cues := []Cue{
@@ -56,14 +48,71 @@ func TestPlannerRespectsMaxChunkSizeWhenMergingShortCues(t *testing.T) {
 		{Index: 3, Start: 1.2, End: 1.7, Text: "三"},
 	}
 	planner := NewPlanner(cfg, NewStatisticalEstimator(), nil)
-	plan, chunks, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
+	plan, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
 	if err != nil {
 		t.Fatalf("Plan() error = %v", err)
 	}
-	if len(plan) != 3 || len(chunks) != 2 {
-		t.Fatalf("MaxChunkSize should split short cue merges: plan=%+v chunks=%+v", plan, chunks)
+	if len(plan) != 3 {
+		t.Fatalf("plan=%+v", plan)
 	}
-	if len(chunks[0].Items) != 2 || len(chunks[1].Items) != 1 {
-		t.Fatalf("chunk sizes = %+v, want [2,1]", chunks)
+}
+
+func TestPlannerUsesLLMSemanticMergeForAdjacentShortCues(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.EnableTextRewrite = false
+	chat := &fakeChat{response: `{"groups":[[1,2],[3]]}`}
+	planner := NewPlanner(cfg, NewStatisticalEstimator(), NewLLMOptimizer(chat))
+	cues := []Cue{
+		{Index: 1, Start: 0, End: 0.8, Text: "因为我们已经准备好了"},
+		{Index: 2, Start: 0.9, End: 1.7, Text: "所以现在可以开始。"},
+		{Index: 3, Start: 2.0, End: 2.8, Text: "下一句。"},
+	}
+	plan, err := planner.PlanContext(context.Background(), cues, types.LanguageNameSimplifiedChinese)
+	if err != nil {
+		t.Fatalf("PlanContext() error = %v", err)
+	}
+	if len(plan) != 2 || len(plan[0].CueIndexes) != 2 || plan[0].CueIndexes[0] != 1 || plan[0].CueIndexes[1] != 2 {
+		t.Fatalf("plan=%+v", plan)
+	}
+	if plan[0].OriginalStart != 0 || plan[0].OriginalEnd != 1.7 || plan[0].SpokenText != "因为我们已经准备好了 所以现在可以开始。" {
+		t.Fatalf("merged plan item=%+v", plan[0])
+	}
+}
+
+func TestPlannerRejectsInvalidLLMSemanticMerge(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.EnableTextRewrite = false
+	chat := &fakeChat{response: `{"groups":[[1,3],[2]]}`}
+	planner := NewPlanner(cfg, NewStatisticalEstimator(), NewLLMOptimizer(chat))
+	cues := []Cue{
+		{Index: 1, Start: 0, End: 0.8, Text: "第一段"},
+		{Index: 2, Start: 0.9, End: 1.7, Text: "第二段"},
+		{Index: 3, Start: 1.8, End: 2.6, Text: "第三段"},
+	}
+	plan, err := planner.PlanContext(context.Background(), cues, types.LanguageNameSimplifiedChinese)
+	if err != nil {
+		t.Fatalf("PlanContext() error = %v", err)
+	}
+	if len(plan) != len(cues) {
+		t.Fatalf("invalid merge changed cue boundaries: %+v", plan)
+	}
+}
+
+func TestPlannerRetriesTransientSemanticMergeFailure(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.EnableTextRewrite = false
+	chat := &fakeChat{responses: []string{"not json", `{"groups":[[1,2],[3]]}`}}
+	planner := NewPlanner(cfg, NewStatisticalEstimator(), NewLLMOptimizer(chat))
+	cues := []Cue{
+		{Index: 1, Start: 0, End: 0.8, Text: "因为我们已经准备好了"},
+		{Index: 2, Start: 0.9, End: 1.7, Text: "所以现在可以开始。"},
+		{Index: 3, Start: 2.0, End: 2.8, Text: "下一句。"},
+	}
+	plan, err := planner.PlanContext(context.Background(), cues, types.LanguageNameSimplifiedChinese)
+	if err != nil {
+		t.Fatalf("PlanContext() error = %v", err)
+	}
+	if chat.calls != 2 || len(plan) != 2 || len(plan[0].CueIndexes) != 2 {
+		t.Fatalf("calls=%d plan=%+v, want retry and merged cues", chat.calls, plan)
 	}
 }

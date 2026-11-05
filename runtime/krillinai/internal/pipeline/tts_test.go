@@ -83,6 +83,15 @@ func TestGenerateTTSUsesManifestTargetSRTWhenInputEmpty(t *testing.T) {
 	if fake.lastSpeech.TtsSourceFilePath != customTarget {
 		t.Fatalf("TtsSourceFilePath = %q, want %q", fake.lastSpeech.TtsSourceFilePath, customTarget)
 	}
+	if fake.lastSpeech.TtsResultSrtFilePath != customTarget {
+		t.Fatalf("TtsResultSrtFilePath = %q, want %q", fake.lastSpeech.TtsResultSrtFilePath, customTarget)
+	}
+	if fake.lastSpeech.TtsOriginSrtFilePath != filepath.Join(dir, "origin_language_srt.srt") {
+		t.Fatalf("TtsOriginSrtFilePath = %q, want default origin path", fake.lastSpeech.TtsOriginSrtFilePath)
+	}
+	if fake.lastSpeech.TtsBilingualSrtFilePath != filepath.Join(dir, "bilingual_srt.srt") {
+		t.Fatalf("TtsBilingualSrtFilePath = %q, want default bilingual path", fake.lastSpeech.TtsBilingualSrtFilePath)
+	}
 	if !fake.lastSpeech.EnableTts {
 		t.Fatalf("EnableTts = false, want true")
 	}
@@ -136,5 +145,86 @@ func TestGenerateTTSReportsVoiceGenerationProgress(t *testing.T) {
 	last := updates[len(updates)-1]
 	if last != (update{phase: "collecting_outputs", percent: 99}) {
 		t.Fatalf("last progress = %+v, want collecting_outputs/99", last)
+	}
+}
+
+func TestFailTTSStageInvalidatesStaleOutputs(t *testing.T) {
+	dir := t.TempDir()
+	manifest := NewManifest("demo", dir)
+	if err := manifest.ApplyDefaultOutputs(); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		manifest.Outputs.TTSAudio,
+		manifest.Outputs.VideoWithTTS,
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("stale"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	response, err := failTTSStage(TTSRequest{Workdir: dir, TaskID: "demo"}, manifest, "generate_speech_failed", context.Canceled)
+	if err == nil {
+		t.Fatal("failTTSStage() error = nil")
+	}
+	if response.OK {
+		t.Fatal("response OK = true, want false")
+	}
+	if response.Outputs.TTSAudio != "" || response.Outputs.VideoWithTTS != "" {
+		t.Fatalf("response outputs = %+v, want TTS outputs cleared", response.Outputs)
+	}
+	for _, path := range []string{
+		filepath.Join(dir, "tts_final_audio.wav"),
+		filepath.Join(dir, "video_with_tts.mp4"),
+	} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("stale output %s still exists, stat error = %v", path, statErr)
+		}
+	}
+	saved, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Stages[string(StageTTS)].OK {
+		t.Fatal("saved TTS stage OK = true, want false")
+	}
+	if saved.Outputs.TTSAudio != "" || saved.Outputs.VideoWithTTS != "" {
+		t.Fatalf("saved outputs = %+v, want TTS outputs cleared", saved.Outputs)
+	}
+}
+
+func TestPrepareTTSOutputsRemovesPreviousArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	manifest := NewManifest("demo", dir)
+	if err := manifest.ApplyDefaultOutputs(); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		manifest.Outputs.TTSAudio,
+		manifest.Outputs.VideoWithTTS,
+		filepath.Join(dir, "dubbing", "dubbing_plan.json"),
+		filepath.Join(dir, "dubbing", "dubbing_report.json"),
+		filepath.Join(dir, "dubbing", "dub.srt"),
+	}
+	for _, path := range paths {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("stale"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	prepareTTSOutputs(manifest)
+	for _, path := range paths {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("previous artifact %s still exists, stat error = %v", path, err)
+		}
+	}
+	if manifest.Outputs.TTSAudio == "" || manifest.Outputs.VideoWithTTS == "" {
+		t.Fatalf("prepareTTSOutputs cleared manifest paths: %+v", manifest.Outputs)
 	}
 }

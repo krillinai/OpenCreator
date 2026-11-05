@@ -14,28 +14,30 @@ const (
 )
 
 type Config struct {
-	MinSubtitleDuration float64
-	MaxChunkSize        int
-	GapTolerance        float64
-	SpeedMin            float64
-	SpeedAccept         float64
-	SpeedMax            float64
-	EnableTextRewrite   bool
-	RewriteMaxAttempts  int
-	Estimator           string
+	MinSubtitleDuration   float64
+	MaxChunkSize          int
+	GapTolerance          float64
+	SpeedMin              float64
+	SpeedAccept           float64
+	SpeedMax              float64
+	MaxTimingOverrunRatio float64
+	EnableTextRewrite     bool
+	RewriteMaxAttempts    int
+	Estimator             string
 }
 
 func DefaultConfig() Config {
 	return Config{
-		MinSubtitleDuration: 2.5,
-		MaxChunkSize:        5,
-		GapTolerance:        1.5,
-		SpeedMin:            0.95,
-		SpeedAccept:         1.15,
-		SpeedMax:            1.30,
-		EnableTextRewrite:   true,
-		RewriteMaxAttempts:  2,
-		Estimator:           "statistical",
+		MinSubtitleDuration:   2.5,
+		MaxChunkSize:          5,
+		GapTolerance:          1.5,
+		SpeedMin:              0.95,
+		SpeedAccept:           1.15,
+		SpeedMax:              1.30,
+		MaxTimingOverrunRatio: 0.10,
+		EnableTextRewrite:     true,
+		RewriteMaxAttempts:    3,
+		Estimator:             "statistical",
 	}
 }
 
@@ -51,21 +53,26 @@ func (c Cue) Duration() float64 {
 }
 
 type PlanItem struct {
-	Index              int     `json:"index"`
-	OriginalStart      float64 `json:"original_start"`
-	OriginalEnd        float64 `json:"original_end"`
-	NewStart           float64 `json:"new_start"`
-	NewEnd             float64 `json:"new_end"`
-	OriginalText       string  `json:"original_text"`
-	CleanText          string  `json:"clean_text"`
-	SpokenText         string  `json:"spoken_text"`
-	EstimatedDuration  float64 `json:"estimated_duration"`
-	EstimateConfidence float64 `json:"estimate_confidence"`
-	ActualDuration     float64 `json:"actual_duration"`
-	SpeedFactor        float64 `json:"speed_factor"`
-	ChunkID            int     `json:"chunk_id"`
-	RewriteAttempts    int     `json:"rewrite_attempts"`
-	Warning            string  `json:"warning,omitempty"`
+	Index                int     `json:"index"`
+	CueIndexes           []int   `json:"cue_indexes,omitempty"`
+	OriginalStart        float64 `json:"original_start"`
+	OriginalEnd          float64 `json:"original_end"`
+	NewStart             float64 `json:"new_start"`
+	NewEnd               float64 `json:"new_end"`
+	OriginalText         string  `json:"original_text"`
+	SourceText           string  `json:"source_text,omitempty"`
+	CleanText            string  `json:"clean_text"`
+	SpokenText           string  `json:"spoken_text"`
+	EstimatedDuration    float64 `json:"estimated_duration"`
+	EstimateConfidence   float64 `json:"estimate_confidence"`
+	ActualDuration       float64 `json:"actual_duration"`
+	SourceSpeechDuration float64 `json:"source_speech_duration"`
+	TargetSpeechDuration float64 `json:"target_speech_duration"`
+	DurationRatio        float64 `json:"duration_ratio"`
+	SpeedFactor          float64 `json:"speed_factor"`
+	ChunkID              int     `json:"chunk_id"`
+	RewriteAttempts      int     `json:"rewrite_attempts"`
+	Warning              string  `json:"warning,omitempty"`
 }
 
 type Chunk struct {
@@ -78,10 +85,11 @@ type Chunk struct {
 }
 
 type Report struct {
-	Warnings       []string `json:"warnings"`
-	FailedIndexes  []int    `json:"failed_indexes"`
-	MaxSpeedFactor float64  `json:"max_speed_factor"`
-	RewriteCount   int      `json:"rewrite_count"`
+	Warnings           []string `json:"warnings"`
+	FailedIndexes      []int    `json:"failed_indexes"`
+	MaxSpeedFactor     float64  `json:"max_speed_factor"`
+	RewriteCount       int      `json:"rewrite_count"`
+	SemanticMergeCount int      `json:"semantic_merge_count"`
 }
 
 type CommandRunner func(args []string) error
@@ -91,6 +99,7 @@ type Dependencies struct {
 	TTS            types.Ttser
 	Chat           types.ChatCompleter
 	Language       types.StandardLanguageCode
+	SourceSRT      string
 	Voice          string
 	Workdir        string
 	InputSRT       string
@@ -107,4 +116,15 @@ type Dependencies struct {
 
 type TextOptimizer interface {
 	Optimize(ctx context.Context, text string, availableSeconds float64, reason string) (string, error)
+}
+
+type SourceAwareTextOptimizer interface {
+	OptimizeWithSource(ctx context.Context, sourceText, targetText string, availableSeconds float64, reason string) (string, error)
+}
+
+// MeasuredSourceAwareTextOptimizer is the stricter source-aware contract used
+// after TTS. It receives the measured target duration so the model can see the
+// actual overrun instead of only the subtitle window.
+type MeasuredSourceAwareTextOptimizer interface {
+	OptimizeWithSourceMeasured(ctx context.Context, sourceText, targetText string, availableSeconds, actualSeconds float64, reason string) (string, error)
 }

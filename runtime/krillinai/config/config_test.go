@@ -21,14 +21,14 @@ func TestDefaultDubbingConfig(t *testing.T) {
 	if Conf.Dubbing.GapTolerance != 1.5 {
 		t.Fatalf("GapTolerance = %v, want 1.5", Conf.Dubbing.GapTolerance)
 	}
-	if Conf.Dubbing.SpeedMin != 0.95 || Conf.Dubbing.SpeedAccept != 1.15 || Conf.Dubbing.SpeedMax != 1.30 {
+	if Conf.Dubbing.SpeedMin != 0.95 || Conf.Dubbing.SpeedAccept != 1.15 || Conf.Dubbing.SpeedMax != 1.30 || Conf.Dubbing.MaxTimingOverrunRatio != 0.10 {
 		t.Fatalf("speed config = %+v", Conf.Dubbing)
 	}
 	if !Conf.Dubbing.EnableTextRewrite {
 		t.Fatalf("EnableTextRewrite = false, want true")
 	}
-	if Conf.Dubbing.RewriteMaxAttempts != 2 {
-		t.Fatalf("RewriteMaxAttempts = %d, want 2", Conf.Dubbing.RewriteMaxAttempts)
+	if Conf.Dubbing.RewriteMaxAttempts != 3 {
+		t.Fatalf("RewriteMaxAttempts = %d, want 3", Conf.Dubbing.RewriteMaxAttempts)
 	}
 	if Conf.Dubbing.Estimator != "statistical" {
 		t.Fatalf("Estimator = %q, want statistical", Conf.Dubbing.Estimator)

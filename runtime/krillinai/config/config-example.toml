@@ -76,14 +76,15 @@
         base_url = "https://openspeech.bytedance.com"
 
 [dubbing]
-    min_subtitle_duration = 2.5 # 最短配音字幕时长，短句会优先合并
-    max_chunk_size = 5 # 单个配音 chunk 最多合并字幕条数
-    gap_tolerance = 1.5 # 可吸收的相邻字幕空隙，单位秒
-    speed_min = 0.95 # 允许的最慢调速倍率
-    speed_accept = 1.15 # 推荐的最大自然调速倍率
-    speed_max = 1.30 # 硬上限，超过后优先改写文本
+    min_subtitle_duration = 2.5 # 兼容旧配置；逐条配音流程不再合并短字幕
+    max_chunk_size = 5 # 兼容旧配置；逐条配音流程不再使用 chunk
+    gap_tolerance = 1.5 # 兼容旧配置；字幕时间槽不再吸收额外空隙
+    speed_min = 0.95 # 兼容旧配置；自然配音流程不再变速
+    speed_accept = 1.15 # 兼容旧配置；自然配音流程不再变速
+    speed_max = 1.30 # 兼容旧 chunk 配置
+    max_timing_overrun_ratio = 0.10 # LLM 最多改写3次后，允许目标音频比时间槽长10%并轻微加速
     enable_text_rewrite = true # 是否允许 LLM 改写为自然口播
-    rewrite_max_attempts = 2 # 单条字幕最多改写次数
+    rewrite_max_attempts = 3 # 单条字幕最多改写次数
     estimator = "statistical" # 估时器，当前支持 statistical
 
 [image] # 封面生图配置
