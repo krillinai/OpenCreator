@@ -18,6 +18,9 @@ func TestDefaultDubbingConfig(t *testing.T) {
 	if Conf.Dubbing.MaxChunkSize != 5 {
 		t.Fatalf("MaxChunkSize = %d, want 5", Conf.Dubbing.MaxChunkSize)
 	}
+	if Conf.Dubbing.MaxSubtitleChars != 70 {
+		t.Fatalf("MaxSubtitleChars = %d, want 70", Conf.Dubbing.MaxSubtitleChars)
+	}
 	if Conf.Dubbing.GapTolerance != 1.5 {
 		t.Fatalf("GapTolerance = %v, want 1.5", Conf.Dubbing.GapTolerance)
 	}

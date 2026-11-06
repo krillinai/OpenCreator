@@ -6,16 +6,18 @@ import (
 )
 
 const (
-	DubbingDirName       = "dubbing"
-	DubbingInputFileName = "dubbing_input.srt"
-	DubbingPlanFileName  = "dubbing_plan.json"
-	DubbingReportName    = "dubbing_report.json"
-	DubSubtitleFileName  = "dub.srt"
+	DubbingDirName          = "dubbing"
+	DubbingInputFileName    = "dubbing_input.srt"
+	DubbingPlanFileName     = "dubbing_plan.json"
+	DubbingReportName       = "dubbing_report.json"
+	DubSubtitleFileName     = "dub.srt"
+	DefaultMaxSubtitleChars = 70
 )
 
 type Config struct {
 	MinSubtitleDuration   float64
 	MaxChunkSize          int
+	MaxSubtitleChars      int
 	GapTolerance          float64
 	SpeedMin              float64
 	SpeedAccept           float64
@@ -30,6 +32,7 @@ func DefaultConfig() Config {
 	return Config{
 		MinSubtitleDuration:   2.5,
 		MaxChunkSize:          5,
+		MaxSubtitleChars:      DefaultMaxSubtitleChars,
 		GapTolerance:          1.5,
 		SpeedMin:              0.95,
 		SpeedAccept:           1.15,

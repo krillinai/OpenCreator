@@ -39,6 +39,9 @@ func NewRunner(deps Dependencies) *Runner {
 		if deps.Config.MaxTimingOverrunRatio <= 0 {
 			deps.Config.MaxTimingOverrunRatio = defaults.MaxTimingOverrunRatio
 		}
+		if deps.Config.MaxSubtitleChars <= 0 {
+			deps.Config.MaxSubtitleChars = defaults.MaxSubtitleChars
+		}
 	}
 	if deps.FFmpeg == nil {
 		deps.FFmpeg = defaultFFmpegRunner
@@ -83,7 +86,7 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 	}
 
 	r.reportPhase("planning_voice")
-	optimizer := NewLLMOptimizer(r.deps.Chat)
+	optimizer := NewLLMOptimizer(r.deps.Chat, r.deps.Config.MaxSubtitleChars)
 	planner := NewPlanner(r.deps.Config, NewStatisticalEstimator(), optimizer)
 	plan, err := planner.PlanContext(ctx, cues, r.deps.Language)
 	if err != nil {

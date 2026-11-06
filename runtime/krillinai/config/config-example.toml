@@ -76,8 +76,9 @@
         base_url = "https://openspeech.bytedance.com"
 
 [dubbing]
-    min_subtitle_duration = 2.5 # 兼容旧配置；逐条配音流程不再合并短字幕
-    max_chunk_size = 5 # 兼容旧配置；逐条配音流程不再使用 chunk
+    min_subtitle_duration = 2.5 # 语义合并候选的单条字幕时长上限
+    max_chunk_size = 5 # 单个语义合并组的最大字幕条数
+    max_subtitle_chars = 70 # 合并后的目标语言字幕单行硬上限
     gap_tolerance = 1.5 # 兼容旧配置；字幕时间槽不再吸收额外空隙
     speed_min = 0.95 # 兼容旧配置；自然配音流程不再变速
     speed_accept = 1.15 # 兼容旧配置；自然配音流程不再变速

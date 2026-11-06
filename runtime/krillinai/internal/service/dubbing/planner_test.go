@@ -79,6 +79,48 @@ func TestPlannerUsesLLMSemanticMergeForAdjacentShortCues(t *testing.T) {
 	}
 }
 
+func TestPlannerRescuesExtremelyShortSemanticContinuation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.EnableTextRewrite = false
+	chat := &fakeChat{responses: []string{
+		`{"groups":[[1],[2],[3]]}`,
+		`{"groups":[[1,2]]}`,
+	}}
+	planner := NewPlanner(cfg, NewStatisticalEstimator(), NewLLMOptimizer(chat))
+	cues := []Cue{
+		{Index: 1, Start: 0, End: 1.7, Text: "然后休息五分钟。"},
+		{Index: 2, Start: 1.7, End: 2.25, Text: "重复以上步骤。"},
+		{Index: 3, Start: 2.25, End: 3.5, Text: "现在继续。"},
+	}
+	plan, err := planner.PlanContext(context.Background(), cues, types.LanguageNameSimplifiedChinese)
+	if err != nil {
+		t.Fatalf("PlanContext() error = %v", err)
+	}
+	if len(plan) != 2 || len(plan[0].CueIndexes) != 2 || plan[0].OriginalEnd != 2.25 {
+		t.Fatalf("rescued plan=%+v", plan)
+	}
+}
+
+func TestPlannerRejectsSemanticMergeOverSubtitleLength(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.EnableTextRewrite = false
+	cfg.MaxSubtitleChars = 10
+	chat := &fakeChat{response: `{"groups":[[1,2],[3]]}`}
+	planner := NewPlanner(cfg, NewStatisticalEstimator(), NewLLMOptimizer(chat, cfg.MaxSubtitleChars))
+	cues := []Cue{
+		{Index: 1, Start: 0, End: 0.8, Text: "第一段内容"},
+		{Index: 2, Start: 0.8, End: 1.6, Text: "第二段内容"},
+		{Index: 3, Start: 1.6, End: 2.4, Text: "下一句"},
+	}
+	plan, err := planner.PlanContext(context.Background(), cues, types.LanguageNameSimplifiedChinese)
+	if err != nil {
+		t.Fatalf("PlanContext() error = %v", err)
+	}
+	if len(plan) != len(cues) || len(plan[0].CueIndexes) != 1 {
+		t.Fatalf("overlong semantic merge changed cue boundaries: %+v", plan)
+	}
+}
+
 func TestPlannerRejectsInvalidLLMSemanticMerge(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.EnableTextRewrite = false

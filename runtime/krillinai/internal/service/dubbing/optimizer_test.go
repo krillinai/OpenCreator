@@ -53,6 +53,14 @@ func TestLLMOptimizerNormalizesJSONFallbackResponse(t *testing.T) {
 	}
 }
 
+func TestLLMOptimizerRejectsSubtitleOverConfiguredLength(t *testing.T) {
+	chat := &fakeChat{response: strings.Repeat("字", DefaultMaxSubtitleChars+1)}
+	_, err := NewLLMOptimizer(chat).Optimize(context.Background(), "原文", 2, "estimated_too_long")
+	if err == nil || !strings.Contains(err.Error(), "exceeds 70 characters") {
+		t.Fatalf("Optimize() error = %v, want subtitle length rejection", err)
+	}
+}
+
 func TestLLMOptimizerHandlesNilChatAndEmptyResponse(t *testing.T) {
 	if got, err := NewLLMOptimizer(nil).Optimize(context.Background(), "原文", 1.2, "test"); err != nil || got != "原文" {
 		t.Fatalf("nil chat Optimize() = %q, %v", got, err)

@@ -128,6 +128,7 @@ type Tts struct {
 type Dubbing struct {
 	MinSubtitleDuration   float64 `toml:"min_subtitle_duration"`
 	MaxChunkSize          int     `toml:"max_chunk_size"`
+	MaxSubtitleChars      int     `toml:"max_subtitle_chars"`
 	GapTolerance          float64 `toml:"gap_tolerance"`
 	SpeedMin              float64 `toml:"speed_min"`
 	SpeedAccept           float64 `toml:"speed_accept"`
@@ -219,6 +220,7 @@ var Conf = Config{
 	Dubbing: Dubbing{
 		MinSubtitleDuration:   2.5,
 		MaxChunkSize:          5,
+		MaxSubtitleChars:      70,
 		GapTolerance:          1.5,
 		SpeedMin:              0.95,
 		SpeedAccept:           1.15,
