@@ -21,8 +21,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![AtomGit G-Star](https://img.shields.io/badge/AtomGit-G--Star-DA203E?style=flat)](https://atomgit.com/krillinai/OpenCreator)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/fUNvbqDaw)
-[![QQ 그룹](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://qm.qq.com/q/W4YC0PLMeA)
+[![X](https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white)](https://x.com/KrillinAIJunxi)
 
 [특징](#주요-특징) · [도구](#제작-도구) · [Skills](#skills) · [사례](#활용-사례) · [시작](#빠른-시작) · [Desktop](#desktop) · [문서](#문서) · [커뮤니티](#커뮤니티)
 
@@ -261,6 +260,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 </table>
 
 > 이 동영상 사례와 자막 정렬 이미지는 OpenCreator가 KrillinAI라는 이름을 사용하던 시기에 제작되었습니다.
+
+#### 자막 편집기
+
+내장 자막 편집기는 원문과 번역문을 나란히 편집하고, 동기화된 동영상 미리 보기, 재생과 연동되는 파형 및 타임라인, 사용자 지정 자막 스타일을 제공합니다.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
 
 ### 비디오 다운로드
 

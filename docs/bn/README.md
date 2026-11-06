@@ -21,8 +21,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![AtomGit G-Star](https://img.shields.io/badge/AtomGit-G--Star-DA203E?style=flat)](https://atomgit.com/krillinai/OpenCreator)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/fUNvbqDaw)
-[![QQ গ্রুপ](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://qm.qq.com/q/W4YC0PLMeA)
+[![X](https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white)](https://x.com/KrillinAIJunxi)
 
 [বিশেষত্ব](#project-highlights) · [নির্মাণ টুল](#creator-tools) · [Skills](#skills) · [উদাহরণ](#examples) · [শুরু করুন](#quick-start) · [Desktop](#desktop) · [নথি](#documentation) · [কমিউনিটি](#community)
 
@@ -303,6 +302,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 </table>
 
 > ভিডিও উদাহরণ ও সাবটাইটেল সারিবিন্যাসের ছবিটি KrillinAI নাম থাকার সময় তৈরি।
+
+#### সাবটাইটেল এডিটর
+
+বিল্ট-ইন সাবটাইটেল এডিটরে মূল লেখা ও অনুবাদ পাশাপাশি সম্পাদনা, সিঙ্ক্রোনাইজড ভিডিও প্রিভিউ, প্লেব্যাকের সঙ্গে যুক্ত ওয়েভফর্ম ও টাইমলাইন এবং কাস্টমাইজযোগ্য সাবটাইটেল স্টাইল ব্যবহার করা যায়।
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
 
 <a id="video-downloader"></a>
 

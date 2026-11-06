@@ -21,8 +21,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![AtomGit G-Star](https://img.shields.io/badge/AtomGit-G--Star-DA203E?style=flat)](https://atomgit.com/krillinai/OpenCreator)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/fUNvbqDaw)
-[![Nhóm QQ](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://qm.qq.com/q/W4YC0PLMeA)
+[![X](https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white)](https://x.com/KrillinAIJunxi)
 
 [Điểm nổi bật](#project-highlights) · [Công cụ sáng tạo](#creator-tools) · [Skills](#skills) · [Ví dụ](#examples) · [Bắt đầu](#quick-start) · [Desktop](#desktop) · [Tài liệu](#documentation) · [Cộng đồng](#community)
 
@@ -303,6 +302,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 </table>
 
 > Các video ví dụ và ảnh căn chỉnh phụ đề được tạo khi OpenCreator còn dùng tên KrillinAI.
+
+#### Trình chỉnh sửa phụ đề
+
+Trình chỉnh sửa phụ đề tích hợp hỗ trợ chỉnh sửa văn bản gốc và bản dịch cạnh nhau, xem trước video đồng bộ, dạng sóng và dòng thởi gian liên kết với phát lại, cùng kiểu phụ đề tùy chỉnh.
+
+![OpenCreator subtitle editor](../images/examples/video-translation-subtitle-editor-en.png)
 
 <a id="video-downloader"></a>
 
