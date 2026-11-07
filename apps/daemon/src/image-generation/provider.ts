@@ -374,9 +374,10 @@ async function generateGeminiImages(
         failure.publicFacts
       );
     }
-    const part = findGeminiImagePart(await response.json() as unknown);
+    const payload = await response.json() as unknown;
+    const part = findGeminiImagePart(payload);
     if (!part) {
-      throw new ImageGenerationProviderError('upstream_error', 'Gemini returned no image data');
+      throw new ImageGenerationProviderError('upstream_error', geminiNoImageMessage(payload));
     }
     const content = Buffer.from(part.data, 'base64');
     validateImageContent(content);
@@ -575,6 +576,28 @@ function manualImageParameters(request: CreateImageGenerationRequest, provider: 
       && (provider !== 'openai' || request.aspectRatio || request.resolution)
       ? imageModelPixelSize(provider, aspectRatio, resolution) : request.size
   };
+}
+
+function geminiNoImageMessage(payload: unknown): string {
+  if (!isRecord(payload)) return 'Gemini returned no image data';
+  const blockReason = readNestedString(payload, ['promptFeedback', 'blockReason']);
+  if (blockReason) {
+    const detail = readNestedString(payload, ['promptFeedback', 'blockReasonMessage']);
+    return `Gemini blocked the prompt (${blockReason})${detail ? `: ${detail}` : ''}`;
+  }
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+    const finishReason = typeof candidate.finishReason === 'string' ? candidate.finishReason : undefined;
+    if (!finishReason || finishReason === 'STOP') continue;
+    const parts = isRecord(candidate.content) && Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
+    const text = parts
+      .map(part => (isRecord(part) && typeof part.text === 'string' ? part.text.trim() : ''))
+      .filter(Boolean)
+      .join(' ');
+    return `Gemini blocked the image (${finishReason})${text ? `: ${text}` : ''}`;
+  }
+  return 'Gemini returned no image data';
 }
 
 function findGeminiImagePart(payload: unknown): { data: string; mime: string | null } | undefined {
