@@ -53,8 +53,10 @@ describe('subtitle editing', () => {
     expect(sameSubtitleCues(cues, splitSubtitle(cues, 4, 3))).toBe(false);
   });
 
-  it('uses real amplitude from every channel and keeps silent audio flat', () => {
-    expect(waveformPeaks([new Float32Array([0, -.8, 0, 0]), new Float32Array([0, 0, 0, .5])], 2)).toEqual([expect.closeTo(.8), .5]);
+  it('uses RMS energy from every channel and keeps silent audio flat', () => {
+    expect(waveformPeaks([new Float32Array([0, -.8, 0, 0]), new Float32Array([0, 0, 0, .5])], 2)).toEqual([
+      expect.closeTo(.8 / Math.sqrt(2)), expect.closeTo(.5 / Math.sqrt(2))
+    ]);
     expect(waveformPeaks([new Float32Array(10)], 4)).toEqual([0, 0, 0, 0]);
     expect(waveformPeaks([])).toEqual([]);
   });

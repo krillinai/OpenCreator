@@ -30,7 +30,7 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		MinSubtitleDuration:   2.5,
+		MinSubtitleDuration:   3.0,
 		MaxChunkSize:          5,
 		MaxSubtitleChars:      DefaultMaxSubtitleChars,
 		GapTolerance:          1.5,
@@ -97,6 +97,7 @@ type Report struct {
 
 type CommandRunner func(args []string) error
 type DurationProbe func(path string) (float64, error)
+type SpeechBoundsProbe func(path string) (float64, float64, error)
 
 type Dependencies struct {
 	TTS            types.Ttser
@@ -113,6 +114,7 @@ type Dependencies struct {
 	Config         Config
 	FFmpeg         CommandRunner
 	Duration       DurationProbe
+	SpeechBounds   SpeechBoundsProbe
 	ReportProgress func(completed, total int)
 	ReportPhase    func(phase string)
 }
@@ -130,4 +132,16 @@ type SourceAwareTextOptimizer interface {
 // actual overrun instead of only the subtitle window.
 type MeasuredSourceAwareTextOptimizer interface {
 	OptimizeWithSourceMeasured(ctx context.Context, sourceText, targetText string, availableSeconds, actualSeconds float64, reason string) (string, error)
+}
+
+type RewriteContext struct {
+	OriginalTarget string
+	PreviousSource string
+	PreviousTarget string
+	NextSource     string
+	NextTarget     string
+}
+
+type ContextualMeasuredTextOptimizer interface {
+	OptimizeWithSourceMeasuredContext(ctx context.Context, sourceText, targetText string, availableSeconds, actualSeconds float64, reason string, surrounding RewriteContext) (string, error)
 }

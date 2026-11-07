@@ -9,11 +9,15 @@ const MAX_WAVEFORM_BYTES = 256 * 1024 * 1024;
 
 function waveformSvgPath(peaks: number[]) {
   const sortedPeaks = peaks.filter(Number.isFinite).sort((left, right) => left - right);
-  const reference = sortedPeaks[Math.floor(Math.max(0, sortedPeaks.length - 1) * .99)] ?? 0;
-  const scale = reference > 0 ? 1 / reference : 1;
+  const reference = sortedPeaks[Math.floor(Math.max(0, sortedPeaks.length - 1) * .98)] ?? 0;
+  // Ignore a small noise floor while preserving useful differences between speech levels.
+  const floor = Math.min(reference, Math.max(.005, reference * .04));
+  const range = reference - floor;
   return peaks.map((peak, i, all) => {
     const x = i * 10000 / Math.max(1, all.length - 1);
-    const normalized = Math.min(1, Math.max(0, peak * scale));
+    const normalized = range > 0
+      ? Math.pow(Math.min(1, Math.max(0, (peak - floor) / range)), 1.1)
+      : 0;
     return `M${x.toFixed(1)},${(30 - normalized * 28).toFixed(1)}v${(normalized * 56).toFixed(1)}`;
   }).join('');
 }
@@ -52,7 +56,8 @@ function useWaveform(src: string | undefined, duration: number) {
       const audio = await context.decodeAudioData(bytes.buffer);
       if (controller.signal.aborted) return;
       const channels = Array.from({ length: audio.numberOfChannels }, (_, i) => audio.getChannelData(i));
-      setResult({ src, peaks: waveformPeaks(channels, Math.min(12000, Math.ceil(audio.duration * 30))), duration: audio.duration, status: 'ready' });
+      // Keep enough detail for zooming without drawing many sub-pixel bars in the default view.
+      setResult({ src, peaks: waveformPeaks(channels, Math.min(4000, Math.ceil(audio.duration * 6))), duration: audio.duration, status: 'ready' });
     })().catch(() => {
       if (!controller.signal.aborted) setResult({ src, peaks: [], duration: 0, status: 'unavailable' });
     });

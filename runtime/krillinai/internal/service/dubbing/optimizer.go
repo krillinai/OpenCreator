@@ -7,111 +7,55 @@ import (
 	"krillin-ai/internal/types"
 	"krillin-ai/pkg/util"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
 type LLMOptimizer struct {
 	chat             types.ChatCompleter
+	targetLanguage   types.StandardLanguageCode
 	maxSubtitleChars int
 }
 
-func NewLLMOptimizer(chat types.ChatCompleter, maxChars ...int) *LLMOptimizer {
+func NewLLMOptimizer(chat types.ChatCompleter, targetLanguage types.StandardLanguageCode, maxChars ...int) *LLMOptimizer {
 	limit := DefaultMaxSubtitleChars
 	if len(maxChars) > 0 && maxChars[0] > 0 {
 		limit = maxChars[0]
 	}
-	return &LLMOptimizer{chat: chat, maxSubtitleChars: limit}
+	return &LLMOptimizer{chat: chat, targetLanguage: targetLanguage, maxSubtitleChars: limit}
 }
 
-type mergeCueInput struct {
-	ID       int     `json:"cue_id"`
-	Start    float64 `json:"start"`
-	End      float64 `json:"end"`
-	Text     string  `json:"text"`
-	Length   int     `json:"text_length"`
-	Eligible bool    `json:"merge_eligible"`
-}
-
-type mergeCueOutput struct {
-	Groups [][]int `json:"groups"`
-}
-
-// Merge asks the model only for semantic boundaries. Timing, adjacency, and
-// subtitle length constraints are checked again by Planner before audio.
-func (o *LLMOptimizer) Merge(ctx context.Context, cues []Cue, language types.StandardLanguageCode, minDuration, gapTolerance float64, maxGroupSize, maxSubtitleChars int) ([][]int, error) {
+// ShouldMergeForTiming decides whether two timed captions are one unfinished
+// spoken thought. The runner separately verifies measured timing and length.
+func (o *LLMOptimizer) ShouldMergeForTiming(ctx context.Context, left, right PlanItem) (bool, error) {
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return false, err
 		}
 	}
-	groups := make([][]int, len(cues))
-	for i := range cues {
-		groups[i] = []int{i}
+	if o == nil || o.chat == nil {
+		return false, nil
 	}
-	if o == nil || o.chat == nil || len(cues) < 2 {
-		return groups, nil
-	}
-	if maxSubtitleChars <= 0 {
-		maxSubtitleChars = DefaultMaxSubtitleChars
-	}
-	input := make([]mergeCueInput, 0, len(cues))
-	mergePossible := false
-	for _, cue := range cues {
-		input = append(input, mergeCueInput{
-			ID: cue.Index, Start: cue.Start, End: cue.End, Text: CleanTextForSpeech(cue.Text),
-			Length:   subtitleLength(CleanTextForSpeech(cue.Text)),
-			Eligible: cue.Duration() <= minDuration,
-		})
-	}
-	for i := 1; i < len(input); i++ {
-		if input[i-1].Eligible && input[i].Eligible && cues[i].Start-cues[i-1].End <= gapTolerance {
-			mergePossible = true
-			break
-		}
-	}
-	if !mergePossible {
-		return groups, nil
-	}
-	payload, err := json.Marshal(input)
-	if err != nil {
-		return nil, err
-	}
-	prompt := fmt.Sprintf(`判断相邻字幕是否属于同一个连续语义意群，并决定是否合并成一个配音单元。
-要求：
-1. 只合并 merge_eligible=true 的相邻字幕；相邻字幕必须语义连续、属于同一句或同一意群，合并后口播要更自然。
-2. 不要因为字幕很短就强行合并。遇到明显转折、说话停顿、换说话人或独立回答时保持分开；但如果短句是上一句的步骤延续、补充动作、结果或指代，即使带句号也可以合并。
-3. 每组最多 %d 条，组内 cue_id 必须连续。gap 超过 %.2f 秒的字幕不得合并。
-4. 合并组按原顺序拼接 text 后，目标语言字幕总长度不得超过 %d 个 Unicode 字素簇；超过必须保持分开。
-5. 输出所有字幕，未合并的字幕也要作为单元素数组返回，顺序不能改变。
-6. 只输出 JSON，不要解释：{"groups":[[cue_id,...], ...]}
-目标语言：%s
-字幕数据：
-%s`, maxGroupSize, gapTolerance, maxSubtitleChars, types.GetStandardLanguageName(language), payload)
+	prompt := fmt.Sprintf(`判断下面相邻的两条字幕合在一个配音单元中是否更自然。
+程序已根据实测配音时长确认存在时间问题；你只判断语义和自然停顿。只有两段属于同一个未完意群，或者第二段是极短的动作延续、重复指令，明确依赖前一句，即使前一句有句号，连起来口播更自然时才回答 true。两段目标语原样连读后还必须语法通顺、意思完整；若缺少必要谓语或衔接词、重复同一意思，或与源语事实冲突，回答 false。两个各自完整且独立的句子、话题相关但并无指代依赖，或两段之间有明显停顿，必须回答 false。不要因为字幕短就合并，不要改写任何文本。
+只输出 JSON：{"merge":true} 或 {"merge":false}
+目标语言：%s（%s）
+两段间隔：%.3f 秒
+第一段源语：%s
+第一段目标语：%s
+第二段源语：%s
+第二段目标语：%s`, types.GetStandardLanguageName(o.targetLanguage), o.targetLanguage, right.OriginalStart-left.OriginalEnd, left.SourceText, left.SpokenText, right.SourceText, right.SpokenText)
 	response, err := o.chat.ChatCompletion(prompt)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	var output mergeCueOutput
-	if err := json.Unmarshal([]byte(util.ExtractJSONObject(response, "groups")), &output); err != nil {
-		return nil, err
+	var output struct {
+		Merge bool `json:"merge"`
 	}
-	if len(output.Groups) == 0 {
-		return nil, fmt.Errorf("semantic merge returned no groups")
+	if err := json.Unmarshal([]byte(util.ExtractJSONObject(response, "merge")), &output); err != nil {
+		return false, err
 	}
-	indexByID := make(map[int]int, len(cues))
-	for i, cue := range cues {
-		indexByID[cue.Index] = i
-	}
-	for i := range output.Groups {
-		for j, id := range output.Groups[i] {
-			index, ok := indexByID[id]
-			if !ok {
-				return nil, fmt.Errorf("semantic merge returned unknown cue %d", id)
-			}
-			output.Groups[i][j] = index
-		}
-	}
-	return output.Groups, nil
+	return output.Merge, nil
 }
 
 func (o *LLMOptimizer) Optimize(ctx context.Context, text string, availableSeconds float64, reason string) (string, error) {
@@ -123,16 +67,16 @@ func (o *LLMOptimizer) Optimize(ctx context.Context, text string, availableSecon
 	if o == nil || o.chat == nil {
 		return text, nil
 	}
-	prompt := fmt.Sprintf(`请把下面字幕改写成更自然、更短、 更适合口播的一句话。
+	prompt := fmt.Sprintf(`请尽量把下面字幕改写成更短、更适合口播的一句话。
 要求：
-1. 保留核心含义，不添加新事实。
-2. 输出目标语言文本，不要解释。
+1. 完整保留原意、句子功能和语气，不添加新事实。改写后必须仍是能独立听懂的自然表达；不要把完整动作缩成单个副词或语气词。
+2. 目标语言是 %s（%s）；只用该语言改写，不要翻译成其他语言，不要解释。
 3. 输出单行纯文本，且不得超过 %d 个 Unicode 字素簇。
-4. 适合 %.1f 秒内自然朗读，必须明显短于当前文本。
+4. 尽量适合 %.1f 秒内自然朗读；如无法在保留原意和自然表达的前提下缩短，原样返回当前字幕。不要为满足时长删掉必要词。
 触发原因：%s
 
 字幕：
-%s`, o.subtitleLimit(), availableSeconds, reason, text)
+%s`, types.GetStandardLanguageName(o.targetLanguage), o.targetLanguage, o.subtitleLimit(), availableSeconds, reason, text)
 	resp, err := o.chat.ChatCompletion(prompt)
 	if err != nil {
 		return "", err
@@ -144,6 +88,9 @@ func (o *LLMOptimizer) Optimize(ctx context.Context, text string, availableSecon
 	if subtitleLength(resp) > o.subtitleLimit() {
 		return "", fmt.Errorf("optimized subtitle exceeds %d characters", o.subtitleLimit())
 	}
+	if err := o.validateRewriteLanguage(text, resp); err != nil {
+		return "", err
+	}
 	return resp, nil
 }
 
@@ -151,17 +98,21 @@ func (o *LLMOptimizer) Optimize(ctx context.Context, text string, availableSecon
 // callers that do not have a measured TTS duration yet. The measured runner
 // uses OptimizeWithSourceMeasured below.
 func (o *LLMOptimizer) OptimizeWithSource(ctx context.Context, sourceText, targetText string, availableSeconds float64, reason string) (string, error) {
-	return o.optimizeWithSource(ctx, sourceText, targetText, availableSeconds, availableSeconds, reason, false)
+	return o.optimizeWithSource(ctx, sourceText, targetText, availableSeconds, availableSeconds, reason, false, RewriteContext{})
 }
 
 // OptimizeWithSourceMeasured uses the immutable source transcript as semantic
 // context while rewriting only the target-language speech text. actualSeconds
 // is the measured duration of the current target TTS, not the subtitle window.
 func (o *LLMOptimizer) OptimizeWithSourceMeasured(ctx context.Context, sourceText, targetText string, availableSeconds, actualSeconds float64, reason string) (string, error) {
-	return o.optimizeWithSource(ctx, sourceText, targetText, availableSeconds, actualSeconds, reason, true)
+	return o.optimizeWithSource(ctx, sourceText, targetText, availableSeconds, actualSeconds, reason, true, RewriteContext{})
 }
 
-func (o *LLMOptimizer) optimizeWithSource(ctx context.Context, sourceText, targetText string, availableSeconds, actualSeconds float64, reason string, requireShorter bool) (string, error) {
+func (o *LLMOptimizer) OptimizeWithSourceMeasuredContext(ctx context.Context, sourceText, targetText string, availableSeconds, actualSeconds float64, reason string, surrounding RewriteContext) (string, error) {
+	return o.optimizeWithSource(ctx, sourceText, targetText, availableSeconds, actualSeconds, reason, true, surrounding)
+}
+
+func (o *LLMOptimizer) optimizeWithSource(ctx context.Context, sourceText, targetText string, availableSeconds, actualSeconds float64, reason string, requireShorter bool, surrounding RewriteContext) (string, error) {
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -172,6 +123,10 @@ func (o *LLMOptimizer) optimizeWithSource(ctx context.Context, sourceText, targe
 	}
 	targetText = normalizeOptimizerText(targetText)
 	sourceText = normalizeOptimizerText(sourceText)
+	originalTarget := normalizeOptimizerText(surrounding.OriginalTarget)
+	if originalTarget == "" {
+		originalTarget = targetText
+	}
 	if availableSeconds <= 0 {
 		return "", fmt.Errorf("source-aware rewrite has invalid time slot %.3fs", availableSeconds)
 	}
@@ -180,14 +135,14 @@ func (o *LLMOptimizer) optimizeWithSource(ctx context.Context, sourceText, targe
 	}
 	overrun := actualSeconds - availableSeconds
 	overrunRatio := actualSeconds / availableSeconds
-	prompt := fmt.Sprintf(`你是视频配音字幕压缩器。当前目标语言 TTS 已经实测超出时间槽，请只把目标语言改写成更短、更自然、能在时间槽内正常语速说完的口播文案。
+	prompt := fmt.Sprintf(`你是视频配音字幕改写助手。当前目标语言 TTS 已经实测超出时间槽，请尝试把目标语言改写得更简洁、更自然。
 
 硬约束：
 1. 源语言转录是只读事实依据。禁止改写、纠正、翻译、删减或输出源语言；只允许修改“目标语言配音字幕”。
-2. 保留源语言中的核心含义、事实、数字、单位、专有名词、否定、条件、因果和语气，不得添加信息。
-3. 目标语言必须是自然的口语表达，单行输出，且不得超过 %d 个 Unicode 字素簇；不得使用变速、加速朗读、停顿标记、SSML、解释文字或括号说明来规避时长。
-4. 时间槽是硬上限：目标文本必须按正常语速在 %.3f 秒内说完。当前 TTS 实测 %.3f 秒，超出 %.3f 秒（%.1fx），所以返回的目标文本必须比当前文本明显更短；不能原样返回，也不能只换同义词维持相近长度。
-5. 压缩顺序：删除非语义填充词和重复修饰；改用更短的本地化口语句式；合并不影响事实的重复表达。不要删掉任何事实或逻辑关系。即使时间很紧，也要返回最短的自然、完整目标语句。
+2. 先连读前后文，理解当前字幕在整句中的作用。完整保留源语言中的意思、动作及其次数和顺序、事实、数字、单位、专有名词、否定、条件、因果和语气，不得添加信息；惯用语按上下文含义表达，不能逐词直译。特别注意重复动作必须明确保留首次和再次，例如“test yourself, then test again”必须表达“先自测，再测一次”，不能只写“再自测一次”。也要区分将要做的事与已经做过的事：如果前文说“只被告知将要教”，本段不能改成“教过”，即使下一段还会说他们其实没教过。当前字幕若是未完句，应与相邻字幕衔接自然，不要强行把它改成独立句；不能把完整指令缩成单个副词，例如不能把“重复。”改成“再”。
+3. 目标语言是 %s（%s）；只用该语言改写为自然的口语表达，不要翻译成其他语言。单行输出，且不得超过 %d 个 Unicode 字素簇；不得使用变速、加速朗读、停顿标记、SSML、解释文字或括号说明来规避时长。
+4. 时间槽 %.3f 秒是尽量接近的目标；当前 TTS 实测 %.3f 秒，超出 %.3f 秒（%.1fx）。原始目标译文是每次重试的固定参照，但若它与源语言冲突，以源语言和上下文为准。先保证意思准确和表达完整，再尝试缩短。若无法在不损失意思和自然度的前提下缩短，必须原样返回当前目标文本；程序会处理剩余的时长差。
+5. 压缩时优先删除不影响意思的填充词和重复修饰，或换用更简洁的本地化口语句式。不要删掉必要的谓语、宾语、动作和逻辑关系；例如“巩固记忆”不能缩成缺宾语的“然后巩固”。不要为了凑时长把句子改成不完整的片段。
 6. 只输出 JSON，不要 Markdown 或任何解释：{"target_text":"..."}
 
 触发原因：%s
@@ -196,8 +151,19 @@ func (o *LLMOptimizer) optimizeWithSource(ctx context.Context, sourceText, targe
 源语言转录（只读）：
 %s
 
+上一条（只读语境，不能合并或改写）：
+源语：%s
+目标语：%s
+
+原始目标译文（只读参照）：
+%s
+
 当前目标语言配音字幕（仅可改写这一段）：
-%s`, o.subtitleLimit(), availableSeconds, actualSeconds, overrun, overrunRatio, reason, subtitleLength(targetText), o.subtitleLimit(), sourceText, targetText)
+%s
+
+下一条（只读语境，不能合并或改写）：
+源语：%s
+目标语：%s`, types.GetStandardLanguageName(o.targetLanguage), o.targetLanguage, o.subtitleLimit(), availableSeconds, actualSeconds, overrun, overrunRatio, reason, subtitleLength(targetText), o.subtitleLimit(), sourceText, normalizeOptimizerText(surrounding.PreviousSource), normalizeOptimizerText(surrounding.PreviousTarget), originalTarget, targetText, normalizeOptimizerText(surrounding.NextSource), normalizeOptimizerText(surrounding.NextTarget))
 	resp, err := o.chat.ChatCompletion(prompt)
 	if err != nil {
 		return "", err
@@ -215,10 +181,24 @@ func (o *LLMOptimizer) optimizeWithSource(ctx context.Context, sourceText, targe
 	if subtitleLength(output.Target) > o.subtitleLimit() {
 		return "", fmt.Errorf("target subtitle rewrite exceeds %d characters", o.subtitleLimit())
 	}
+	if err := o.validateRewriteLanguage(targetText, output.Target); err != nil {
+		return "", err
+	}
 	if requireShorter && !optimizerTextIsShorter(output.Target, targetText) {
 		return "", fmt.Errorf("target subtitle rewrite did not shorten text")
 	}
 	return output.Target, nil
+}
+
+func (o *LLMOptimizer) validateRewriteLanguage(current, candidate string) error {
+	if o.targetLanguage != types.LanguageNameSimplifiedChinese && o.targetLanguage != types.LanguageNameTraditionalChinese {
+		return nil
+	}
+	hasHan := func(r rune) bool { return unicode.Is(unicode.Han, r) }
+	if strings.IndexFunc(current, hasHan) >= 0 && strings.IndexFunc(candidate, hasHan) < 0 {
+		return fmt.Errorf("target subtitle rewrite lost Chinese text")
+	}
+	return nil
 }
 
 func (o *LLMOptimizer) subtitleLimit() int {

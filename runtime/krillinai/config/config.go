@@ -218,7 +218,7 @@ var Conf = Config{
 		},
 	},
 	Dubbing: Dubbing{
-		MinSubtitleDuration:   2.5,
+		MinSubtitleDuration:   3.0,
 		MaxChunkSize:          5,
 		MaxSubtitleChars:      70,
 		GapTolerance:          1.5,

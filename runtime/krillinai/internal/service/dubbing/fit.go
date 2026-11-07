@@ -11,8 +11,9 @@ func FitSegments(plan []PlanItem) ([]PlanItem, Report, error) {
 }
 
 // FitSegmentsWithConfig keeps every segment inside its original subtitle window.
-// A small measured overrun is corrected with pitch-preserving atempo after the
-// rewrite loop has had a chance to improve the target text.
+// The rewrite loop gets the first chance to reduce an overrun. If the rewrite
+// budget is exhausted, atempo remains the final delivery guarantee even when
+// the resulting speed exceeds the configured quality warning threshold.
 func FitSegmentsWithConfig(plan []PlanItem, cfg Config) ([]PlanItem, Report, error) {
 	cfg = normalizeTimingConfig(cfg)
 	maxRatio := 1 + cfg.MaxTimingOverrunRatio
@@ -32,13 +33,13 @@ func FitSegmentsWithConfig(plan []PlanItem, cfg Config) ([]PlanItem, Report, err
 			return nil, report, fmt.Errorf("subtitle %d has non-positive measured duration: %.3f", item.Index, item.ActualDuration)
 		}
 		if item.DurationRatio > maxRatio+timelineComparisonEpsilon {
-			report.FailedIndexes = append(report.FailedIndexes, item.Index)
 			reason := "target_tts_longer_than_source_speech_window"
 			if len(item.CueIndexes) > 1 {
 				reason = "semantic_group_tts_longer_than_source_speech_window"
 			}
-			report.Warnings = append(report.Warnings, fmt.Sprintf("subtitle %d timing mismatch: target %.3fs / source %.3fs (ratio %.2f), reason=%s", item.Index, item.ActualDuration, slot, item.DurationRatio, reason))
-			return nil, report, fmt.Errorf("subtitle %d audio duration %.3fs exceeds time slot %.3fs after %d rewrite attempts", item.Index, item.ActualDuration, slot, item.RewriteAttempts)
+			warning := fmt.Sprintf("subtitle %d timing fallback: target %.3fs / source %.3fs (ratio %.2f), reason=%s, atempo_required=true", item.Index, item.ActualDuration, slot, item.DurationRatio, reason)
+			report.Warnings = append(report.Warnings, warning)
+			item.Warning = warning
 		}
 
 		item.NewStart = item.OriginalStart

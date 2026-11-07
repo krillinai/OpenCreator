@@ -4,7 +4,7 @@ import "testing"
 
 func TestDefaultConfigValues(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.MinSubtitleDuration != 2.5 || cfg.MaxChunkSize != 5 || cfg.MaxSubtitleChars != 70 || cfg.GapTolerance != 1.5 {
+	if cfg.MinSubtitleDuration != 3.0 || cfg.MaxChunkSize != 5 || cfg.MaxSubtitleChars != 70 || cfg.GapTolerance != 1.5 {
 		t.Fatalf("DefaultConfig timing = %+v", cfg)
 	}
 	if cfg.SpeedMin != 0.95 || cfg.SpeedAccept != 1.15 || cfg.SpeedMax != 1.30 || cfg.MaxTimingOverrunRatio != 0.10 {

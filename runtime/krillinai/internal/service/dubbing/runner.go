@@ -47,7 +47,10 @@ func NewRunner(deps Dependencies) *Runner {
 		deps.FFmpeg = defaultFFmpegRunner
 	}
 	if deps.Duration == nil {
-		deps.Duration = util.GetAudioDuration
+		deps.Duration = util.GetSpeechDuration
+		if deps.SpeechBounds == nil {
+			deps.SpeechBounds = util.GetSpeechBounds
+		}
 	}
 	if deps.OutputAudio == "" && deps.Workdir != "" {
 		deps.OutputAudio = filepath.Join(deps.Workdir, types.TtsResultAudioFileName)
@@ -86,8 +89,8 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 	}
 
 	r.reportPhase("planning_voice")
-	optimizer := NewLLMOptimizer(r.deps.Chat, r.deps.Config.MaxSubtitleChars)
-	planner := NewPlanner(r.deps.Config, NewStatisticalEstimator(), optimizer)
+	optimizer := NewLLMOptimizer(r.deps.Chat, r.deps.Language, r.deps.Config.MaxSubtitleChars)
+	planner := NewPlanner(r.deps.Config, NewStatisticalEstimator())
 	plan, err := planner.PlanContext(ctx, cues, r.deps.Language)
 	if err != nil {
 		return Result{}, err
@@ -114,6 +117,10 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 	}
 
 	plan, err = r.rewriteOverlongSegments(ctx, plan, planner.estimator, optimizer, segmentsDir)
+	if err != nil {
+		return Result{}, err
+	}
+	plan, err = r.mergeStubbornSegments(ctx, plan, planner.estimator, optimizer, segmentsDir)
 	if err != nil {
 		return Result{}, err
 	}
@@ -146,7 +153,7 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	r.reportPhase("assembling_voice")
-	if err := AssembleAudio(fitted, segmentsDir, r.deps.OutputAudio, r.deps.FFmpeg); err != nil {
+	if err := assembleAudioWithBounds(fitted, segmentsDir, r.deps.OutputAudio, r.deps.FFmpeg, r.deps.SpeechBounds); err != nil {
 		return Result{}, err
 	}
 	if err := ensureNonEmptyFile(r.deps.OutputAudio, "output audio"); err != nil {
@@ -192,6 +199,11 @@ func (r *Runner) rewriteOverlongSegments(ctx context.Context, plan []PlanItem, e
 			item := plan[index]
 			slot := item.OriginalEnd - item.OriginalStart
 			ratio := item.ActualDuration / slot
+			// Once the bounded rewrite budget is exhausted, keep the last valid
+			// TTS result and let FitSegments apply the mandatory atempo fallback.
+			if item.RewriteAttempts >= maxAttempts {
+				continue
+			}
 			// The first overrun must be sent to LLM. After a rewrite, a result
 			// within the configured tolerance is eligible for atempo fitting.
 			if item.RewriteAttempts > 0 && ratio <= maxAcceptedRatio+timelineComparisonEpsilon {
@@ -203,7 +215,7 @@ func (r *Runner) rewriteOverlongSegments(ctx context.Context, plan []PlanItem, e
 			return plan, nil
 		}
 		if !r.deps.Config.EnableTextRewrite || optimizer == nil {
-			return nil, timingOverflowError(plan, overlong[0])
+			return plan, nil
 		}
 
 		for _, index := range pending {
@@ -213,14 +225,25 @@ func (r *Runner) rewriteOverlongSegments(ctx context.Context, plan []PlanItem, e
 			item := &plan[index]
 			slot := item.OriginalEnd - item.OriginalStart
 			if item.RewriteAttempts >= maxAttempts {
-				return nil, timingOverflowError(plan, index)
+				continue
 			}
 			reason := fmt.Sprintf("measured_too_long: actual_duration=%.3f, slot_duration=%.3f", item.ActualDuration, slot)
 			previousTarget := item.SpokenText
 			if strings.TrimSpace(item.SourceText) != "" {
 				var rewritten string
 				var rewriteErr error
-				if measuredOptimizer, ok := optimizer.(MeasuredSourceAwareTextOptimizer); ok {
+				if contextualOptimizer, ok := optimizer.(ContextualMeasuredTextOptimizer); ok {
+					surrounding := RewriteContext{OriginalTarget: item.OriginalText}
+					if index > 0 {
+						surrounding.PreviousSource = plan[index-1].SourceText
+						surrounding.PreviousTarget = plan[index-1].OriginalText
+					}
+					if index+1 < len(plan) {
+						surrounding.NextSource = plan[index+1].SourceText
+						surrounding.NextTarget = plan[index+1].OriginalText
+					}
+					rewritten, rewriteErr = contextualOptimizer.OptimizeWithSourceMeasuredContext(ctx, item.SourceText, item.SpokenText, slot, item.ActualDuration, reason, surrounding)
+				} else if measuredOptimizer, ok := optimizer.(MeasuredSourceAwareTextOptimizer); ok {
 					rewritten, rewriteErr = measuredOptimizer.OptimizeWithSourceMeasured(ctx, item.SourceText, item.SpokenText, slot, item.ActualDuration, reason)
 				} else if sourceOptimizer, ok := optimizer.(SourceAwareTextOptimizer); ok {
 					rewritten, rewriteErr = sourceOptimizer.OptimizeWithSource(ctx, item.SourceText, item.SpokenText, slot, reason)
@@ -229,20 +252,11 @@ func (r *Runner) rewriteOverlongSegments(ctx context.Context, plan []PlanItem, e
 				}
 				rewritten = strings.TrimSpace(rewritten)
 				if rewriteErr != nil || rewritten == "" || rewritten == previousTarget {
-					// A source-aware response can fail strict JSON parsing or repeat the
-					// existing target. Give the target-only prompt one chance in this
-					// attempt, then let the bounded retry loop try again.
-					fallback, fallbackErr := optimizer.Optimize(ctx, item.SpokenText, slot, reason+"; source-aware rewrite unavailable")
-					fallback = strings.TrimSpace(fallback)
-					if fallbackErr == nil && fallback != "" && fallback != previousTarget && optimizerTextIsShorter(fallback, previousTarget) {
-						rewritten = fallback
-					} else {
-						item.RewriteAttempts++
-						if item.RewriteAttempts >= maxAttempts {
-							return nil, timingOverflowError(plan, index)
-						}
-						continue
+					if ctxErr := ctx.Err(); ctxErr != nil {
+						return nil, ctxErr
 					}
+					item.RewriteAttempts++
+					continue
 				}
 				item.SpokenText = rewritten
 			} else {
@@ -252,17 +266,11 @@ func (r *Runner) rewriteOverlongSegments(ctx context.Context, plan []PlanItem, e
 						return nil, ctxErr
 					}
 					item.RewriteAttempts++
-					if item.RewriteAttempts >= maxAttempts {
-						return nil, timingOverflowError(plan, index)
-					}
 					continue
 				}
 				rewritten = strings.TrimSpace(rewritten)
 				if rewritten == "" || rewritten == previousTarget {
 					item.RewriteAttempts++
-					if item.RewriteAttempts >= maxAttempts {
-						return nil, timingOverflowError(plan, index)
-					}
 					continue
 				}
 				item.SpokenText = rewritten
@@ -322,14 +330,6 @@ func overlongPlanIndexes(plan []PlanItem) []int {
 		}
 	}
 	return overlong
-}
-
-func timingOverflowError(plan []PlanItem, index int) error {
-	if index < 0 || index >= len(plan) {
-		return fmt.Errorf("subtitle timing overflow at plan index %d", index)
-	}
-	item := plan[index]
-	return fmt.Errorf("subtitle %d audio duration %.3fs exceeds time slot %.3fs after %d rewrite attempts", item.Index, item.ActualDuration, item.OriginalEnd-item.OriginalStart, item.RewriteAttempts)
 }
 
 func (r *Runner) validate() error {

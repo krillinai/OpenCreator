@@ -12,8 +12,8 @@ func TestDefaultImageConfig(t *testing.T) {
 }
 
 func TestDefaultDubbingConfig(t *testing.T) {
-	if Conf.Dubbing.MinSubtitleDuration != 2.5 {
-		t.Fatalf("MinSubtitleDuration = %v, want 2.5", Conf.Dubbing.MinSubtitleDuration)
+	if Conf.Dubbing.MinSubtitleDuration != 3.0 {
+		t.Fatalf("MinSubtitleDuration = %v, want 3.0", Conf.Dubbing.MinSubtitleDuration)
 	}
 	if Conf.Dubbing.MaxChunkSize != 5 {
 		t.Fatalf("MaxChunkSize = %d, want 5", Conf.Dubbing.MaxChunkSize)

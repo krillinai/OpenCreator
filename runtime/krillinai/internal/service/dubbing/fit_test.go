@@ -213,25 +213,34 @@ func TestFitSegmentsRequiresRewriteThenAcceptsConfiguredOverrun(t *testing.T) {
 	}
 }
 
-func TestFitSegmentsRejectsOverrunAboveConfiguredTolerance(t *testing.T) {
+func TestFitSegmentsUsesForcedAtempoFallbackAboveConfiguredTolerance(t *testing.T) {
 	plan := []PlanItem{{Index: 4, OriginalStart: 0, OriginalEnd: 5, ActualDuration: 5.51, RewriteAttempts: 3}}
-	_, _, err := FitSegmentsWithConfig(plan, DefaultConfig())
-	if err == nil || !strings.Contains(err.Error(), "subtitle 4") {
-		t.Fatalf("FitSegmentsWithConfig() error = %v, want tolerance overflow", err)
+	fitted, report, err := FitSegmentsWithConfig(plan, DefaultConfig())
+	if err != nil {
+		t.Fatalf("FitSegmentsWithConfig() error = %v, want forced timing fallback", err)
+	}
+	if fitted[0].SpeedFactor < 1.1019 || fitted[0].SpeedFactor > 1.1021 {
+		t.Fatalf("speed = %.3f, want 1.102", fitted[0].SpeedFactor)
+	}
+	if fitted[0].NewEnd != 5 {
+		t.Fatalf("new end = %.3f, want 5.000", fitted[0].NewEnd)
+	}
+	if len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "atempo_required=true") {
+		t.Fatalf("timing warnings = %+v", report.Warnings)
 	}
 }
 
-func TestFitSegmentsRejectsMeasuredOverflow(t *testing.T) {
+func TestFitSegmentsUsesForcedAtempoFallbackForMeasuredOverflow(t *testing.T) {
 	plan := []PlanItem{{Index: 9, OriginalStart: 0, OriginalEnd: 1, ActualDuration: 1.5, RewriteAttempts: 2}}
-	_, report, err := FitSegments(plan)
-	if err == nil || !strings.Contains(err.Error(), "subtitle 9") || !strings.Contains(err.Error(), "1.500") {
-		t.Fatalf("FitSegments() error = %v, want subtitle overflow", err)
+	fitted, report, err := FitSegments(plan)
+	if err != nil {
+		t.Fatalf("FitSegments() error = %v, want forced timing fallback", err)
 	}
-	if len(report.FailedIndexes) != 1 || report.FailedIndexes[0] != 9 {
-		t.Fatalf("failed indexes = %+v", report.FailedIndexes)
+	if fitted[0].SpeedFactor != 1.5 || fitted[0].NewEnd != 1 {
+		t.Fatalf("fitted segment = %+v, want 1.5x speed ending at 1s", fitted[0])
 	}
-	if len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "target_tts_longer_than_source_speech_window") {
-		t.Fatalf("timing diagnostics = %+v", report.Warnings)
+	if len(report.FailedIndexes) != 0 || len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "target_tts_longer_than_source_speech_window") {
+		t.Fatalf("timing diagnostics = %+v", report)
 	}
 }
 
