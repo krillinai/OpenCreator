@@ -244,6 +244,51 @@ func TestNewClientUsesConfiguredProxy(t *testing.T) {
 	}
 }
 
+func TestChatCompletionUsesMaxCompletionTokensForReasoningModels(t *testing.T) {
+	log.InitLogger()
+	previous := config.Conf.Llm.Model
+	previousModelName := config.Conf.Llm.ModelName
+	t.Cleanup(func() {
+		config.Conf.Llm.Model = previous
+		config.Conf.Llm.ModelName = previousModelName
+	})
+	cases := []struct {
+		model      string
+		completion bool
+	}{
+		{"gpt-5", true}, {"gpt-5-mini", true}, {"o3-mini", true}, {"o4-mini", true}, {"o1", true},
+		{"gpt-4o", false}, {"deepseek-chat", false}, {"qwen-max", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.model, func(t *testing.T) {
+			config.Conf.Llm.Model = tc.model
+			config.Conf.Llm.ModelName = ""
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					MaxTokens           int `json:"max_tokens"`
+					MaxCompletionTokens int `json:"max_completion_tokens"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Errorf("decode: %v", err)
+				}
+				if tc.completion && (request.MaxCompletionTokens != 2048 || request.MaxTokens != 0) {
+					t.Errorf("expected max_completion_tokens only: %+v", request)
+				}
+				if !tc.completion && (request.MaxTokens != 2048 || request.MaxCompletionTokens != 0) {
+					t.Errorf("expected max_tokens only: %+v", request)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+			}))
+			defer server.Close()
+			text, err := newClient(server.URL, "test-key", "", time.Second).ChatCompletionContextWithMaxTokens(context.Background(), "translate", 2048)
+			if err != nil || text != "ok" {
+				t.Fatalf("text=%q err=%v", text, err)
+			}
+		})
+	}
+}
+
 func setTestModel(t *testing.T) {
 	t.Helper()
 	log.InitLogger()

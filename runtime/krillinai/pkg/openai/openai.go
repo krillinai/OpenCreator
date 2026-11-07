@@ -47,8 +47,14 @@ func (c *Client) ChatCompletionContextWithMaxTokens(ctx context.Context, query s
 				Content: query,
 			},
 		},
-		MaxTokens:      maxTokens,
 		ResponseFormat: responseFormat,
+	}
+	// OpenAI 推理模型（o1/o3/o4/gpt-5）拒绝 max_tokens，必须使用 max_completion_tokens；
+	// 其他兼容供应商（DeepSeek、Qwen、本地模型等）仍使用 max_tokens。
+	if usesMaxCompletionTokens(req.Model) {
+		req.MaxCompletionTokens = maxTokens
+	} else {
+		req.MaxTokens = maxTokens
 	}
 	// DeepSeek V4 的推理可能耗尽字幕 JSON 的输出预算。
 	modelNames := []string{req.Model, config.Conf.Llm.ModelName}
@@ -70,6 +76,15 @@ func (c *Client) ChatCompletionContextWithMaxTokens(ctx context.Context, query s
 		return "", fmt.Errorf("llm_translation_empty_response: response %s has no content", response.ID)
 	}
 	return response.Choices[0].Message.Content, nil
+}
+
+func usesMaxCompletionTokens(model string) bool {
+	for _, prefix := range []string{"o1", "o3", "o4", "gpt-5"} {
+		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func disablesReasoning(modelNames ...string) bool {
