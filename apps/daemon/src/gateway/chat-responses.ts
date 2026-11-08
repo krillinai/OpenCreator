@@ -58,6 +58,8 @@ export function responsesToChat(body: Record<string, unknown>) {
     toolChoice = { type: 'function', function: { name: toolName(choice.name) } };
   }
   const request: Item = { model: body.model, messages, stream: body.stream === true };
+  // Chat Completions only reports token usage on streams when asked to, and the Responses usage is built from it.
+  if (request.stream) request.stream_options = { include_usage: true };
   if (nativeTools.length) request.tools = nativeTools;
   if (toolChoice !== undefined) request.tool_choice = toolChoice;
   for (const key of ['temperature', 'top_p', 'parallel_tool_calls']) if (body[key] !== undefined) request[key] = body[key];
