@@ -223,6 +223,39 @@ describe('video translation two-step flow', () => {
     expect(stageCalls(session.applyAction)).toHaveLength(0);
   });
 
+  it('keeps a failed subtitle task visible while a later source preview runs', async () => {
+    const initial = initialJob({ currentStage: 'preview-source-video', currentStep: 1, workspacePhase: 'result' }, []);
+    initial.status = 'failed';
+    const failedSubtitle = {
+      id: 'failed_subtitle', jobId: initial.id, stageId: 'subtitle', executor: 'krillinai', status: 'failed' as const,
+      dispatchStatus: 'finished' as const, claimOwner: null, claimExpiresAt: null, attempt: 1,
+      idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { workflow: true, phase: 'reading_platform_captions', percent: 5 },
+      errorCode: 'platform_caption_access_failed', errorMessage: 'YouTube sign-in required',
+      startedAt: initial.createdAt, finishedAt: initial.updatedAt
+    };
+    const preview = {
+      ...failedSubtitle, id: 'running_preview', stageId: 'preview-source-video', executor: 'download',
+      status: 'running' as const, dispatchStatus: 'claimed' as const,
+      progress: { previewSourceUrl: initial.state.sourceUrl!, phase: 'downloading', percent: 7 },
+      errorCode: null, errorMessage: null, finishedAt: null
+    };
+    initial.stages = [failedSubtitle, preview];
+    const session = mount(initial);
+    const bar = screen.getByRole('region', { name: '当前任务进度' });
+    expect(bar).toHaveTextContent('翻译字幕失败');
+    expect(bar).not.toHaveTextContent('原视频预览准备');
+    expect(screen.getByRole('progressbar', { name: '原视频预览准备进度' })).toHaveAttribute('aria-valuenow', '7');
+    expect(within(bar).getByRole('button', { name: '重试当前阶段' })).toBeDisabled();
+
+    await act(async () => session.push({ ...initial, revision: 2, stages: [failedSubtitle,
+      { ...preview, status: 'failed', dispatchStatus: 'finished', finishedAt: initial.updatedAt }] }));
+    const retry = within(bar).getByRole('button', { name: '重试当前阶段' });
+    expect(retry).toBeEnabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(stageCalls(session.applyAction)[0]?.input.stageId).toBe('subtitle'));
+  });
+
   it('uses current global speech settings for first dubbing despite saved task defaults, including immediate output', async () => {
     const services = configuredSpeech();
     const response = await services.getConfig();

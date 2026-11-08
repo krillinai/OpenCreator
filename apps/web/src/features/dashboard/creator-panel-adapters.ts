@@ -90,6 +90,11 @@ export const videoTranslationPanelAdapter: CreatorPanelAdapter = {
   id: 'video-translation',
   taskProgress: videoTranslationTaskProgress,
   failedProgressText(stage, l) {
+    if (stage.stageId === 'subtitle' && stage.errorCode === 'platform_caption_access_failed'
+      && /cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(stage.errorMessage ?? '')) {
+      return l('YouTube 登录态已失效，请在平台连接中重新连接，然后重试字幕翻译',
+        'The YouTube session expired. Reconnect it in Platform connections, then retry subtitle translation.');
+    }
     if (stage.stageId === 'preview-source-video') return l('原视频预览准备失败，可重试', 'Source video preview preparation failed. You can retry.', 'Förberedelsen av originalvideons förhandsvisning misslyckades. Du kan försöka igen.');
     if (stage.stageId === 'prepare-source-video') return l('原视频准备失败，已有字幕未受影响，可重试', 'Source video preparation failed; subtitles are preserved. You can retry.');
     return stage.errorCode === 'creator_dependency_prepare_failed'
@@ -196,7 +201,7 @@ export const videoTranslationPanelAdapter: CreatorPanelAdapter = {
       const total = readFiniteNumber(stage.progress.totalBytes);
       const speed = readFiniteNumber(stage.progress.bytesPerSecond);
       const remaining = readFiniteNumber(stage.progress.remainingSeconds);
-      const amount = `${(bytes / 1024 ** 2).toFixed(1)} MiB${total === null ? '' : ` / ${(total / 1024 ** 2).toFixed(1)} MiB`}${speed && speed > 0 ? ` · ${(speed / 1024 ** 2).toFixed(1)} MiB/s` : ''}${remaining === null ? '' : localize(` · 剩余约 ${Math.ceil(remaining)} 秒`, ` · ~${Math.ceil(remaining)} s remaining`)}`;
+      const amount = `${(bytes / 1024 ** 2).toFixed(1)} MiB${total === null ? '' : ` / ${stage.progress.totalBytesEstimated === true ? '~' : ''}${(total / 1024 ** 2).toFixed(1)} MiB`}${speed && speed > 0 ? ` · ${(speed / 1024 ** 2).toFixed(1)} MiB/s` : ''}${remaining === null ? '' : localize(` · 剩余约 ${Math.ceil(remaining)} 秒`, ` · ~${Math.ceil(remaining)} s remaining`)}`;
       if (stage.stageId === 'preview-source-video') return { ...standard,
         showMessage: true,
         indeterminate: standard.percent === null,
@@ -272,6 +277,7 @@ function videoTranslationTaskProgress(job: CreatorJob, l: CreatorPanelLocalize):
   const generations = job.stages.filter(stage => generationIds.includes(stage.stageId));
   const latest = generations.at(-1);
   const stage = [...generations].reverse().find(active)
+    ?? (latest?.status === 'failed' ? latest : undefined)
     ?? [...job.stages].reverse().find(run => ['prepare-source-video', 'preview-source-video'].includes(run.stageId)
       && run.progress.backgroundSourceDownload !== true && active(run))
     ?? latest;

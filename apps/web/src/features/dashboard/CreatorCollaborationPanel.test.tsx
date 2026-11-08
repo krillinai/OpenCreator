@@ -242,6 +242,39 @@ describe('Short video script panel', () => {
 });
 
 describe('CreatorCollaborationPanel', () => {
+  it('keeps the failed subtitle retry distinct from an active source download', () => {
+    const job = videoGenerationJob();
+    job.templateId = 'video-translation';
+    job.status = 'failed';
+    job.state = { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=demo',
+      targetLanguage: 'zh_cn', currentStage: 'preview-source-video' };
+    const failedSubtitle = { ...job.stages[0]!, id: 'subtitle_failed', stageId: 'subtitle', status: 'failed' as const,
+      errorCode: 'platform_caption_access_failed',
+      errorMessage: 'WARNING: [youtube] The provided YouTube account cookies are no longer valid.',
+      progress: { phase: 'reading_platform_captions', percent: 5, workflow: true }, finishedAt: job.updatedAt };
+    const runningDownload = { ...job.stages[0]!, id: 'download_running', stageId: 'preview-source-video',
+      executor: 'download', progress: { phase: 'downloading', percent: 39, backgroundSourceDownload: false } };
+    job.stages = [failedSubtitle, runningDownload];
+    const issue = { ...normalizePageIssue('runtime', 'creator.retry-stage', new Error(failedSubtitle.errorMessage),
+      failedSubtitle.errorMessage), source: 'stage' as const, code: failedSubtitle.errorCode,
+      stageId: 'subtitle', stageRunId: failedSubtitle.id, status: 'open' as const,
+      publicFacts: { kind: 'unknown' as const, provider: 'krillinai', upstreamMessage: failedSubtitle.errorMessage },
+      repairActions: [{ kind: 'retry-operation' as const, operationId: 'creator.retry-stage', requiresConfirmation: false, risk: 'normal' as const }] };
+    const applyAction = vi.fn();
+    render(<LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={job} externalIssues={[issue]}
+        service={{ applyAction, runAgentTurn: vi.fn() } as never}>
+        <CreatorCollaborationPanel adapter={videoTranslationPanelAdapter} stepLabel="项目结果" contextSummary="English → 简体中文" />
+        <TaskProgressBarHarness />
+      </CreatorSessionProvider>
+    </LanguageProvider>);
+    expect(screen.getAllByText('YouTube 登录态已失效，请在平台连接中重新连接，然后重试字幕翻译')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: '去平台连接' })).toHaveAttribute('href', '#/settings?tab=platform-connections');
+    expect(screen.getByRole('button', { name: '重试字幕翻译' })).toBeDisabled();
+    expect(screen.getByRole('progressbar', { name: '原视频预览准备进度' })).toHaveAttribute('aria-valuenow', '39');
+    expect(applyAction).not.toHaveBeenCalled();
+  });
+
   it('places a supplied summary above the timeline and preserves current issues', () => {
     const panel = (currentIssue?: string) => <LanguageProvider initialPreference="zh-CN">
       <CreatorSessionProvider initialJob={videoGenerationJob()} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>

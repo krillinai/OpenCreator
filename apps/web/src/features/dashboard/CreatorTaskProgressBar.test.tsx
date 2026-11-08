@@ -1,4 +1,4 @@
-import type { CreatorJob, CreatorStageRun } from '@opencreator/protocol';
+import type { CreatorJob, CreatorStageRun, OpenCreatorIssue } from '@opencreator/protocol';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
@@ -136,6 +136,30 @@ describe('shared persistent task progress', () => {
     expect(sourceProgress).toHaveAttribute('aria-valuenow', '50');
   });
 
+  it('keeps the source download bar visible when the total size is unknown', () => {
+    const source = stage('preview-source-video', { id: 'source_unknown', executor: 'download', progress: {
+      backgroundSourceDownload: true, phase: 'downloading', percent: null,
+      downloadedBytes: 33 * 1024 ** 2, totalBytes: null
+    } });
+    mount(job([source]), {}, true);
+
+    const bar = screen.getByRole('progressbar', { name: '原视频下载进度' });
+    expect(bar).toHaveAttribute('data-indeterminate', 'true');
+    expect(bar).not.toHaveAttribute('aria-valuenow');
+    expect(screen.getByText(/33\.0 MiB/)).toBeVisible();
+  });
+
+  it('labels a bitrate-based source size as approximate', () => {
+    const source = stage('preview-source-video', { id: 'source_estimated', executor: 'download', progress: {
+      backgroundSourceDownload: true, phase: 'downloading', percent: 28,
+      downloadedBytes: 20 * 1024 ** 2, totalBytes: 55 * 1024 ** 2, totalBytesEstimated: true
+    } });
+    mount(job([source]), {}, true);
+
+    expect(screen.getByRole('progressbar', { name: '原视频下载进度' })).toHaveAttribute('aria-valuenow', '28');
+    expect(screen.getByText(/20\.0 MiB \/ ~55\.0 MiB/)).toBeVisible();
+  });
+
   it('keeps the overall progress and labels the conversion phase separately', () => {
     const source = stage('prepare-source-video', {
       executor: 'download',
@@ -166,15 +190,23 @@ describe('shared persistent task progress', () => {
   it('retries only the failed stage with the same version and guards repeated clicks', async () => {
     const failed = stage('render-horizontal', { id: 'failed_render', status: 'failed', errorMessage: '编码失败',
       progress: { workflow: true, inputResultVersion: 2, targetResultVersion: 2, baseResultVersion: 2, workflowParentStageRunId: 'tts_done' } });
+    const issue: OpenCreatorIssue = {
+      id: 'failed_render_issue', diagnosticId: 'OC-RENDER', code: 'render_failed',
+      scope: { kind: 'creator-job', jobId: 'job_1' }, source: 'stage', category: 'execution', severity: 'error',
+      status: 'open', stageId: failed.stageId, stageRunId: failed.id, summaryKey: 'issue.execution', summaryParams: {},
+      fallbackMessage: '编码失败', retryable: true, repairActions: [{ kind: 'retry-operation', operationId: 'creator.retry-stage',
+        requiresConfirmation: false, risk: 'normal' }], fingerprint: 'failed-render', occurrenceCount: 1,
+      occurredAt: '2026-10-21T00:00:00Z', lastOccurredAt: '2026-10-21T00:00:00Z'
+    };
     let resolve!: (value: { job: CreatorJob }) => void;
     const applyAction = vi.fn(() => new Promise<{ job: CreatorJob }>(done => { resolve = done; }));
-    const view = mount({ ...job([failed]), status: 'failed' }, { applyAction });
+    const view = mount({ ...job([failed]), status: 'failed', issues: [issue] }, { applyAction });
     expect(screen.getByText('编码失败')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '重试当前阶段' }));
     fireEvent.click(screen.getByRole('button', { name: '正在重试…' }));
     await act(async () => { await Promise.resolve(); });
     expect(applyAction).toHaveBeenCalledOnce();
-    expect(applyAction.mock.calls[0]).toEqual(['job_1', expect.objectContaining({ action: 'run-stage', input: {
+    expect(applyAction.mock.calls[0]).toEqual(['job_1', expect.objectContaining({ action: 'run-stage', repairIssueId: issue.id, input: {
       stageId: 'render-horizontal', resumedFromStageRunId: 'failed_render', workflow: true,
       inputResultVersion: 2, targetResultVersion: 2, baseResultVersion: 2, workflowParentStageRunId: 'tts_done'
     } })]);

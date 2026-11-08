@@ -64,6 +64,19 @@ describe('localized issue copy', () => {
     expect(text.nextStep).not.toContain('模型');
   });
 
+  it('identifies an expired YouTube caption session and directs the user to reconnect it', () => {
+    const next = { ...issue, code: 'platform_caption_access_failed', publicFacts: {
+      kind: 'unknown' as const, provider: 'krillinai',
+      upstreamMessage: 'WARNING: [youtube] The provided YouTube account cookies are no longer valid.'
+    } };
+    const text = issueConversationText(next, 'zh-CN');
+    expect(text.message).toContain('YouTube 登录态已失效');
+    expect(text.nextStep).toContain('平台连接');
+    expect(text.nextStep).toContain('重试字幕翻译');
+    expect(text.nextStep).not.toContain('模型');
+    expect(text.message).not.toContain('WARNING:');
+  });
+
   it('keeps model permission guidance for a model provider authorization error', () => {
     expect(issueConversationText({ ...issue, publicFacts: {
       kind: 'unauthorized', provider: 'openai', httpStatus: 403

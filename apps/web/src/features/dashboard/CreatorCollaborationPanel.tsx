@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleDot,
+  Link2,
   LoaderCircle,
   LogIn,
   MessageSquareText,
@@ -316,6 +317,16 @@ export default function CreatorCollaborationPanel(props: {
                   <CollaborationIssueView
                     key={item.id}
                     issue={item.issue}
+                    retryLabel={item.issue.stageId === undefined ? undefined : l(
+                      `重试${props.adapter.stageLabel(item.issue.stageId, l)}`,
+                      `Retry ${props.adapter.stageLabel(item.issue.stageId, l)}`
+                    )}
+                    retryBlocked={session.job.templateId === 'video-translation'
+                      && item.issue.stageId !== undefined
+                      && session.job.stages.some(run => (run.status === 'queued' || run.status === 'running')
+                        && (item.issue.stageId === 'preview-source-video'
+                          || run.stageId === 'preview-source-video' && run.progress.backgroundSourceDownload !== true))}
+                    youtubeSessionIssue={isYouTubeSessionIssue(item.issue, session.job)}
                     onRetry={() => session.repairIssue(item.issue)}
                     onFocus={() => {
                       session.focusIssue(item.issue);
@@ -417,6 +428,9 @@ export default function CreatorCollaborationPanel(props: {
 
 function CollaborationIssueView(props: {
   issue: OpenCreatorIssue;
+  retryLabel?: string;
+  retryBlocked?: boolean;
+  youtubeSessionIssue?: boolean;
   onRetry(): Promise<void>;
   onFocus(): void;
 }) {
@@ -449,10 +463,13 @@ function CollaborationIssueView(props: {
               {l('去登录', 'Sign in')}
             </a>
           ) : null}
+          {props.youtubeSessionIssue ? <a className="creator-collaboration-login-action" href="#/settings?tab=platform-connections">
+            <Link2 size={15} aria-hidden="true" />{l('去平台连接', 'Open platform connections')}
+          </a> : null}
           <button type="button" onClick={props.onFocus} title={l('询问这个问题', 'Ask about this issue')} aria-label={l('询问这个问题', 'Ask about this issue')}>
             <MessageSquareText size={15} aria-hidden="true" />
           </button>
-          {retryable ? <button type="button" onClick={() => void props.onRetry().catch(() => undefined)} title={l('重试当前步骤', 'Retry this stage')} aria-label={l('重试当前步骤', 'Retry this stage')}><RefreshCw size={15} aria-hidden="true" /></button> : null}
+          {retryable ? <button type="button" disabled={props.retryBlocked} onClick={() => void props.onRetry().catch(() => undefined)} title={props.retryLabel ?? l('重试当前步骤', 'Retry this stage')} aria-label={props.retryLabel ?? l('重试当前步骤', 'Retry this stage')}><RefreshCw size={15} aria-hidden="true" /></button> : null}
         </div>
       ) : null}
     </article>
@@ -461,6 +478,18 @@ function CollaborationIssueView(props: {
 
 function isOpenCreatorAuthIssue(issue: OpenCreatorIssue): boolean {
   return issue.code === 'auth_required' || issue.code === 'GATEWAY_AUTH_REQUIRED';
+}
+
+function isYouTubeSessionIssue(issue: OpenCreatorIssue, job: CreatorJob): boolean {
+  if (typeof job.state.sourceUrl !== 'string') return false;
+  let hostname: string;
+  try { hostname = new URL(job.state.sourceUrl).hostname.toLowerCase(); }
+  catch { return false; }
+  if (hostname !== 'youtube.com' && !hostname.endsWith('.youtube.com') && hostname !== 'youtu.be') return false;
+  return issue.code === 'login_required' || issue.code === 'platform_caption_access_failed'
+    && /cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(
+      issue.publicFacts?.upstreamMessage ?? issue.technicalDetail ?? ''
+    );
 }
 
 function CollaborationMessageView(props: { message: CollaborationMessage }) {
@@ -577,6 +606,7 @@ export function useCreatorTaskProgress(options: {
       ? null
       : workflowPercent ?? Math.max(0, Math.min(100, Math.round(progress!.percent!)));
   const canceling = active && stage?.progress.cancelRequested === true;
+  const retryBlocked = session?.job.stages.some(run => run.status === 'queued' || run.status === 'running') ?? false;
   const label = workflow?.steps[workflow.stepIndex]?.label ?? l('创作任务', 'Creator task');
   const title = starting ? l('正在启动任务', 'Starting task')
     : canceling ? l('正在终止当前阶段', 'Stopping current stage')
@@ -605,6 +635,8 @@ export function useCreatorTaskProgress(options: {
     setRetryState({ id: stage.id, pending: true });
     session.clearError();
     try {
+      const issue = session.issues.find(candidate => candidate.status === 'open' && candidate.stageRunId === stage.id
+        && candidate.repairActions.some(action => action.kind === 'retry-operation' && action.operationId === 'creator.retry-stage'));
       // Retry the same stage and version instead of generating all upstream outputs again.
       await session.applyAction({ action: 'run-stage', input: {
         stageId: stage.stageId,
@@ -612,14 +644,14 @@ export function useCreatorTaskProgress(options: {
         ...(stage.progress.workflow === true ? { workflow: true } : {}),
         ...Object.fromEntries(['baseResultVersion', 'inputResultVersion', 'targetResultVersion', 'workflowParentStageRunId']
           .filter(field => stage.progress[field] !== undefined).map(field => [field, stage.progress[field]!]))
-      } });
+      }, ...(issue === undefined ? {} : { repairIssueId: issue.id }) });
       setRetryState(undefined);
     } catch (error) {
       setRetryState({ id: stage.id, error: creatorSystemIssueText((error as { code?: string })?.code ?? null, l)
         ?? l('重试未能启动，请查看详情后再试', 'Could not start the retry. View details and try again.') });
     } finally { retryingRef.current = false; }
   }
-  return { workflow, stage, status, active, starting, canceling, progress, percent, title, summary,
+  return { workflow, stage, status, active, starting, canceling, retryBlocked, progress, percent, title, summary,
     retry, retryPending: retryState?.id === stage?.id && retryState?.pending === true,
     controlError: retryState?.id === stage?.id ? retryState?.error : undefined,
     dismiss: () => { if (workflow && status === 'succeeded') setDismissed(workflow.key); } };
@@ -663,7 +695,9 @@ export function CreatorTaskProgressBar(props: {
       </ol> : null}
       {task.percent !== null ? <strong className="creator-task-progress-bar-percent" title={l('当前任务进度', 'Current task progress')}>{task.percent}<span>%</span></strong> : null}
       <div className="creator-task-progress-bar-actions">
-        {failed ? <button type="button" disabled={busy} onClick={() => void task.retry()}>{task.retryPending ? l('正在重试…', 'Retrying…') : l('重试当前阶段', 'Retry stage')}</button> : null}
+        {failed ? <button type="button" disabled={busy || task.retryBlocked}
+          title={task.retryBlocked ? l('当前还有阶段正在运行，请等待完成后重试', 'Wait for the active stage to finish before retrying') : undefined}
+          onClick={() => void task.retry()}>{task.retryPending ? l('正在重试…', 'Retrying…') : l('重试当前阶段', 'Retry stage')}</button> : null}
         {stopped && props.onResume ? <button type="button" disabled={busy} onClick={props.onResume}>{props.controlPending === 'resuming' ? l('正在继续…', 'Resuming…') : l('继续任务', 'Resume task')}</button> : null}
         {success && props.onPreview ? <button type="button" onClick={props.onPreview}>{l('查看成片', 'View video')}</button> : null}
         {success && props.onDownload ? <button type="button" onClick={props.onDownload}>{l('下载视频', 'Download video')}</button> : null}
