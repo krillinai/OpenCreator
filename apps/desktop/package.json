@@ -1,6 +1,6 @@
 {
   "name": "@opencreator/desktop",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "private": true,
   "description": "OpenCreator 本地 Codex Dashboard",
   "author": "OpenCreator",
