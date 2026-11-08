@@ -96,16 +96,16 @@ function unindexedCallSlot(calls: Map<number, Item>, call: Item, lastIndex: numb
 
 export async function chatToResponses(response: Response, tools: Map<string, Tool>, model: unknown): Promise<Response> {
   const id = `resp_${randomUUID()}`; const created = Math.floor(Date.now() / 1000);
-  const envelope = (output: Item[], status = 'completed', tokenUsage?: Item) => ({ id, object: 'response', created_at: created, status, model, output, usage: usage(tokenUsage), error: null });
+  const envelope = (output: Item[], status = 'completed', tokenUsage?: Item, incompleteReason?: string) => ({ id, object: 'response', created_at: created, status, model, output, usage: usage(tokenUsage), error: null, ...(incompleteReason ? { incomplete_details: { reason: incompleteReason } } : {}) });
   if (!response.headers.get('content-type')?.includes('text/event-stream')) {
     const payload = await response.json();
     if (payload.error) return Response.json(payload);
     const choice = payload.choices?.[0];
-    if (!choice || !['stop', 'tool_calls', 'length'].includes(choice.finish_reason)) throw new GatewayError('invalid_gateway_response');
+    if (!choice || !['stop', 'tool_calls', 'length', 'content_filter'].includes(choice.finish_reason)) throw new GatewayError('invalid_gateway_response');
     const output: Item[] = [];
     if (typeof choice.message?.content === 'string' && choice.message.content) output.push({ id: `msg_${randomUUID()}`, type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: choice.message.content, annotations: [] }] });
     for (const call of choice.message?.tool_calls ?? []) output.push(outputTool(call, tools));
-    return Response.json(envelope(output, choice.finish_reason === 'length' ? 'incomplete' : 'completed', payload.usage));
+    return Response.json(envelope(output, ['length', 'content_filter'].includes(choice.finish_reason) ? 'incomplete' : 'completed', payload.usage, choice.finish_reason === 'content_filter' ? 'content_filter' : undefined));
   }
   if (!response.body) throw new GatewayError('invalid_gateway_response');
   const reader = response.body.getReader(); const decoder = new TextDecoder(); const encoder = new TextEncoder();
@@ -158,7 +158,7 @@ export async function chatToResponses(response: Response, tools: Map<string, Too
       if (buffer.length > 1024 * 1024 || text.length > 64 * 1024 * 1024) throw new GatewayError('invalid_gateway_response');
       if (chunk.done || ended) break;
     }
-    if (!finish || !['stop', 'tool_calls', 'length'].includes(finish)) throw new GatewayError('request_outcome_unknown', 409);
+    if (!finish || !['stop', 'tool_calls', 'length', 'content_filter'].includes(finish)) throw new GatewayError('request_outcome_unknown', 409);
     if (message) {
       message.status = 'completed'; message.content = [{ type: 'output_text', text, annotations: [] }];
       yield event('response.output_text.done', { item_id: message.id, output_index: 0, content_index: 0, text });
@@ -171,7 +171,8 @@ export async function chatToResponses(response: Response, tools: Map<string, Too
       yield event(item.type === 'function_call' ? 'response.function_call_arguments.done' : 'response.custom_tool_call_input.done', { item_id: item.id, output_index: index, arguments: item.arguments, input: item.input });
       yield event('response.output_item.done', { output_index: index, item });
     }
-    yield event(finish === 'length' ? 'response.incomplete' : 'response.completed', { response: envelope(output, finish === 'length' ? 'incomplete' : 'completed', tokenUsage) });
+    const incomplete = finish === 'length' || finish === 'content_filter';
+    yield event(incomplete ? 'response.incomplete' : 'response.completed', { response: envelope(output, incomplete ? 'incomplete' : 'completed', tokenUsage, finish === 'content_filter' ? 'content_filter' : undefined) });
   }
   const generator = events();
   return new Response(new ReadableStream<Uint8Array>({
