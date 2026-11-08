@@ -50,6 +50,10 @@ type PlaybackOutput = PlaybackCodecs & {
 };
 
 const YT_DLP_UTF8_ARGS = ['--encoding', 'utf-8'];
+const PREVIEW_DOWNLOAD_END = 75;
+const PREVIEW_MERGE_PERCENT = 77;
+const PREVIEW_VALIDATING_PERCENT = 79;
+const PREVIEW_CONVERSION_START = 80;
 
 function isPreviewStage(stage: CreatorExecutorInput): boolean {
   return stage.stageRun.stageId === 'prepare-source-video' || stage.stageRun.stageId === 'preview-source-video';
@@ -470,7 +474,11 @@ async function downloadPlaybackSource(
         '--progress',
         '--progress-delta',
         '0.5',
-        ...(preview ? ['--progress-template', 'download:oc-preview:%(progress)j'] : []),
+        ...(preview ? [
+          '--print', 'before_dl:oc-preview-formats:%(format_id)s',
+          '--print', 'before_dl:oc-preview-metadata:%(requested_formats.:.{format_id,filesize,filesize_approx})j',
+          '--progress-template', 'download:oc-preview:%(progress)j'
+        ] : []),
         '-f',
         preview ? 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best' : 'bestvideo+bestaudio/best',
         '--merge-output-format',
@@ -499,7 +507,7 @@ async function downloadPlaybackSource(
   stage.reportProgress({
     status: 'running',
     phase: 'validating_output',
-    percent: 97,
+    percent: preview ? PREVIEW_VALIDATING_PERCENT : 97,
     message: preview ? 'Checking the video for subtitle preview' : 'Checking the YouTube source'
   });
   const output = await normalizeVideoForPlayback(
@@ -563,8 +571,34 @@ function createPreviewProgressReporter(stage: CreatorExecutorInput): (line: stri
   const resources = new Map<string, PreviewResource>();
   let anonymousResourceKey = 'anonymous:0';
   let reportedPercent = 2;
+  let expectedResourceCount: number | null = null;
+  let selectedFormatSizes: number[] | null = null;
 
   return line => {
+    if (line.startsWith('oc-preview-formats:')) {
+      const formatIds = line.slice('oc-preview-formats:'.length).trim();
+      expectedResourceCount = formatIds && formatIds !== 'NA'
+        ? formatIds.split('+').length
+        : null;
+      return;
+    }
+    if (line.startsWith('oc-preview-metadata:')) {
+      try {
+        const formats = JSON.parse(line.slice('oc-preview-metadata:'.length)) as unknown;
+        if (Array.isArray(formats) && formats.length > 0) {
+          expectedResourceCount = formats.length;
+          const sizes = formats.map(format => {
+            if (typeof format !== 'object' || format === null || Array.isArray(format)) return null;
+            const fields = format as Record<string, unknown>;
+            const size = [fields.filesize, fields.filesize_approx]
+              .find(value => typeof value === 'number' && Number.isFinite(value) && value > 0);
+            return typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : null;
+          });
+          selectedFormatSizes = sizes.every((size): size is number => size !== null) ? sizes : null;
+        }
+      } catch {}
+      return;
+    }
     const marker = line.indexOf('oc-preview:');
     if (marker >= 0) {
       try {
@@ -595,26 +629,28 @@ function createPreviewProgressReporter(stage: CreatorExecutorInput): (line: stri
           percent: total === null ? existing?.percent ?? null : Math.min(100, Math.max(0, bytes / total * 100))
         };
         resources.set(resourceKey, resource);
-        const downloadedBytes = [...resources.values()]
+        const currentResources = [...resources.values()];
+        const downloadedBytes = currentResources
           .reduce((sum, current) => sum + current.bytes, 0);
-        const knownTotals = [...resources.values()].map(current => current.total);
-        const totalBytes = knownTotals.every(current => current !== null)
-          ? knownTotals.reduce((sum, current) => sum + (current ?? 0), 0)
-          : null;
-        const rawPercent = totalBytes === null || totalBytes <= 0
-          ? null
-          : Math.min(100, Math.max(0, downloadedBytes / totalBytes * 100));
-        // Keep a small amount of headroom for a later audio resource or the
-        // merge step, while allowing a single resource to reflect its bytes.
-        const combinedPercent = rawPercent === null
-          ? null
-          : Math.min(95, rawPercent);
-        if (combinedPercent !== null) reportedPercent = Math.round(combinedPercent);
+        const knownTotals = currentResources.map(current => current.total);
+        const measuredSizes = selectedFormatSizes !== null && currentResources.length <= selectedFormatSizes.length
+          ? selectedFormatSizes : null;
+        const totalBytes = measuredSizes !== null
+          ? measuredSizes.reduce((sum, size) => sum + size, 0)
+          : currentResources.length === expectedResourceCount && knownTotals.every(current => current !== null)
+            ? knownTotals.reduce((sum, current) => sum + (current ?? 0), 0)
+            : null;
+        const weights = measuredSizes ?? Array.from({ length: Math.max(expectedResourceCount ?? 1, currentResources.length) }, () => 1);
+        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+        const completedWeight = currentResources.reduce((sum, current, index) => {
+          const resourceTotal = current.total ?? measuredSizes?.[index] ?? null;
+          return sum + (resourceTotal === null ? 0 : weights[index]! * Math.min(1, current.bytes / resourceTotal));
+        }, 0);
+        reportedPercent = Math.max(reportedPercent,
+          Math.min(PREVIEW_DOWNLOAD_END, Math.round(2 + completedWeight / totalWeight * (PREVIEW_DOWNLOAD_END - 2))));
         stage.reportProgress({
           phase: 'downloading',
-          percent: combinedPercent === null
-            ? reportedPercent > 2 ? reportedPercent : null
-            : reportedPercent,
+          percent: reportedPercent,
           message: 'Downloading the current original-video resource; existing subtitles are preserved',
           downloadedBytes,
           totalBytes
@@ -623,7 +659,7 @@ function createPreviewProgressReporter(stage: CreatorExecutorInput): (line: stri
       return;
     }
     if (/\[(?:Merger|VideoRemuxer)\]/.test(line)) {
-      reportedPercent = Math.max(reportedPercent, 96);
+      reportedPercent = Math.max(reportedPercent, PREVIEW_MERGE_PERCENT);
       stage.reportProgress({ phase: 'merging_media', percent: reportedPercent, message: 'Merging video and audio for subtitle preview' });
     }
   };
@@ -938,10 +974,11 @@ async function normalizeVideoForPlayback(
   }
 
   const conversionDuration = duration ?? await readMediaDuration(path, input, stage);
+  const conversionStart = isPreviewStage(stage) ? PREVIEW_CONVERSION_START : 98;
   stage.reportProgress({
     status: 'running',
     phase: 'normalizing_media',
-    percent: 98,
+    percent: conversionStart,
     phasePercent: 0,
     message: 'Converting video for local playback'
   });
@@ -1024,10 +1061,12 @@ function reportPlaybackConversionProgress(
   );
   if (!Number.isFinite(elapsed)) return;
   const phasePercent = Math.min(100, Math.max(0, Math.round(elapsed / duration * 100)));
+  const conversionStart = isPreviewStage(stage) ? PREVIEW_CONVERSION_START : 98;
   stage.reportProgress({
     status: 'running',
     phase: 'normalizing_media',
-    percent: Math.min(99, Math.max(98, Math.round(98 + elapsed / duration))),
+    percent: Math.min(99, Math.max(conversionStart,
+      Math.round(conversionStart + (99 - conversionStart) * phasePercent / 100))),
     phasePercent,
     message: 'Converting video for local playback'
   });

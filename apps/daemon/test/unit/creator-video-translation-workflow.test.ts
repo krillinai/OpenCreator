@@ -236,6 +236,28 @@ describe('video translation workflow', () => {
     fixture.db.close();
   });
 
+  it('stops after dubbing when subtitle burning is disabled', async () => {
+    const fixture = setup({ dubbing: true, composeVideo: false });
+    const config = createDefaultCreatorServicesConfig();
+    config.llm.apiKey = 'llm-key';
+    config.tts.openai.apiKey = 'tts-key';
+    const workflow = createVideoTranslationWorkflow({
+      creator: fixture.service, dispatcher: fixture.dispatcher,
+      configStore: { read: async () => config }
+    });
+    try {
+      const first = fixture.dispatcher.dispatch(fixture.jobId, {
+        action: 'run-stage', expectedRevision: 0, idempotencyKey: 'dub-without-burn',
+        input: { stageId: 'subtitle', workflow: true }
+      }, 'user').commandReceipt.stageRunId!;
+      await succeedAndContinue(fixture, workflow, first);
+      const tts = latestStage(fixture);
+      expect(tts.stageId).toBe('tts');
+      await succeedAndContinue(fixture, workflow, tts.id);
+      expect(fixture.service.getJob(fixture.jobId)?.stages.map(stage => stage.stageId)).toEqual(['subtitle', 'tts']);
+    } finally { fixture.db.close(); }
+  });
+
   it('recovers a committed stage that crashed before its next stage was queued', async () => {
     const fixture = setup({ dubbing: false, composeVideo: true, videoFormat: 'horizontal' });
     const first = fixture.dispatcher.dispatch(fixture.jobId, {

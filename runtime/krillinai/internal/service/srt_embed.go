@@ -781,13 +781,13 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 			if len(subtitleLines) == 1 {
 				majorText := joinASSLines(wrapSubtitleForASS(subtitleLines[0], screenStyle.Major, stepParam))
 				combinedText := majorPrefix + subtitleFallbackFontTags(majorText, screenStyle.Major.FontName, fallbacks)
-				_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+				writeStyledSubtitleDialogue(assFile, startFormatted, endFormatted, combinedText, screenStyle)
 				continue
 			}
 			majorText := joinASSLines(wrapSubtitleForASS(subtitleLines[0], firstStyle, stepParam))
 			minorText := joinASSLines(wrapSubtitleForASS(subtitleLines[1], secondStyle, stepParam))
 			combinedText := firstPrefix + subtitleFallbackFontTags(majorText, firstStyle.FontName, fallbacks) + `\N` + secondPrefix + subtitleFallbackFontTags(minorText, secondStyle.FontName, fallbacks)
-			_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+			writeStyledSubtitleDialogue(assFile, startFormatted, endFormatted, combinedText, screenStyle)
 		}
 	} else {
 		// TODO 竖屏拆分调优
@@ -833,7 +833,7 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 				majorText := joinASSLines(wrapSubtitleForASS(subtitleLines[0], firstStyle, stepParam))
 				minorText := joinASSLines(wrapSubtitleForASS(subtitleLines[1], secondStyle, stepParam))
 				combinedText := firstPrefix + subtitleFallbackFontTags(majorText, firstStyle.FontName, fallbacks) + `\N` + secondPrefix + subtitleFallbackFontTags(minorText, secondStyle.FontName, fallbacks)
-				_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+				writeStyledSubtitleDialogue(assFile, startFormatted, endFormatted, combinedText, screenStyle)
 				continue
 			}
 
@@ -855,7 +855,7 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 					startFormatted := formatTimestamp(iStart)
 					endFormatted := formatTimestamp(iEnd)
 					combinedText := majorPrefix + subtitleFallbackFontTags(line, screenStyle.Major.FontName, fallbacks)
-					_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+					writeStyledSubtitleDialogue(assFile, startFormatted, endFormatted, combinedText, screenStyle)
 				}
 			} else {
 				// 处理英文字幕
@@ -863,7 +863,7 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 				endFormatted := formatTimestamp(endTime)
 				cleanedText := joinASSLines(wrapSubtitleForASS(content, screenStyle.Major, stepParam))
 				combinedText := majorPrefix + subtitleFallbackFontTags(cleanedText, screenStyle.Major.FontName, fallbacks)
-				_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+				writeStyledSubtitleDialogue(assFile, startFormatted, endFormatted, combinedText, screenStyle)
 			}
 		}
 	}

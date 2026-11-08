@@ -95,10 +95,10 @@ export default function SubtitleTimeline(props: {
   const scrub = useRef<{ pointerId: number; resume: boolean }>();
   const trackRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const waveform = useWaveform(collapsed ? undefined : props.src, props.duration);
-  const voiceWaveform = useWaveform(collapsed ? undefined : props.voiceSrc, props.duration);
-  const duration = Math.max(1, props.duration, waveform.duration, voiceWaveform.duration, ...props.cues.map(cue => subtitleSeconds(cue.end) || 0));
-  const clipTop = props.voiceSrc ? 150 : 98;
+  const waveformSrc = props.voiceSrc ?? props.src;
+  const waveform = useWaveform(collapsed ? undefined : waveformSrc, props.duration);
+  const duration = Math.max(1, props.duration, waveform.duration, ...props.cues.map(cue => subtitleSeconds(cue.end) || 0));
+  const clipTop = 98;
   const selected = props.cues.find(cue => cue.id === props.selectedId);
   const canSplit = selected && props.currentTime - subtitleSeconds(selected.start) >= 0.08
     && subtitleSeconds(selected.end) - props.currentTime >= 0.08;
@@ -114,7 +114,6 @@ export default function SubtitleTimeline(props: {
   });
   const tickCount = Math.max(2, Math.round(Math.floor(viewportWidth / 110) * zoom));
   const waveformPath = useMemo(() => waveformSvgPath(waveform.peaks), [waveform.peaks]);
-  const voiceWaveformPath = useMemo(() => waveformSvgPath(voiceWaveform.peaks), [voiceWaveform.peaks]);
 
   useEffect(() => { props.onLayoutChange?.({ collapsed, height }); }, [collapsed, height, props.onLayoutChange]);
 
@@ -128,10 +127,6 @@ export default function SubtitleTimeline(props: {
   }, [collapsed]);
 
   useEffect(() => { setError(''); }, [props.selectedId]);
-
-  useEffect(() => {
-    if (props.voiceSrc) setHeight(value => Math.max(value, Math.min(280, window.innerHeight * .5)));
-  }, [props.voiceSrc]);
 
   useEffect(() => {
     if (scrub.current || !props.playing || !scrollRef.current || !trackRef.current) return;
@@ -271,19 +266,10 @@ export default function SubtitleTimeline(props: {
             {waveform.status === 'ready' ? <svg viewBox="0 0 10000 60" preserveAspectRatio="none"><path d={waveformPath} /></svg> : null}
           </div>
           {waveform.status !== 'ready' ? <span className="subtitle-timeline-waveform-status" role="status">
-            {!props.src ? l('仅字幕时间轴', 'Subtitle timing only') : waveform.status === 'loading' ? l('正在生成音频波形…', 'Generating audio waveform…')
+            {!waveformSrc ? l('仅字幕时间轴', 'Subtitle timing only') : waveform.status === 'loading' ? l('正在生成音频波形…', 'Generating audio waveform…')
               : l('无法生成此媒体的波形，仍可调整字幕时间。', 'Waveform unavailable for this media. Subtitle timing is still editable.')}
           </span> : null}
         </div>
-        {props.voiceSrc ? <div className="subtitle-timeline-voice" role="slider" tabIndex={0} aria-label={l('目标语言配音试听', 'Target-language dubbing preview')}
-          aria-valuemin={0} aria-valuemax={duration} aria-valuenow={props.currentTime} aria-valuetext={subtitleTimestamp(props.currentTime)}
-          onPointerDown={beginScrub} onPointerMove={event => { if (scrub.current?.pointerId === event.pointerId) props.onSeek(pointTime(event.clientX)); }}
-          onPointerUp={event => finishScrub(event, true)} onPointerCancel={event => finishScrub(event)} onLostPointerCapture={event => finishScrub(event)}
-          onDoubleClick={() => { if (props.src) props.onTogglePlay(); }} onKeyDown={positionKeyDown}>
-          <span>{l('配音', 'Dubbing')}</span>
-          {voiceWaveform.status === 'ready' ? <svg aria-hidden="true" viewBox="0 0 10000 60" preserveAspectRatio="none"
-            style={{ width: `${voiceWaveform.duration / duration * 100}%` }}><path d={voiceWaveformPath} /></svg> : null}
-        </div> : null}
         {positioned.filter(({ start, end }) => Number.isFinite(start) && end > start).map(({ cue, start, end, lane }) => <div key={cue.id}
           className="subtitle-timeline-clip" data-selected={props.selectedId === cue.id} data-active={props.currentTime >= start && props.currentTime < end}
           data-focused={props.playing || props.selectedId === undefined

@@ -173,6 +173,16 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
   if (krillinCliStageId(input.stage.stageRun.stageId) !== 'subtitle') {
     await writeInitialManifest(input.stage, input.options);
   }
+  if (input.stage.stageRun.stageId === 'tts') {
+    const targetSubtitle = input.artifacts.find(artifact => artifact.kind === 'target_subtitle');
+    if (targetSubtitle !== undefined) {
+      await copyFile(targetSubtitle.path, join(input.stage.workdir, 'target_language_srt.srt'));
+    }
+    const sourceSubtitle = input.artifacts.find(artifact => artifact.kind === 'source_subtitle');
+    if (sourceSubtitle !== undefined) {
+      await copyFile(sourceSubtitle.path, join(input.stage.workdir, 'origin_language_srt.srt'));
+    }
+  }
 
   const args = buildKrillinCliCommandArguments(
     input.stage,
@@ -182,7 +192,8 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
     input.source
   );
   if (args[0] === 'render-horizontal' || args[0] === 'render-vertical') {
-    const kind = args[0] === 'render-vertical' ? 'vertical_subtitle' : 'target_subtitle';
+    const kind = args[0] === 'render-vertical' && !booleanOption(input.options, 'dubbed', false)
+      ? 'vertical_subtitle' : 'target_subtitle';
     const source = input.stage.inputArtifacts.find(artifact => artifact.kind === kind)
       ?? input.stage.inputArtifacts.find(artifact => artifact.kind === 'target_subtitle');
     const readCues = (artifact: typeof source): SubtitleRenderCueInput[] => {
@@ -350,7 +361,9 @@ export function buildKrillinCliCommandArguments(
   if (command === 'tts') {
     const target = artifactPath(artifacts, 'target_subtitle');
     const bilingual = artifactPath(artifacts, 'bilingual_subtitle');
-    const subtitle = target ?? bilingual;
+    const subtitle = stage.stageRun.stageId === 'tts' && target
+      ? join(stage.workdir, 'target_language_srt.srt')
+      : target ?? bilingual;
     if (!subtitle) throw new CreatorExecutorError('creator_stage_input_missing', 'TTS subtitle input is required');
     const lineMode = target
       ? 'target-only'
@@ -386,7 +399,7 @@ export function buildKrillinCliCommandArguments(
     const vertical = artifactPath(artifacts, 'vertical_subtitle');
     const target = artifactPath(artifacts, 'target_subtitle');
     const bilingual = artifactPath(artifacts, 'bilingual_subtitle');
-    const subtitle = command === 'render-vertical'
+    const subtitle = command === 'render-vertical' && !dubbed
       ? vertical ?? (booleanOption(options, 'bilingual', false) ? bilingual ?? target : target ?? bilingual)
       : booleanOption(options, 'bilingual', false) && bilingual
         ? bilingual
@@ -603,7 +616,14 @@ export function outputMappings(stageId: string): Array<[string, string]> {
       ['short_origin_mixed_srt', 'vertical_subtitle']
     ];
   }
-  if (stageId === 'tts') return [['origin_video', 'source_video'], ['tts_audio', 'dubbed_audio'], ['video_with_tts', 'dubbed_video']];
+  if (stageId === 'tts') return [
+    ['origin_video', 'source_video'],
+    ['origin_srt', 'source_subtitle'],
+    ['target_srt', 'target_subtitle'],
+    ['bilingual_srt', 'bilingual_subtitle'],
+    ['tts_audio', 'dubbed_audio'],
+    ['video_with_tts', 'dubbed_video']
+  ];
   if (stageId === 'render-horizontal') return [['origin_video', 'source_video'], ['horizontal_video', 'horizontal_video']];
   if (stageId === 'render-vertical') return [['origin_video', 'source_video'], ['vertical_video', 'vertical_video']];
   return [];

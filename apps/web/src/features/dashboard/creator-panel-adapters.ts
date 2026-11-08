@@ -272,7 +272,8 @@ function videoTranslationTaskProgress(job: CreatorJob, l: CreatorPanelLocalize):
   const generations = job.stages.filter(stage => generationIds.includes(stage.stageId));
   const latest = generations.at(-1);
   const stage = [...generations].reverse().find(active)
-    ?? [...job.stages].reverse().find(run => ['prepare-source-video', 'preview-source-video'].includes(run.stageId) && active(run))
+    ?? [...job.stages].reverse().find(run => ['prepare-source-video', 'preview-source-video'].includes(run.stageId)
+      && run.progress.backgroundSourceDownload !== true && active(run))
     ?? latest;
   if (!stage) return null;
   const chain: CreatorStageRun[] = [stage];
@@ -322,11 +323,8 @@ function videoTranslationTaskProgress(job: CreatorJob, l: CreatorPanelLocalize):
     : stagePercent === null
       ? null
       : Math.round(((stepIndex + Math.max(0, Math.min(100, stagePercent)) / 100) / ids.length) * 100);
-  const taskPercent = stagePercent === null
-    ? null
-    : Math.max(Math.round(Math.max(0, Math.min(100, stagePercent))), weightedTaskPercent ?? 0);
   const normalizedTaskPercent = generationIds.includes(stage.stageId)
-    ? taskPercent
+    ? weightedTaskPercent
     : currentStagePercent;
   if (stage.stageId === 'subtitle' && stage.status === 'succeeded' && !waitingForNext) return null;
   const labels: Record<string, string> = {

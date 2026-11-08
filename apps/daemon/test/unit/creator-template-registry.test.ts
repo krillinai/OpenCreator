@@ -259,6 +259,7 @@ describe('creator template registry', () => {
       version,
       'edit-subtitle'
     )).toEqual([
+      'bilingual_subtitle',
       'dubbed_audio',
       'dubbed_video',
       'horizontal_video',
@@ -284,6 +285,7 @@ describe('creator template registry', () => {
       2,
       'edit-subtitle'
     )).toEqual([
+      'bilingual_subtitle',
       'dubbed_audio',
       'dubbed_video',
       'horizontal_video',

@@ -45,7 +45,7 @@ export function createKrillinExecutor(input: {
   return {
     id: 'krillinai',
     async run(stageInput): Promise<CreatorExecutorResult> {
-      let stage = filterObsoleteSourceVideo(stageInput);
+      let stage = filterStaleDubbedMedia(filterObsoleteSourceVideo(stageInput));
       await input.ensureRuntimeReady?.();
       const configured = await input.configStore.read();
       const preflight = preflightKrillinDependencies(input.resourceRoot, configured, {
@@ -205,6 +205,15 @@ function filterObsoleteSourceVideo(input: CreatorExecutorInput): CreatorExecutor
   return inputArtifacts.length === input.inputArtifacts.length ? input : { ...input, inputArtifacts };
 }
 
+function filterStaleDubbedMedia(input: CreatorExecutorInput): CreatorExecutorInput {
+  if (input.job.templateId !== 'video-translation'
+    || (input.stageRun.stageId !== 'render-horizontal' && input.stageRun.stageId !== 'render-vertical')) return input;
+  const inputArtifacts = input.inputArtifacts.filter(artifact => (
+    artifact.kind !== 'dubbed_audio' && artifact.kind !== 'dubbed_video'
+  ) || artifact.status === 'completed');
+  return inputArtifacts.length === input.inputArtifacts.length ? input : { ...input, inputArtifacts };
+}
+
 function requiresTranscriptionDependency(
   stageId: string,
   options: Record<string, unknown>
@@ -287,7 +296,7 @@ export function buildKrillinStageOptions(input: CreatorExecutorInput): Record<st
     sourceOnly: input.job.templateId === 'stickman-video'
       && input.stageRun.stageId === 'source-transcript',
     prepareVideo: input.job.templateId !== 'video-translation',
-    audioOnly: input.job.templateId === 'video-translation',
+    audioOnly: input.job.templateId === 'video-translation' && state.sourceType === 'subtitle',
     bilingual: input.stageRun.stageId === 'subtitles' || state.bilingual === true,
     bilingualTop: state.subtitlePosition !== 'bottom',
     ttsProvider: typeof state.ttsProvider === 'string' ? state.ttsProvider : undefined,
@@ -305,6 +314,7 @@ export function buildKrillinStageOptions(input: CreatorExecutorInput): Record<st
         secondaryColor: state.subtitleSecondaryColor,
         outlineColor: state.subtitleOutlineColor,
         outlineWidth: state.subtitleOutlineWidth,
+        verticalOffset: state.subtitleVerticalOffset,
         shadow: compactObject({
           enabled: state.subtitleShadowEnabled,
           color: state.subtitleShadowColor,
@@ -399,12 +409,12 @@ export function buildKrillinSubtitleStyle(value: CreatorJson | undefined): Recor
   return {
     version: 1,
     horizontal: {
-      major: createStyle('Major', sizes.horizontalMajor, style.primaryColor, 20),
-      minor: createStyle('Minor', sizes.horizontalMinor, style.secondaryColor, 30)
+      major: createStyle('Major', sizes.horizontalMajor, style.primaryColor, 20 + style.verticalOffset),
+      minor: createStyle('Minor', sizes.horizontalMinor, style.secondaryColor, 30 + style.verticalOffset)
     },
     vertical: {
-      major: createStyle('Major', sizes.verticalMajor, style.primaryColor, 101),
-      minor: createStyle('Minor', sizes.verticalMinor, style.secondaryColor, 92)
+      major: createStyle('Major', sizes.verticalMajor, style.primaryColor, 101 + style.verticalOffset),
+      minor: createStyle('Minor', sizes.verticalMinor, style.secondaryColor, 92 + style.verticalOffset)
     }
   };
 }
@@ -635,7 +645,9 @@ function expectedOutputKinds(stageId: string): Set<string> {
     'bilingual_subtitle',
     'vertical_subtitle'
   ]);
-  if (stageId === 'tts') return new Set(['source_video', 'dubbed_audio', 'dubbed_video']);
+  if (stageId === 'tts') return new Set([
+    'source_video', 'source_subtitle', 'target_subtitle', 'bilingual_subtitle', 'dubbed_audio', 'dubbed_video'
+  ]);
   if (stageId === 'render-horizontal') return new Set(['source_video', 'horizontal_video']);
   if (stageId === 'render-vertical') return new Set(['source_video', 'vertical_video']);
   return new Set();
@@ -648,7 +660,7 @@ function requiredOutputKinds(stageId: string, templateId?: string): string[] {
   if (stageId === 'subtitle') {
     return [...(templateId === 'video-translation' ? [] : ['source_video']), 'source_subtitle', 'target_subtitle', 'vertical_subtitle'];
   }
-  if (stageId === 'tts') return ['dubbed_audio'];
+  if (stageId === 'tts') return ['target_subtitle', 'dubbed_audio'];
   if (stageId === 'render-horizontal') return ['horizontal_video'];
   if (stageId === 'render-vertical') return ['vertical_video'];
   return [];

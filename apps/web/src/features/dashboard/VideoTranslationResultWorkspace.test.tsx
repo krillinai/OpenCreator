@@ -58,6 +58,47 @@ function EditingHarness(props: { preview?: boolean; readOnly?: boolean; saving?:
 }
 
 describe('VideoTranslationResultWorkspace', () => {
+  it('switches between the burned video and live subtitles over the dubbed video', () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    const props = { ...baseProps, activeTab: 'subtitles' as const, workbench: true, immersive: true,
+      dubbing: true, hasVoiceArtifact: true,
+      preferCompletedVideoPreview: true,
+      onEditorContextChange: vi.fn(),
+      editorSettings: { style: <input aria-label="测试字号" />, voice: <span>配音</span>, disabled: false, onOpen: vi.fn() },
+      subtitleVideoPreviews: { horizontal: { artifactId: 'dubbed', src: 'blob:dubbed', source: false, needsSubtitleOverlay: true } },
+      videoOutputs: [{ artifactId: 'rendered', variant: 'horizontal' as const, artifactVersion: 2, src: 'blob:rendered' }],
+      renderSubtitlePreview: () => <span>字幕叠加</span> };
+    const { rerender } = render(<VideoTranslationResultWorkspace {...props} />);
+    expect(screen.getByLabelText('横屏字幕视频预览')).toHaveAttribute('src', 'blob:rendered');
+    expect(screen.getByRole('button', { name: '已生成成片' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('字幕叠加')).not.toBeInTheDocument();
+    const video = screen.getByLabelText('横屏字幕视频预览') as HTMLVideoElement;
+    fireEvent.loadedMetadata(video);
+    video.currentTime = 4.5;
+    fireEvent.timeUpdate(video);
+    expect(video.currentTime).toBe(4.5);
+    expect(props.onEditorContextChange).toHaveBeenLastCalledWith(expect.objectContaining({ time: 4.5 }));
+    fireEvent.click(screen.getByRole('button', { name: '字幕样式' }));
+    expect(screen.getByLabelText('横屏字幕视频预览')).toBe(video);
+    expect(video).toHaveAttribute('src', 'blob:dubbed');
+    expect(video.currentTime).toBe(4.5);
+    fireEvent.loadedMetadata(video);
+    expect(video.currentTime).toBe(4.5);
+    expect(screen.getByRole('button', { name: '当前样式' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('字幕叠加')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '已生成成片' }));
+    expect(screen.getByLabelText('横屏字幕视频预览')).toHaveAttribute('src', 'blob:rendered');
+    fireEvent.loadedMetadata(video);
+    expect(video.currentTime).toBe(4.5);
+    expect(screen.queryByText('字幕叠加')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '当前样式' }));
+    expect(screen.getByLabelText('横屏字幕视频预览')).toHaveAttribute('src', 'blob:dubbed');
+    expect(screen.getByText('字幕叠加')).toBeVisible();
+    rerender(<VideoTranslationResultWorkspace {...props} videoPreviewRequest={{ key: 'render-done', version: 1 }} />);
+    expect(screen.getByLabelText('横屏字幕视频预览')).toHaveAttribute('src', 'blob:rendered');
+    pause.mockRestore();
+  });
+
   it('previews the completed video without autoplay and returns to the source when editing settings or subtitles', () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
     const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
@@ -73,8 +114,9 @@ describe('VideoTranslationResultWorkspace', () => {
     expect(screen.getByLabelText('横屏字幕视频预览')).not.toHaveAttribute('autoplay');
     expect(play).not.toHaveBeenCalled();
     expect(screen.queryByText('实时字幕叠加')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '返回编辑预览' }));
+    fireEvent.click(screen.getByRole('button', { name: '当前样式' }));
     expect(screen.getByLabelText('横屏字幕视频预览')).toHaveAttribute('src', 'blob:source');
+    expect(screen.getByText('实时字幕叠加')).toBeVisible();
     rerender(<VideoTranslationResultWorkspace {...props} activeTab="subtitles" videoPreviewRequest={{ key: 'view-again', version: 1 }} />);
     expect(screen.getByLabelText('横屏字幕视频预览')).toHaveAttribute('src', 'blob:rendered');
     fireEvent.focus(screen.getByRole('textbox', { name: '测试字号' }));

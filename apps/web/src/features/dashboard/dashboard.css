@@ -1062,16 +1062,41 @@
 }
 
 .video-translation-dubbing-row {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  align-items: start;
-  gap: 12px 20px;
+  --dubbing-label-width: 78px;
+  --dubbing-actions-width: 86px;
+  --dubbing-control-gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
 }
 
-/* Labels sit to the left of their controls to keep the dubbing block one row tall. */
+.video-translation-dubbing-settings .video-translation-option-title {
+  grid-template-columns: minmax(0, 1fr);
+  padding-inline: 12px;
+}
+
+.video-translation-dubbing-settings .video-translation-option-icon {
+  display: none;
+}
+
+.video-translation-dubbing-settings .video-translation-option-content {
+  margin-inline: 12px;
+}
+
+.video-translation-burn-subtitles {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.video-translation-dubbing-row > .video-translation-voice-source,
+.video-translation-dubbing-row > .creator-tool-field {
+  margin-inline-end: calc(var(--dubbing-actions-width) + var(--dubbing-control-gap));
+}
+
 .video-translation-dubbing-row > .video-translation-voice-source,
 .video-translation-dubbing-row > .creator-tool-field,
 .video-translation-dubbing-row .tts-voice-picker-field {
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: var(--dubbing-label-width) minmax(0, 1fr);
   align-items: center;
   gap: 10px;
 }
@@ -1083,7 +1108,30 @@
 }
 
 .video-translation-dubbing-row .tts-voice-picker {
+  grid-template-columns: minmax(0, 1fr) var(--dubbing-actions-width);
   align-items: center;
+  gap: var(--dubbing-control-gap);
+}
+
+.video-translation-dubbing-row .official-model-control,
+.video-translation-dubbing-row .official-model-control input[role='combobox'] {
+  height: 40px;
+}
+
+.video-translation-dubbing-row .official-model-control:not(.is-open) .official-model-selected-icon {
+  display: none;
+}
+
+.video-translation-dubbing-row .official-model-control:not(.is-open) input[role='combobox'] {
+  padding-inline: 10px 32px;
+}
+
+.video-translation-dubbing-row .official-model-value {
+  height: 40px;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .video-translation-voice-source {
@@ -1154,6 +1202,21 @@
 
 .video-translation-voice-config-actions button:hover { color: var(--text); }
 .video-translation-voice-config-actions button:disabled { opacity: 0.5; cursor: default; }
+
+@media (max-width: 760px) {
+  .video-translation-dubbing-row {
+    --dubbing-actions-width: 94px;
+  }
+
+  .video-translation-dubbing-row > .video-translation-voice-source > div,
+  .video-translation-dubbing-row .official-model-control,
+  .video-translation-dubbing-row .official-model-control input[role='combobox'],
+  .video-translation-dubbing-row .official-model-value,
+  .video-translation-dubbing-row .tts-voice-select,
+  .video-translation-dubbing-row .tts-voice-picker-actions button {
+    height: 44px;
+  }
+}
 
 .video-translation-upload.is-compact > button {
   min-height: 58px;
@@ -13404,16 +13467,6 @@
   .video-translation-outline-fields,
   .video-translation-title-fields {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@container video-translation-output-controls (max-width: 480px) {
-  .video-translation-dubbing-settings .tts-voice-picker {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .video-translation-dubbing-settings .tts-voice-picker-actions {
-    justify-content: flex-end;
   }
 }
 

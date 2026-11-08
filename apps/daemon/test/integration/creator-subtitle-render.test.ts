@@ -95,6 +95,7 @@ describe.runIf(hasPackagedRuntime)('Creator packaged subtitle rendering', () => 
     const style = {
       fontPreset, fontWeight: 'bold', fontSize: 'medium',
       primaryColor: '#7EE7FF', secondaryColor: '#FFD45C', outlineColor: '#102030', outlineWidth: 2,
+      verticalOffset: 40,
       shadow: { enabled: true, color: '#000000', opacity: 0.6, offsetX: -4, offsetY: 6, blur: 2 }
     } as const;
     const result = renderStyle(style, { width, height, position, mixed });
@@ -132,6 +133,17 @@ describe.runIf(hasPackagedRuntime)('Creator packaged subtitle rendering', () => 
     const first = renderStyle(style);
     const second = renderStyle({ shadow: { ...style.shadow, offsetX: 6, offsetY: -6 } });
     expect(first.frame.sha256).not.toBe(second.frame.sha256);
+  });
+  it.each([
+    [640, 360],
+    [360, 640]
+  ])('raises burned subtitles in %dx%d video when height increases', (width, height) => {
+    const options = { width, height, position: 'top' };
+    const baseline = renderStyle({ verticalOffset: 0 }, options);
+    const raised = renderStyle({ verticalOffset: 40 }, options);
+    expect(baseline.frame.changedPixels).toBeGreaterThan(100);
+    expect(raised.frame.changedPixels).toBeGreaterThan(100);
+    expect(baseline.frame.centerY - raised.frame.centerY).toBeGreaterThan(height * 0.1);
   });
   it('renders visibly different fixed frames and fails when a packaged font is missing', () => {
     const first = renderStyle({
@@ -232,7 +244,7 @@ function renderStyle(style: Parameters<typeof buildKrillinSubtitleStyle>[0], opt
   return {
     ass: readFileSync(assPath, 'utf8'),
     assPath,
-    frame: compareFramePixels(inputVideo, outputVideo),
+    frame: compareFramePixels(inputVideo, outputVideo, options.width),
     paths: { launcher, workdir, inputVideo, subtitle },
     stylePath
   };
@@ -279,19 +291,24 @@ function runCli(
   });
 }
 
-function compareFramePixels(sourceVideo: string, renderedVideo: string) {
+function compareFramePixels(sourceVideo: string, renderedVideo: string, width: number) {
   const source = rawFrame(sourceVideo);
   const rendered = rawFrame(renderedVideo);
   expect(rendered.length).toBe(source.length);
   let changedPixels = 0;
+  let totalY = 0;
   for (let offset = 0; offset < rendered.length; offset += 3) {
     const distance = Math.abs(rendered[offset]! - source[offset]!)
       + Math.abs(rendered[offset + 1]! - source[offset + 1]!)
       + Math.abs(rendered[offset + 2]! - source[offset + 2]!);
-    if (distance > 24) changedPixels += 1;
+    if (distance > 24) {
+      changedPixels += 1;
+      totalY += Math.floor(offset / (width * 3));
+    }
   }
   return {
     changedPixels,
+    centerY: changedPixels === 0 ? 0 : totalY / changedPixels,
     sha256: createHash('sha256').update(rendered).digest('hex')
   };
 }

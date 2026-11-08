@@ -89,6 +89,7 @@ export type SubtitleVideoPreview = {
   previewLoading?: boolean;
   previewError?: string;
   source: boolean;
+  needsSubtitleOverlay?: boolean;
 };
 
 export type VoiceResultOutput = {
@@ -114,6 +115,8 @@ export default function VideoTranslationResultWorkspace(props: {
   workbench?: boolean;
   onBack?(): void;
   onRequestOutput?(type: 'video' | 'voice'): void;
+  outputUpToDate?: boolean;
+  outputActionDetail?: string;
   generationLabel?: string;
   outputBusyLabel?: string;
   taskProgress?: ReactNode;
@@ -137,6 +140,7 @@ export default function VideoTranslationResultWorkspace(props: {
   dubbing: boolean;
   hasVoiceArtifact: boolean;
   videoOutputs: VideoResultOutput[];
+  preferCompletedVideoPreview?: boolean;
   subtitleOutputs: SubtitleResultOutput[];
   subtitleVideoPreviews: Partial<Record<SubtitleResultVariant, SubtitleVideoPreview>>;
   previewPreparation?: { pending: boolean; blocked?: boolean; error?: string; errorDetail?: string; progress?: ReactNode };
@@ -229,7 +233,8 @@ export default function VideoTranslationResultWorkspace(props: {
   const sourceSubtitleVideo = activeSubtitleVariant === undefined
     ? undefined
     : props.subtitleVideoPreviews[activeSubtitleVariant];
-  const [generatedPreviewId, setGeneratedPreviewId] = useState<string>();
+  // undefined follows the completed render; null keeps the editable dubbing preview.
+  const [generatedPreviewId, setGeneratedPreviewId] = useState<string | null>();
   useEffect(() => { setGeneratedPreviewId(undefined); }, [props.version, props.outputBusyLabel]);
   const requestedVideo = props.videoOutputs.find(output => output.variant === activeSubtitleVariant) ?? props.videoOutputs[0];
   useEffect(() => {
@@ -238,11 +243,17 @@ export default function VideoTranslationResultWorkspace(props: {
     setGeneratedPreviewId(requestedVideo.artifactId);
     setAuditionVoice(false);
   }, [props.videoPreviewRequest?.key, props.videoPreviewRequest?.version, props.version, requestedVideo?.artifactId]);
-  const generatedPreview = props.videoOutputs.find(output => output.artifactId === generatedPreviewId);
+  const previewId = generatedPreviewId === undefined && props.preferCompletedVideoPreview && !props.execution && !props.outputBusyLabel
+    ? requestedVideo?.artifactId
+    : generatedPreviewId;
+  const generatedPreview = props.videoOutputs.find(output => output.artifactId === previewId);
   // Saved subtitles need the same live composition as drafts. A rendered
   // output may contain older text or styles and must not replace the source.
   const activeSubtitleVideo = generatedPreview ? { ...generatedPreview, source: false } : sourceSubtitleVideo;
-  const draftVideoPreview = props.immersive && activeSubtitleVideo?.source !== false;
+  const showLiveSubtitles = !generatedPreview && (sourceSubtitleVideo?.source === true || sourceSubtitleVideo?.needsSubtitleOverlay === true);
+  const draftVideoPreview = props.immersive && showLiveSubtitles;
+  const canSwitchVideoPreview = requestedVideo !== undefined && requestedVideo.variant === activeSubtitleVariant
+    && sourceSubtitleVideo !== undefined && sourceSubtitleVideo.artifactId !== requestedVideo.artifactId;
   const videoPreviewVariant = draftVideoPreview ? props.editorSettings?.previewFormat ?? activeSubtitleVariant : activeSubtitleVariant;
   const sourceWidth = subtitleVideoSize.width <= 32 ? 1920 : subtitleVideoSize.width;
   const sourceHeight = subtitleVideoSize.height <= 32 ? 1080 : subtitleVideoSize.height;
@@ -328,7 +339,7 @@ export default function VideoTranslationResultWorkspace(props: {
   }
 
   function openEditorSettings(panel: EditorSettingsPanel) {
-    setGeneratedPreviewId(undefined);
+    setGeneratedPreviewId(null);
     if (subtitleVideoRef.current && !subtitleVideoRef.current.paused) subtitleVideoRef.current.pause();
     props.editorSettings?.onOpen();
     setEditorPanel(panel);
@@ -460,7 +471,7 @@ export default function VideoTranslationResultWorkspace(props: {
 
   function replaceCues(cues: SubtitleCue[]) {
     if (!activeSubtitleOutput || editReadOnly || !props.onSubtitleCuesChange || sameSubtitleCues(activeSubtitleOutput.cues, cues)) return;
-    setGeneratedPreviewId(undefined);
+    setGeneratedPreviewId(null);
     const entry = history.current.get(historyKey) ?? { past: [], future: [] };
     entry.past = [...entry.past.slice(-59), activeSubtitleOutput.cues];
     entry.future = [];
@@ -471,7 +482,7 @@ export default function VideoTranslationResultWorkspace(props: {
 
   function editText(cue: SubtitleCue, text: string, field: 'text' | 'sourceText' = 'text') {
     if (!activeSubtitleOutput || editReadOnly) return;
-    setGeneratedPreviewId(undefined);
+    setGeneratedPreviewId(null);
     if (props.onSubtitleCuesChange) replaceCues(activeSubtitleOutput.cues.map(item => item.id === cue.id ? { ...item, [field]: text } : item));
     else if (field === 'sourceText') props.onSubtitleChange(activeSubtitleOutput.variant, cue.id, text, field);
     else props.onSubtitleChange(activeSubtitleOutput.variant, cue.id, text);
@@ -479,7 +490,7 @@ export default function VideoTranslationResultWorkspace(props: {
 
   function travelHistory(direction: 'past' | 'future') {
     if (!activeSubtitleOutput || editReadOnly || !props.onSubtitleCuesChange) return;
-    setGeneratedPreviewId(undefined);
+    setGeneratedPreviewId(null);
     const entry = history.current.get(historyKey);
     const next = entry?.[direction].pop();
     if (!next || !entry) return;
@@ -494,9 +505,12 @@ export default function VideoTranslationResultWorkspace(props: {
   }
 
   const workbenchOutputAction = props.workbench && !props.subtitleOnly && editorPanel !== 'language';
-  const outputActionLabel = editorPanel === 'voice'
+  const enablingDubbing = editorPanel === 'voice' && !props.dubbing;
+  const outputActionLabel = enablingDubbing
     ? l('配音并合成视频', 'Dub and compose video')
-    : props.dubbing ? l('配音并合成视频', 'Dub and compose video') : props.videoOutputs.length ? l('重新合成视频', 'Recompose video') : l('合成视频', 'Compose video');
+    : props.generationLabel ?? (props.videoOutputs.length ? l('重新合成视频', 'Recompose video') : l('合成视频', 'Compose video'));
+  const outputActionDisabled = props.outputDisabled || props.subtitleSavePending || props.editorSettings?.disabled
+    || (props.subtitleAutosave && hasSubtitleDrafts) || (workbenchOutputAction && props.outputUpToDate && !enablingDubbing);
   const regenerationControls = (props.hasPendingChanges || props.regenerationPending || workbenchOutputAction) ? (
     <div className="video-result-regenerate" data-confirming={props.regenerationPending}
       role={props.regenerationPending ? 'group' : 'region'}
@@ -513,7 +527,7 @@ export default function VideoTranslationResultWorkspace(props: {
             ? l(`确认${props.generationLabel ?? '生成'}`, `Confirm: ${props.generationLabel ?? 'Generate'}`)
             : l(`确认生成 V${props.nextVersion}`, `Confirm and generate V${props.nextVersion}`)}</button>
         </div>
-    </> : <button type="button" disabled={props.outputDisabled || props.subtitleSavePending || props.editorSettings?.disabled || (props.subtitleAutosave && hasSubtitleDrafts)}
+    </> : <button type="button" disabled={outputActionDisabled}
       onClick={() => workbenchOutputAction ? props.onRequestOutput?.(editorPanel === 'voice' ? 'voice' : 'video') : props.onRequestRegenerate()}>
         {props.outputBusyLabel ?? (props.workbench ? workbenchOutputAction ? outputActionLabel : props.generationLabel
           : props.subtitleDirty ? l(`保存并生成 V${props.nextVersion}`, `Save and generate V${props.nextVersion}`) : l(`生成 V${props.nextVersion}`, `Generate V${props.nextVersion}`))}
@@ -576,9 +590,9 @@ export default function VideoTranslationResultWorkspace(props: {
                 `${subtitleVariantLabel(videoPreviewVariant ?? activeSubtitleOutput.variant, l)} video preview`
               )}
             />
-            {activeSubtitleVideo.source !== false && props.renderSubtitlePreview ? <div className="subtitle-editor-styled-overlay" key={`${props.version}-${activeSubtitleVariant}-${activeSubtitleVideo.src}`}>
+            {showLiveSubtitles && props.renderSubtitlePreview ? <div className="subtitle-editor-styled-overlay" key={`${props.version}-${activeSubtitleVariant}-${activeSubtitleVideo.src}`}>
               {props.renderSubtitlePreview(activeSubtitleOutput.cues, subtitlePreviewSize.width, subtitlePreviewSize.height, subtitleVideoRef, videoPreviewVariant ?? activeSubtitleOutput.variant)}
-            </div> : activeSubtitleVideo.source !== false && activeSubtitleCues.length > 0 ? (
+            </div> : showLiveSubtitles && activeSubtitleCues.length > 0 ? (
               <div className="video-result-subtitle-overlay" aria-hidden="true">
                 {activeSubtitleCues.map(cue => (
                   <span key={cue.id}>
@@ -632,13 +646,19 @@ export default function VideoTranslationResultWorkspace(props: {
             else void subtitleFrameRef.current?.requestFullscreen();
           }}><Maximize2 size={16} aria-hidden="true" /></button> : null}
       </div>
-      {generatedPreview ? <small className="video-result-completed-preview">
-        {l('成片预览', 'Completed video preview')} · V{props.version}
-        <button type="button" onClick={() => setGeneratedPreviewId(undefined)}>{l('返回编辑预览', 'Return to editing preview')}</button>
-      </small> : activeSubtitleVideo?.source ? (
+      {canSwitchVideoPreview ? <div className="creator-tool-segmented video-result-preview-modes" role="group" aria-label={l('视频预览模式', 'Video preview mode')}>
+        <button type="button" aria-pressed={generatedPreview !== undefined} onClick={() => {
+          if (requestedVideo) setGeneratedPreviewId(requestedVideo.artifactId);
+        }}>
+          {l('已生成成片', 'Rendered video')}
+        </button>
+        <button type="button" aria-pressed={generatedPreview === undefined} onClick={() => setGeneratedPreviewId(null)}>
+          {l('当前样式', 'Current style')}
+        </button>
+      </div> : generatedPreview ? <small>{l('成片预览', 'Completed video preview')} · V{props.version}</small> : activeSubtitleVideo?.source ? (
         <small>{l('当前使用原视频同步预览', 'Using the source video for synchronized preview')}</small>
-      ) : props.immersive && activeSubtitleVideo?.source === false ? (
-        <small>{l('当前版本', 'Current version')} · V{props.version}</small>
+      ) : props.immersive && showLiveSubtitles ? (
+        <small>{l('当前样式', 'Current style')} · V{props.version}</small>
       ) : null}
     </section>
   ) : null;
@@ -1190,9 +1210,9 @@ export default function VideoTranslationResultWorkspace(props: {
       {props.immersive && props.editorSettings && editorPanel ? <SubtitleEditorSettingsPanel
         open={settingsOpen}
         title={editorPanelLabel(editorPanel)}
-        context={props.workbench ? l('设置自动保存，点击合成后开始生成', 'Settings save automatically. Generation requires confirmation.') : l(`正在基于 V${props.version} 调整`, `Adjusting from V${props.version}`)}
+        context={props.workbench ? props.outputActionDetail ?? l('设置自动保存，点击合成后开始生成', 'Settings save automatically. Generation requires confirmation.') : l(`正在基于 V${props.version} 调整`, `Adjusting from V${props.version}`)}
         onClose={collapseEditorSettings}
-        onInteract={() => setGeneratedPreviewId(undefined)}
+        onInteract={() => setGeneratedPreviewId(null)}
         actions={regenerationControls}
         footer={props.workbench ? undefined : <button type="button" onClick={collapseEditorSettings}>{l('完成', 'Done')}</button>}>
         <div className="subtitle-editor-settings-tabs" role="tablist" aria-label={l('项目设置', 'Project settings')}>
@@ -1273,7 +1293,7 @@ function videoVariantFormatLabel(variant: VideoResultVariant, l: LocalizeCopy): 
   return ({
     horizontal: l('横屏 16:9', 'Horizontal 16:9'),
     vertical: l('竖屏 9:16', 'Vertical 9:16'),
-    dubbed: l('配音视频', 'Dubbed video')
+    dubbed: l('无字幕配音底片', 'Dubbed video without subtitles')
   } as const)[variant];
 }
 

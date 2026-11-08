@@ -110,4 +110,33 @@ describe('SubtitleTimeline playback controls', () => {
     expect(document.querySelector('.subtitle-timeline-waveform path')?.getAttribute('d')).toContain('v56.0');
     expect(screen.queryByText('无法生成此媒体的波形，仍可调整字幕时间。')).toBeNull();
   });
+
+  it('shows only the dubbing waveform when available, then returns to the source waveform', async () => {
+    const fetchMedia = vi.fn(async () => new Response(new Uint8Array([1, 2, 3])));
+    vi.stubGlobal('fetch', fetchMedia);
+    vi.stubGlobal('OfflineAudioContext', class {
+      async decodeAudioData() {
+        return {
+          duration: 20,
+          numberOfChannels: 1,
+          getChannelData: () => new Float32Array([0, .5, 0, -.25])
+        };
+      }
+    });
+    const callbacks = { onSelect: vi.fn(), onSeek: vi.fn(), onTogglePlay: vi.fn(), onPlaybackChange: vi.fn(), onChange: vi.fn() };
+    const props = { cues: [{ id: 1, start: '00:00:00,000', end: '00:00:01,000', text: 'Hello' }],
+      src: 'blob:source', currentTime: 0, duration: 20, playing: false, readOnly: true, ...callbacks };
+    const { container, rerender } = render(<SubtitleTimeline {...props} voiceSrc="blob:dub" />);
+    await waitFor(() => expect(container.querySelector('.subtitle-timeline-waveform svg')).not.toBeNull());
+    expect(fetchMedia).toHaveBeenCalledExactlyOnceWith('blob:dub', { signal: expect.any(AbortSignal) });
+    expect(container.querySelectorAll('.subtitle-timeline-waveform svg')).toHaveLength(1);
+    expect(container.querySelector('.subtitle-timeline-voice')).toBeNull();
+    expect(container.querySelector('.subtitle-timeline-clip')).toHaveStyle({ top: '98px' });
+
+    rerender(<SubtitleTimeline {...props} />);
+    await waitFor(() => expect(fetchMedia).toHaveBeenCalledTimes(2));
+    expect(fetchMedia).toHaveBeenLastCalledWith('blob:source', { signal: expect.any(AbortSignal) });
+    await waitFor(() => expect(container.querySelector('.subtitle-timeline-waveform svg')).not.toBeNull());
+    expect(container.querySelectorAll('.subtitle-timeline-waveform svg')).toHaveLength(1);
+  });
 });
