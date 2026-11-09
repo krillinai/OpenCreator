@@ -73,7 +73,7 @@ func buildEmbedSubtitleArgs(req RenderVideoRequest) ([]string, string) {
 		"-i", req.InputVideo,
 	}
 	if req.AudioFile != "" {
-		args = append(args, "-i", req.AudioFile, "-map", "0:v:0", "-map", "1:a:0", "-shortest")
+		args = append(args, "-i", req.AudioFile, "-map", "0:v:0", "-map", "1:a:0", "-af", "apad", "-shortest")
 	}
 	return append(args,
 		"-vf", filter,

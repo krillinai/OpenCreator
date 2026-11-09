@@ -1,69 +1,55 @@
 package dubbing
 
 import (
+	"context"
 	"krillin-ai/internal/types"
 	"testing"
 )
 
-func TestPlannerMergesShortAdjacentCues(t *testing.T) {
-	cfg := DefaultConfig()
+func TestPlannerPreservesShortCompleteSentences(t *testing.T) {
+	planner := NewPlanner(DefaultConfig(), NewStatisticalEstimator())
 	cues := []Cue{
-		{Index: 1, Start: 0, End: 0.8, Text: "你好"},
-		{Index: 2, Start: 1.0, End: 2.2, Text: "我们开始吧"},
-		{Index: 3, Start: 5.0, End: 6.0, Text: "下一段"},
+		{Index: 23, Start: 49.928, End: 51.654, Text: "这叫帕金森定律。"},
+		{Index: 24, Start: 51.654, End: 54.130, Text: "工作会把你给它的时间填满。"},
 	}
-	planner := NewPlanner(cfg, NewStatisticalEstimator(), nil)
-	plan, chunks, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
+	plan, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
 	if err != nil {
-		t.Fatalf("Plan() error = %v", err)
+		t.Fatal(err)
 	}
-	if len(plan) != 3 || len(chunks) != 2 {
-		t.Fatalf("plan=%+v chunks=%+v", plan, chunks)
-	}
-	if plan[0].ChunkID != plan[1].ChunkID {
-		t.Fatalf("first short cue should merge with second: %+v", plan)
-	}
-	if plan[2].ChunkID == plan[1].ChunkID {
-		t.Fatalf("large gap should start a new chunk: %+v", plan)
+	if len(plan) != 2 || plan[0].Index != 23 || plan[1].Index != 24 ||
+		plan[0].SpokenText != cues[0].Text || plan[1].SpokenText != cues[1].Text ||
+		plan[0].RewriteAttempts != 0 || plan[1].RewriteAttempts != 0 {
+		t.Fatalf("plan = %+v, want original separate cues", plan)
 	}
 }
 
-func TestPlannerDoesNotMergeLongAdjacentCuesOnlyBecauseGapIsSmall(t *testing.T) {
-	cfg := DefaultConfig()
-	cues := []Cue{
-		{Index: 1, Start: 0, End: 3.0, Text: "这是第一句已经足够长的字幕"},
-		{Index: 2, Start: 3.2, End: 6.2, Text: "这是第二句同样足够长的字幕"},
-	}
-	planner := NewPlanner(cfg, NewStatisticalEstimator(), nil)
-	plan, chunks, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
+func TestPlannerDefersRewriteUntilTTSIsMeasured(t *testing.T) {
+	input := "你在看学习视频，却没有真正学习。"
+	planner := NewPlanner(DefaultConfig(), NewStatisticalEstimator())
+	plan, err := planner.Plan([]Cue{{Index: 1, Start: 0, End: 3.83, Text: input}}, types.LanguageNameSimplifiedChinese)
 	if err != nil {
-		t.Fatalf("Plan() error = %v", err)
+		t.Fatal(err)
 	}
-	if len(plan) != 2 || len(chunks) != 2 {
-		t.Fatalf("long adjacent cues should not merge only because gap is small: plan=%+v chunks=%+v", plan, chunks)
-	}
-	if plan[0].ChunkID == plan[1].ChunkID {
-		t.Fatalf("long adjacent cues share chunk: %+v", plan)
+	if len(plan) != 1 || plan[0].SpokenText != input || plan[0].RewriteAttempts != 0 {
+		t.Fatalf("plan = %+v, want original target subtitle", plan)
 	}
 }
 
-func TestPlannerRespectsMaxChunkSizeWhenMergingShortCues(t *testing.T) {
+func TestPlannerRejectsOverlongOriginalSubtitle(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.MaxChunkSize = 2
-	cues := []Cue{
-		{Index: 1, Start: 0, End: 0.5, Text: "一"},
-		{Index: 2, Start: 0.6, End: 1.1, Text: "二"},
-		{Index: 3, Start: 1.2, End: 1.7, Text: "三"},
+	cfg.MaxSubtitleChars = 4
+	planner := NewPlanner(cfg, NewStatisticalEstimator())
+	_, err := planner.Plan([]Cue{{Index: 1, Start: 0, End: 1, Text: "这是一条很长的字幕"}}, types.LanguageNameSimplifiedChinese)
+	if err == nil {
+		t.Fatal("Plan() should reject subtitles over the configured length")
 	}
-	planner := NewPlanner(cfg, NewStatisticalEstimator(), nil)
-	plan, chunks, err := planner.Plan(cues, types.LanguageNameSimplifiedChinese)
-	if err != nil {
-		t.Fatalf("Plan() error = %v", err)
-	}
-	if len(plan) != 3 || len(chunks) != 2 {
-		t.Fatalf("MaxChunkSize should split short cue merges: plan=%+v chunks=%+v", plan, chunks)
-	}
-	if len(chunks[0].Items) != 2 || len(chunks[1].Items) != 1 {
-		t.Fatalf("chunk sizes = %+v, want [2,1]", chunks)
+}
+
+func TestPlannerHonorsCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	planner := NewPlanner(DefaultConfig(), NewStatisticalEstimator())
+	if _, err := planner.PlanContext(ctx, []Cue{{Index: 1, Start: 0, End: 1, Text: "你好"}}, types.LanguageNameSimplifiedChinese); err == nil {
+		t.Fatal("PlanContext() should stop on cancellation")
 	}
 }

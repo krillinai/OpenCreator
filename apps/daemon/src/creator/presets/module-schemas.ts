@@ -25,6 +25,7 @@ export const creatorSubtitleStyleSchema = z.object({
   secondaryColor: colorSchema.default('#D1D5DB'),
   outlineColor: colorSchema.default('#000000'),
   outlineWidth: z.number().min(0).max(8).default(2.5),
+  verticalOffset: z.number().int().min(-20).max(100).default(0),
   shadow: z.object({
     enabled: z.boolean().default(true),
     color: colorSchema.default('#000000'),

@@ -27,6 +27,7 @@ import {
   useOptionalCreatorSession
 } from './creator-session-store.js';
 import VideoSourceInput from './VideoSourceInput.js';
+import AutoClipWorkspaceV3 from './AutoClipWorkspaceV3.js';
 
 type AutoClipStep = 0 | 1 | 2;
 type VideoOrientation = 'landscape' | 'portrait' | 'square';
@@ -67,6 +68,17 @@ type AutoClipResultVersion = {
 const analysisStageIds = new Set(['probe', 'download', 'subtitle', 'analyze']);
 
 export default function AutoClipWorkspace(props: {
+  onBack(): void;
+  promptHint?: string;
+  videoMetadataService?: VideoMetadataService;
+}) {
+  const session = useOptionalCreatorSession();
+  return session?.job.templateVersion !== undefined && session.job.templateVersion >= 3
+    ? <AutoClipWorkspaceV3 {...props} />
+    : <LegacyAutoClipWorkspace {...props} />;
+}
+
+function LegacyAutoClipWorkspace(props: {
   onBack(): void;
   promptHint?: string;
   videoMetadataService?: VideoMetadataService;

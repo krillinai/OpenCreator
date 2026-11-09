@@ -160,6 +160,90 @@ func TestFitTimelineRejectsInvalidSpeedOrder(t *testing.T) {
 	}
 }
 
+func TestFitSegmentsKeepsOriginalSubtitleWindowAndNaturalSpeed(t *testing.T) {
+	plan := []PlanItem{{
+		Index:          7,
+		OriginalStart:  12.5,
+		OriginalEnd:    15,
+		SpokenText:     "短句",
+		ActualDuration: 1.2,
+	}}
+
+	fitted, report, err := FitSegments(plan)
+	if err != nil {
+		t.Fatalf("FitSegments() error = %v", err)
+	}
+	if fitted[0].NewStart != 12.5 || fitted[0].NewEnd != 13.7 {
+		t.Fatalf("audio window = %.3f --> %.3f", fitted[0].NewStart, fitted[0].NewEnd)
+	}
+	if fitted[0].SourceSpeechDuration != 2.5 || fitted[0].TargetSpeechDuration != 1.2 || fitted[0].DurationRatio != 0.48 {
+		t.Fatalf("duration diagnostics = source %.3f target %.3f ratio %.3f", fitted[0].SourceSpeechDuration, fitted[0].TargetSpeechDuration, fitted[0].DurationRatio)
+	}
+	if fitted[0].SpeedFactor != 1 || report.MaxSpeedFactor != 1 {
+		t.Fatalf("speed = %.3f report=%.3f, want natural speed", fitted[0].SpeedFactor, report.MaxSpeedFactor)
+	}
+	cue := BuildDubCues(fitted)[0]
+	if cue.Start != 12.5 || cue.End != 15 || cue.Text != "短句" {
+		t.Fatalf("subtitle cue = %+v, want original window and final text", cue)
+	}
+}
+
+func TestFitSegmentsRequiresRewriteThenAcceptsConfiguredOverrun(t *testing.T) {
+	plan := []PlanItem{{
+		Index:           4,
+		OriginalStart:   8.24,
+		OriginalEnd:     13.72,
+		SpokenText:      "目标字幕",
+		ActualDuration:  5.48 * 1.0365,
+		RewriteAttempts: 1,
+	}}
+
+	fitted, report, err := FitSegmentsWithConfig(plan, DefaultConfig())
+	if err != nil {
+		t.Fatalf("FitSegmentsWithConfig() error = %v", err)
+	}
+	if fitted[0].SpeedFactor <= 1 || fitted[0].SpeedFactor > 1.10 {
+		t.Fatalf("speed = %.4f, want a small accepted speed adjustment", fitted[0].SpeedFactor)
+	}
+	if fitted[0].NewEnd > fitted[0].OriginalEnd+timelineComparisonEpsilon {
+		t.Fatalf("new end %.4f exceeds slot end %.4f", fitted[0].NewEnd, fitted[0].OriginalEnd)
+	}
+	if report.MaxSpeedFactor != fitted[0].SpeedFactor {
+		t.Fatalf("max speed = %.4f, want %.4f", report.MaxSpeedFactor, fitted[0].SpeedFactor)
+	}
+}
+
+func TestFitSegmentsUsesForcedAtempoFallbackAboveConfiguredTolerance(t *testing.T) {
+	plan := []PlanItem{{Index: 4, OriginalStart: 0, OriginalEnd: 5, ActualDuration: 5.51, RewriteAttempts: 3}}
+	fitted, report, err := FitSegmentsWithConfig(plan, DefaultConfig())
+	if err != nil {
+		t.Fatalf("FitSegmentsWithConfig() error = %v, want forced timing fallback", err)
+	}
+	if fitted[0].SpeedFactor < 1.1019 || fitted[0].SpeedFactor > 1.1021 {
+		t.Fatalf("speed = %.3f, want 1.102", fitted[0].SpeedFactor)
+	}
+	if fitted[0].NewEnd != 5 {
+		t.Fatalf("new end = %.3f, want 5.000", fitted[0].NewEnd)
+	}
+	if len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "atempo_required=true") {
+		t.Fatalf("timing warnings = %+v", report.Warnings)
+	}
+}
+
+func TestFitSegmentsUsesForcedAtempoFallbackForMeasuredOverflow(t *testing.T) {
+	plan := []PlanItem{{Index: 9, OriginalStart: 0, OriginalEnd: 1, ActualDuration: 1.5, RewriteAttempts: 2}}
+	fitted, report, err := FitSegments(plan)
+	if err != nil {
+		t.Fatalf("FitSegments() error = %v, want forced timing fallback", err)
+	}
+	if fitted[0].SpeedFactor != 1.5 || fitted[0].NewEnd != 1 {
+		t.Fatalf("fitted segment = %+v, want 1.5x speed ending at 1s", fitted[0])
+	}
+	if len(report.FailedIndexes) != 0 || len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "target_tts_longer_than_source_speech_window") {
+		t.Fatalf("timing diagnostics = %+v", report)
+	}
+}
+
 func warningsContain(warnings []string, substr string) bool {
 	for _, warning := range warnings {
 		if strings.Contains(warning, substr) {

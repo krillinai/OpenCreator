@@ -32,7 +32,7 @@ export function createLegacyAutoClipTemplate(): CreatorTemplateDefinition {
   };
 }
 
-export function createAutoClipTemplate(): CreatorTemplateDefinition {
+export function createAutoClipTemplateV2(): CreatorTemplateDefinition {
   return {
     id: 'auto-clip',
     version: 2,
@@ -119,5 +119,35 @@ export function createAutoClipTemplate(): CreatorTemplateDefinition {
       '工作流必须从 analyze 自动继续到 render，将本次分析出的全部片段直接生成视频。',
       '不得把多个候选片段拼接成一个文件。'
     ].join(' ')
+  };
+}
+
+export function createAutoClipTemplate(): CreatorTemplateDefinition {
+  return {
+    id: 'auto-clip',
+    version: 3,
+    renderer: 'auto-clips',
+    inputSchema: z.object({
+      sourceType: z.enum(['url', 'file']).default('url'),
+      sourceUrl: z.string().default(''),
+      sourceArtifactId: z.string().nullable().default(null),
+      duration: z.enum(['15-30', '30-60', '60-90', '90-180']).default('90-180'),
+      clipCount: z.number().int().min(1).max(20).default(3),
+      currentStage: z.string().nullable().default(null)
+    }).passthrough() as never,
+    stages: [{
+      id: 'clip',
+      executor: 'krillinai',
+      allowedJobStatuses: ['draft', 'running', 'completed', 'failed', 'needs_input'],
+      inputArtifacts: [{ kind: 'source_video', selector: 'state-artifact-id', stateKey: 'sourceArtifactId', optional: true }],
+      outputArtifacts: [{ kind: 'source_video', status: 'completed' }, { kind: 'clip_index', status: 'completed' }, { kind: 'auto_clip_video', status: 'completed' }]
+    }],
+    actions: [
+      { id: 'update-settings', inputSchema: record, allowedStages: ['clip'] },
+      { id: 'run-stage', inputSchema: record, allowedStages: ['clip'] },
+      { id: 'undo-action', inputSchema: record, allowedStages: ['clip'] }
+    ],
+    outputs: [{ kind: 'auto_clip_video', required: true }],
+    agentGuidance: '提交视频来源、切片数量和目标时长，运行 clip 阶段；KrillinAI 负责原文字幕、选片和视频切割。'
   };
 }

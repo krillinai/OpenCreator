@@ -65,6 +65,19 @@ describe('Creator KrillinAI subtitle style mapping', () => {
     expect(result.horizontal.major.override_tags).toBe('');
   });
 
+  it('moves both subtitle lines together while retaining each format baseline', () => {
+    const base = buildKrillinSubtitleStyle({ fontPreset: 'sans' }) as {
+      horizontal: { major: Record<string, unknown>; minor: Record<string, unknown> };
+      vertical: { major: Record<string, unknown>; minor: Record<string, unknown> };
+    };
+    const raised = buildKrillinSubtitleStyle({ fontPreset: 'sans', verticalOffset: 40 }) as typeof base;
+    expect([base.horizontal.major.margin_v, base.horizontal.minor.margin_v,
+      base.vertical.major.margin_v, base.vertical.minor.margin_v]).toEqual([20, 30, 101, 92]);
+    expect([raised.horizontal.major.margin_v, raised.horizontal.minor.margin_v,
+      raised.vertical.major.margin_v, raised.vertical.minor.margin_v]).toEqual([60, 70, 141, 132]);
+    expect(() => buildKrillinSubtitleStyle({ verticalOffset: -21 })).toThrow();
+  });
+
   it('rejects unsupported style fields instead of dropping them', () => {
     expect(() => buildKrillinSubtitleStyle({
       rawAssStyle: 'Style: unsafe'

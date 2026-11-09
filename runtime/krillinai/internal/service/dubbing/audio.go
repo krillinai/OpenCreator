@@ -3,6 +3,7 @@ package dubbing
 import (
 	"fmt"
 	"krillin-ai/internal/storage"
+	"krillin-ai/pkg/util"
 	"math"
 	"os"
 	"os/exec"
@@ -65,6 +66,7 @@ func buildMuxArgs(inputVideo, inputAudio, outputVideo string) []string {
 		"-map", "1:a:0",
 		"-c:a", "aac",
 		"-b:a", "192k",
+		"-af", "apad",
 		"-shortest",
 		outputVideo,
 	}
@@ -73,10 +75,14 @@ func buildMuxArgs(inputVideo, inputAudio, outputVideo string) []string {
 func BuildDubCues(plan []PlanItem) []Cue {
 	cues := make([]Cue, len(plan))
 	for i, item := range plan {
+		index := item.Index
+		if index <= 0 {
+			index = i + 1
+		}
 		cues[i] = Cue{
-			Index: i + 1,
-			Start: item.NewStart,
-			End:   item.NewEnd,
+			Index: index,
+			Start: item.OriginalStart,
+			End:   item.OriginalEnd,
 			Text:  item.SpokenText,
 		}
 	}
@@ -96,6 +102,10 @@ func fittedChunkPath(segmentsDir string, id int) string {
 }
 
 func AssembleAudio(plan []PlanItem, segmentsDir, outputAudio string, run CommandRunner) error {
+	return assembleAudioWithBounds(plan, segmentsDir, outputAudio, run, util.GetSpeechBounds)
+}
+
+func assembleAudioWithBounds(plan []PlanItem, segmentsDir, outputAudio string, run CommandRunner, bounds SpeechBoundsProbe) error {
 	if run == nil {
 		run = defaultFFmpegRunner
 	}
@@ -119,10 +129,18 @@ func AssembleAudio(plan []PlanItem, segmentsDir, outputAudio string, run Command
 		}
 
 		fitted := fittedSegmentPath(segmentsDir, item.Index)
+		filter := filters[i]
+		if bounds != nil && item.ActualDuration > 0 {
+			start, end, err := bounds(raw)
+			if err != nil {
+				return fmt.Errorf("detect speech bounds for segment %d: %w", item.Index, err)
+			}
+			filter = fmt.Sprintf("atrim=start=%.6f:end=%.6f,asetpts=PTS-STARTPTS,%s", start, end, filter)
+		}
 		if err := run([]string{
 			"-y",
 			"-i", raw,
-			"-filter:a", filters[i],
+			"-filter:a", filter,
 			"-ar", "44100",
 			"-ac", "1",
 			"-c:a", "pcm_s16le",

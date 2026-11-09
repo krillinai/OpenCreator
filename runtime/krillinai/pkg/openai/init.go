@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sashabaranov/go-openai"
+	"krillin-ai/config"
 )
 
 const defaultRequestTimeout = 2 * time.Minute
@@ -33,7 +34,7 @@ func newClient(baseUrl, apiKey, proxyAddr string, requestTimeout time.Duration) 
 	transport.TLSHandshakeTimeout = 10 * time.Second
 	// 非流式响应可能在生成完成后才发送响应头，由请求 context 统一限制总耗时。
 	transport.ResponseHeaderTimeout = 0
-	if proxyAddr != "" {
+	if config.ProxyForBaseURL(baseUrl, proxyAddr) != "" {
 		if proxyURL, err := url.Parse(proxyAddr); err == nil {
 			transport.Proxy = http.ProxyURL(proxyURL)
 		}

@@ -26,6 +26,9 @@ func TestSynthesizeUsesQwenTTSRequestAndDownloadsAudio(t *testing.T) {
 			if r.Header.Get("Authorization") != "Bearer dashscope-key" {
 				t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 			}
+			if r.Header.Get("api-key") != "dashscope-key" {
+				t.Fatalf("api-key = %q", r.Header.Get("api-key"))
+			}
 			var request map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatalf("decode request: %v", err)

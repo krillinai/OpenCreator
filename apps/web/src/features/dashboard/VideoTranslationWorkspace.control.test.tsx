@@ -280,6 +280,77 @@ describe('VideoTranslationWorkspace task controls', () => {
   });
 
   it.each([
+    { setting: 'bilingual', existingVoice: false, clickFromStyle: false, burnSubtitles: true, expectedStage: 'tts' },
+    { setting: 'bilingual', existingVoice: false, clickFromStyle: true, burnSubtitles: true, expectedStage: 'tts' },
+    { setting: 'bilingual', existingVoice: false, clickFromStyle: false, burnSubtitles: false, expectedStage: 'tts' },
+    { setting: 'bilingual', existingVoice: true, clickFromStyle: false, burnSubtitles: true, expectedStage: 'render-horizontal' },
+    { setting: 'bilingual', existingVoice: true, clickFromStyle: true, burnSubtitles: true, expectedStage: 'render-horizontal' },
+    { setting: 'bilingual', existingVoice: true, clickFromStyle: false, burnSubtitles: false, expectedStage: 'commit-version' },
+    { setting: 'targetLanguage', existingVoice: false, clickFromStyle: false, burnSubtitles: true, expectedStage: undefined }
+  ])('starts dubbing when only subtitle display changes, but protects changed translation language: $setting (voice: $existingVoice, style action: $clickFromStyle, burn: $burnSubtitles)', async ({ setting, existingVoice, clickFromStyle, burnSubtitles, expectedStage }) => {
+    const target = subtitleArtifact(1, '原译文');
+    const voice: CreatorArtifact = { ...sourceVideoArtifact(1), id: 'dubbed_audio_v1', kind: 'dubbed_audio' };
+    const translatedState = {
+      ...job({ status: 'completed', revision: 1, stages: [] }).state,
+      workspacePhase: 'result', resultVersion: 1, bilingual: true, dubbing: existingVoice, composeVideo: existingVoice,
+      ttsProvider: 'openai', ttsModel: 'gpt-4o-mini-tts', voiceCode: 'alloy', voiceName: 'Alloy'
+    };
+    let current = job({ status: 'completed', revision: 1, stages: [], artifacts: existingVoice ? [target, voice] : [target], state: translatedState });
+    current.state.resultSnapshots = [{ version: 1, createdAt: target.createdAt, action: 'run-stage', stageId: 'subtitle',
+      description: 'Subtitles', artifactRefs: { target_subtitle: [target.id], ...(existingVoice ? { dubbed_audio: [voice.id] } : {}) }, changedArtifactIds: [target.id],
+      staleArtifactIds: [], state: translatedState }];
+    const applyAction = vi.fn(async (_id: string, request: { action: string; input: { patch?: Record<string, CreatorJson> } }) => {
+      current = { ...current, revision: current.revision + 1, state: { ...current.state, ...request.input.patch } };
+      return { job: current };
+    });
+    const services = {
+      getConfig: vi.fn(async () => ({ config: {
+        transcription: { provider: 'openai', openai: { model: 'whisper-1' } },
+        tts: { provider: 'openai', openai: { model: 'gpt-4o-mini-tts', defaultVoiceId: 'alloy' } }
+      }, configuredCredentials: ['tts.openai.apiKey'] })),
+      getCapabilities: vi.fn(async () => ({ transcription: { providers: [] } })),
+      getTtsVoices: vi.fn(async () => ({ voices: [{ id: 'alloy', name: 'Alloy', provider: 'openai', kind: 'builtin' }] }))
+    };
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={current}
+      service={{ applyAction, runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace onBack={vi.fn()} creatorServicesService={services as never} />
+    </CreatorSessionProvider></LanguageProvider>);
+    fireEvent.click(screen.getByRole('button', { name: setting === 'bilingual' ? '字幕样式' : '任务设置' }));
+    const panel = screen.getByRole('complementary', { name: setting === 'bilingual' ? '字幕样式' : '任务设置' });
+    if (setting === 'bilingual') {
+      fireEvent.click(within(panel).getByRole('switch', { name: '双语字幕' }));
+      await waitFor(() => expect(current.state.bilingual).toBe(false));
+    } else {
+      changeControl(within(panel).getByRole('combobox', { name: '翻译为' }), { target: { value: 'ja' } });
+      await waitFor(() => expect(current.state.targetLanguage).toBe('ja'));
+    }
+    fireEvent.click(within(panel).getByRole('tab', { name: '配音' }));
+    if (!existingVoice) fireEvent.click(within(panel).getByRole('switch', { name: '启用配音' }));
+    await waitFor(() => expect(within(panel).getByRole('combobox', { name: '配音音色' })).toHaveAttribute('data-value', 'alloy'));
+    const burnSwitch = within(panel).getByRole('switch', { name: '烧录字幕' });
+    expect(burnSwitch).toBeChecked();
+    if (!burnSubtitles) fireEvent.click(burnSwitch);
+    await waitFor(() => expect(current.state.composeVideo).toBe(burnSubtitles));
+    if (clickFromStyle) fireEvent.click(within(panel).getByRole('tab', { name: '字幕样式' }));
+    const actionLabel = setting === 'targetLanguage' ? '重新翻译字幕'
+      : existingVoice ? burnSubtitles ? '合成视频' : '保存设置' : '配音并合成视频';
+    fireEvent.click(within(panel).getByRole('button', { name: actionLabel }));
+    if (expectedStage === 'commit-version') {
+      await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({
+        action: 'commit-version', input: { baseResultVersion: 1 }
+      })));
+      expect(applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+    } else if (expectedStage) {
+      await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({
+        action: 'run-stage', input: { stageId: expectedStage, workflow: true, baseResultVersion: 1, inputResultVersion: 1 }
+      })));
+    } else {
+      expect(screen.getByText('翻译输入已修改，请先重新翻译字幕，再生成配音。')).toBeVisible();
+      expect(applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+    }
+  });
+
+  it.each([
     ['字幕样式', 'render-horizontal', 'preset'],
     ['字幕样式', 'render-horizontal', 'saved'],
     ['字幕样式', 'render-horizontal', 'custom'],
@@ -1183,7 +1254,7 @@ describe('VideoTranslationWorkspace task controls', () => {
       expect(preset).toHaveAttribute('aria-pressed', 'true');
       expect(screen.getByRole('textbox', { name: `${label} HEX` })).toHaveValue('#7EE7FF');
     }
-    expect(within(screen.getByRole('dialog', { name: '自定义字幕样式' })).getAllByRole('slider')).toHaveLength(5);
+    expect(within(screen.getByRole('dialog', { name: '自定义字幕样式' })).getAllByRole('slider')).toHaveLength(6);
     expect(within(screen.getByRole('dialog', { name: '阴影颜色色板' })).getAllByRole('slider')).toHaveLength(2);
     expect(screen.queryByText('自定义')).not.toBeInTheDocument();
   });
@@ -1279,6 +1350,9 @@ describe('VideoTranslationWorkspace task controls', () => {
     fireEvent.change(screen.getByRole('spinbutton', { name: '描边宽度' }), {
       target: { value: '3.5' }
     });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '字幕高度' }), {
+      target: { value: '39.5' }
+    });
     fireEvent.click(screen.getByRole('switch', { name: '字幕阴影' }));
     fireEvent.click(screen.getByRole('button', { name: '选择阴影颜色' }));
     fireEvent.change(screen.getByRole('textbox', { name: '阴影颜色 HEX' }), {
@@ -1312,6 +1386,7 @@ describe('VideoTranslationWorkspace task controls', () => {
               secondaryColor: '#654321',
               outlineColor: '#111111',
               outlineWidth: 3.5,
+              verticalOffset: 40,
               shadow: {
                 enabled: true,
                 color: '#222222',
@@ -1450,6 +1525,119 @@ describe('VideoTranslationWorkspace task controls', () => {
       restoreUrlMethod('createObjectURL', createObjectUrlDescriptor);
       restoreUrlMethod('revokeObjectURL', revokeObjectUrlDescriptor);
     }
+  });
+
+  it('previews the burned video and shows the dubbing-aligned bilingual cues', async () => {
+    const createObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+    const revokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:dubbed-video-preview') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    const originalTarget = subtitleArtifact(1, '旧译文');
+    const dubbedTarget = subtitleArtifact(2, '最终配音文案');
+    const oldVertical: CreatorArtifact = { ...subtitleArtifact(1, '旧竖屏文案'), id: 'vertical-v1', kind: 'vertical_subtitle' };
+    const originalSource = textSubtitleArtifact({ id: 'source-v1', kind: 'source_subtitle', version: 1,
+      fileName: 'source-v1.srt', text: 'Original speech' });
+    const dubbedSource = textSubtitleArtifact({ id: 'source-v2', kind: 'source_subtitle', version: 2,
+      fileName: 'source-v2.srt', text: 'Aligned original speech' });
+    const sourceVideo = sourceVideoArtifact(1);
+    const dubbedVideo: CreatorArtifact = { ...sourceVideoArtifact(2), id: 'dubbed-video-v2', kind: 'dubbed_video' };
+    const subtitledVideo: CreatorArtifact = { ...sourceVideoArtifact(2), id: 'subtitled-video-v2', kind: 'horizontal_video' };
+    const currentJob = job({
+      status: 'completed', revision: 3, stages: [],
+      artifacts: [sourceVideo, originalSource, originalTarget, oldVertical, dubbedSource, dubbedTarget, dubbedVideo, subtitledVideo],
+      state: {
+        workspacePhase: 'result', resultVersion: 2, latestResultVersion: 2,
+        dubbing: true, bilingual: false, composeVideo: false,
+        resultSnapshots: [
+          { version: 1, createdAt: originalTarget.createdAt, action: 'stage-succeeded', stageId: 'subtitle',
+            description: 'Translated', artifactRefs: { source_video: [sourceVideo.id], source_subtitle: [originalSource.id],
+            target_subtitle: [originalTarget.id], vertical_subtitle: [oldVertical.id] }, changedArtifactIds: [originalSource.id, originalTarget.id],
+            staleArtifactIds: [], state: { sourceType: 'url', sourceLanguage: 'en', targetLanguage: 'zh_cn', dubbing: false } },
+          { version: 2, createdAt: dubbedTarget.createdAt, action: 'stage-succeeded', stageId: 'tts',
+            description: 'Dubbed', artifactRefs: { source_video: [sourceVideo.id], source_subtitle: [dubbedSource.id],
+            target_subtitle: [dubbedTarget.id], vertical_subtitle: [oldVertical.id],
+              dubbed_video: [dubbedVideo.id], horizontal_video: [subtitledVideo.id] },
+            changedArtifactIds: [dubbedSource.id, dubbedTarget.id, dubbedVideo.id, subtitledVideo.id], staleArtifactIds: [],
+            state: { sourceType: 'url', sourceLanguage: 'en', targetLanguage: 'zh_cn', dubbing: true, bilingual: false, composeVideo: true } }
+        ]
+      }
+    });
+    const openArtifact = vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' })));
+    const view = render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={currentJob}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn(), openArtifact } as never}>
+      <VideoTranslationWorkspace onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+    try {
+      await waitFor(() => expect(openArtifact).toHaveBeenCalledWith('job_control', dubbedVideo.id));
+      expect(await screen.findByLabelText('横屏字幕视频预览')).toHaveAttribute('src', 'blob:dubbed-video-preview');
+      expect(screen.getByRole('button', { name: '已生成成片' })).toHaveAttribute('aria-pressed', 'true');
+      expect(document.querySelector('.subtitle-editor-styled-overlay')).toBeNull();
+      expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toHaveValue('最终配音文案');
+      expect(screen.getByLabelText('横屏字幕原文 1')).toHaveValue('Aligned original speech');
+      expect(screen.queryByRole('textbox', { name: '竖屏字幕 1' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '字幕样式' }));
+      expect(screen.getByRole('button', { name: '当前样式' })).toHaveAttribute('aria-pressed', 'true');
+      expect(document.querySelector('.video-result-subtitle-overlay')).toHaveTextContent('最终配音文案');
+      fireEvent.click(screen.getByRole('tab', { name: '作品' }));
+      expect(screen.getByRole('button', { name: '下载横屏成片' })).toBeVisible();
+      expect(screen.getByRole('button', { name: '下载配音视频' })).toBeVisible();
+      expect(screen.getByText('无字幕配音底片')).toBeVisible();
+      expect(screen.queryByRole('button', { name: '下载竖屏 9:16' })).not.toBeInTheDocument();
+    } finally {
+      view.unmount();
+      restoreUrlMethod('createObjectURL', createObjectUrlDescriptor);
+      restoreUrlMethod('revokeObjectURL', revokeObjectUrlDescriptor);
+    }
+  });
+
+  it('recomposes a styled dubbed video without starting TTS again', async () => {
+    const target = subtitleArtifact(1, '配音后的字幕');
+    const sourceVideo = sourceVideoArtifact(1);
+    const dubbedAudio: CreatorArtifact = { ...sourceVideoArtifact(1), id: 'dubbed-audio-v1', kind: 'dubbed_audio' };
+    const dubbedVideo: CreatorArtifact = { ...sourceVideoArtifact(1), id: 'dubbed-video-v1', kind: 'dubbed_video' };
+    const horizontalVideo: CreatorArtifact = { ...sourceVideoArtifact(1), id: 'horizontal-video-v1', kind: 'horizontal_video' };
+    const state = {
+      workspacePhase: 'result', resultVersion: 1, latestResultVersion: 1,
+      dubbing: true, composeVideo: true, bilingual: false,
+      ttsProvider: 'openai', ttsModel: 'gpt-4o-mini-tts', voiceCode: 'alloy', voiceName: 'Alloy'
+    };
+    let current = job({ status: 'completed', revision: 1, stages: [],
+      artifacts: [target, sourceVideo, dubbedAudio, dubbedVideo, horizontalVideo], state });
+    current.state.resultSnapshots = [{
+      version: 1, createdAt: target.createdAt, action: 'stage-succeeded', stageId: 'render-horizontal',
+      description: 'Rendered', artifactRefs: {
+        target_subtitle: [target.id], source_video: [sourceVideo.id],
+        dubbed_audio: [dubbedAudio.id], dubbed_video: [dubbedVideo.id], horizontal_video: [horizontalVideo.id]
+      }, changedArtifactIds: [horizontalVideo.id], staleArtifactIds: [], state: { ...current.state }
+    }];
+    const applyAction = vi.fn(async (_id: string, request: { action: string; input: { patch?: Record<string, CreatorJson> } }) => {
+      current = { ...current, revision: current.revision + 1, state: { ...current.state, ...request.input.patch } };
+      return { job: current };
+    });
+    const services = {
+      getConfig: vi.fn(async () => ({ config: createDefaultCreatorServicesConfig(), configuredCredentials: [] })),
+      getCapabilities: vi.fn(async () => ({ transcription: { providers: [] } }))
+    };
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={current}
+      service={{ applyAction, runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace onBack={vi.fn()} creatorServicesService={services as never} />
+    </CreatorSessionProvider></LanguageProvider>);
+    expect(screen.getByRole('button', { name: '当前已是最新' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '字幕样式' }));
+    const panel = screen.getByRole('complementary', { name: '字幕样式' });
+    fireEvent.click(within(panel).getByRole('button', { name: '自定义样式' }));
+    changeControl(screen.getByRole('combobox', { name: '字幕大小' }), { target: { value: 'large' } });
+    fireEvent.click(within(screen.getByRole('dialog', { name: '自定义字幕样式' })).getByRole('button', { name: '完成' }));
+    await waitFor(() => expect(current.state.subtitleStyle).toEqual(expect.objectContaining({ fontSize: 'large' })));
+    expect(within(panel).getByRole('button', { name: '重新合成视频' })).toBeEnabled();
+    expect(within(panel).getByText('复用 V1 配音 · 更新字幕和视频')).toBeVisible();
+    const configReads = services.getConfig.mock.calls.length;
+    fireEvent.click(within(panel).getByRole('button', { name: '重新合成视频' }));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({
+      action: 'run-stage', input: { stageId: 'render-horizontal', workflow: true, baseResultVersion: 1, inputResultVersion: 1 }
+    })));
+    expect(services.getConfig).toHaveBeenCalledTimes(configReads);
+    expect(applyAction.mock.calls.some(([, request]) => request.action === 'run-stage' && request.input.patch?.ttsProvider !== undefined)).toBe(false);
   });
 
   it('edits target and source cues while offering bilingual subtitle downloads', async () => {

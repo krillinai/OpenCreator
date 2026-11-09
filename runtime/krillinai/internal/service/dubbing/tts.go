@@ -11,6 +11,12 @@ import (
 )
 
 func GenerateRawSegments(ctx context.Context, tts types.Ttser, plan []PlanItem, voice, dir string, run CommandRunner, duration DurationProbe) ([]PlanItem, error) {
+	return GenerateRawSegmentsWithProgress(ctx, tts, plan, voice, dir, run, duration, nil)
+}
+
+// GenerateRawSegmentsWithProgress creates one natural-speed audio file per cue
+// and measures each waveform immediately after synthesis.
+func GenerateRawSegmentsWithProgress(ctx context.Context, tts types.Ttser, plan []PlanItem, voice, dir string, run CommandRunner, duration DurationProbe, reportProgress func(completed, total int)) ([]PlanItem, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -25,34 +31,71 @@ func GenerateRawSegments(ctx context.Context, tts types.Ttser, plan []PlanItem, 
 	if err := os.MkdirAll(rawDir, 0755); err != nil {
 		return nil, err
 	}
+	if reportProgress != nil {
+		reportProgress(0, len(plan))
+	}
 
 	for i := range plan {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 
-		output := filepath.Join(rawDir, fmt.Sprintf("%d.wav", plan[i].Index))
-		if IsSilenceOnlyText(plan[i].SpokenText) {
-			if err := WriteTinySilence(output, run); err != nil {
-				return nil, err
-			}
-		} else {
-			if tts == nil {
-				return nil, errors.New("tts is required for non-silence text")
-			}
-			if err := retryTTS(tts, plan[i].SpokenText, voice, output, 3); err != nil {
-				return nil, fmt.Errorf("tts segment %d failed: %w", plan[i].Index, err)
-			}
+		if err := generateRawSegment(ctx, tts, &plan[i], voice, dir, run, duration); err != nil {
+			return nil, err
 		}
-
-		dur, err := duration(output)
-		if err != nil {
-			return nil, fmt.Errorf("measure segment %d duration failed for %s: %w", plan[i].Index, output, err)
+		if reportProgress != nil {
+			reportProgress(i+1, len(plan))
 		}
-		plan[i].ActualDuration = dur
 	}
 
 	return plan, nil
+}
+
+func generateRawSegment(ctx context.Context, tts types.Ttser, item *PlanItem, voice, dir string, run CommandRunner, duration DurationProbe) error {
+	if item == nil {
+		return errors.New("plan item is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if run == nil {
+		run = defaultFFmpegRunner
+	}
+	if duration == nil {
+		return errors.New("duration probe is required")
+	}
+
+	rawDir := filepath.Join(dir, "raw")
+	if err := os.MkdirAll(rawDir, 0755); err != nil {
+		return err
+	}
+	output := filepath.Join(rawDir, fmt.Sprintf("%d.wav", item.Index))
+	if IsSilenceOnlyText(item.SpokenText) {
+		if err := WriteTinySilence(output, run); err != nil {
+			return fmt.Errorf("write silence segment %d failed: %w", item.Index, err)
+		}
+	} else {
+		if tts == nil {
+			return errors.New("tts is required for non-silence text")
+		}
+		if err := retryTTS(tts, item.SpokenText, voice, output, 3); err != nil {
+			return fmt.Errorf("tts segment %d failed: %w", item.Index, err)
+		}
+	}
+
+	dur, err := duration(output)
+	if err != nil {
+		return fmt.Errorf("measure segment %d duration failed for %s: %w", item.Index, output, err)
+	}
+	item.ActualDuration = dur
+	return nil
+}
+
+func regenerateRawSegment(ctx context.Context, tts types.Ttser, item *PlanItem, voice, dir string, run CommandRunner, duration DurationProbe) error {
+	return generateRawSegment(ctx, tts, item, voice, dir, run, duration)
 }
 
 func GenerateRawChunkSegments(

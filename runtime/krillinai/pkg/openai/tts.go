@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"krillin-ai/config"
 	"krillin-ai/internal/types"
 )
 
@@ -40,7 +41,7 @@ func NewTtsClient(baseURL, apiKey, model, proxy string) *TtsClient {
 		model = DefaultTTSModel
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if proxyURL, err := url.Parse(strings.TrimSpace(proxy)); err == nil && proxyURL.Scheme != "" {
+	if proxyURL, err := url.Parse(strings.TrimSpace(config.ProxyForBaseURL(baseURL, proxy))); err == nil && proxyURL.Scheme != "" {
 		transport.Proxy = http.ProxyURL(proxyURL)
 	}
 	return &TtsClient{

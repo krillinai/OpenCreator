@@ -1062,16 +1062,41 @@
 }
 
 .video-translation-dubbing-row {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  align-items: start;
-  gap: 12px 20px;
+  --dubbing-label-width: 78px;
+  --dubbing-actions-width: 86px;
+  --dubbing-control-gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
 }
 
-/* Labels sit to the left of their controls to keep the dubbing block one row tall. */
+.video-translation-dubbing-settings .video-translation-option-title {
+  grid-template-columns: minmax(0, 1fr);
+  padding-inline: 12px;
+}
+
+.video-translation-dubbing-settings .video-translation-option-icon {
+  display: none;
+}
+
+.video-translation-dubbing-settings .video-translation-option-content {
+  margin-inline: 12px;
+}
+
+.video-translation-burn-subtitles {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.video-translation-dubbing-row > .video-translation-voice-source,
+.video-translation-dubbing-row > .creator-tool-field {
+  margin-inline-end: calc(var(--dubbing-actions-width) + var(--dubbing-control-gap));
+}
+
 .video-translation-dubbing-row > .video-translation-voice-source,
 .video-translation-dubbing-row > .creator-tool-field,
 .video-translation-dubbing-row .tts-voice-picker-field {
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: var(--dubbing-label-width) minmax(0, 1fr);
   align-items: center;
   gap: 10px;
 }
@@ -1083,7 +1108,30 @@
 }
 
 .video-translation-dubbing-row .tts-voice-picker {
+  grid-template-columns: minmax(0, 1fr) var(--dubbing-actions-width);
   align-items: center;
+  gap: var(--dubbing-control-gap);
+}
+
+.video-translation-dubbing-row .official-model-control,
+.video-translation-dubbing-row .official-model-control input[role='combobox'] {
+  height: 40px;
+}
+
+.video-translation-dubbing-row .official-model-control:not(.is-open) .official-model-selected-icon {
+  display: none;
+}
+
+.video-translation-dubbing-row .official-model-control:not(.is-open) input[role='combobox'] {
+  padding-inline: 10px 32px;
+}
+
+.video-translation-dubbing-row .official-model-value {
+  height: 40px;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .video-translation-voice-source {
@@ -1154,6 +1202,21 @@
 
 .video-translation-voice-config-actions button:hover { color: var(--text); }
 .video-translation-voice-config-actions button:disabled { opacity: 0.5; cursor: default; }
+
+@media (max-width: 760px) {
+  .video-translation-dubbing-row {
+    --dubbing-actions-width: 94px;
+  }
+
+  .video-translation-dubbing-row > .video-translation-voice-source > div,
+  .video-translation-dubbing-row .official-model-control,
+  .video-translation-dubbing-row .official-model-control input[role='combobox'],
+  .video-translation-dubbing-row .official-model-value,
+  .video-translation-dubbing-row .tts-voice-select,
+  .video-translation-dubbing-row .tts-voice-picker-actions button {
+    height: 44px;
+  }
+}
 
 .video-translation-upload.is-compact > button {
   min-height: 58px;
@@ -13399,16 +13462,6 @@
   }
 }
 
-@container video-translation-output-controls (max-width: 480px) {
-  .video-translation-dubbing-settings .tts-voice-picker {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .video-translation-dubbing-settings .tts-voice-picker-actions {
-    justify-content: flex-end;
-  }
-}
-
 @container video-translation-workspace (max-width: 480px) {
   .video-translation-wizard-main[data-phase="configure"] .video-translation-step-panel {
     padding: 16px;
@@ -16044,3 +16097,110 @@
 .subtitle-composition-preview[data-status="failed"] .subtitle-composition-canvas { visibility: hidden; }
 .subtitle-composition-preview button { pointer-events: auto; }
 .subtitle-editor-styled-overlay { position: absolute; inset: 0; pointer-events: none; }
+.auto-clip-v3-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.auto-clip-v3-results {
+  min-width: 0;
+}
+
+.auto-clip-v3-results-heading,
+.auto-clip-v3-item-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.auto-clip-v3-results-heading {
+  margin-bottom: 16px;
+}
+
+.auto-clip-v3-results-heading h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.auto-clip-v3-results-heading span,
+.auto-clip-v3-item-heading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auto-clip-v3-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.auto-clip-v3-item {
+  min-width: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.auto-clip-v3-item-heading {
+  padding: 12px 14px;
+}
+
+.auto-clip-v3-item-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.auto-clip-v3-item-heading strong {
+  font-size: 13px;
+}
+
+.auto-clip-v3-item-heading button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.auto-clip-v3-item-heading button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.auto-clip-v3-item video,
+.auto-clip-v3-preview-loading {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #171b1e;
+}
+
+.auto-clip-v3-preview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .auto-clip-v3-settings,
+  .auto-clip-v3-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auto-clip-v3-results-heading {
+    flex-wrap: wrap;
+  }
+}

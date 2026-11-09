@@ -37,6 +37,40 @@ afterEach(() => {
 });
 
 describe('KrillinAI CLI runner', () => {
+  it.skipIf(process.platform === 'win32')('registers every clip listed by the KrillinAI result index', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-clips-'));
+    const resourceRoot = join(tempDir, 'runtime');
+    const jobsRoot = join(tempDir, 'jobs');
+    const dependencyRoot = join(tempDir, 'dependencies');
+    const workdir = join(jobsRoot, 'job-1', 'clip-stage');
+    const cli = join(resourceRoot, 'bin', 'krillinai-cli');
+    mkdirSync(dirname(cli), { recursive: true });
+    mkdirSync(workdir, { recursive: true });
+    writeFileSync(cli, `#!${process.execPath}\n${FAKE_CLI}`);
+    chmodSync(cli, 0o755);
+    const manifest: KrillinRuntimeManifest = {
+      version: 1, platform: process.platform, arch: process.arch,
+      resources: [{ path: 'bin/krillinai-cli', sha256: 'a'.repeat(64), kind: 'executable' }]
+    };
+    const config = createDefaultCreatorServicesConfig();
+    config.llm.apiKey = 'fixture-llm-key';
+    const stage = {
+      stageRun: { id: 'clip-stage', stageId: 'clip', progress: {} },
+      job: { id: 'job-1', templateId: 'auto-clip', templateVersion: 3, state: {} },
+      inputArtifacts: [], workdir, signal: new AbortController().signal,
+      reportProgress() {}
+    } as unknown as CreatorExecutorInput;
+
+    const artifacts = await runKrillinCli({
+      resourceRoot, jobsRoot, dependencyRoot, manifest, stage, config, artifacts: [],
+      options: { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=fixture', clipCount: 2, duration: '30-60' }
+    });
+
+    expect(artifacts.map(artifact => artifact.kind)).toEqual(['clip_index', 'auto_clip_video', 'auto_clip_video']);
+    expect(artifacts.filter(artifact => artifact.kind === 'auto_clip_video').map(artifact => artifact.metadata))
+      .toEqual([expect.objectContaining({ candidateId: 'clip-01', start: 0, end: 30 }),
+        expect.objectContaining({ candidateId: 'clip-02', start: 30, end: 60 })]);
+  });
   it.runIf(process.platform === 'win32')('mounts packaged executable files without requiring symlink privileges', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-windows-file-overlay-'));
     const resourceRoot = join(tempDir, 'runtime');
@@ -445,11 +479,13 @@ describe('KrillinAI CLI runner', () => {
     const dependencyRoot = join(tempDir, 'dependencies');
     const workdir = join(jobsRoot, 'job-tts', 'stage-run-tts');
     const subtitle = join(jobsRoot, 'job-tts', 'artifacts', 'target.srt');
+    const sourceSubtitle = join(jobsRoot, 'job-tts', 'artifacts', 'source.srt');
     const cli = join(resourceRoot, 'bin', 'krillinai-cli');
     mkdirSync(dirname(cli), { recursive: true });
     mkdirSync(dirname(subtitle), { recursive: true });
     mkdirSync(workdir, { recursive: true });
     writeFileSync(subtitle, '1\n00:00:00,000 --> 00:00:01,000\n你好\n');
+    writeFileSync(sourceSubtitle, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
     writeFileSync(cli, `#!${process.execPath}\n${FAKE_CLI}`);
     chmodSync(cli, 0o755);
 
@@ -493,7 +529,10 @@ describe('KrillinAI CLI runner', () => {
       manifest,
       stage,
       config,
-      artifacts: [{ id: 'subtitle-1', kind: 'target_subtitle', path: subtitle }],
+      artifacts: [
+        { id: 'subtitle-1', kind: 'target_subtitle', path: subtitle },
+        { id: 'source-1', kind: 'source_subtitle', path: sourceSubtitle }
+      ],
       options: {
         ttsProvider: 'aliyun',
         ttsModel: 'qwen3-tts-instruct-flash',
@@ -501,7 +540,14 @@ describe('KrillinAI CLI runner', () => {
       }
     });
 
-    expect(artifacts.map(artifact => artifact.kind)).toEqual(['dubbed_audio']);
+    expect(artifacts.map(artifact => artifact.kind)).toEqual([
+      'source_subtitle', 'target_subtitle', 'bilingual_subtitle', 'dubbed_audio'
+    ]);
+    expect(readFileSync(sourceSubtitle, 'utf8')).toContain('Hello');
+    expect(readFileSync(subtitle, 'utf8')).toContain('你好');
+    expect(readFileSync(join(workdir, 'origin_language_srt.srt'), 'utf8')).toContain('Hello');
+    expect(readFileSync(join(workdir, 'target_language_srt.srt'), 'utf8')).toContain('配音文案');
+    expect(readFileSync(join(workdir, 'bilingual_srt.srt'), 'utf8')).toContain('配音文案\nHello');
     expect(progress).toContainEqual(expect.objectContaining({ phase: 'generating_voice', percent: 48, completed: 4, total: 10, message: '已生成配音 4/10 段' }));
     expect(JSON.parse(readFileSync(join(workdir, 'observed-args.json'), 'utf8'))).toEqual([
       'tts',
@@ -510,7 +556,7 @@ describe('KrillinAI CLI runner', () => {
       '--task-id',
       'stage-run-tts',
       '--input-srt',
-      subtitle,
+      join(workdir, 'target_language_srt.srt'),
       '--line-mode',
       'target-only',
       '--voice',
@@ -622,7 +668,8 @@ describe('KrillinAI CLI runner', () => {
     const run = async (
       stageId: 'render-horizontal' | 'render-vertical',
       stageRunId: string,
-      inputs = artifacts
+      inputs = artifacts,
+      dubbed = false
     ) => {
       const workdir = join(jobsRoot, 'job-render', stageRunId);
       mkdirSync(workdir, { recursive: true });
@@ -637,8 +684,9 @@ describe('KrillinAI CLI runner', () => {
           state: {}
         },
         inputArtifacts: inputs.map(artifact => ({ ...artifact, metadata: {
-          cues: artifact.kind === 'target_subtitle' || artifact.kind === 'source_subtitle'
-            ? [{ start: '00:00:00,000', end: '00:00:01,000', text: artifact.kind === 'target_subtitle' ? '目标字幕' : 'Source subtitle' }]
+          cues: artifact.kind === 'target_subtitle' || artifact.kind === 'source_subtitle' || artifact.kind === 'vertical_subtitle'
+            ? [{ start: '00:00:00,000', end: '00:00:01,000', text: artifact.kind === 'target_subtitle'
+              ? '目标字幕' : artifact.kind === 'source_subtitle' ? 'Source subtitle' : '竖屏短字幕' }]
             : []
         } })),
         workdir,
@@ -653,7 +701,7 @@ describe('KrillinAI CLI runner', () => {
         stage,
         config,
         artifacts: inputs,
-        options: { bilingual: true, bilingualTop: subtitlePosition === 'top' }
+        options: { bilingual: true, bilingualTop: subtitlePosition === 'top', dubbed }
       });
       return JSON.parse(readFileSync(join(workdir, 'observed-args.json'), 'utf8')) as string[];
     };
@@ -666,6 +714,14 @@ describe('KrillinAI CLI runner', () => {
       artifacts.filter(artifact => artifact.kind !== 'vertical_subtitle')
     ))).toBe(bilingual);
     expect(selectedSubtitle(await run('render-horizontal', 'stage-run-horizontal'))).toBe(bilingual);
+    const dubbedVideo = join(jobsRoot, 'job-render', 'artifacts', 'dubbed.mp4');
+    writeFileSync(dubbedVideo, 'fixture-dubbed-video');
+    expect(selectedSubtitle(await run('render-vertical', 'stage-run-dubbed-vertical', [
+      ...artifacts,
+      { id: 'dubbed-1', kind: 'dubbed_video', path: dubbedVideo }
+    ], true))).toBe(bilingual);
+    expect(JSON.parse(readFileSync(join(jobsRoot, 'job-render', 'stage-run-dubbed-vertical', 'observed-subtitle-document.json'), 'utf8')))
+      .toMatchObject({ cues: [{ startMs: 0, endMs: 1000, text: '目标字幕', sourceText: 'Source subtitle' }] });
     for (const stageRunId of ['stage-run-horizontal', 'stage-run-vertical-fallback']) {
       expect(JSON.parse(readFileSync(join(jobsRoot, 'job-render', stageRunId, 'observed-subtitle-document.json'), 'utf8')))
         .toMatchObject({ bilingual: true, subtitlePosition, cues: [{ startMs: 0, endMs: 1000, text: '目标字幕', sourceText: 'Source subtitle' }] });
@@ -674,7 +730,7 @@ describe('KrillinAI CLI runner', () => {
 });
 
 const FAKE_CLI = String.raw`
-const { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } = require('node:fs');
+const { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const { join } = require('node:path');
 
@@ -714,8 +770,16 @@ let outputs;
 if (args[0] === 'tts') {
   process.stdout.write(JSON.stringify({ type: 'progress', phase: 'generating_voice', percent: 48, completed: 4, total: 10, message: '已生成配音 4/10 段' }) + '\n');
   outputs = {
+    target_srt: join(workdir, 'target_language_srt.srt'),
     tts_audio: join(workdir, 'dubbed_audio.wav')
   };
+  writeFileSync(outputs.target_srt, '1\n00:00:00,000 --> 00:00:01,000\n配音文案\n');
+  const originSrt = join(workdir, 'origin_language_srt.srt');
+  if (existsSync(originSrt)) {
+    outputs.origin_srt = originSrt;
+    outputs.bilingual_srt = join(workdir, 'bilingual_srt.srt');
+    writeFileSync(outputs.bilingual_srt, '1\n00:00:00,000 --> 00:00:01,000\n配音文案\nHello\n');
+  }
   writeFileSync(outputs.tts_audio, 'audio');
 } else if (args[0] === 'render-horizontal') {
   outputs = {
@@ -727,6 +791,17 @@ if (args[0] === 'tts') {
     vertical_video: join(workdir, 'vertical_video.mp4')
   };
   writeFileSync(outputs.vertical_video, 'video');
+} else if (args[0] === 'clip') {
+  mkdirSync(join(workdir, 'clips'), { recursive: true });
+  const clips = [1, 2].map(number => {
+    const file = 'clips/clip-0' + number + '.mp4';
+    writeFileSync(join(workdir, file), 'video');
+    return { id: 'clip-0' + number, file, start_ms: (number - 1) * 30000,
+      end_ms: number * 30000, score: 0.8 };
+  });
+  outputs = { clip_index: join(workdir, 'clips.json') };
+  writeFileSync(outputs.clip_index, JSON.stringify({ schema_version: 1,
+    caption_source: 'youtube_vtt', requested_count: 2, clips }));
 } else {
   process.stdout.write(JSON.stringify({
     type: 'progress',

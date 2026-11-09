@@ -50,6 +50,10 @@ type PlaybackOutput = PlaybackCodecs & {
 };
 
 const YT_DLP_UTF8_ARGS = ['--encoding', 'utf-8'];
+const PREVIEW_DOWNLOAD_END = 75;
+const PREVIEW_MERGE_PERCENT = 77;
+const PREVIEW_VALIDATING_PERCENT = 79;
+const PREVIEW_CONVERSION_START = 80;
 
 function isPreviewStage(stage: CreatorExecutorInput): boolean {
   return stage.stageRun.stageId === 'prepare-source-video' || stage.stageRun.stageId === 'preview-source-video';
@@ -470,7 +474,12 @@ async function downloadPlaybackSource(
         '--progress',
         '--progress-delta',
         '0.5',
-        ...(preview ? ['--progress-template', 'download:oc-preview:%(progress)j'] : []),
+        ...(preview ? [
+          '--print', 'before_dl:oc-preview-formats:%(format_id)s',
+          '--print', 'before_dl:oc-preview-duration:%(duration)s',
+          '--print', 'before_dl:oc-preview-metadata:%(requested_formats.:.{format_id,filesize,filesize_approx,tbr,abr})j',
+          '--progress-template', 'download:[download] %(progress._percent_str)s oc-preview:%(progress)j'
+        ] : []),
         '-f',
         preview ? 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best' : 'bestvideo+bestaudio/best',
         '--merge-output-format',
@@ -499,7 +508,7 @@ async function downloadPlaybackSource(
   stage.reportProgress({
     status: 'running',
     phase: 'validating_output',
-    percent: 97,
+    percent: preview ? PREVIEW_VALIDATING_PERCENT : 97,
     message: preview ? 'Checking the video for subtitle preview' : 'Checking the YouTube source'
   });
   const output = await normalizeVideoForPlayback(
@@ -563,8 +572,48 @@ function createPreviewProgressReporter(stage: CreatorExecutorInput): (line: stri
   const resources = new Map<string, PreviewResource>();
   let anonymousResourceKey = 'anonymous:0';
   let reportedPercent = 2;
+  let expectedResourceCount: number | null = null;
+  let selectedFormats: Array<Record<string, unknown>> | null = null;
+  let duration: number | null = null;
+
+  const selectedFormatSizes = (): Array<{ bytes: number; estimated: boolean }> | null => {
+    if (selectedFormats === null) return null;
+    const sizes = selectedFormats.map(format => {
+      const exact = positiveNumber(format.filesize);
+      if (exact !== null) return { bytes: exact, estimated: false };
+      const approximate = positiveNumber(format.filesize_approx);
+      if (approximate !== null) return { bytes: approximate, estimated: true };
+      const bytes = estimatedDownloadFormatBytes(null,
+        positiveNumber(format.tbr) ?? positiveNumber(format.abr), duration);
+      return bytes > 0 ? { bytes, estimated: true } : null;
+    });
+    return sizes.every((size): size is { bytes: number; estimated: boolean } => size !== null)
+      ? sizes : null;
+  };
 
   return line => {
+    if (line.startsWith('oc-preview-formats:')) {
+      const formatIds = line.slice('oc-preview-formats:'.length).trim();
+      expectedResourceCount = formatIds && formatIds !== 'NA'
+        ? formatIds.split('+').length
+        : null;
+      return;
+    }
+    if (line.startsWith('oc-preview-duration:')) {
+      duration = positiveNumber(Number(line.slice('oc-preview-duration:'.length)));
+      return;
+    }
+    if (line.startsWith('oc-preview-metadata:')) {
+      try {
+        const formats = JSON.parse(line.slice('oc-preview-metadata:'.length)) as unknown;
+        if (Array.isArray(formats) && formats.length > 0) {
+          expectedResourceCount = formats.length;
+          selectedFormats = formats.every(format => typeof format === 'object' && format !== null && !Array.isArray(format))
+            ? formats as Array<Record<string, unknown>> : null;
+        }
+      } catch {}
+      return;
+    }
     const marker = line.indexOf('oc-preview:');
     if (marker >= 0) {
       try {
@@ -572,7 +621,11 @@ function createPreviewProgressReporter(stage: CreatorExecutorInput): (line: stri
         const bytes = typeof data.downloaded_bytes === 'number' && Number.isFinite(data.downloaded_bytes)
           ? Math.max(0, data.downloaded_bytes)
           : 0;
-        const total = typeof data.total_bytes === 'number' && Number.isFinite(data.total_bytes) && data.total_bytes > 0
+        const unboundedFragment = data.fragment_index !== undefined
+          && positiveNumber(data.fragment_count) === null
+          && data.status !== 'finished';
+        const total = unboundedFragment ? null
+          : typeof data.total_bytes === 'number' && Number.isFinite(data.total_bytes) && data.total_bytes > 0
           ? data.total_bytes
           : typeof data.total_bytes_estimate === 'number' && Number.isFinite(data.total_bytes_estimate) && data.total_bytes_estimate > 0
             ? data.total_bytes_estimate
@@ -589,41 +642,54 @@ function createPreviewProgressReporter(stage: CreatorExecutorInput): (line: stri
           anonymousResourceKey = resourceKey;
         }
         const existing = resources.get(resourceKey);
+        const partPercent = unboundedFragment ? null : parseDownloadPartPercent(line);
         const resource: PreviewResource = {
           bytes: Math.max(existing?.bytes ?? 0, bytes),
-          total: total ?? existing?.total ?? null,
-          percent: total === null ? existing?.percent ?? null : Math.min(100, Math.max(0, bytes / total * 100))
+          total: unboundedFragment ? null : total ?? existing?.total ?? null,
+          percent: unboundedFragment ? null
+            : total === null ? partPercent ?? existing?.percent ?? null : Math.min(100, Math.max(0, bytes / total * 100))
         };
         resources.set(resourceKey, resource);
-        const downloadedBytes = [...resources.values()]
+        const currentResources = [...resources.values()];
+        const downloadedBytes = currentResources
           .reduce((sum, current) => sum + current.bytes, 0);
-        const knownTotals = [...resources.values()].map(current => current.total);
-        const totalBytes = knownTotals.every(current => current !== null)
-          ? knownTotals.reduce((sum, current) => sum + (current ?? 0), 0)
-          : null;
-        const rawPercent = totalBytes === null || totalBytes <= 0
-          ? null
-          : Math.min(100, Math.max(0, downloadedBytes / totalBytes * 100));
-        // Keep a small amount of headroom for a later audio resource or the
-        // merge step, while allowing a single resource to reflect its bytes.
-        const combinedPercent = rawPercent === null
-          ? null
-          : Math.min(95, rawPercent);
-        if (combinedPercent !== null) reportedPercent = Math.round(combinedPercent);
+        const knownTotals = currentResources.map(current => current.total);
+        const selectedSizes = selectedFormatSizes();
+        const measuredSizes = selectedSizes !== null && currentResources.length <= selectedSizes.length
+          ? selectedSizes.map(size => size.bytes) : null;
+        const totalBytes = measuredSizes !== null
+          ? measuredSizes.reduce((sum, size) => sum + size, 0)
+          : currentResources.length === expectedResourceCount && knownTotals.every(current => current !== null)
+            ? knownTotals.reduce((sum, current) => sum + (current ?? 0), 0)
+            : null;
+        const weights = measuredSizes ?? Array.from({ length: Math.max(expectedResourceCount ?? 1, currentResources.length) }, () => 1);
+        const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+        const completedWeight = currentResources.reduce((sum, current, index) => {
+          const resourceTotal = current.total ?? measuredSizes?.[index] ?? null;
+          const fraction = measuredSizes !== null
+            ? current.bytes / measuredSizes[index]!
+            : current.percent === null
+              ? resourceTotal === null ? 0 : current.bytes / resourceTotal
+              : current.percent / 100;
+          return sum + weights[index]! * Math.min(1, fraction);
+        }, 0);
+        if (totalBytes !== null) {
+          reportedPercent = Math.max(reportedPercent,
+            scaledDownloadPercent(completedWeight, totalWeight, PREVIEW_DOWNLOAD_END));
+        }
         stage.reportProgress({
           phase: 'downloading',
-          percent: combinedPercent === null
-            ? reportedPercent > 2 ? reportedPercent : null
-            : reportedPercent,
+          percent: totalBytes === null ? null : reportedPercent,
           message: 'Downloading the current original-video resource; existing subtitles are preserved',
           downloadedBytes,
-          totalBytes
+          totalBytes,
+          totalBytesEstimated: measuredSizes !== null && selectedSizes?.some(size => size.estimated) === true
         });
       } catch {}
       return;
     }
     if (/\[(?:Merger|VideoRemuxer)\]/.test(line)) {
-      reportedPercent = Math.max(reportedPercent, 96);
+      reportedPercent = Math.max(reportedPercent, PREVIEW_MERGE_PERCENT);
       stage.reportProgress({ phase: 'merging_media', percent: reportedPercent, message: 'Merging video and audio for subtitle preview' });
     }
   };
@@ -765,16 +831,19 @@ function estimatedProbeFormatBytes(
 ): number {
   const format = probe.formats.find(candidate => candidate.id === formatId);
   if (format === undefined) return 0;
-  if (format.bytes !== null && format.bytes > 0) return format.bytes;
-  if (
-    probe.duration === null
-    || format.bitrateKbps === null
-    || probe.duration <= 0
-    || format.bitrateKbps <= 0
-  ) {
-    return 0;
-  }
-  return probe.duration * format.bitrateKbps * 1_000 / 8;
+  return estimatedDownloadFormatBytes(format.bytes, format.bitrateKbps, probe.duration);
+}
+
+function positiveNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function estimatedDownloadFormatBytes(bytes: number | null, bitrateKbps: number | null, duration: number | null): number {
+  const knownBytes = positiveNumber(bytes);
+  if (knownBytes !== null) return knownBytes;
+  const rate = positiveNumber(bitrateKbps);
+  const seconds = positiveNumber(duration);
+  return rate === null || seconds === null ? 0 : seconds * rate * 1_000 / 8;
 }
 
 function audioDownloadArgs(
@@ -938,10 +1007,11 @@ async function normalizeVideoForPlayback(
   }
 
   const conversionDuration = duration ?? await readMediaDuration(path, input, stage);
+  const conversionStart = isPreviewStage(stage) ? PREVIEW_CONVERSION_START : 98;
   stage.reportProgress({
     status: 'running',
     phase: 'normalizing_media',
-    percent: 98,
+    percent: conversionStart,
     phasePercent: 0,
     message: 'Converting video for local playback'
   });
@@ -1024,10 +1094,12 @@ function reportPlaybackConversionProgress(
   );
   if (!Number.isFinite(elapsed)) return;
   const phasePercent = Math.min(100, Math.max(0, Math.round(elapsed / duration * 100)));
+  const conversionStart = isPreviewStage(stage) ? PREVIEW_CONVERSION_START : 98;
   stage.reportProgress({
     status: 'running',
     phase: 'normalizing_media',
-    percent: Math.min(99, Math.max(98, Math.round(98 + elapsed / duration))),
+    percent: Math.min(99, Math.max(conversionStart,
+      Math.round(conversionStart + (99 - conversionStart) * phasePercent / 100))),
     phasePercent,
     message: 'Converting video for local playback'
   });
@@ -1141,10 +1213,8 @@ function createDownloadProgressReporter(
   let reportedPercent = typeof stage.stageRun.progress.percent === 'number'
     ? Math.min(95, Math.max(2, Math.round(stage.stageRun.progress.percent))) : 2;
   return line => {
-    const match = line.match(/\[download\]\s+([\d.]+)%/);
-    if (match !== null) {
-      const partPercent = Math.max(0, Math.min(100, Number(match[1])));
-      if (!Number.isFinite(partPercent)) return;
+    const partPercent = parseDownloadPartPercent(line);
+    if (partPercent !== null) {
       if (
         partPercent < previousPartPercent
         && previousPartPercent >= 99
@@ -1160,16 +1230,9 @@ function createDownloadProgressReporter(
         .slice(0, completedParts)
         .reduce((sum, weight) => sum + weight, 0);
       const currentWeight = weights[completedParts] ?? weights.at(-1) ?? 1;
-      const combinedPercent = 2 + (
-        (
-          completedWeight
-          + currentWeight * partPercent / 100
-        )
-        / totalWeight
-      ) * 93;
       reportedPercent = Math.max(
         reportedPercent,
-        Math.min(95, Math.round(combinedPercent))
+        scaledDownloadPercent(completedWeight + currentWeight * partPercent / 100, totalWeight, 95)
       );
       stage.reportProgress({
         status: 'running',
@@ -1200,6 +1263,17 @@ function createDownloadProgressReporter(
       });
     }
   };
+}
+
+function parseDownloadPartPercent(line: string): number | null {
+  const match = /\[download\]\s+([\d.]+)%/.exec(line);
+  if (match === null) return null;
+  const percent = Number(match[1]);
+  return Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : null;
+}
+
+function scaledDownloadPercent(completedWeight: number, totalWeight: number, endPercent: number): number {
+  return Math.min(endPercent, Math.round(2 + completedWeight / totalWeight * (endPercent - 2)));
 }
 
 function parseDownloadTotalBytes(line: string): number | null {

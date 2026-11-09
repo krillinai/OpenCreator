@@ -275,6 +275,82 @@ func GetAudioDuration(inputFile string) (float64, error) {
 	return duration, nil
 }
 
+var (
+	silenceStartPattern = regexp.MustCompile(`silence_start:\s*([0-9]+(?:\.[0-9]+)?)`)
+	silenceEndPattern   = regexp.MustCompile(`silence_end:\s*([0-9]+(?:\.[0-9]+)?)`)
+)
+
+// GetSpeechDuration returns the duration between the first and last audible
+// samples. TTS providers commonly add padding silence to WAV files; counting
+// that padding as speech makes short subtitle windows look overlong.
+// All-silence files keep their container duration so explicit silence cues
+// remain valid audio placeholders.
+func GetSpeechDuration(inputFile string) (float64, error) {
+	start, end, err := GetSpeechBounds(inputFile)
+	if err != nil {
+		return 0, err
+	}
+	return end - start, nil
+}
+
+// GetSpeechBounds uses the same boundary detection for timing and audio assembly.
+func GetSpeechBounds(inputFile string) (float64, float64, error) {
+	total, err := GetAudioDuration(inputFile)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	cmd := exec.Command(
+		storage.FfmpegPath,
+		"-hide_banner",
+		"-i", inputFile,
+		"-af", "silencedetect=noise=-35dB:d=0.05",
+		"-f", "null",
+		"-",
+	)
+	output, detectErr := cmd.CombinedOutput()
+	if detectErr != nil {
+		// Preserve the previous duration behavior if silence detection is not
+		// available for a particular codec or installation.
+		return 0, total, nil
+	}
+
+	starts := make([]float64, 0, 2)
+	for _, match := range silenceStartPattern.FindAllStringSubmatch(string(output), -1) {
+		if value, parseErr := strconv.ParseFloat(match[1], 64); parseErr == nil {
+			starts = append(starts, value)
+		}
+	}
+	ends := make([]float64, 0, 2)
+	for _, match := range silenceEndPattern.FindAllStringSubmatch(string(output), -1) {
+		if value, parseErr := strconv.ParseFloat(match[1], 64); parseErr == nil {
+			ends = append(ends, value)
+		}
+	}
+
+	start := 0.0
+	if len(starts) > 0 && len(ends) > 0 && starts[0] <= 0.001 {
+		start = ends[0]
+	}
+	end := total
+	if len(starts) > 0 && len(ends) > 0 && ends[len(ends)-1] >= total-0.05 {
+		end = starts[len(starts)-1]
+	}
+	effective := speechDurationFromSilence(total, start, end)
+	if effective == total {
+		return 0, total, nil
+	}
+	return start, end, nil
+}
+
+func speechDurationFromSilence(total, start, end float64) float64 {
+	effective := end - start
+	if effective <= 0.02 || effective > total+0.02 {
+		return total
+	}
+	return effective
+}
+
 // todo 后续再补充
 func IsAsianLanguage(code types.StandardLanguageCode) bool {
 	return code == types.LanguageNameSimplifiedChinese || code == types.LanguageNameTraditionalChinese || code == types.LanguageNameJapanese || code == types.LanguageNameKorean || code == types.LanguageNameThai

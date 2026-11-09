@@ -75,11 +75,17 @@ export function waveformPeaks(channels: Float32Array[], bins = 2400): number[] {
   if (!length) return [];
   const count = Math.min(bins, length);
   return Array.from({ length: count }, (_, bin) => {
-    let peak = 0;
+    let level = 0;
     const start = Math.floor(bin * length / count), end = Math.floor((bin + 1) * length / count);
     for (const channel of channels) {
-      for (let i = start; i < end; i++) peak = Math.max(peak, Math.abs(channel[i] ?? 0));
+      let energy = 0;
+      for (let i = start; i < end; i++) {
+        const sample = channel[i] ?? 0;
+        energy += sample * sample;
+      }
+      const rms = Math.sqrt(energy / Math.max(1, end - start));
+      level = Math.max(level, rms);
     }
-    return peak;
+    return level;
   });
 }

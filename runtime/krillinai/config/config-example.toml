@@ -10,7 +10,6 @@
     target_language_first = true # 双语字幕中目标语言是否在上方，建议值：true（目标语言在上）
     short_subtitle_max_chars = 20 # 短字幕英文每行最大字符数，建议值：15-25
     proxy = "" # 网络代理地址，格式如http://127.0.0.1:7890，可不填
-    youtube_proxy = "" # YouTube/yt-dlp 专用代理；留空时回退到 proxy
 
 [server]
     host = "127.0.0.1"
@@ -76,14 +75,16 @@
         base_url = "https://openspeech.bytedance.com"
 
 [dubbing]
-    min_subtitle_duration = 2.5 # 最短配音字幕时长，短句会优先合并
-    max_chunk_size = 5 # 单个配音 chunk 最多合并字幕条数
-    gap_tolerance = 1.5 # 可吸收的相邻字幕空隙，单位秒
-    speed_min = 0.95 # 允许的最慢调速倍率
-    speed_accept = 1.15 # 推荐的最大自然调速倍率
-    speed_max = 1.30 # 硬上限，超过后优先改写文本
+    min_subtitle_duration = 3.0 # 兼容旧配置；配音合并不再按字幕时长触发
+    max_chunk_size = 5 # 兼容旧配置；设为 1 可禁用合并
+    max_subtitle_chars = 70 # 合并后的目标语言字幕单行硬上限
+    gap_tolerance = 1.5 # 候选合并允许的最大相邻字幕间隔；时间槽不吸收空隙
+    speed_min = 0.95 # 兼容旧配置；自然配音流程不再变速
+    speed_accept = 1.15 # 兼容旧配置；自然配音流程不再变速
+    speed_max = 1.30 # 兼容旧 chunk 配置
+    max_timing_overrun_ratio = 0.10 # LLM 最多改写3次后，允许目标音频比时间槽长10%并轻微加速
     enable_text_rewrite = true # 是否允许 LLM 改写为自然口播
-    rewrite_max_attempts = 2 # 单条字幕最多改写次数
+    rewrite_max_attempts = 3 # 单条字幕最多改写次数
     estimator = "statistical" # 估时器，当前支持 statistical
 
 [image] # 封面生图配置

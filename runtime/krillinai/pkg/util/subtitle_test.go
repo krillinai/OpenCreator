@@ -18,3 +18,16 @@ func TestSplitTextSentences(t *testing.T) {
 		t.Errorf("Expected 1 sentence, got %d sentences", len(sentences))
 	}
 }
+
+func TestSpeechDurationFromBoundarySilence(t *testing.T) {
+	got := speechDurationFromSilence(1.27, 0.05825, 1.04467)
+	if got < 0.9863 || got > 0.9865 {
+		t.Fatalf("effective speech duration = %.4f, want about 0.9864", got)
+	}
+}
+
+func TestSpeechDurationFromSilenceKeepsAllSilencePlaceholder(t *testing.T) {
+	if got := speechDurationFromSilence(0.1, 0.1, 0); got != 0.1 {
+		t.Fatalf("all-silence duration = %.3f, want 0.100", got)
+	}
+}

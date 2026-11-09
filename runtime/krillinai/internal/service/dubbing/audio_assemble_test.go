@@ -1,12 +1,131 @@
 package dubbing
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"krillin-ai/internal/storage"
 )
+
+func TestAssembleAudioPreservesSpeechAfterInternalPause(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg is unavailable")
+	}
+	ffprobe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Skip("ffprobe is unavailable")
+	}
+	previousFFmpeg, previousFFprobe := storage.FfmpegPath, storage.FfprobePath
+	storage.FfmpegPath, storage.FfprobePath = ffmpeg, ffprobe
+	t.Cleanup(func() {
+		storage.FfmpegPath, storage.FfprobePath = previousFFmpeg, previousFFprobe
+	})
+
+	dir := t.TempDir()
+	rawDir := filepath.Join(dir, "raw")
+	if err := os.MkdirAll(rawDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	raw := filepath.Join(rawDir, "1.wav")
+	input := []string{
+		"-y", "-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=44100:d=0.1",
+		"-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=0.6",
+		"-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=44100:d=0.2",
+		"-f", "lavfi", "-i", "sine=frequency=660:sample_rate=44100:duration=0.6",
+		"-f", "lavfi", "-i", "anullsrc=channel_layout=mono:sample_rate=44100:d=0.15",
+		"-filter_complex", "[0:a][1:a][2:a][3:a][4:a]concat=n=5:v=0:a=1", "-c:a", "pcm_s16le", raw,
+	}
+	if output, err := exec.Command(ffmpeg, input...).CombinedOutput(); err != nil {
+		t.Fatalf("create speech with internal pause: %v: %s", err, output)
+	}
+
+	outputAudio := filepath.Join(dir, "out.wav")
+	plan := []PlanItem{{Index: 1, NewStart: 0, NewEnd: 1.4, ActualDuration: 1.4, SpeedFactor: 1, SpokenText: "speech resumes after a pause"}}
+	if err := AssembleAudio(plan, dir, outputAudio, func(args []string) error {
+		if output, err := exec.Command(ffmpeg, args...).CombinedOutput(); err != nil {
+			return fmt.Errorf("ffmpeg: %w: %s", err, output)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	probe, err := exec.Command(ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", outputAudio).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	duration, err := strconv.ParseFloat(strings.TrimSpace(string(probe)), 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(duration-1.4) > 0.05 {
+		t.Fatalf("assembled audio duration = %.3fs, want 1.4s including speech after the pause", duration)
+	}
+}
+
+func TestAssembleAudioSavedTTSFixture(t *testing.T) {
+	fixture := os.Getenv("OPENCREATOR_DUBBING_FIXTURE")
+	if fixture == "" {
+		t.Skip("no saved TTS fixture")
+	}
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ffprobe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousFFmpeg, previousFFprobe := storage.FfmpegPath, storage.FfprobePath
+	storage.FfmpegPath, storage.FfprobePath = ffmpeg, ffprobe
+	t.Cleanup(func() {
+		storage.FfmpegPath, storage.FfprobePath = previousFFmpeg, previousFFprobe
+	})
+
+	data, err := os.ReadFile(filepath.Join(fixture, DubbingPlanFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan []PlanItem
+	if err := json.Unmarshal(data, &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan) == 0 {
+		t.Fatal("fixture plan is empty")
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(filepath.Join(fixture, "segments", "raw"), filepath.Join(dir, "raw")); err != nil {
+		t.Fatal(err)
+	}
+	outputAudio := filepath.Join(dir, "assembled.wav")
+	if err := AssembleAudio(plan, dir, outputAudio, func(args []string) error {
+		if output, err := exec.Command(ffmpeg, args...).CombinedOutput(); err != nil {
+			return fmt.Errorf("ffmpeg: %w: %s", err, output)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	probe, err := exec.Command(ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", outputAudio).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	duration, err := strconv.ParseFloat(strings.TrimSpace(string(probe)), 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := plan[len(plan)-1].NewEnd
+	if duration > want+0.25 || duration < want-0.5 {
+		t.Fatalf("assembled audio duration = %.3fs, want near %.3fs from plan", duration, want)
+	}
+}
 
 func TestAssembleAudioWritesConcatListInFittedDir(t *testing.T) {
 	dir := t.TempDir()

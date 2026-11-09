@@ -107,6 +107,7 @@ type TranslationSettingsSnapshot = {
   subtitleSecondaryColor: string;
   subtitleOutlineColor: string;
   subtitleOutlineWidth: number;
+  subtitleVerticalOffset: number;
   subtitleShadowEnabled: boolean;
   subtitleShadowColor: string;
   subtitleShadowOpacity: number;
@@ -135,6 +136,7 @@ type SubtitleStyleSettings = Pick<
   | 'subtitleSecondaryColor'
   | 'subtitleOutlineColor'
   | 'subtitleOutlineWidth'
+  | 'subtitleVerticalOffset'
   | 'subtitleShadowEnabled'
   | 'subtitleShadowColor'
   | 'subtitleShadowOpacity'
@@ -188,6 +190,7 @@ const defaultSubtitleStyle: SubtitleStyleSettings = {
   subtitleSecondaryColor: '#D1D5DB',
   subtitleOutlineColor: '#000000',
   subtitleOutlineWidth: 2.5,
+  subtitleVerticalOffset: 0,
   subtitleShadowEnabled: true,
   subtitleShadowColor: '#000000',
   subtitleShadowOpacity: 0.6,
@@ -461,6 +464,7 @@ function sameSubtitleStyle(
     && left.subtitleSecondaryColor === right.subtitleSecondaryColor
     && left.subtitleOutlineColor === right.subtitleOutlineColor
     && left.subtitleOutlineWidth === right.subtitleOutlineWidth
+    && left.subtitleVerticalOffset === right.subtitleVerticalOffset
     && left.subtitleShadowEnabled === right.subtitleShadowEnabled
     && left.subtitleShadowColor === right.subtitleShadowColor
     && left.subtitleShadowOpacity === right.subtitleShadowOpacity
@@ -494,8 +498,7 @@ function translationChanges(
   const voiceChanged = version.settings.dubbing !== settings.dubbing
     || version.settings.ttsProvider !== settings.ttsProvider
     || version.settings.ttsModel !== settings.ttsModel
-    || version.settings.voiceCode !== settings.voiceCode
-    || version.settings.voiceName !== settings.voiceName;
+    || version.settings.voiceCode !== settings.voiceCode;
   const outputChanged = version.settings.composeVideo !== settings.composeVideo
     || version.settings.videoFormat !== settings.videoFormat
     || version.settings.verticalTitle !== settings.verticalTitle
@@ -531,7 +534,6 @@ export function videoTranslationRegenerationStage(
       changes.subtitleContentChanged
       || changes.voiceChanged
       || staleArtifactKinds.has('dubbed_audio')
-      || staleArtifactKinds.has('dubbed_video')
     )
   ) return 'tts';
   if (
@@ -541,6 +543,7 @@ export function videoTranslationRegenerationStage(
       || changes.subtitleStyleChanged
       || changes.voiceChanged
       || changes.outputChanged
+      || staleArtifactKinds.has('dubbed_video')
       || staleArtifactKinds.has('horizontal_video')
       || staleArtifactKinds.has('vertical_video')
     )
@@ -560,6 +563,37 @@ export function videoTranslationRegenerationStage(
       : 'render-horizontal';
   }
   return undefined;
+}
+
+function outputStageForRequest(input: {
+  version: TranslationResultVersion;
+  settings: TranslationSettingsSnapshot;
+  source: TranslationSourceSnapshot;
+  subtitleNeedsRegeneration: boolean;
+  subtitleModelChanged: boolean;
+  staleArtifactKinds: ReadonlySet<string>;
+  reusableDubbedAudio: boolean;
+  reusableDubbedVideo: boolean;
+  type: 'video' | 'voice';
+}): TranslationStageId | undefined {
+  const { version, settings, source, subtitleNeedsRegeneration, subtitleModelChanged, staleArtifactKinds } = input;
+  const stageSettings = settings.dubbing && canReuseSubtitleCues(version, settings, source) ? {
+    ...settings,
+    bilingual: version.settings.bilingual,
+    subtitlePosition: version.settings.subtitlePosition
+  } : settings;
+  const reusableDubbing = input.reusableDubbedAudio || input.reusableDubbedVideo;
+  const effectiveStaleKinds = input.reusableDubbedVideo && staleArtifactKinds.has('dubbed_audio')
+    ? new Set([...staleArtifactKinds].filter(kind => kind !== 'dubbed_audio'))
+    : staleArtifactKinds;
+  const stage = videoTranslationRegenerationStage(
+    version, stageSettings, source, subtitleNeedsRegeneration, effectiveStaleKinds, subtitleModelChanged
+  );
+  if (stage === 'subtitle') return stage;
+  if (settings.dubbing && !reusableDubbing) return 'tts';
+  return stage ?? (input.type === 'video' || (input.type === 'voice' && settings.composeVideo)
+    ? settings.videoFormat === 'vertical' ? 'render-vertical' : 'render-horizontal'
+    : undefined);
 }
 
 function serializeResultVersions(versions: TranslationResultVersion[]): CreatorJson {
@@ -949,7 +983,7 @@ function legacyResultVersionsFromArtifacts(
           voiceName: typeof sourceState.voiceName === 'string'
             ? sourceState.voiceName
             : persisted?.settings.voiceName ?? '',
-          composeVideo: videoArtifacts.length > 0 || sourceState.composeVideo === true,
+          composeVideo: hasHorizontal || hasVertical || sourceState.composeVideo === true,
           videoFormat: inferredVideoFormat
             ?? (sourceState.videoFormat === 'vertical' || sourceState.videoFormat === 'all'
               ? sourceState.videoFormat
@@ -1173,6 +1207,13 @@ function readSubtitleStyleSettings(
       8,
       settings?.subtitleOutlineWidth ?? defaultSubtitleStyle.subtitleOutlineWidth
     ),
+    subtitleVerticalOffset: Math.round(readBoundedNumber(
+      style.verticalOffset ?? state.subtitleVerticalOffset
+        ?? fallbackStyle.verticalOffset ?? fallback.subtitleVerticalOffset,
+      -20,
+      100,
+      settings?.subtitleVerticalOffset ?? defaultSubtitleStyle.subtitleVerticalOffset
+    )),
     subtitleShadowEnabled: readBooleanValue(
       shadow.enabled ?? state.subtitleShadowEnabled
         ?? fallbackShadow.enabled ?? fallback.subtitleShadowEnabled,
@@ -1766,6 +1807,7 @@ export default function VideoTranslationWorkspace(props: {
   const [subtitleSecondaryColor, setSubtitleSecondaryColor] = useState(defaultSubtitleStyle.subtitleSecondaryColor);
   const [subtitleOutlineColor, setSubtitleOutlineColor] = useState(defaultSubtitleStyle.subtitleOutlineColor);
   const [subtitleOutlineWidth, setSubtitleOutlineWidth] = useState(defaultSubtitleStyle.subtitleOutlineWidth);
+  const [subtitleVerticalOffset, setSubtitleVerticalOffset] = useState(defaultSubtitleStyle.subtitleVerticalOffset);
   const [subtitleShadowEnabled, setSubtitleShadowEnabled] = useState(defaultSubtitleStyle.subtitleShadowEnabled);
   const [subtitleShadowColor, setSubtitleShadowColor] = useState(defaultSubtitleStyle.subtitleShadowColor);
   const [subtitleShadowOpacity, setSubtitleShadowOpacity] = useState(defaultSubtitleStyle.subtitleShadowOpacity);
@@ -1832,6 +1874,7 @@ export default function VideoTranslationWorkspace(props: {
     subtitleSecondaryColor,
     subtitleOutlineColor,
     subtitleOutlineWidth,
+    subtitleVerticalOffset,
     subtitleShadowEnabled,
     subtitleShadowColor,
     subtitleShadowOpacity,
@@ -1890,6 +1933,7 @@ export default function VideoTranslationWorkspace(props: {
     setSubtitleSecondaryColor(style.subtitleSecondaryColor);
     setSubtitleOutlineColor(style.subtitleOutlineColor);
     setSubtitleOutlineWidth(style.subtitleOutlineWidth);
+    setSubtitleVerticalOffset(style.subtitleVerticalOffset);
     setSubtitleShadowEnabled(style.subtitleShadowEnabled);
     setSubtitleShadowColor(style.subtitleShadowColor);
     setSubtitleShadowOpacity(style.subtitleShadowOpacity);
@@ -1976,6 +2020,7 @@ export default function VideoTranslationWorkspace(props: {
     setSubtitleSecondaryColor(persistedSubtitleStyle.subtitleSecondaryColor);
     setSubtitleOutlineColor(persistedSubtitleStyle.subtitleOutlineColor);
     setSubtitleOutlineWidth(persistedSubtitleStyle.subtitleOutlineWidth);
+    setSubtitleVerticalOffset(persistedSubtitleStyle.subtitleVerticalOffset);
     setSubtitleShadowEnabled(persistedSubtitleStyle.subtitleShadowEnabled);
     setSubtitleShadowColor(persistedSubtitleStyle.subtitleShadowColor);
     setSubtitleShadowOpacity(persistedSubtitleStyle.subtitleShadowOpacity);
@@ -2094,6 +2139,7 @@ export default function VideoTranslationWorkspace(props: {
       secondaryColor: subtitleSecondaryColor,
       outlineColor: subtitleOutlineColor,
       outlineWidth: subtitleOutlineWidth,
+      verticalOffset: subtitleVerticalOffset,
       shadow: {
         enabled: subtitleShadowEnabled,
         color: subtitleShadowColor,
@@ -2168,6 +2214,7 @@ export default function VideoTranslationWorkspace(props: {
     subtitleFont,
     subtitleOutlineColor,
     subtitleOutlineWidth,
+    subtitleVerticalOffset,
     subtitleSecondaryColor,
     subtitleShadowBlur,
     subtitleShadowColor,
@@ -2424,11 +2471,12 @@ export default function VideoTranslationWorkspace(props: {
     const artifact = selectedVideoArtifacts[variant];
     return artifact === undefined ? [] : [{ variant, artifact }];
   });
-  const selectedVideoEntries = finalVideoEntries.length > 0
-    ? finalVideoEntries
-    : selectedVideoArtifacts.dubbed === undefined
+  const selectedVideoEntries = [
+    ...finalVideoEntries,
+    ...(selectedVideoArtifacts.dubbed === undefined
       ? []
-      : [{ variant: 'dubbed' as const, artifact: selectedVideoArtifacts.dubbed }];
+      : [{ variant: 'dubbed' as const, artifact: selectedVideoArtifacts.dubbed }])
+  ];
   const selectedVoiceArtifact = latestArtifactForResultVersion(
     jobArtifacts,
     resultVersion,
@@ -2536,6 +2584,8 @@ export default function VideoTranslationWorkspace(props: {
     creatorSession?.state.resultSnapshots,
     { bilingual: false }
   );
+  // Dubbed renders share the TTS-aligned target track; the old vertical SRT is no longer an output subtitle.
+  if (selectedVideoArtifacts.dubbed !== undefined) selectedSubtitleArtifacts.vertical = undefined;
   const selectedTargetSubtitleArtifact = latestArtifactForResultVersion(
     jobArtifacts,
     resultVersion,
@@ -2563,7 +2613,7 @@ export default function VideoTranslationWorkspace(props: {
   const subtitleVideoArtifacts: Partial<Record<SubtitleResultVariant, CreatorArtifact>> = {
     horizontal: selectedSubtitleArtifacts.horizontal === undefined
       ? undefined
-      : selectedSourceVideoArtifact ?? selectedVideoArtifacts.horizontal ?? selectedVideoArtifacts.dubbed,
+      : selectedVideoArtifacts.dubbed ?? selectedSourceVideoArtifact ?? selectedVideoArtifacts.horizontal,
     vertical: selectedSubtitleArtifacts.vertical === undefined
       ? undefined
       : selectedSourceVideoArtifact ?? selectedVideoArtifacts.vertical
@@ -2677,6 +2727,7 @@ export default function VideoTranslationWorkspace(props: {
     selectedSubtitleCues,
     selectedSourceSubtitleArtifact,
     selectedSubtitleOnly || subtitleImmersive || selectedResultSettings?.bilingual === true
+      || selectedVideoArtifacts.dubbed !== undefined
   );
   const baseVerticalSubtitleCues = subtitleCuesFromArtifact(selectedVerticalSubtitleArtifact);
   const displayedHorizontalSubtitleCues = subtitleDrafts[horizontalSubtitleDraftKey] ?? baseHorizontalSubtitleCues;
@@ -2717,7 +2768,8 @@ export default function VideoTranslationWorkspace(props: {
       src: preview?.src,
       previewLoading: preview?.loading ?? openArtifact !== undefined,
       previewError: preview?.error ? mediaPreviewErrorMessage('video', l) : undefined,
-      source: artifact.kind === 'source_video'
+      source: artifact.kind === 'source_video',
+      needsSubtitleOverlay: artifact.kind === 'source_video' || artifact.kind === 'dubbed_video'
     } satisfies SubtitleVideoPreview]];
   })) as Partial<Record<SubtitleResultVariant, SubtitleVideoPreview>>;
   const selectedPreviewStage = [...(creatorSession?.job.stages ?? [])].reverse().find(stage =>
@@ -2778,6 +2830,10 @@ export default function VideoTranslationWorkspace(props: {
       return artifact === undefined ? [] : [artifact.kind];
     })
   );
+  const reusableDubbedAudio = selectedVoiceArtifact?.status === 'completed'
+    && !staleArtifactKinds.has('dubbed_audio');
+  const reusableDubbedVideo = selectedVideoArtifacts.dubbed?.status === 'completed'
+    && !staleArtifactKinds.has('dubbed_video');
   const currentResultNotice = resultNotice === translationStartedNotice
     && resultExecution?.status !== 'running' && resultExecution?.status !== 'queued'
     ? '' : resultNotice;
@@ -2827,6 +2883,7 @@ export default function VideoTranslationWorkspace(props: {
       subtitleSecondaryColor,
       subtitleOutlineColor,
       subtitleOutlineWidth,
+      subtitleVerticalOffset,
       subtitleShadowEnabled,
       subtitleShadowColor,
       subtitleShadowOpacity,
@@ -2870,6 +2927,7 @@ export default function VideoTranslationWorkspace(props: {
     setSubtitleSecondaryColor(settings.subtitleSecondaryColor);
     setSubtitleOutlineColor(settings.subtitleOutlineColor);
     setSubtitleOutlineWidth(settings.subtitleOutlineWidth);
+    setSubtitleVerticalOffset(settings.subtitleVerticalOffset);
     setSubtitleShadowEnabled(settings.subtitleShadowEnabled);
     setSubtitleShadowColor(settings.subtitleShadowColor);
     setSubtitleShadowOpacity(settings.subtitleShadowOpacity);
@@ -2952,33 +3010,50 @@ export default function VideoTranslationWorkspace(props: {
         subtitleModelChanged
       )
     : [];
+  const outputRequestType = resultProposal === 'voice' || regenerationSettings?.dubbing ? 'voice' : 'video';
   const plannedStage = selectedResult && regenerationSettings && regenerationSource
-    ? videoTranslationRegenerationStage(selectedResult, regenerationSettings, regenerationSource, subtitleNeedsRegeneration, staleArtifactKinds, subtitleModelChanged)
+    ? outputStageForRequest({
+        version: selectedResult, settings: regenerationSettings, source: regenerationSource,
+        subtitleNeedsRegeneration, subtitleModelChanged, staleArtifactKinds,
+        reusableDubbedAudio, reusableDubbedVideo, type: outputRequestType
+      })
     : undefined;
-  const generationLabel = resultProposal === 'voice'
-    ? l('配音并合成视频', 'Dub and compose video')
-    : plannedStage === 'subtitle'
-      ? l('重新翻译字幕', 'Retranslate subtitles')
-      : resultProposal === 'video' || regenerationSettings?.composeVideo
-        ? l('合成视频', 'Compose video')
-        : plannedStage === 'tts' ? l('配音并合成视频', 'Dub and compose video') : l('保存设置', 'Save settings');
+  const currentVideoReady = finalVideoEntries.length > 0 && finalVideoEntries.every(({ artifact }) => (
+    artifact.status === 'completed' && !staleArtifactKinds.has(artifact.kind)
+  ));
+  const outputUpToDate = !hasPendingChanges && currentVideoReady;
+  const generationLabel = outputUpToDate ? l('当前已是最新', 'Up to date')
+    : plannedStage === 'subtitle' ? l('重新翻译字幕', 'Retranslate subtitles')
+      : plannedStage === 'tts' ? (reusableDubbedAudio || reusableDubbedVideo
+        ? l('重新配音并合成视频', 'Redub and compose video')
+        : l('配音并合成视频', 'Dub and compose video'))
+        : isVideoCompositionStage(plannedStage) ? (finalVideoEntries.length > 0
+          ? l('重新合成视频', 'Recompose video') : l('合成视频', 'Compose video'))
+          : l('保存设置', 'Save settings');
+  const outputActionDetail = isVideoCompositionStage(plannedStage) && regenerationSettings?.dubbing
+    && (reusableDubbedAudio || reusableDubbedVideo) && hasPendingChanges
+    ? l(`复用 V${resultVersion} 配音 · 更新字幕和视频`, `Reuse V${resultVersion} dubbing · update subtitles and video`)
+    : undefined;
   const generationSummary = plannedStage === 'subtitle' && resultProposal !== 'voice'
     ? l('将按当前语言和模型重新翻译，生成新的字幕结果。人工修改保留在历史版本中。', 'The selected languages and model will be used to translate again. Manual edits remain in the previous version.')
-    : resultProposal === 'voice'
+    : plannedStage === 'tts'
       ? l('将根据当前字幕生成配音，然后自动合成到视频。', 'Generate dubbing from the current subtitles, then compose it into the video.')
+      : outputActionDetail
+        ? l('将复用已有配音，仅更新字幕和视频。', 'Reuse the existing dubbing and update subtitles and video.')
       : l('将使用当前字幕、样式和配音设置生成视频。已有文件保留在历史版本中。', 'Render a video with the current subtitles, style, and dubbing settings. Previous files remain in version history.');
 
   function requestOutput(type: 'video' | 'voice') {
     if (speechSyncing || submitting || subtitleSaving || activeStage || sourcePreviewPending || outputStartingRef.current || !selectedResult) return;
     setResultNotice('');
-    if (type === 'voice' && plannedStage === 'subtitle') {
-      setResultNotice(l('翻译语言已修改，请先重新翻译字幕，再生成配音。', 'The translation languages changed. Retranslate the subtitles before generating dubbing.'));
+    if (type === 'voice' && regenerationSettings && regenerationSource
+      && (subtitleModelChanged || !canReuseSubtitleCues(selectedResult, regenerationSettings, regenerationSource))) {
+      setResultNotice(l('翻译输入已修改，请先重新翻译字幕，再生成配音。', 'The translation inputs changed. Retranslate the subtitles before generating dubbing.'));
       return;
     }
     prepareEditorSettings();
-    setComposeVideo(true);
+    if (type === 'video' || (type === 'voice' && !dubbing)) setComposeVideo(true);
     if (type === 'voice') setDubbing(true);
-    if (plannedStage === 'subtitle') { setResultProposal('regenerate'); return; }
+    if (type === 'video' && plannedStage === 'subtitle') { setResultProposal('regenerate'); return; }
     setOutputRequest(type);
   }
 
@@ -2999,7 +3074,7 @@ export default function VideoTranslationWorkspace(props: {
     void props.creatorServicesService.getConfig().then(({ config }) => {
       prepareEditorSettings();
       resolveSpeechSettings(config.tts, true);
-      setDubbing(true); setComposeVideo(true);
+      setDubbing(true);
       setOutputRequest(pending.type);
     }).catch(cause => setResultNotice(creatorErrorMessage(cause, l)));
   }, [creatorSession?.job.id, selectedResult?.value, workspacePhase, props.creatorServicesService]);
@@ -3509,7 +3584,13 @@ export default function VideoTranslationWorkspace(props: {
     setResultNotice('');
     try {
       let speech = { ttsProvider, ttsModel, voiceCode, voiceName };
-      if ((proposal === 'voice' || regenerationSettings.dubbing) && !officialSpeech.official) {
+      const type = proposal === 'voice' || regenerationSettings.dubbing ? 'voice' : 'video';
+      const stageId = outputStageForRequest({
+        version: selectedResult, settings: regenerationSettings, source: regenerationSource,
+        subtitleNeedsRegeneration, subtitleModelChanged, staleArtifactKinds,
+        reusableDubbedAudio, reusableDubbedVideo, type
+      });
+      if (stageId === 'tts' && !officialSpeech.official) {
         const service = props.creatorServicesService;
         ++speechConfigRequestRef.current;
         const response = service ? await service.getConfig() : undefined;
@@ -3527,17 +3608,8 @@ export default function VideoTranslationWorkspace(props: {
           }
         }
       }
-      applySpeechSettings(speech);
+      if (stageId === 'tts') applySpeechSettings(speech);
       setConfigurationRequired(undefined);
-      const stageId = proposal === 'voice' && (!selectedVoiceArtifact || staleArtifactKinds.has('dubbed_audio') || subtitleNeedsRegeneration
-        || selectedResult.settings.ttsProvider !== speech.ttsProvider || selectedResult.settings.ttsModel !== speech.ttsModel || selectedResult.settings.voiceCode !== speech.voiceCode) ? 'tts' : videoTranslationRegenerationStage(
-        selectedResult,
-        { ...regenerationSettings, ...speech },
-        regenerationSource,
-        subtitleNeedsRegeneration,
-        staleArtifactKinds,
-        subtitleModelChanged
-      ) ?? (proposal === 'video' || proposal === 'voice' ? (videoFormat === 'vertical' ? 'render-vertical' : 'render-horizontal') : undefined);
       await executeRegeneration(stageId, speech);
       setSubtitleImmersive(true);
       setResultTab('subtitles');
@@ -3569,6 +3641,7 @@ export default function VideoTranslationWorkspace(props: {
     secondaryColor: subtitleSecondaryColor,
     outlineColor: subtitleOutlineColor,
     outlineWidth: subtitleOutlineWidth,
+    verticalOffset: subtitleVerticalOffset,
     shadow: {
       enabled: subtitleShadowEnabled,
       color: subtitleShadowColor,
@@ -3650,6 +3723,9 @@ export default function VideoTranslationWorkspace(props: {
           prefixPresetLabel
         /> : null}
       </div>
+
+      <h4 className="video-translation-style-drawer-section">{l('位置', 'Position')}</h4>
+      <SubtitleRangeControl label={l('字幕高度', 'Subtitle height')} min={-20} max={100} step={1} value={subtitleVerticalOffset} onChange={value => setSubtitleVerticalOffset(Math.round(value))} />
 
       <h4 className="video-translation-style-drawer-section">{l('描边与阴影', 'Outline & shadow')}</h4>
         <div className="video-translation-advanced-style-content">
@@ -3911,6 +3987,7 @@ export default function VideoTranslationWorkspace(props: {
           description={l('合成时自动生成配音并加入视频', 'Generate dubbing and include it when composing the video')}
           onChange={value => {
             setDubbing(value);
+            if (value) setComposeVideo(true);
           }}
         />
       </div>
@@ -3954,6 +4031,16 @@ export default function VideoTranslationWorkspace(props: {
               </button>
             </div>
           ) : null}
+          <div className="video-translation-burn-subtitles">
+            <Switch
+              checked={composeVideo}
+              label={l('烧录字幕', 'Burn subtitles')}
+              description={bilingual
+                ? l('使用字幕样式中的双语字幕', 'Use bilingual subtitles from Subtitle style')
+                : l('使用字幕样式中的目标语言字幕', 'Use target-language subtitles from Subtitle style')}
+              onChange={setComposeVideo}
+            />
+          </div>
         </div>
       ) : null}
     </div>
@@ -4035,6 +4122,8 @@ export default function VideoTranslationWorkspace(props: {
               onBack={() => void leaveWorkspace(selectedSubtitleOnly ? 'project' : 'outputs')}
               onRequestOutput={requestOutput}
               generationLabel={generationLabel}
+              outputUpToDate={outputUpToDate}
+              outputActionDetail={outputActionDetail}
               outputDisabled={Boolean(sourcePreviewPending) || taskProgress?.active}
               outputBusyLabel={taskProgress?.active && !['prepare-source-video', 'preview-source-video'].includes(taskProgress.stage?.stageId ?? '') ? taskProgress.title : undefined}
               videoPreviewRequest={videoPreviewRequest}
@@ -4059,8 +4148,8 @@ export default function VideoTranslationWorkspace(props: {
                 <button type="button" disabled={submitting} onClick={() => void configureDubbingService()}>{l('去配置配音服务', 'Configure dubbing service')}</button>
               </div> : undefined}
               generationSummary={generationSummary}
-              staleOutputs={[...(staleArtifactKinds.has('dubbed_audio') || staleArtifactKinds.has('dubbed_video') || (subtitleNeedsRegeneration && hasVoiceArtifact) ? [l('配音', 'Dubbing')] : []),
-                ...(staleArtifactKinds.has('horizontal_video') || staleArtifactKinds.has('vertical_video') || (videoOutputs.length > 0 && (subtitleNeedsRegeneration || hasConfigDraftChanges)) ? [l('视频', 'Video')] : [])]}
+              staleOutputs={[...(staleArtifactKinds.has('dubbed_audio') && !reusableDubbedVideo || (subtitleNeedsRegeneration && hasVoiceArtifact) ? [l('配音', 'Dubbing')] : []),
+                ...(staleArtifactKinds.has('dubbed_video') || staleArtifactKinds.has('horizontal_video') || staleArtifactKinds.has('vertical_video') || (videoOutputs.length > 0 && (subtitleNeedsRegeneration || hasConfigDraftChanges)) ? [l('视频', 'Video')] : [])]}
               subtitleAutosave
               subtitleSaveError={subtitleSaveError}
               subtitleOnly={selectedSubtitleOnly}
@@ -4073,6 +4162,9 @@ export default function VideoTranslationWorkspace(props: {
               dubbing={dubbing}
               hasVoiceArtifact={hasVoiceArtifact}
               videoOutputs={videoOutputs}
+              preferCompletedVideoPreview={finalVideoEntries.length > 0 && finalVideoEntries.every(({ artifact }) => (
+                artifact.status === 'completed' && !staleArtifactKinds.has(artifact.kind)
+              ))}
               subtitleOutputs={selectedSubtitleOnly ? subtitleOutputs.filter(output => output.variant === 'horizontal') : subtitleOutputs}
               subtitleDownloads={[
                 { kind: 'target_subtitle', label: l('译文 SRT', 'Translated SRT') },
@@ -4106,6 +4198,7 @@ export default function VideoTranslationWorkspace(props: {
                   fontPreset: settings.subtitleFont, fontWeight: settings.subtitleWeight, fontSize: settings.subtitleSize,
                   primaryColor: settings.subtitleColor, secondaryColor: settings.subtitleSecondaryColor,
                   outlineColor: settings.subtitleOutlineColor, outlineWidth: settings.subtitleOutlineWidth,
+                  verticalOffset: settings.subtitleVerticalOffset,
                   shadow: { enabled: settings.subtitleShadowEnabled, color: settings.subtitleShadowColor, opacity: settings.subtitleShadowOpacity,
                     offsetX: settings.subtitleShadowOffsetX, offsetY: settings.subtitleShadowOffsetY, blur: settings.subtitleShadowBlur }
                 } : subtitleRenderStyle;

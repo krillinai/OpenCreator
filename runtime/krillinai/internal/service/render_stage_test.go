@@ -39,6 +39,9 @@ func TestRenderCanComposePreviouslyGeneratedAudioWithoutRepeatingTTS(t *testing.
 	if !strings.Contains(command, "-i origin.mp4 -i dubbed.wav -map 0:v:0 -map 1:a:0") {
 		t.Fatalf("audio mapping missing: %v", args)
 	}
+	if !strings.Contains(command, "-af apad -shortest") {
+		t.Fatalf("dubbed audio should be padded to the video duration: %v", args)
+	}
 }
 
 func TestRenderAssPathDerivesFromOutputFile(t *testing.T) {

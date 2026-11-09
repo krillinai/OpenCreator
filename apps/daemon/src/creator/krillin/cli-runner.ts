@@ -1,4 +1,4 @@
-import { copyFile, link, mkdir, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, link, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
@@ -173,6 +173,16 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
   if (krillinCliStageId(input.stage.stageRun.stageId) !== 'subtitle') {
     await writeInitialManifest(input.stage, input.options);
   }
+  if (input.stage.stageRun.stageId === 'tts') {
+    const targetSubtitle = input.artifacts.find(artifact => artifact.kind === 'target_subtitle');
+    if (targetSubtitle !== undefined) {
+      await copyFile(targetSubtitle.path, join(input.stage.workdir, 'target_language_srt.srt'));
+    }
+    const sourceSubtitle = input.artifacts.find(artifact => artifact.kind === 'source_subtitle');
+    if (sourceSubtitle !== undefined) {
+      await copyFile(sourceSubtitle.path, join(input.stage.workdir, 'origin_language_srt.srt'));
+    }
+  }
 
   const args = buildKrillinCliCommandArguments(
     input.stage,
@@ -182,7 +192,8 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
     input.source
   );
   if (args[0] === 'render-horizontal' || args[0] === 'render-vertical') {
-    const kind = args[0] === 'render-vertical' ? 'vertical_subtitle' : 'target_subtitle';
+    const kind = args[0] === 'render-vertical' && !booleanOption(input.options, 'dubbed', false)
+      ? 'vertical_subtitle' : 'target_subtitle';
     const source = input.stage.inputArtifacts.find(artifact => artifact.kind === kind)
       ?? input.stage.inputArtifacts.find(artifact => artifact.kind === 'target_subtitle');
     const readCues = (artifact: typeof source): SubtitleRenderCueInput[] => {
@@ -347,10 +358,26 @@ export function buildKrillinCliCommandArguments(
       ...styleArgument(stylePath)
     ];
   }
+  if (command === 'clip') {
+    const source = options.sourceType === 'file' ? artifactPath(artifacts, 'source_video') : sourceUrl;
+    if (!source) throw new CreatorExecutorError('creator_stage_input_missing', 'A video URL or uploaded file is required');
+    const duration = stringOption(options, 'duration') ?? '90-180';
+    const [minimum, maximum] = duration.split('-').map(Number);
+    if (!Number.isInteger(minimum) || !Number.isInteger(maximum)) {
+      throw new CreatorExecutorError('creator_stage_config_missing', 'Invalid clip duration');
+    }
+    return ['clip', '--input', source, '--count', String(options.clipCount ?? 3),
+      '--min-duration-sec', String(minimum), '--max-duration-sec', String(maximum),
+      '--origin-lang', stringOption(options, 'originLanguage') ?? 'auto',
+      '--caption-source', stringOption(options, 'captionSource') ?? 'any',
+      ...(options.deferTranscription === true ? ['--defer-transcription'] : []), ...common];
+  }
   if (command === 'tts') {
     const target = artifactPath(artifacts, 'target_subtitle');
     const bilingual = artifactPath(artifacts, 'bilingual_subtitle');
-    const subtitle = target ?? bilingual;
+    const subtitle = stage.stageRun.stageId === 'tts' && target
+      ? join(stage.workdir, 'target_language_srt.srt')
+      : target ?? bilingual;
     if (!subtitle) throw new CreatorExecutorError('creator_stage_input_missing', 'TTS subtitle input is required');
     const lineMode = target
       ? 'target-only'
@@ -386,7 +413,7 @@ export function buildKrillinCliCommandArguments(
     const vertical = artifactPath(artifacts, 'vertical_subtitle');
     const target = artifactPath(artifacts, 'target_subtitle');
     const bilingual = artifactPath(artifacts, 'bilingual_subtitle');
-    const subtitle = command === 'render-vertical'
+    const subtitle = command === 'render-vertical' && !dubbed
       ? vertical ?? (booleanOption(options, 'bilingual', false) ? bilingual ?? target : target ?? bilingual)
       : booleanOption(options, 'bilingual', false) && bilingual
         ? bilingual
@@ -570,6 +597,72 @@ async function collectArtifacts(
         ? { metadata: krillinTranslationReport(response) } : {})
     });
   }
+  if (input.stage.stageRun.stageId === 'clip') {
+    const index = candidates.find(candidate => candidate.kind === 'clip_index');
+    if (index === undefined) throw new CreatorExecutorError('krillin_output_missing', 'KrillinAI did not produce a clip index');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFile(index.path, 'utf8')) as unknown;
+    } catch {
+      throw new CreatorExecutorError('krillin_output_invalid', 'Clip index is not valid JSON');
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new CreatorExecutorError('krillin_output_invalid', 'Clip index is invalid');
+    }
+    const clipIndex = parsed as Record<string, unknown>;
+    if (clipIndex.schema_version !== 1 || typeof clipIndex.caption_source !== 'string'
+      || !Number.isInteger(clipIndex.requested_count) || (clipIndex.requested_count as number) < 1
+      || (clipIndex.requested_count as number) > 20) {
+      throw new CreatorExecutorError('krillin_output_invalid', 'Clip index schema is invalid');
+    }
+    const clips = clipIndex.clips;
+    if (!Array.isArray(clips) || clips.length < 1 || clips.length > 20) {
+      throw new CreatorExecutorError('krillin_output_invalid', 'Clip index has an invalid clip count');
+    }
+    const ids = new Set<string>();
+    for (const item of clips) {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+        throw new CreatorExecutorError('krillin_output_invalid', 'Clip index contains an invalid item');
+      }
+      const clip = item as Record<string, unknown>;
+      if (typeof clip.id !== 'string' || !clip.id || ids.has(clip.id)
+        || typeof clip.file !== 'string' || !clip.file.endsWith('.mp4')
+        || !Number.isInteger(clip.start_ms) || !Number.isInteger(clip.end_ms)
+        || (clip.start_ms as number) < 0 || (clip.end_ms as number) <= (clip.start_ms as number)
+        || typeof clip.score !== 'number' || clip.score < 0 || clip.score > 1) {
+        throw new CreatorExecutorError('krillin_output_invalid', 'Clip index contains invalid metadata');
+      }
+      ids.add(clip.id);
+      let path: string;
+      try {
+        path = await realpath(resolve(dirname(index.path), clip.file));
+      } catch {
+        throw new CreatorExecutorError('krillin_output_missing', `Clip output is missing: ${clip.id}`);
+      }
+      if (!isInside(jobRoot, path)) {
+        throw new CreatorExecutorError('krillin_output_escape', 'Clip output escapes the current Job root');
+      }
+      const info = await stat(path);
+      if (!info.isFile() || info.size === 0) {
+        throw new CreatorExecutorError('krillin_output_invalid', 'Clip output is empty');
+      }
+      result.push({
+        id: `${input.stage.stageRun.id}:auto_clip_video:${clip.id}`,
+        kind: 'auto_clip_video',
+        relativePath: relative(input.jobsRoot, path).replaceAll('\\', '/'),
+        mimeType: 'video/mp4',
+        size: info.size,
+        sha256: await sha256CreatorFile(path, input.stage.signal),
+        metadata: {
+          candidateId: clip.id,
+          start: (clip.start_ms as number) / 1000,
+          end: (clip.end_ms as number) / 1000,
+          duration: ((clip.end_ms as number) - (clip.start_ms as number)) / 1000,
+          score: clip.score
+        }
+      });
+    }
+  }
   return result;
 }
 
@@ -590,6 +683,7 @@ export function krillinTranslationReport(response: Pick<KrillinCliResponse, 'war
 }
 
 export function outputMappings(stageId: string): Array<[string, string]> {
+  if (stageId === 'clip') return [['origin_video', 'source_video'], ['clip_index', 'clip_index']];
   if (stageId === 'source-transcript') return [['origin_srt', 'source_subtitle']];
   if (stageId === 'transcription') return [['origin_video', 'source_video'], ['origin_srt', 'source_subtitle']];
   if (stageId === 'narration') return [['tts_audio', 'narration_audio']];
@@ -604,7 +698,14 @@ export function outputMappings(stageId: string): Array<[string, string]> {
       ['short_origin_mixed_srt', 'vertical_subtitle']
     ];
   }
-  if (stageId === 'tts') return [['origin_video', 'source_video'], ['tts_audio', 'dubbed_audio'], ['video_with_tts', 'dubbed_video']];
+  if (stageId === 'tts') return [
+    ['origin_video', 'source_video'],
+    ['origin_srt', 'source_subtitle'],
+    ['target_srt', 'target_subtitle'],
+    ['bilingual_srt', 'bilingual_subtitle'],
+    ['tts_audio', 'dubbed_audio'],
+    ['video_with_tts', 'dubbed_video']
+  ];
   if (stageId === 'render-horizontal') return [['origin_video', 'source_video'], ['horizontal_video', 'horizontal_video']];
   if (stageId === 'render-vertical') return [['origin_video', 'source_video'], ['vertical_video', 'vertical_video']];
   return [];
@@ -1088,6 +1189,7 @@ function styleArgument(path: string | undefined): string[] {
 function mimeType(path: string): string | undefined {
   const extension = basename(path).split('.').at(-1)?.toLowerCase();
   if (extension === 'srt') return 'application/x-subrip';
+  if (extension === 'json') return 'application/json';
   if (extension === 'wav') return 'audio/wav';
   if (extension === 'mp3') return 'audio/mpeg';
   if (extension === 'mp4') return 'video/mp4';

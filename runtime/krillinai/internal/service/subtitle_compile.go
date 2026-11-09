@@ -89,7 +89,7 @@ func CompileSubtitleDocument(input, output string, styleSet *subtitlestyle.Style
 		} else {
 			text = majorPrefix + subtitleFallbackFontTags(assText(cue.Text), screenStyle.Major.FontName, fallbacks)
 		}
-		ass.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", start, end, text))
+		writeStyledSubtitleDialogue(&ass, start, end, text, screenStyle)
 	}
 	if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
 		return fmt.Errorf("create subtitle output directory: %w", err)

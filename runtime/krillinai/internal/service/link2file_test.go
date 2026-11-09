@@ -78,6 +78,21 @@ func TestCompactCommandOutputPrioritizesFatalDownloadError(t *testing.T) {
 	}
 }
 
+func TestAdditionalVideoSourcesMatchOpenCreator(t *testing.T) {
+	for _, source := range []string{
+		"https://www.reddit.com/r/videos/comments/abc123/example/",
+		"https://v.redd.it/abc123",
+		"https://www.douyin.com/jingxuan?modal_id=123456",
+	} {
+		if !isAdditionalVideoSource(source) {
+			t.Errorf("source was rejected: %s", source)
+		}
+	}
+	if isAdditionalVideoSource("https://www.reddit.com/user/settings") {
+		t.Fatal("non-video Reddit URL was accepted")
+	}
+}
+
 func TestBilibiliDownloadsOnlySelectedPart(testRunner *testing.T) {
 	if runtime.GOOS == "windows" {
 		testRunner.Skip("shell downloader fixture requires POSIX")

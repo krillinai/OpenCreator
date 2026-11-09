@@ -708,6 +708,52 @@ func TestPairedTranslationUsesWordTimingAndVariableCueCount(t *testing.T) {
 	}
 }
 
+func TestPairedTranslationSendsSourceSpeechDurationToLLM(t *testing.T) {
+	previous := config.Conf
+	t.Cleanup(func() { config.Conf = previous })
+	config.Conf.App.MaxSentenceLength = 60
+	words := []VttWord{
+		{Text: "We", Start: "00:00:00.400", End: "00:00:00.700"},
+		{Text: "can", Start: "00:00:00.800", End: "00:00:01.100"},
+		{Text: "start.", Start: "00:00:01.300", End: "00:00:02.000"},
+	}
+	var got pairedTranslationInput
+	completer := translationCompleterFunc(func(prompt string) (string, error) {
+		var err error
+		got, err = decodePairedTestInput(prompt)
+		if err != nil {
+			return "", err
+		}
+		return echoPairedTestResponse(got)
+	})
+	source := []*util.SrtBlock{{Index: 1, Timestamp: "00:00:00,000 --> 00:00:03,000", OriginLanguageSentence: "We can start."}}
+	if _, err := (&Translator{chatCompleter: completer}).BatchTranslateSrtBlocks(context.Background(), source, "en", "zh_cn", nil, words); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Sentences) != 1 || got.Sentences[0].SourceSpeechStartMS != 400 || got.Sentences[0].SourceSpeechEndMS != 2000 || got.Sentences[0].SourceSpeechDurationMS != 1600 || got.Sentences[0].SourceSpeechTimingEstimated {
+		t.Fatalf("source timing not sent as measured speech time: %+v", got.Sentences)
+	}
+}
+
+func TestPairedTranslationMarksCueDurationFallbackAsEstimated(t *testing.T) {
+	var got pairedTranslationInput
+	completer := translationCompleterFunc(func(prompt string) (string, error) {
+		var err error
+		got, err = decodePairedTestInput(prompt)
+		if err != nil {
+			return "", err
+		}
+		return echoPairedTestResponse(got)
+	})
+	source := []*util.SrtBlock{{Index: 1, Timestamp: "00:00:04,000 --> 00:00:07,000", OriginLanguageSentence: "Hello."}}
+	if _, err := (&Translator{chatCompleter: completer}).BatchTranslateSrtBlocks(context.Background(), source, "en", "zh_cn", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Sentences) != 1 || got.Sentences[0].SourceSpeechDurationMS != 3000 || !got.Sentences[0].SourceSpeechTimingEstimated {
+		t.Fatalf("cue fallback timing not marked estimated: %+v", got.Sentences)
+	}
+}
+
 func TestNormalSubtitleLimitIsIndependentOfShortSubtitles(t *testing.T) {
 	previous := config.Conf
 	t.Cleanup(func() { config.Conf = previous })

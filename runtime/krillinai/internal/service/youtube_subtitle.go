@@ -351,7 +351,7 @@ func youtubeSubtitleCommandArgs(track youtubeSubtitleTrack, outputPattern string
 }
 
 func appendYouTubeAccessArgs(cmdArgs []string) []string {
-	if proxy := config.YouTubeProxy(); proxy != "" {
+	if proxy := strings.TrimSpace(config.Conf.App.Proxy); proxy != "" {
 		cmdArgs = append(cmdArgs, "--proxy", proxy)
 	}
 	return appendCookiesArgs(cmdArgs, youtubeCookiesPath)

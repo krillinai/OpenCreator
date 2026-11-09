@@ -13,7 +13,7 @@ import {
   createLegacyImageGenerationTemplate
 } from './image-generation.js';
 import { createVideoGenerationTemplate } from './video-generation.js';
-import { createAutoClipTemplate, createLegacyAutoClipTemplate } from './auto-clip.js';
+import { createAutoClipTemplate, createAutoClipTemplateV2, createLegacyAutoClipTemplate } from './auto-clip.js';
 import { createStickmanVideoTemplate } from './stickman-video.js';
 import { createSmartDubbingTemplate } from './smart-dubbing.js';
 import { createTranscriptionTemplate } from './transcription.js';
@@ -27,6 +27,7 @@ import type {
 
 export {
   createAutoClipTemplate,
+  createAutoClipTemplateV2,
   createLegacyAutoClipTemplate,
   createCoverTemplate,
   createLegacyCoverTemplate,
@@ -62,6 +63,7 @@ export function createDefaultCreatorTemplateRegistry(): CreatorTemplateRegistry 
     createShortVideoScriptTemplate(),
     createWechatArticleTemplate(),
     createLegacyAutoClipTemplate(),
+    createAutoClipTemplateV2(),
     createAutoClipTemplate(),
     createStickmanVideoTemplate()
   ]);
@@ -124,8 +126,11 @@ function propagateArtifacts(
     visited.add(current);
     for (const stage of template.stages) {
       if (!stage.inputArtifacts.some(input => input.kind === current)) continue;
-      // Reusing a previous version does not make the stage's upstream outputs downstream.
-      if (stage.outputArtifacts.some(output => output.kind === current)) continue;
+      // A required latest input can be transformed into a new version of the same kind.
+      // Optional imports reused by the stage must not invalidate its other outputs.
+      if (stage.outputArtifacts.some(output => output.kind === current)
+        && !stage.inputArtifacts.some(input => input.kind === current
+          && input.selector === 'latest-completed' && input.optional !== true)) continue;
       for (const output of stage.outputArtifacts) {
         if (stage.inputArtifacts.some(input => input.kind === output.kind)) continue;
         if (!result.has(output.kind)) {

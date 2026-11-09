@@ -38,6 +38,14 @@ describe('video translation result artifact selection', () => {
     });
   });
 
+  it('does not infer burned subtitles from a subtitle-free dubbed video', () => {
+    const subtitle = artifact({ id: 'target', kind: 'target_subtitle', version: 1, metadata: { resultVersion: 1, cues: [] } });
+    const dubbed = artifact({ id: 'dubbed', kind: 'dubbed_video', version: 1, metadata: {
+      resultVersion: 1, settingsSnapshot: { ...fallbackState(), composeVideo: false, dubbing: true }
+    } });
+    expect(resultVersionsFromArtifacts([subtitle, dubbed], { ...fallbackState(), composeVideo: false })[0]?.settings.composeVideo).toBe(false);
+  });
+
   it('starts a new render from existing subtitles when video composition is enabled', () => {
     const version = resultVersion({
       settings: { composeVideo: false, videoFormat: 'horizontal' }
@@ -75,6 +83,12 @@ describe('video translation result artifact selection', () => {
       version.source,
       false
     )).toBe('render-vertical');
+    expect(videoTranslationRegenerationStage(
+      version,
+      { ...version.settings, subtitleVerticalOffset: 40 },
+      version.source,
+      false
+    )).toBe('render-horizontal');
     expect(videoTranslationRegenerationStage(
       subtitleOnlyVersion,
       subtitleOnlyVersion.settings,
@@ -651,6 +665,7 @@ function resultVersion(input: {
     subtitleSecondaryColor?: string;
     subtitleOutlineColor?: string;
     subtitleOutlineWidth?: number;
+    subtitleVerticalOffset?: number;
     subtitleShadowEnabled?: boolean;
     subtitleShadowColor?: string;
     subtitleShadowOpacity?: number;
@@ -687,6 +702,7 @@ function resultVersion(input: {
       subtitleSecondaryColor: settings.subtitleSecondaryColor ?? '#FFD45C',
       subtitleOutlineColor: settings.subtitleOutlineColor ?? '#000000',
       subtitleOutlineWidth: settings.subtitleOutlineWidth ?? 2,
+      subtitleVerticalOffset: settings.subtitleVerticalOffset ?? 0,
       subtitleShadowEnabled: settings.subtitleShadowEnabled ?? true,
       subtitleShadowColor: settings.subtitleShadowColor ?? '#000000',
       subtitleShadowOpacity: settings.subtitleShadowOpacity ?? 0.65,

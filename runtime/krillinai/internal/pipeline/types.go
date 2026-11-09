@@ -12,6 +12,7 @@ const (
 	StageRenderHorizontal Stage = "render-horizontal"
 	StageRenderVertical   Stage = "render-vertical"
 	StageCover            Stage = "cover"
+	StageClip             Stage = "clip"
 	StagePipeline         Stage = "pipeline"
 	StageVoices           Stage = "voices"
 )
@@ -91,6 +92,7 @@ type Outputs struct {
 	FinalCoverPrompt    string `json:"cover_prompt,omitempty"`
 	OriginText          string `json:"origin_text,omitempty"`
 	TargetText          string `json:"target_text,omitempty"`
+	ClipIndex           string `json:"clip_index,omitempty"`
 }
 
 type Voice struct {

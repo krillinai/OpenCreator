@@ -40,6 +40,7 @@
 
 ### Service Operations
 
+- Mandatory: The local OpenCreator Web development server must use `127.0.0.1:19861`. Do not switch to another port when `19861` is occupied. Confirm the listener is an older OpenCreator service, stop that service, and start the current working tree on `19861`.
 - When a running Vite development server can hot-reload frontend source changes, do not restart the Web service merely to apply page changes.
 - Stop or restart the relevant service only when server code, startup configuration, environment variables, or process dependencies change; hot reload fails; the service is not running; or the user explicitly requests it.
 - Before restarting, confirm the target port and process command. After restarting, check only that service and its direct dependencies, avoiding operations on unrelated services.

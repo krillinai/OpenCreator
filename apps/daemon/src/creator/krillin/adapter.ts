@@ -26,7 +26,7 @@ import {
 } from './cli-runner.js';
 import type { KrillinDependencyLoader } from './dependency-loader.js';
 import { preflightKrillinDependencies } from './dependency-preflight.js';
-import { createKrillinCliExecutionPlan } from './execution-plan.js';
+import { createKrillinCliExecutionPlan, isYouTubeSource } from './execution-plan.js';
 import { readKrillinRuntimeManifest, resolveInside } from './manifest.js';
 import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
 import { assessKrillinTranscription } from './transcription-language.js';
@@ -45,7 +45,7 @@ export function createKrillinExecutor(input: {
   return {
     id: 'krillinai',
     async run(stageInput): Promise<CreatorExecutorResult> {
-      let stage = filterObsoleteSourceVideo(stageInput);
+      let stage = filterStaleDubbedMedia(filterObsoleteSourceVideo(stageInput));
       await input.ensureRuntimeReady?.();
       const configured = await input.configStore.read();
       const preflight = preflightKrillinDependencies(input.resourceRoot, configured, {
@@ -69,6 +69,12 @@ export function createKrillinExecutor(input: {
           },
           options
         );
+        if (stage.stageRun.stageId === 'clip' && options.captionSource === 'any'
+          && isYouTubeSource(stringValue(options.sourceUrl))) {
+          attempts[0]!.options = { ...attempts[0]!.options, deferTranscription: true };
+          attempts[0]!.continueOnErrorCodes = ['clip_transcription_required'];
+          attempts.push({ options: { ...options, deferTranscription: false, captionSource: 'whisper' } });
+        }
         let completed: KrillinResultArtifact[] | undefined;
         let deferredFailure: KrillinCliError | undefined;
         for (const attempt of attempts) {
@@ -121,7 +127,9 @@ export function createKrillinExecutor(input: {
               && !stage.signal.aborted
             ) {
               deferredFailure = error;
-              const message = error.code === 'platform_caption_invalid'
+              const message = error.code === 'clip_transcription_required'
+                ? 'No usable platform subtitles were found. Switched to speech transcription.'
+                : error.code === 'platform_caption_invalid'
                 ? 'Platform subtitle parsing failed. Switched to speech transcription.'
                 : 'No usable platform subtitles were found. Switched to speech transcription.';
               captionFallbackProgress = {
@@ -205,11 +213,23 @@ function filterObsoleteSourceVideo(input: CreatorExecutorInput): CreatorExecutor
   return inputArtifacts.length === input.inputArtifacts.length ? input : { ...input, inputArtifacts };
 }
 
+function filterStaleDubbedMedia(input: CreatorExecutorInput): CreatorExecutorInput {
+  if (input.job.templateId !== 'video-translation'
+    || (input.stageRun.stageId !== 'render-horizontal' && input.stageRun.stageId !== 'render-vertical')) return input;
+  const inputArtifacts = input.inputArtifacts.filter(artifact => (
+    artifact.kind !== 'dubbed_audio' && artifact.kind !== 'dubbed_video'
+  ) || artifact.status === 'completed');
+  return inputArtifacts.length === input.inputArtifacts.length ? input : { ...input, inputArtifacts };
+}
+
 function requiresTranscriptionDependency(
   stageId: string,
   options: Record<string, unknown>
 ): boolean {
-  return (stageId === 'subtitle' || stageId === 'transcription') && options.captionSource !== 'platform';
+  return ((stageId === 'subtitle' || stageId === 'transcription') && options.captionSource !== 'platform')
+    || (stageId === 'clip' && (options.sourceType === 'file'
+      || options.captionSource === 'whisper'
+      || !isYouTubeSource(stringValue(options.sourceUrl))));
 }
 
 async function ensureKrillinTranscriptionDependency(
@@ -284,10 +304,12 @@ export function buildKrillinStageOptions(input: CreatorExecutorInput): Record<st
       typeof state.targetLanguage === 'string' ? state.targetLanguage : undefined
     ),
     captionSource: state.preferPlatformCaptions === false ? 'whisper' : 'any',
+    clipCount: input.job.templateId === 'auto-clip' && input.job.templateVersion >= 3 ? state.clipCount : undefined,
+    duration: input.job.templateId === 'auto-clip' && input.job.templateVersion >= 3 ? state.duration : undefined,
     sourceOnly: input.job.templateId === 'transcription'
       || input.job.templateId === 'stickman-video' && input.stageRun.stageId === 'source-transcript',
     prepareVideo: input.job.templateId !== 'video-translation',
-    audioOnly: input.job.templateId === 'video-translation',
+    audioOnly: input.job.templateId === 'video-translation' && state.sourceType === 'subtitle',
     bilingual: input.stageRun.stageId === 'subtitles' || state.bilingual === true,
     bilingualTop: state.subtitlePosition !== 'bottom',
     ttsProvider: typeof state.ttsProvider === 'string' ? state.ttsProvider : undefined,
@@ -305,6 +327,7 @@ export function buildKrillinStageOptions(input: CreatorExecutorInput): Record<st
         secondaryColor: state.subtitleSecondaryColor,
         outlineColor: state.subtitleOutlineColor,
         outlineWidth: state.subtitleOutlineWidth,
+        verticalOffset: state.subtitleVerticalOffset,
         shadow: compactObject({
           enabled: state.subtitleShadowEnabled,
           color: state.subtitleShadowColor,
@@ -399,12 +422,12 @@ export function buildKrillinSubtitleStyle(value: CreatorJson | undefined): Recor
   return {
     version: 1,
     horizontal: {
-      major: createStyle('Major', sizes.horizontalMajor, style.primaryColor, 20),
-      minor: createStyle('Minor', sizes.horizontalMinor, style.secondaryColor, 30)
+      major: createStyle('Major', sizes.horizontalMajor, style.primaryColor, 20 + style.verticalOffset),
+      minor: createStyle('Minor', sizes.horizontalMinor, style.secondaryColor, 30 + style.verticalOffset)
     },
     vertical: {
-      major: createStyle('Major', sizes.verticalMajor, style.primaryColor, 101),
-      minor: createStyle('Minor', sizes.verticalMinor, style.secondaryColor, 92)
+      major: createStyle('Major', sizes.verticalMajor, style.primaryColor, 101 + style.verticalOffset),
+      minor: createStyle('Minor', sizes.verticalMinor, style.secondaryColor, 92 + style.verticalOffset)
     }
   };
 }
@@ -533,7 +556,7 @@ export async function validateResultArtifacts(input: {
           text: cue.text
         }))
       };
-    } else {
+    } else if (outputKind !== 'clip_index') {
       metadata = { ...metadata, ...(await validateMediaFile(path, input.ffprobe)) };
     }
     outputs.push({ kind: outputKind, status: 'completed', path, metadata,
@@ -557,7 +580,7 @@ function executablePath(resourceRoot: string, pattern: RegExp): string {
 }
 
 export type KrillinStageContract = {
-  stageType: 'subtitle' | 'tts' | 'render-horizontal' | 'render-vertical';
+  stageType: 'subtitle' | 'tts' | 'render-horizontal' | 'render-vertical' | 'clip';
   allowedOutputKinds: Set<string>;
   outputAliases: Record<string, string | undefined>;
   requiredOutputKinds: string[];
@@ -567,6 +590,14 @@ export function resolveKrillinStageContract(
   input: Pick<CreatorExecutorInput, 'job' | 'stageRun'>
 ): KrillinStageContract {
   const stageId = input.stageRun.stageId;
+  if (input.job.templateId === 'auto-clip' && input.job.templateVersion >= 3 && stageId === 'clip') {
+    return {
+      stageType: 'clip',
+      allowedOutputKinds: new Set(['source_video', 'clip_index', 'auto_clip_video']),
+      outputAliases: { source_video: 'source_video', clip_index: 'clip_index', auto_clip_video: 'auto_clip_video' },
+      requiredOutputKinds: ['clip_index', 'auto_clip_video']
+    };
+  }
   if (input.job.templateId === 'transcription' && stageId === 'transcription') return {
     stageType: 'subtitle',
     allowedOutputKinds: new Set(['source_video', 'source_subtitle']),
@@ -641,7 +672,9 @@ function expectedOutputKinds(stageId: string): Set<string> {
     'bilingual_subtitle',
     'vertical_subtitle'
   ]);
-  if (stageId === 'tts') return new Set(['source_video', 'dubbed_audio', 'dubbed_video']);
+  if (stageId === 'tts') return new Set([
+    'source_video', 'source_subtitle', 'target_subtitle', 'bilingual_subtitle', 'dubbed_audio', 'dubbed_video'
+  ]);
   if (stageId === 'render-horizontal') return new Set(['source_video', 'horizontal_video']);
   if (stageId === 'render-vertical') return new Set(['source_video', 'vertical_video']);
   return new Set();
@@ -654,7 +687,7 @@ function requiredOutputKinds(stageId: string, templateId?: string): string[] {
   if (stageId === 'subtitle') {
     return [...(templateId === 'video-translation' ? [] : ['source_video']), 'source_subtitle', 'target_subtitle', 'vertical_subtitle'];
   }
-  if (stageId === 'tts') return ['dubbed_audio'];
+  if (stageId === 'tts') return ['target_subtitle', 'dubbed_audio'];
   if (stageId === 'render-horizontal') return ['horizontal_video'];
   if (stageId === 'render-vertical') return ['vertical_video'];
   return [];

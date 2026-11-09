@@ -175,12 +175,23 @@ describe('video translation two-step flow', () => {
     initial.stages = [{ id: 'running_tts', jobId: initial.id, stageId: 'tts', executor: 'test', status: 'running', dispatchStatus: 'claimed',
       claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
       progress: { workflow: true, baseResultVersion: 1, inputResultVersion: 1, phase: 'generating_voice', percent: 29, completed: 12, total: 41 },
+      errorCode: null, errorMessage: null, startedAt: initial.createdAt, finishedAt: null },
+    { id: 'running_source', jobId: initial.id, stageId: 'preview-source-video', executor: 'download', status: 'running', dispatchStatus: 'claimed',
+      claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { backgroundSourceDownload: true, previewSourceUrl: initial.state.sourceUrl!, phase: 'downloading', percent: 50,
+        downloadedBytes: 50, totalBytes: 100 },
       errorCode: null, errorMessage: null, startedAt: initial.createdAt, finishedAt: null }];
     const session = mount(initial);
     const bar = screen.getByRole('region', { name: '当前任务进度' });
     expect(bar).toHaveTextContent('已完成 12 / 41 段');
     expect(bar).toHaveTextContent('V2');
-    expect(within(bar).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '29');
+    expect(within(bar).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '14');
+    expect(screen.getByRole('progressbar', { name: '原视频下载进度' })).toHaveAttribute('aria-valuenow', '50');
+    await act(async () => session.push({ ...initial, revision: 2, stages: [initial.stages[0]!, {
+      ...initial.stages[1]!, progress: { ...initial.stages[1]!.progress, percent: 75, downloadedBytes: 75 }
+    }] }));
+    expect(within(bar).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '14');
+    expect(screen.getByRole('progressbar', { name: '原视频下载进度' })).toHaveAttribute('aria-valuenow', '75');
     expect(screen.getByRole('button', { name: 'AI 助手' })).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(within(bar).getByRole('button', { name: '查看详情' }));
     expect(screen.getByRole('button', { name: 'AI 助手' })).toHaveAttribute('aria-pressed', 'true');
@@ -210,6 +221,39 @@ describe('video translation two-step flow', () => {
     fireEvent.click(detailsButton);
     expect(stage).toHaveFocus();
     expect(stageCalls(session.applyAction)).toHaveLength(0);
+  });
+
+  it('keeps a failed subtitle task visible while a later source preview runs', async () => {
+    const initial = initialJob({ currentStage: 'preview-source-video', currentStep: 1, workspacePhase: 'result' }, []);
+    initial.status = 'failed';
+    const failedSubtitle = {
+      id: 'failed_subtitle', jobId: initial.id, stageId: 'subtitle', executor: 'krillinai', status: 'failed' as const,
+      dispatchStatus: 'finished' as const, claimOwner: null, claimExpiresAt: null, attempt: 1,
+      idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { workflow: true, phase: 'reading_platform_captions', percent: 5 },
+      errorCode: 'platform_caption_access_failed', errorMessage: 'YouTube sign-in required',
+      startedAt: initial.createdAt, finishedAt: initial.updatedAt
+    };
+    const preview = {
+      ...failedSubtitle, id: 'running_preview', stageId: 'preview-source-video', executor: 'download',
+      status: 'running' as const, dispatchStatus: 'claimed' as const,
+      progress: { previewSourceUrl: initial.state.sourceUrl!, phase: 'downloading', percent: 7 },
+      errorCode: null, errorMessage: null, finishedAt: null
+    };
+    initial.stages = [failedSubtitle, preview];
+    const session = mount(initial);
+    const bar = screen.getByRole('region', { name: '当前任务进度' });
+    expect(bar).toHaveTextContent('翻译字幕失败');
+    expect(bar).not.toHaveTextContent('原视频预览准备');
+    expect(screen.getByRole('progressbar', { name: '原视频预览准备进度' })).toHaveAttribute('aria-valuenow', '7');
+    expect(within(bar).getByRole('button', { name: '重试当前阶段' })).toBeDisabled();
+
+    await act(async () => session.push({ ...initial, revision: 2, stages: [failedSubtitle,
+      { ...preview, status: 'failed', dispatchStatus: 'finished', finishedAt: initial.updatedAt }] }));
+    const retry = within(bar).getByRole('button', { name: '重试当前阶段' });
+    expect(retry).toBeEnabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(stageCalls(session.applyAction)[0]?.input.stageId).toBe('subtitle'));
   });
 
   it('uses current global speech settings for first dubbing despite saved task defaults, including immediate output', async () => {
@@ -255,7 +299,7 @@ describe('video translation two-step flow', () => {
     fireEvent.click(screen.getByRole('button', { name: '使用当前设置' }));
     await waitFor(() => expect(screen.getByText('阿里云百炼')).toBeVisible());
     expect(screen.getByRole('combobox', { name: '配音音色' })).toHaveAttribute('data-value', 'Cherry');
-    fireEvent.click(screen.getByRole('button', { name: '配音并合成视频' }));
+    fireEvent.click(screen.getByRole('button', { name: '重新配音并合成视频' }));
     await waitFor(() => expect(stageCalls(session.applyAction)).toHaveLength(1));
     expect(stageCalls(session.applyAction)[0]!.input.stageId).toBe('tts');
     expect(session.current().state).toMatchObject({ ttsProvider: 'aliyun', voiceCode: 'Cherry' });
@@ -412,12 +456,17 @@ describe('video translation two-step flow', () => {
     expect(editor).toHaveValue('Edited during download');
   });
 
-  it('saves subtitles and the editor context before configuration, then resumes combined output exactly once', async () => {
+  it.each([true, false])('preserves burn subtitles=%s when resuming dubbing after service configuration', async burnSubtitles => {
     const services = configuredSpeech();
     const response = await services.getConfig(); response.config.tts.openai.apiKey = ''; response.configuredCredentials = [];
     services.getConfig.mockResolvedValue(response);
     const first = mount(initialJob(), undefined, services);
     fireEvent.click(screen.getByRole('button', { name: '配音' }));
+    if (!burnSubtitles) {
+      fireEvent.click(screen.getByRole('switch', { name: '启用配音' }));
+      fireEvent.click(await screen.findByRole('switch', { name: '烧录字幕' }));
+      await waitFor(() => expect(first.current().state.composeVideo).toBe(false));
+    }
     fireEvent.click(screen.getByRole('button', { name: '配音并合成视频' }));
     const configure = await screen.findByRole('button', { name: '去配置配音服务' });
     expect(stageCalls(first.applyAction)).toHaveLength(0);
@@ -437,7 +486,7 @@ describe('video translation two-step flow', () => {
     const returned = mount(saved, undefined, updatedServices);
     await waitFor(() => expect(stageCalls(returned.applyAction)).toHaveLength(1));
     expect(stageCalls(returned.applyAction)[0]!.input).toMatchObject({ stageId: 'tts', workflow: true, inputResultVersion: 1 });
-    expect(returned.current().state).toMatchObject({ composeVideo: true, dubbing: true, ttsProvider: 'aliyun', voiceCode: 'Serena' });
+    expect(returned.current().state).toMatchObject({ composeVideo: burnSubtitles, dubbing: true, ttsProvider: 'aliyun', voiceCode: 'Serena' });
     expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toHaveValue('Manual correction before setup');
     expect(screen.getByRole('complementary', { name: '配音' })).toBeVisible();
     expect(readTranslationContinuation()).toBeUndefined();

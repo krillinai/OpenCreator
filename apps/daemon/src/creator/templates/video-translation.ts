@@ -83,12 +83,19 @@ function createVideoTranslationTemplateDefinition(version: 1 | 2): CreatorTempla
           kind: 'target_subtitle',
           selector: 'latest-completed'
         }, {
+          kind: 'source_subtitle',
+          selector: 'latest-completed',
+          optional: true
+        }, {
           kind: 'source_video',
           selector: 'latest-completed',
           optional: true
         }],
         outputArtifacts: [
           { kind: 'source_video', status: 'completed' },
+          { kind: 'source_subtitle', status: 'completed' },
+          { kind: 'target_subtitle', status: 'completed' },
+          { kind: 'bilingual_subtitle', status: 'completed' },
           { kind: 'dubbed_audio', status: 'completed' },
           { kind: 'dubbed_video', status: 'completed' }
         ]

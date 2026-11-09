@@ -123,6 +123,10 @@ func (c *TtsClient) Synthesize(ctx context.Context, options types.TTSSpeechOptio
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	// DashScope deployments accept the API key header. Keep Authorization for
+	// older compatible gateways while sending the header required by the
+	// current Qwen TTS endpoint.
+	req.Header.Set("api-key", c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := c.httpClient.Do(req)
 	if err != nil {

@@ -242,6 +242,64 @@ describe('Short video script panel', () => {
 });
 
 describe('CreatorCollaborationPanel', () => {
+  it.each([
+    ['downloading_media', 41, '下载视频与音频', '正在下载视频：27.7 MiB / 39.8 MiB；预计剩余 165 秒'],
+    ['analyzing_clips', 48, '分析高光与传播潜力', '正在查找完整片段'],
+    ['rendering_clips', 60, '正在导出视频切片 0/3', '正在生成片段 1/3']
+  ])('shows the auto-clip %s phase and live detail beside overall progress', (phase, percent, label, message) => {
+    const job = videoGenerationJob();
+    job.templateId = 'auto-clip';
+    job.templateVersion = 3;
+    job.state = { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=fixture', clipCount: 3, duration: '90-180' };
+    job.activities = [];
+    job.stages[0] = {
+      ...job.stages[0]!, stageId: 'clip', executor: 'krillinai',
+      progress: { phase, percent, message, completed: 0, total: 3 }
+    };
+    const { container } = render(<LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={job} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+        <CreatorCollaborationPanel adapter={creatorPanelAdapterFor('auto-clip')} stepLabel="生成视频切片" contextSummary="3 个片段" />
+      </CreatorSessionProvider>
+    </LanguageProvider>);
+
+    expect(screen.getByText(label)).toBeVisible();
+    expect(container.querySelector('.creator-collaboration-stage-message')).toHaveTextContent(message);
+    expect(screen.getByRole('progressbar', { name: '生成视频切片进度' })).toHaveAttribute('aria-valuenow', String(percent));
+  });
+
+  it('keeps the failed subtitle retry distinct from an active source download', () => {
+    const job = videoGenerationJob();
+    job.templateId = 'video-translation';
+    job.status = 'failed';
+    job.state = { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=demo',
+      targetLanguage: 'zh_cn', currentStage: 'preview-source-video' };
+    const failedSubtitle = { ...job.stages[0]!, id: 'subtitle_failed', stageId: 'subtitle', status: 'failed' as const,
+      errorCode: 'platform_caption_access_failed',
+      errorMessage: 'WARNING: [youtube] The provided YouTube account cookies are no longer valid.',
+      progress: { phase: 'reading_platform_captions', percent: 5, workflow: true }, finishedAt: job.updatedAt };
+    const runningDownload = { ...job.stages[0]!, id: 'download_running', stageId: 'preview-source-video',
+      executor: 'download', progress: { phase: 'downloading', percent: 39, backgroundSourceDownload: false } };
+    job.stages = [failedSubtitle, runningDownload];
+    const issue = { ...normalizePageIssue('runtime', 'creator.retry-stage', new Error(failedSubtitle.errorMessage),
+      failedSubtitle.errorMessage), source: 'stage' as const, code: failedSubtitle.errorCode,
+      stageId: 'subtitle', stageRunId: failedSubtitle.id, status: 'open' as const,
+      publicFacts: { kind: 'unknown' as const, provider: 'krillinai', upstreamMessage: failedSubtitle.errorMessage },
+      repairActions: [{ kind: 'retry-operation' as const, operationId: 'creator.retry-stage', requiresConfirmation: false, risk: 'normal' as const }] };
+    const applyAction = vi.fn();
+    render(<LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={job} externalIssues={[issue]}
+        service={{ applyAction, runAgentTurn: vi.fn() } as never}>
+        <CreatorCollaborationPanel adapter={videoTranslationPanelAdapter} stepLabel="项目结果" contextSummary="English → 简体中文" />
+        <TaskProgressBarHarness />
+      </CreatorSessionProvider>
+    </LanguageProvider>);
+    expect(screen.getAllByText('YouTube 登录态已失效，请在平台连接中重新连接，然后重试字幕翻译')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: '去平台连接' })).toHaveAttribute('href', '#/settings?tab=platform-connections');
+    expect(screen.getByRole('button', { name: '重试字幕翻译' })).toBeDisabled();
+    expect(screen.getByRole('progressbar', { name: '原视频预览准备进度' })).toHaveAttribute('aria-valuenow', '39');
+    expect(applyAction).not.toHaveBeenCalled();
+  });
+
   it('places a supplied summary above the timeline and preserves current issues', () => {
     const panel = (currentIssue?: string) => <LanguageProvider initialPreference="zh-CN">
       <CreatorSessionProvider initialJob={videoGenerationJob()} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>

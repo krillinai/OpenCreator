@@ -44,6 +44,10 @@ export function presentIssue(
 
 function issueDescription(issue: OpenCreatorIssue, language: AppLanguage): string {
   const localize = createLocalizedCopy(language);
+  if (isYouTubeCaptionSessionIssue(issue)) return localize(
+    'YouTube 登录态已失效，无法读取平台字幕。错误码：platform_caption_access_failed。',
+    'The YouTube session expired, so platform captions could not be read. Error code: platform_caption_access_failed.'
+  );
   if (recoveredProviderIssue(issue)) return localize('请求状态已核对，任务已恢复。', 'The request status was confirmed and the task recovered.', 'Begäransstatusen har bekräftats och uppgiften har återhämtats.');
   if (issue.code === 'creator_provider_resolution_required') return localize(
     '尚未确认外部服务的最终结果，请先查询原请求状态。',
@@ -212,6 +216,9 @@ export function issueConversationText(
   const nextStep = issue.code === 'creator_provider_resolution_required'
     ? localize('确认原请求结果前请勿重新提交，避免重复扣费。', 'Do not resubmit until the original request outcome is confirmed, to avoid duplicate charges.', 'Skicka inte igen innan resultatet av den ursprungliga begäran har bekräftats, för att undvika dubbla avgifter.')
     : transcription !== undefined ? transcription.nextStep
+    : isYouTubeCaptionSessionIssue(issue)
+    ? localize('请在设置的“平台连接”中重新连接 YouTube，再重试字幕翻译；更换代理节点不会更新登录态。',
+      'Reconnect YouTube in Settings > Platform connections, then retry subtitle translation. Changing proxy nodes does not refresh the session.')
     : issue.code === 'platform_request_signature_required'
     ? localize('请使用本地视频文件继续；当前平台要求下载器尚不支持的请求签名，重新连接 Cookie 或修改模型权限无法解决。', 'Use a local video file to continue. The platform requires a request signature that the downloader does not yet support; reconnecting cookies or changing model permissions will not resolve it.', 'Använd en lokal videofil för att fortsätta. Plattformen kräver en begäranssignatur som nedladdaren ännu inte stöder. Att ansluta kakor igen eller ändra modellbehörigheter löser inte problemet.')
     : issue.code === 'platform_session_required'
@@ -254,6 +261,13 @@ export function issueConversationText(
         message: `${detail}${nextStep}`,
         nextStep
       };
+}
+
+function isYouTubeCaptionSessionIssue(issue: OpenCreatorIssue): boolean {
+  return issue.code === 'platform_caption_access_failed'
+    && /cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(
+      issue.publicFacts?.upstreamMessage ?? issue.technicalDetail ?? ''
+    );
 }
 
 function isOpenCreatorAuthIssue(code: string): boolean {

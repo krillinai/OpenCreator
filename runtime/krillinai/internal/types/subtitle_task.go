@@ -347,6 +347,9 @@ type SubtitleTaskStepParam struct {
 	ShortOriginMixedSrtFilePath string
 	SubtitleInfos               []SubtitleFileInfo
 	TtsSourceFilePath           string
+	TtsOriginSrtFilePath        string // 配音同步使用及输出的源语言字幕路径
+	TtsResultSrtFilePath        string // 配音实际使用的目标字幕输出路径
+	TtsBilingualSrtFilePath     string // 配音同步后的双语字幕输出路径
 	TtsResultFilePath           string
 	InputVideoPath              string // 源视频路径
 	EmbedSubtitleVideoType      string // 合成字幕嵌入的视频类型 none不嵌入 horizontal横屏 vertical竖屏

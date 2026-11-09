@@ -5,6 +5,72 @@ import (
 	"strings"
 )
 
+// FitSegments validates measured audio using the default timing tolerance.
+func FitSegments(plan []PlanItem) ([]PlanItem, Report, error) {
+	return FitSegmentsWithConfig(plan, DefaultConfig())
+}
+
+// FitSegmentsWithConfig keeps every segment inside its original subtitle window.
+// The rewrite loop gets the first chance to reduce an overrun. If the rewrite
+// budget is exhausted, atempo remains the final delivery guarantee even when
+// the resulting speed exceeds the configured quality warning threshold.
+func FitSegmentsWithConfig(plan []PlanItem, cfg Config) ([]PlanItem, Report, error) {
+	cfg = normalizeTimingConfig(cfg)
+	maxRatio := 1 + cfg.MaxTimingOverrunRatio
+	fitted := append([]PlanItem(nil), plan...)
+	report := Report{MaxSpeedFactor: 1}
+	lastEnd := 0.0
+	for i := range fitted {
+		item := &fitted[i]
+		slot := item.OriginalEnd - item.OriginalStart
+		if slot <= 0 {
+			return nil, report, fmt.Errorf("subtitle %d has non-positive duration: %.3f", item.Index, slot)
+		}
+		item.SourceSpeechDuration = slot
+		item.TargetSpeechDuration = item.ActualDuration
+		item.DurationRatio = item.ActualDuration / slot
+		if item.ActualDuration <= 0 {
+			return nil, report, fmt.Errorf("subtitle %d has non-positive measured duration: %.3f", item.Index, item.ActualDuration)
+		}
+		if item.DurationRatio > maxRatio+timelineComparisonEpsilon {
+			reason := "target_tts_longer_than_source_speech_window"
+			if len(item.CueIndexes) > 1 {
+				reason = "semantic_group_tts_longer_than_source_speech_window"
+			}
+			warning := fmt.Sprintf("subtitle %d timing fallback: target %.3fs / source %.3fs (ratio %.2f), reason=%s, atempo_required=true", item.Index, item.ActualDuration, slot, item.DurationRatio, reason)
+			report.Warnings = append(report.Warnings, warning)
+			item.Warning = warning
+		}
+
+		item.NewStart = item.OriginalStart
+		item.SpeedFactor = 1
+		if item.DurationRatio > 1 {
+			item.SpeedFactor = item.DurationRatio
+			if item.SpeedFactor > report.MaxSpeedFactor {
+				report.MaxSpeedFactor = item.SpeedFactor
+			}
+		}
+		item.NewEnd = item.OriginalStart + item.ActualDuration/item.SpeedFactor
+		if item.NewStart+timelineComparisonEpsilon < lastEnd {
+			return nil, report, fmt.Errorf("subtitle %d audio overlaps previous segment: start %.3f previous end %.3f", item.Index, item.NewStart, lastEnd)
+		}
+		lastEnd = item.NewEnd
+		report.RewriteCount += item.RewriteAttempts
+		if len(item.CueIndexes) > 1 {
+			report.SemanticMergeCount++
+		}
+	}
+	return fitted, report, nil
+}
+
+func normalizeTimingConfig(cfg Config) Config {
+	defaults := DefaultConfig()
+	if cfg.MaxTimingOverrunRatio <= 0 {
+		cfg.MaxTimingOverrunRatio = defaults.MaxTimingOverrunRatio
+	}
+	return cfg
+}
+
 func FitTimeline(plan []PlanItem, chunks []Chunk, cfg Config) ([]PlanItem, []Chunk, Report, error) {
 	cfg = normalizeSpeedConfig(cfg)
 	if !(cfg.SpeedMin > 0 && cfg.SpeedMin <= cfg.SpeedAccept && cfg.SpeedAccept <= cfg.SpeedMax) {

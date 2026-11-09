@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"krillin-ai/log"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -28,7 +29,6 @@ type App struct {
 	TargetLanguageFirst   bool     `toml:"target_language_first"`    // 双语字幕中目标语言是否在上
 	ShortSubtitleMaxChars int      `toml:"short_subtitle_max_chars"` // 短字幕原文按词分组的字符长度，独立于普通字幕的目标语言长度
 	Proxy                 string   `toml:"proxy"`
-	YouTubeProxy          string   `toml:"youtube_proxy"`
 	ParsedProxy           *url.URL `toml:"-"`
 }
 
@@ -126,15 +126,17 @@ type Tts struct {
 }
 
 type Dubbing struct {
-	MinSubtitleDuration float64 `toml:"min_subtitle_duration"`
-	MaxChunkSize        int     `toml:"max_chunk_size"`
-	GapTolerance        float64 `toml:"gap_tolerance"`
-	SpeedMin            float64 `toml:"speed_min"`
-	SpeedAccept         float64 `toml:"speed_accept"`
-	SpeedMax            float64 `toml:"speed_max"`
-	EnableTextRewrite   bool    `toml:"enable_text_rewrite"`
-	RewriteMaxAttempts  int     `toml:"rewrite_max_attempts"`
-	Estimator           string  `toml:"estimator"`
+	MinSubtitleDuration   float64 `toml:"min_subtitle_duration"`
+	MaxChunkSize          int     `toml:"max_chunk_size"`
+	MaxSubtitleChars      int     `toml:"max_subtitle_chars"`
+	GapTolerance          float64 `toml:"gap_tolerance"`
+	SpeedMin              float64 `toml:"speed_min"`
+	SpeedAccept           float64 `toml:"speed_accept"`
+	SpeedMax              float64 `toml:"speed_max"`
+	MaxTimingOverrunRatio float64 `toml:"max_timing_overrun_ratio"`
+	EnableTextRewrite     bool    `toml:"enable_text_rewrite"`
+	RewriteMaxAttempts    int     `toml:"rewrite_max_attempts"`
+	Estimator             string  `toml:"estimator"`
 }
 
 type Image struct {
@@ -216,15 +218,17 @@ var Conf = Config{
 		},
 	},
 	Dubbing: Dubbing{
-		MinSubtitleDuration: 2.5,
-		MaxChunkSize:        5,
-		GapTolerance:        1.5,
-		SpeedMin:            0.95,
-		SpeedAccept:         1.15,
-		SpeedMax:            1.30,
-		EnableTextRewrite:   true,
-		RewriteMaxAttempts:  2,
-		Estimator:           "statistical",
+		MinSubtitleDuration:   3.0,
+		MaxChunkSize:          5,
+		MaxSubtitleChars:      70,
+		GapTolerance:          1.5,
+		SpeedMin:              0.95,
+		SpeedAccept:           1.15,
+		SpeedMax:              1.30,
+		MaxTimingOverrunRatio: 0.10,
+		EnableTextRewrite:     true,
+		RewriteMaxAttempts:    3,
+		Estimator:             "statistical",
 	},
 	Image: Image{
 		Provider: "openai-compatible",
@@ -344,13 +348,17 @@ func CheckBaseConfig() error {
 	return err
 }
 
-// YouTubeProxy returns the dedicated media proxy when provided. Older
-// standalone KrillinAI configs only have app.proxy, so retain that fallback.
-func YouTubeProxy() string {
-	if proxy := strings.TrimSpace(Conf.App.YouTubeProxy); proxy != "" {
-		return proxy
+// ProxyForBaseURL keeps local API gateways reachable when a network proxy is configured.
+func ProxyForBaseURL(baseURL, proxy string) string {
+	endpoint, err := url.Parse(baseURL)
+	if err == nil {
+		host := endpoint.Hostname()
+		ip := net.ParseIP(host)
+		if strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback()) {
+			return ""
+		}
 	}
-	return strings.TrimSpace(Conf.App.Proxy)
+	return proxy
 }
 
 // SaveConfig 保存配置到文件
