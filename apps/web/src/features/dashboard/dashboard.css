@@ -16105,3 +16105,110 @@
 .subtitle-composition-preview[data-status="failed"] .subtitle-composition-canvas { visibility: hidden; }
 .subtitle-composition-preview button { pointer-events: auto; }
 .subtitle-editor-styled-overlay { position: absolute; inset: 0; pointer-events: none; }
+.auto-clip-v3-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.auto-clip-v3-results {
+  min-width: 0;
+}
+
+.auto-clip-v3-results-heading,
+.auto-clip-v3-item-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.auto-clip-v3-results-heading {
+  margin-bottom: 16px;
+}
+
+.auto-clip-v3-results-heading h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.auto-clip-v3-results-heading span,
+.auto-clip-v3-item-heading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auto-clip-v3-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.auto-clip-v3-item {
+  min-width: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.auto-clip-v3-item-heading {
+  padding: 12px 14px;
+}
+
+.auto-clip-v3-item-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.auto-clip-v3-item-heading strong {
+  font-size: 13px;
+}
+
+.auto-clip-v3-item-heading button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.auto-clip-v3-item-heading button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.auto-clip-v3-item video,
+.auto-clip-v3-preview-loading {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #171b1e;
+}
+
+.auto-clip-v3-preview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .auto-clip-v3-settings,
+  .auto-clip-v3-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auto-clip-v3-results-heading {
+    flex-wrap: wrap;
+  }
+}

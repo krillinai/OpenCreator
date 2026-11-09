@@ -10,7 +10,6 @@
     target_language_first = true # 双语字幕中目标语言是否在上方，建议值：true（目标语言在上）
     short_subtitle_max_chars = 20 # 短字幕英文每行最大字符数，建议值：15-25
     proxy = "" # 网络代理地址，格式如http://127.0.0.1:7890，可不填
-    youtube_proxy = "" # YouTube/yt-dlp 专用代理；留空时回退到 proxy
 
 [server]
     host = "127.0.0.1"

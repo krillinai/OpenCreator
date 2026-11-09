@@ -14,6 +14,20 @@ import { createKrillinConfigToml } from '../../src/creator/krillin/config-bridge
 import { buildKrillinStageOptions, normalizeKrillinFailure } from '../../src/creator/krillin/adapter.js';
 
 describe('KrillinAI CLI protocol', () => {
+  it('passes the clip source and duration to the KrillinAI CLI', () => {
+    const sourceUrl = 'https://www.youtube.com/watch?v=demo&t=120';
+    const stage = { job: { templateId: 'auto-clip', templateVersion: 3, state: {
+      sourceType: 'url', sourceUrl, clipCount: 4, duration: '90-180'
+    } }, stageRun: { stageId: 'clip', id: 'clip-stage' }, workdir: '/job/clip-stage' };
+    const args = buildKrillinCliCommandArguments(stage as never, [], {
+      ...buildKrillinStageOptions(stage as never), deferTranscription: true
+    }, undefined);
+    expect(args.slice(0, 3)).toEqual(['clip', '--input', sourceUrl]);
+    expect(args).toContain('--defer-transcription');
+    expect(args.slice(args.indexOf('--count'), args.indexOf('--count') + 2)).toEqual(['--count', '4']);
+    expect(args.slice(args.indexOf('--min-duration-sec'), args.indexOf('--min-duration-sec') + 4))
+      .toEqual(['--min-duration-sec', '90', '--max-duration-sec', '180']);
+  });
   it('translates a standalone SRT without passing an old video or translated import', () => {
     const stage = { job: { templateId: 'video-translation', state: { sourceType: 'subtitle', sourceUrl: 'https://youtu.be/old', sourceLanguage: 'en', targetLanguage: 'zh_cn' } }, stageRun: { stageId: 'subtitle', id: 'stage' }, workdir: '/job/stage' };
     const args = buildKrillinCliCommandArguments(stage as never, [

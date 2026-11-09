@@ -22,6 +22,10 @@ func importSubtitleFile(ctx context.Context, svc StageService, req SubtitleReque
 	if err := validateSRTTimelineFile(req.InputSRT, false); err != nil {
 		return err
 	}
+	if req.SourceOnly {
+		reportSubtitleProgress(req, "collecting_subtitles", 96, "正在生成原文字幕")
+		return os.WriteFile(manifest.Outputs.OriginSRT, data, 0600)
+	}
 	parsed, err := readSRTBlocks(req.InputSRT)
 	if err != nil {
 		return err

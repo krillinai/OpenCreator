@@ -51,7 +51,7 @@ func TestSynthesizeSendsOpenAITTSControlsAndWritesAudio(t *testing.T) {
 	defer server.Close()
 
 	output := filepath.Join(t.TempDir(), "speech.mp3")
-	client := NewTtsClient(server.URL, "openai-key", "gpt-4o-mini-tts", "")
+	client := NewTtsClient(server.URL, "openai-key", "gpt-4o-mini-tts", "http://127.0.0.1:1")
 	if err := client.Synthesize(context.Background(), types.TTSSpeechOptions{
 		Text:         "say \"hello\"\nnext",
 		OutputFile:   output,

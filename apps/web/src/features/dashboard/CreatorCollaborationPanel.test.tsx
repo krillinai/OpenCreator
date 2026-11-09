@@ -242,6 +242,31 @@ describe('Short video script panel', () => {
 });
 
 describe('CreatorCollaborationPanel', () => {
+  it.each([
+    ['downloading_media', 41, '下载视频与音频', '正在下载视频：27.7 MiB / 39.8 MiB；预计剩余 165 秒'],
+    ['analyzing_clips', 48, '分析高光与传播潜力', '正在查找完整片段'],
+    ['rendering_clips', 60, '正在导出视频切片 0/3', '正在生成片段 1/3']
+  ])('shows the auto-clip %s phase and live detail beside overall progress', (phase, percent, label, message) => {
+    const job = videoGenerationJob();
+    job.templateId = 'auto-clip';
+    job.templateVersion = 3;
+    job.state = { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=fixture', clipCount: 3, duration: '90-180' };
+    job.activities = [];
+    job.stages[0] = {
+      ...job.stages[0]!, stageId: 'clip', executor: 'krillinai',
+      progress: { phase, percent, message, completed: 0, total: 3 }
+    };
+    const { container } = render(<LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={job} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+        <CreatorCollaborationPanel adapter={creatorPanelAdapterFor('auto-clip')} stepLabel="生成视频切片" contextSummary="3 个片段" />
+      </CreatorSessionProvider>
+    </LanguageProvider>);
+
+    expect(screen.getByText(label)).toBeVisible();
+    expect(container.querySelector('.creator-collaboration-stage-message')).toHaveTextContent(message);
+    expect(screen.getByRole('progressbar', { name: '生成视频切片进度' })).toHaveAttribute('aria-valuenow', String(percent));
+  });
+
   it('keeps the failed subtitle retry distinct from an active source download', () => {
     const job = videoGenerationJob();
     job.templateId = 'video-translation';

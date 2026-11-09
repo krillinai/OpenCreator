@@ -37,6 +37,40 @@ afterEach(() => {
 });
 
 describe('KrillinAI CLI runner', () => {
+  it.skipIf(process.platform === 'win32')('registers every clip listed by the KrillinAI result index', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-clips-'));
+    const resourceRoot = join(tempDir, 'runtime');
+    const jobsRoot = join(tempDir, 'jobs');
+    const dependencyRoot = join(tempDir, 'dependencies');
+    const workdir = join(jobsRoot, 'job-1', 'clip-stage');
+    const cli = join(resourceRoot, 'bin', 'krillinai-cli');
+    mkdirSync(dirname(cli), { recursive: true });
+    mkdirSync(workdir, { recursive: true });
+    writeFileSync(cli, `#!${process.execPath}\n${FAKE_CLI}`);
+    chmodSync(cli, 0o755);
+    const manifest: KrillinRuntimeManifest = {
+      version: 1, platform: process.platform, arch: process.arch,
+      resources: [{ path: 'bin/krillinai-cli', sha256: 'a'.repeat(64), kind: 'executable' }]
+    };
+    const config = createDefaultCreatorServicesConfig();
+    config.llm.apiKey = 'fixture-llm-key';
+    const stage = {
+      stageRun: { id: 'clip-stage', stageId: 'clip', progress: {} },
+      job: { id: 'job-1', templateId: 'auto-clip', templateVersion: 3, state: {} },
+      inputArtifacts: [], workdir, signal: new AbortController().signal,
+      reportProgress() {}
+    } as unknown as CreatorExecutorInput;
+
+    const artifacts = await runKrillinCli({
+      resourceRoot, jobsRoot, dependencyRoot, manifest, stage, config, artifacts: [],
+      options: { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=fixture', clipCount: 2, duration: '30-60' }
+    });
+
+    expect(artifacts.map(artifact => artifact.kind)).toEqual(['clip_index', 'auto_clip_video', 'auto_clip_video']);
+    expect(artifacts.filter(artifact => artifact.kind === 'auto_clip_video').map(artifact => artifact.metadata))
+      .toEqual([expect.objectContaining({ candidateId: 'clip-01', start: 0, end: 30 }),
+        expect.objectContaining({ candidateId: 'clip-02', start: 30, end: 60 })]);
+  });
   it.runIf(process.platform === 'win32')('mounts packaged executable files without requiring symlink privileges', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-windows-file-overlay-'));
     const resourceRoot = join(tempDir, 'runtime');
@@ -757,6 +791,17 @@ if (args[0] === 'tts') {
     vertical_video: join(workdir, 'vertical_video.mp4')
   };
   writeFileSync(outputs.vertical_video, 'video');
+} else if (args[0] === 'clip') {
+  mkdirSync(join(workdir, 'clips'), { recursive: true });
+  const clips = [1, 2].map(number => {
+    const file = 'clips/clip-0' + number + '.mp4';
+    writeFileSync(join(workdir, file), 'video');
+    return { id: 'clip-0' + number, file, start_ms: (number - 1) * 30000,
+      end_ms: number * 30000, score: 0.8 };
+  });
+  outputs = { clip_index: join(workdir, 'clips.json') };
+  writeFileSync(outputs.clip_index, JSON.stringify({ schema_version: 1,
+    caption_source: 'youtube_vtt', requested_count: 2, clips }));
 } else {
   process.stdout.write(JSON.stringify({
     type: 'progress',

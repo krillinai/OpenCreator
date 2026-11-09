@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"krillin-ai/log"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -28,7 +29,6 @@ type App struct {
 	TargetLanguageFirst   bool     `toml:"target_language_first"`    // 双语字幕中目标语言是否在上
 	ShortSubtitleMaxChars int      `toml:"short_subtitle_max_chars"` // 短字幕原文按词分组的字符长度，独立于普通字幕的目标语言长度
 	Proxy                 string   `toml:"proxy"`
-	YouTubeProxy          string   `toml:"youtube_proxy"`
 	ParsedProxy           *url.URL `toml:"-"`
 }
 
@@ -348,13 +348,17 @@ func CheckBaseConfig() error {
 	return err
 }
 
-// YouTubeProxy returns the dedicated media proxy when provided. Older
-// standalone KrillinAI configs only have app.proxy, so retain that fallback.
-func YouTubeProxy() string {
-	if proxy := strings.TrimSpace(Conf.App.YouTubeProxy); proxy != "" {
-		return proxy
+// ProxyForBaseURL keeps local API gateways reachable when a network proxy is configured.
+func ProxyForBaseURL(baseURL, proxy string) string {
+	endpoint, err := url.Parse(baseURL)
+	if err == nil {
+		host := endpoint.Hostname()
+		ip := net.ParseIP(host)
+		if strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback()) {
+			return ""
+		}
 	}
-	return strings.TrimSpace(Conf.App.Proxy)
+	return proxy
 }
 
 // SaveConfig 保存配置到文件

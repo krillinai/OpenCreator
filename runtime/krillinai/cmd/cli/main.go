@@ -135,6 +135,8 @@ func configureOpenCreatorProgress(cmd *cli.Command, output *jsonLineWriter) {
 	switch cmd.Name {
 	case "subtitle":
 		cmd.Subtitle.ReportProgress = writeProgress(cmd.Subtitle.ReportProgress)
+	case "clip":
+		cmd.Clip.ReportProgress = writeProgress(cmd.Clip.ReportProgress)
 	case "tts":
 		cmd.TTS.ReportProgress = writeProgress(cmd.TTS.ReportProgress)
 	case "render-horizontal", "render-vertical":
@@ -143,6 +145,9 @@ func configureOpenCreatorProgress(cmd *cli.Command, output *jsonLineWriter) {
 }
 
 func requiresTranscriptionAtStart(cmd cli.Command) bool {
+	if cmd.Name == "clip" {
+		return cmd.Clip.InputSRT == "" && (cmd.Clip.CaptionSource == pipeline.CaptionSourceWhisper || !pipeline.IsYouTubeInput(cmd.Clip.Input))
+	}
 	if cmd.Name != "subtitle" || cmd.Subtitle.InputSRT != "" {
 		return false
 	}

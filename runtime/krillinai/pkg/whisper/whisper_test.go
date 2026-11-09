@@ -71,7 +71,7 @@ func testTranscription(t *testing.T, official bool, payload string, wantError bo
 	}
 	client := NewClient(server.URL, "test", "")
 	if official {
-		client = NewOfficialClient(server.URL, "test", "", "vendor/chosen-asr")
+		client = NewOfficialClient(server.URL, "test", "http://127.0.0.1:1", "vendor/chosen-asr")
 	}
 	result, err := client.Transcription(audio, "en", dir)
 	if wantError {

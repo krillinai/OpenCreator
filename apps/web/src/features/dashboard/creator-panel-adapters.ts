@@ -635,10 +635,11 @@ export const videoDownloadPanelAdapter: CreatorPanelAdapter = {
 export const autoClipPanelAdapter: CreatorPanelAdapter = {
   id: 'auto-clip',
   composerPlaceholder: l => l(
-    '询问分析或导出状态，或调整内容重点、片段时长和输出画幅',
-    'Ask about analysis or export progress, or adjust the focus, clip length, and output format'
+    '询问切片进度或结果',
+    'Ask about clip progress or results'
   ),
   stageLabel(stageId, l) {
+    if (stageId === 'clip') return l('生成视频切片', 'Create video clips');
     if (stageId === 'probe') return l('读取视频信息', 'Read video information');
     if (stageId === 'download') return l('下载源视频', 'Download source video');
     if (stageId === 'subtitle') return l('生成视频字幕', 'Generate video transcript');
@@ -657,8 +658,13 @@ export const autoClipPanelAdapter: CreatorPanelAdapter = {
       preparing_source: l('准备视频内容', 'Preparing the video content'),
       reading_platform_captions: l('获取平台字幕', 'Fetching platform captions'),
       processing_platform_captions: l('解析平台字幕', 'Processing platform captions'),
+      preparing_original_media: l('准备原视频', 'Preparing the source video'),
+      downloading_media: l('下载视频与音频', 'Downloading video and audio'),
+      preparing_audio: l('准备音频', 'Preparing audio'),
+      extracting_audio: l('提取视频音频', 'Extracting video audio'),
       transcribing_audio: l('转录视频语音', 'Transcribing the video audio'),
       collecting_subtitles: l('整理视频字幕', 'Collecting the video transcript'),
+      collecting_outputs: l('整理视频与字幕', 'Collecting video and captions'),
       analyzing_clips: l('分析高光与传播潜力', 'Analyzing highlights and social potential'),
       rendering_clips: l('生成独立视频切片', 'Rendering individual video clips'),
       completed: l('视频切片已完成', 'Video clips completed')
@@ -681,7 +687,9 @@ export const autoClipPanelAdapter: CreatorPanelAdapter = {
     }
     return normalizeCommonActivity(activity, l, autoClipPanelAdapter, {}, autoClipFieldLabel);
   },
-  readStageProgress: readStandardProgress,
+  readStageProgress(stage) {
+    return { ...readStandardProgress(stage), showMessage: stage.stageId === 'clip' };
+  },
   runningProgressText(_stage, progress, l) {
     if (progress.total !== null && progress.total > 0 && progress.completed !== null && progress.phase === 'rendering_clips') {
       return l(`正在导出视频切片 ${progress.completed}/${progress.total}`, `Exporting video clips ${progress.completed}/${progress.total}`);
@@ -689,6 +697,7 @@ export const autoClipPanelAdapter: CreatorPanelAdapter = {
     return progress.phase === null ? null : autoClipPanelAdapter.phaseLabel(progress.phase, l);
   },
   succeededProgressText(stage, l) {
+    if (stage.stageId === 'clip') return l('视频切片已生成', 'Video clips created');
     if (stage.stageId === 'probe') return l('视频信息已读取', 'Video information read');
     if (stage.stageId === 'download') return l('源视频已下载', 'Source video downloaded');
     if (stage.stageId === 'subtitle') return l('视频字幕已生成', 'Video transcript generated');

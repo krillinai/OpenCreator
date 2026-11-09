@@ -1314,7 +1314,7 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: '选择本地视频' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '视频链接' })).toHaveAttribute(
       'placeholder',
-      '粘贴 YouTube 标准链接、youtu.be 分享链接或 Bilibili 链接'
+      '粘贴视频链接'
     );
     fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
       target: { value: 'https://www.youtube.com/watch?v=auto-clips' }
@@ -1347,29 +1347,21 @@ describe('DashboardPage', () => {
     expect(screen.getByText('long-interview.mp4')).toBeInTheDocument();
     expect(createObjectURL).toHaveBeenCalledWith(file);
     expect(screen.queryByRole('textbox', { name: '视频链接' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '下一步：切片设置' }));
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('输出画幅跟随原视频');
     expect(screen.getByRole('spinbutton', { name: '切片数量' })).toHaveValue(3);
-    expect(screen.getByRole('combobox', { name: '输出画幅' })).toHaveValue('source');
+    expect(screen.getByRole('combobox', { name: '切片时长' })).toHaveValue('90-180');
+    expect(screen.getByRole('button', { name: '开始切片' })).toBeEnabled();
   });
 
-  it('defaults to three source-format clips for a long video', () => {
+  it('defaults to three 90-180 second clips for a long video', () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} workspace="auto-clips" />);
 
-    const clipSteps = screen.getByRole('navigation', { name: '视频切片流程' });
-    expect(within(clipSteps).getByRole('button', { name: '1 添加视频' })).toHaveAttribute('aria-current', 'step');
-    expect(within(clipSteps).getByRole('button', { name: '2 切片设置' })).toBeDisabled();
-    expect(within(clipSteps).getByRole('button', { name: '3 切片结果' })).toBeDisabled();
+    expect(screen.getByRole('spinbutton', { name: '切片数量' })).toHaveValue(3);
+    expect(screen.getByRole('combobox', { name: '切片时长' })).toHaveValue('90-180');
+    expect(screen.getByRole('button', { name: '开始切片' })).toBeDisabled();
     fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
       target: { value: 'https://www.youtube.com/watch?v=long-video' }
     });
-    fireEvent.click(screen.getByRole('button', { name: '下一步：切片设置' }));
-    expect(screen.getByRole('heading', { name: '设置切片目标' })).toBeInTheDocument();
-    expect(screen.getByRole('spinbutton', { name: '切片数量' })).toHaveValue(3);
-    expect(screen.getByRole('combobox', { name: '输出画幅' })).toHaveValue('source');
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('内容重点综合表现');
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('切片数量3');
-    expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-task-final-grid');
+    expect(screen.getByRole('button', { name: '开始切片' })).toBeEnabled();
   });
 
   it('opens the three-step cover workflow and configures the output count', () => {

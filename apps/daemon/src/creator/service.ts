@@ -318,11 +318,12 @@ export function createCreatorService(input: {
           && artifact.status === 'completed'
           && artifact.metadata.sha256 === input.sha256
         ));
-        if (duplicate !== undefined) {
+        if (duplicate !== undefined && current.state.sourceType === 'file'
+          && current.state.sourceArtifactId === duplicate.id) {
           return { job: current, artifact: duplicate, deduplicated: true };
         }
 
-        const artifact = repository.insertArtifact({
+        const artifact = duplicate ?? repository.insertArtifact({
           jobId,
           kind: 'source_video',
           status: 'completed',
@@ -366,7 +367,7 @@ export function createCreatorService(input: {
           revision,
           actor: 'user',
           action: 'register-source-video',
-          summary: 'Uploaded local video',
+          summary: duplicate === undefined ? 'Uploaded local video' : 'Selected local video',
           details: {
             objectId: input.fileName,
             affectedArtifactIds: [artifact.id]
@@ -375,7 +376,7 @@ export function createCreatorService(input: {
         return {
           job: repository.getJob(jobId)!,
           artifact,
-          deduplicated: false
+          deduplicated: duplicate !== undefined
         };
       });
     },
