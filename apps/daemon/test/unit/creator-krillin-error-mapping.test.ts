@@ -3,6 +3,12 @@ import { normalizeKrillinFailure } from '../../src/creator/krillin/adapter.js';
 import { KrillinCliError } from '../../src/creator/krillin/cli-runner.js';
 
 describe('KrillinAI error mapping', () => {
+  it('preserves structured HTTP diagnostics without exposing raw response text to telemetry', () => {
+    const requestId = `ocreq_${'b'.repeat(48)}`;
+    const error = new KrillinCliError('audio_transcription_api_failed', 'private upstream body', 'retryable', true,
+      undefined, { http_status: 429, upstream_code: 'rate_limit_exceeded', request_id: requestId });
+    expect(error.publicFacts).toMatchObject({ httpStatus: 429, upstreamCode: 'rate_limit_exceeded', requestId });
+  });
   it.each(['Douyin', 'Douyin+opencreator'])('preserves the confirmed %s signature incompatibility in translation failures', prefix => {
     const error = new KrillinCliError('prepare_media_failed',
       `ERROR: [${prefix}] Douyin request signature is required (HTTP Error 403; Signature Not Found).`);

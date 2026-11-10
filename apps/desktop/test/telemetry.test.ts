@@ -68,10 +68,12 @@ function daemonEvent() {
     auth_state: 'signed_out',
     recharge_state: 'unknown',
     account_state_observed_at: '2026-09-07T02:00:00.000Z',
+    user_id: 'account-123',
     app_version: 'daemon-must-not-win',
     failure: {
       stage: 'tts',
       error_code: 'creator_stage_failed',
+      request_id: `ocreq_${'a'.repeat(48)}`,
       user_message: 'Creator stage failed.',
       technicalDetail: 'must-not-send',
       detail: { prompt: 'must-not-send' }
@@ -413,12 +415,14 @@ describe('desktop telemetry', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       event_id: daemonEvent().event_id,
+      user_id: 'account-123',
       app_version: '3.2.9',
       operating_system: 'darwin',
       architecture: 'arm64'
     });
     expect(events[0]!.failure).toEqual({
-      stage: 'tts', error_code: 'creator_stage_failed', user_message: 'Creator stage failed.'
+      stage: 'tts', error_code: 'creator_stage_failed', request_id: `ocreq_${'a'.repeat(48)}`,
+      user_message: 'Creator stage failed.'
     });
     expect(JSON.stringify(delivered?.body)).not.toContain('must-not-send');
     expect(requests.some(request => request.url.endsWith('/telemetry/events/ack'))).toBe(true);

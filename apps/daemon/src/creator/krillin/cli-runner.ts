@@ -60,6 +60,9 @@ type KrillinCliResponse = {
     code?: string;
     message?: string;
     retryable?: boolean;
+    http_status?: number;
+    upstream_code?: string;
+    request_id?: string;
   };
 };
 
@@ -86,7 +89,8 @@ export class KrillinCliError extends Error {
     message: string,
     readonly kind?: string,
     readonly retryable = false,
-    options?: ErrorOptions
+    options?: ErrorOptions,
+    diagnostic?: { http_status?: number; upstream_code?: string; request_id?: string }
   ) {
     super(message, options);
     this.name = 'KrillinCliError';
@@ -100,8 +104,10 @@ export class KrillinCliError extends Error {
       kind: outputRejected ? 'http-rejected' : signatureRequired ? 'unsupported' : sessionRequired ? 'unauthorized' : /^prepare_(?:media|audio_fallback)_failed$/.test(code)
         && /bilibili risk control (?:rejected the media request|blocked media extraction)/i.test(message)
         ? 'http-rejected' : publicErrorKindForCode(code) ?? 'unknown', provider: 'krillinai',
-      upstreamCode: outputRejected ? 'output_too_large' : code, upstreamMessage: message,
-      ...(outputRejected ? { httpStatus: 400 } : status === null ? {} : { httpStatus: Number(status[1]) })
+      upstreamCode: diagnostic?.upstream_code ?? (outputRejected ? 'output_too_large' : code), upstreamMessage: message,
+      ...(diagnostic?.request_id === undefined ? {} : { requestId: diagnostic.request_id }),
+      ...(diagnostic?.http_status !== undefined ? { httpStatus: diagnostic.http_status }
+        : outputRejected ? { httpStatus: 400 } : status === null ? {} : { httpStatus: Number(status[1]) })
     });
   }
 }
@@ -519,7 +525,9 @@ function executeCli(input: {
           response.error?.code ?? 'krillin_cli_failed',
           redact(response.error?.message ?? (stderr || 'KrillinAI CLI failed')),
           response.error?.kind,
-          response.error?.retryable === true
+          response.error?.retryable === true,
+          undefined,
+          response.error
         ));
         return;
       }

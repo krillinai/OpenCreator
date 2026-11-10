@@ -620,10 +620,12 @@ export async function buildServer(input: BuildServerInput) {
   await gatewayAccount.initialize();
   const creatorTelemetry = createCreatorTelemetrySink({
     outbox: creatorTelemetryOutbox,
-    readAccount() {
+    readAccount(job) {
       const account = gatewayAccount.peekState();
       const recharge = gatewayAccount.peekTelemetryRechargeState();
+      const binding = creatorRepository.getServiceBinding(job.id);
       return {
+        userId: binding.source === 'gateway' ? binding.accountId : account.account?.id,
         authState: account.authState === 'signed_in'
           ? 'signed_in'
           : account.authState === 'signed_out' ? 'signed_out' : 'unknown',

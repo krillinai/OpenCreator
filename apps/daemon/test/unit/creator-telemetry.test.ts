@@ -121,6 +121,35 @@ describe('creator telemetry event safety', () => {
     expect(JSON.stringify(sanitized)).not.toContain('secret');
     expect(JSON.stringify(sanitized)).not.toContain('/private/file.srt');
   });
+
+  it('keeps only safe user and Gateway correlation IDs', () => {
+    const requestId = `ocreq_${'a'.repeat(48)}`;
+    const sanitized = sanitizeCreatorTelemetryEvent({
+      ...event(), user_id: 'account-123',
+      failure: { error_code: 'audio_transcription_api_failed', request_id: requestId }
+    });
+    expect(sanitized.user_id).toBe('account-123');
+    expect(sanitized.failure?.request_id).toBe(requestId);
+    expect(sanitizeCreatorTelemetryEvent({
+      ...event(), user_id: 'secret\nvalue', failure: { request_id: 'foreign-request-id' }
+    }).failure?.request_id).toBeUndefined();
+    expect(sanitizeCreatorTelemetryEvent({ ...event(), user_id: 'secret\nvalue' }).user_id).toBeUndefined();
+  });
+
+  it('isolates account lookup and outbox failures from Creator execution', () => {
+    const job = { id: 'creator_job_1' } as CreatorJob;
+    const stage = { id: 'creator_stage_run_1' } as CreatorStageRun;
+    const brokenAccount = createCreatorTelemetrySink({
+      outbox: { enqueue: () => { throw new Error('disk full'); } } as unknown as ReturnType<typeof createCreatorTelemetryOutbox>,
+      readAccount: () => { throw new Error('account unavailable'); }
+    });
+    expect(() => brokenAccount.stageStarted(job, stage, 'smart-dubbing')).not.toThrow();
+    const brokenOutbox = createCreatorTelemetrySink({
+      outbox: { enqueue: () => { throw new Error('disk full'); } } as unknown as ReturnType<typeof createCreatorTelemetryOutbox>,
+      readAccount: () => account
+    });
+    expect(() => brokenOutbox.stageFinished(job, stage, 'smart-dubbing', 'failed')).not.toThrow();
+  });
 });
 
 describe('creator stage telemetry outcome mapping', () => {

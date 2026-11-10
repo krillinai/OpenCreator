@@ -3,8 +3,11 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	openaitts "krillin-ai/pkg/openai"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +44,14 @@ func TestGenerateTTSExtractsBilingualTargetBeforeSpeech(t *testing.T) {
 	}
 	if fake.lastSpeech.TtsSourceFilePath != extracted {
 		t.Fatalf("TtsSourceFilePath = %q, want %q", fake.lastSpeech.TtsSourceFilePath, extracted)
+	}
+}
+
+func TestTTSFailureResponsePreservesHTTPDiagnostics(t *testing.T) {
+	cause := &openaitts.SpeechHTTPError{StatusCode: 429, UpstreamCode: "rate_limit_exceeded", RequestID: "ocreq_" + strings.Repeat("a", 48), Message: "private response"}
+	response := ttsFailureResponse(TTSRequest{}, nil, ErrorKindRetryable, "generate_speech_failed", fmt.Errorf("segment 1: %w", cause))
+	if response.Error == nil || response.Error.Code != "generate_speech_failed" || response.Error.HTTPStatus != 429 || response.Error.UpstreamCode != "rate_limit_exceeded" || response.Error.RequestID != cause.RequestID {
+		t.Fatalf("diagnostics = %+v", response.Error)
 	}
 }
 

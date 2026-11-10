@@ -10,7 +10,7 @@ export type CreatorTelemetrySink = ReturnType<typeof createCreatorTelemetrySink>
 
 export function createCreatorTelemetrySink(input: {
   outbox: CreatorTelemetryOutbox;
-  readAccount(): CreatorTelemetryAccountSnapshot;
+  readAccount(job: CreatorJob): CreatorTelemetryAccountSnapshot;
   now?(): string;
 }) {
   const now = input.now ?? (() => new Date().toISOString());
@@ -30,7 +30,7 @@ export function createCreatorTelemetrySink(input: {
         stage,
         feature,
         ...(outcome === undefined ? {} : { outcome }),
-        account: input.readAccount(),
+        account: input.readAccount(job),
         ...(issue === undefined ? {} : { issue })
       }), `${stage.id}:${eventType}`);
     } catch {

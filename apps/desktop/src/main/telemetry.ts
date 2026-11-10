@@ -404,6 +404,8 @@ function sanitizeDaemonTelemetryEvent(
     task_id: value.task_id,
     attempt_id: value.attempt_id,
     feature: value.feature,
+    ...(safeEventText(value.user_id, 128) && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(String(value.user_id))
+      ? { user_id: value.user_id } : {}),
     ...(value.outcome === undefined ? {} : { outcome: value.outcome }),
     auth_state: value.auth_state,
     recharge_state: value.recharge_state,
@@ -419,6 +421,7 @@ function sanitizeDaemonTelemetryEvent(
 
 function sanitizeDaemonFailure(value: Record<string, unknown>): Record<string, unknown> {
   const failure: Record<string, unknown> = {};
+  if (typeof value.request_id === 'string' && /^ocreq_[0-9a-f]{48}$/.test(value.request_id)) failure.request_id = value.request_id;
   for (const key of ['stage', 'executor', 'category', 'error_code', 'provider', 'upstream_code'] as const) {
     if (safeEventText(value[key], 128)) failure[key] = value[key];
   }

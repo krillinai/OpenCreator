@@ -45,10 +45,13 @@ const (
 )
 
 type Error struct {
-	Kind      ErrorKind `json:"kind"`
-	Code      string    `json:"code"`
-	Message   string    `json:"message"`
-	Retryable bool      `json:"retryable"`
+	Kind         ErrorKind `json:"kind"`
+	Code         string    `json:"code"`
+	Message      string    `json:"message"`
+	Retryable    bool      `json:"retryable"`
+	HTTPStatus   int       `json:"http_status,omitempty"`
+	UpstreamCode string    `json:"upstream_code,omitempty"`
+	RequestID    string    `json:"request_id,omitempty"`
 }
 
 func (e *Error) Error() string {

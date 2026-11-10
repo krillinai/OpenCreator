@@ -16,12 +16,14 @@ export type CreatorTelemetryAuthState = 'signed_in' | 'signed_out' | 'unknown';
 export type CreatorTelemetryRechargeState = 'recharged' | 'not_recharged' | 'pending' | 'unknown';
 
 export type CreatorTelemetryAccountSnapshot = {
+  userId?: string;
   authState: CreatorTelemetryAuthState;
   rechargeState: CreatorTelemetryRechargeState;
   accountStateObservedAt: string;
 };
 
 export type CreatorTelemetryFailure = {
+  request_id?: string;
   stage?: string;
   executor?: string;
   category?: string;
@@ -40,6 +42,7 @@ export type CreatorTelemetryFailure = {
 };
 
 export type CreatorTelemetryEvent = {
+  user_id?: string;
   event_id: string;
   event_type: 'task_started' | 'task_finished';
   occurred_at: string;
@@ -75,6 +78,7 @@ export function createCreatorTelemetryEvent(input: {
     task_id: input.job.id,
     attempt_id: input.stage.id,
     feature: input.feature,
+    ...(input.account.userId === undefined ? {} : { user_id: input.account.userId }),
     ...(input.outcome === undefined ? {} : { outcome: input.outcome }),
     auth_state: input.account.authState,
     recharge_state: input.account.rechargeState,
@@ -103,6 +107,7 @@ export function sanitizeCreatorTelemetryEvent(event: CreatorTelemetryEvent): Cre
     task_id: event.task_id,
     attempt_id: event.attempt_id,
     feature: event.feature,
+    ...(safeIdentifier(event.user_id) === undefined ? {} : { user_id: safeIdentifier(event.user_id) }),
     ...(event.outcome === undefined ? {} : { outcome: event.outcome }),
     auth_state: event.auth_state,
     recharge_state: event.recharge_state,
@@ -118,6 +123,7 @@ export function sanitizeCreatorTelemetryEvent(event: CreatorTelemetryEvent): Cre
 
 export function sanitizeCreatorTelemetryFailure(failure: CreatorTelemetryFailure): CreatorTelemetryFailure {
   return {
+    ...(safeGatewayRequestId(failure.request_id) === undefined ? {} : { request_id: failure.request_id }),
     ...(safeIdentifier(failure.stage) === undefined ? {} : { stage: safeIdentifier(failure.stage) }),
     ...(safeIdentifier(failure.executor) === undefined ? {} : { executor: safeIdentifier(failure.executor) }),
     ...(safeIdentifier(failure.category) === undefined ? {} : { category: safeIdentifier(failure.category) }),
@@ -150,6 +156,7 @@ function creatorTelemetryFailure(
     http_status: issue?.publicFacts?.httpStatus,
     provider: issue?.publicFacts?.provider,
     upstream_code: issue?.publicFacts?.upstreamCode,
+    request_id: issue?.publicFacts?.requestId,
     retryable: issue?.retryable ?? false,
     retry_count: Math.max(0, stage.attempt - 1),
     progress_percent: numericProgress(stage.progress.percent),
@@ -186,6 +193,10 @@ function safeIdentifier(value: unknown): string | undefined {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value)
     ? value
     : undefined;
+}
+
+function safeGatewayRequestId(value: unknown): string | undefined {
+  return typeof value === 'string' && /^ocreq_[0-9a-f]{48}$/.test(value) ? value : undefined;
 }
 
 function safeText(value: unknown, maximum: number): string | undefined {

@@ -59,6 +59,28 @@ func TestTranscriptionResponseClassification(t *testing.T) {
 	}
 }
 
+func TestTranscriptionHTTPDiagnostics(t *testing.T) {
+	log.InitLogger()
+	for _, status := range []int{401, 429, 503} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Request-ID", "ocreq_"+strings.Repeat("a", 48))
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":{"message":"private detail","code":"rate_limit_exceeded"}}`))
+		}))
+		dir := t.TempDir()
+		audio := filepath.Join(dir, "audio.wav")
+		if err := os.WriteFile(audio, []byte("audio"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := NewOfficialClient(server.URL, "test", "", "chosen-asr").Transcription(audio, "en", dir)
+		server.Close()
+		var classified *TranscriptionError
+		if !errors.As(err, &classified) || classified.HTTPStatus != status || classified.UpstreamCode != "rate_limit_exceeded" || classified.RequestID != "ocreq_"+strings.Repeat("a", 48) {
+			t.Fatalf("status %d: diagnostics = %+v, error = %v", status, classified, err)
+		}
+	}
+}
+
 func TestTranscriptionReconstructsEmptyTextFromTimedSegments(t *testing.T) {
 	testTranscription(t, true, `{"text":"","language":"en","segments":[{"start":1.25,"end":3.5,"text":"Hello world"}]}`, false)
 }

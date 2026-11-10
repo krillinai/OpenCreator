@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"krillin-ai/internal/types"
+	openaitts "krillin-ai/pkg/openai"
+	"net"
 	"os"
 	"path/filepath"
 )
@@ -230,12 +232,24 @@ func invalidateTTSOutputs(manifest *Manifest) {
 }
 
 func ttsFailureResponse(req TTSRequest, manifest *Manifest, kind ErrorKind, code string, err error) Response {
-	return ttsResponse(false, req, manifest, &Error{
+	pipelineErr := &Error{
 		Kind:      kind,
 		Code:      code,
 		Message:   err.Error(),
 		Retryable: kind == ErrorKindRetryable,
-	})
+	}
+	var speechErr *openaitts.SpeechHTTPError
+	if errors.As(err, &speechErr) {
+		pipelineErr.HTTPStatus = speechErr.StatusCode
+		pipelineErr.UpstreamCode = speechErr.UpstreamCode
+		pipelineErr.RequestID = speechErr.RequestID
+	} else {
+		var networkErr net.Error
+		if errors.As(err, &networkErr) && networkErr.Timeout() {
+			pipelineErr.UpstreamCode = "network_timeout"
+		}
+	}
+	return ttsResponse(false, req, manifest, pipelineErr)
 }
 
 func ttsResponse(ok bool, req TTSRequest, manifest *Manifest, pipelineErr *Error) Response {

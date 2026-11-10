@@ -3,10 +3,12 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"krillin-ai/internal/types"
@@ -73,5 +75,22 @@ func TestSynthesizeSendsOpenAITTSControlsAndWritesAudio(t *testing.T) {
 func TestDefaultVoiceMatchesOpenCreator(t *testing.T) {
 	if DefaultTTSVoice != "marin" {
 		t.Fatalf("DefaultTTSVoice = %q, want marin", DefaultTTSVoice)
+	}
+}
+
+func TestSynthesizeHTTPDiagnostics(t *testing.T) {
+	for _, status := range []int{401, 429, 503} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Request-ID", "ocreq_"+strings.Repeat("b", 48))
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":{"code":"credits_insufficient","message":"private detail"}}`))
+		}))
+		client := NewTtsClient(server.URL, "test", "model", "")
+		err := client.Synthesize(context.Background(), types.TTSSpeechOptions{Text: "hello", OutputFile: filepath.Join(t.TempDir(), "audio.mp3")})
+		server.Close()
+		var classified *SpeechHTTPError
+		if !errors.As(err, &classified) || classified.StatusCode != status || classified.UpstreamCode != "credits_insufficient" || classified.RequestID != "ocreq_"+strings.Repeat("b", 48) {
+			t.Fatalf("status %d: diagnostics = %+v, error = %v", status, classified, err)
+		}
 	}
 }
