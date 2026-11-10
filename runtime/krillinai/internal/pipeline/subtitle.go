@@ -391,6 +391,12 @@ func subtitleFailureResponse(req SubtitleRequest, manifest *Manifest, kind Error
 		Message:   err.Error(),
 		Retryable: kind == ErrorKindRetryable,
 	}
+	var transcriptionErr *whisper.TranscriptionError
+	if errors.As(err, &transcriptionErr) {
+		pipelineErr.HTTPStatus = transcriptionErr.HTTPStatus
+		pipelineErr.UpstreamCode = transcriptionErr.UpstreamCode
+		pipelineErr.RequestID = transcriptionErr.RequestID
+	}
 	return subtitleResponse(false, req, manifest, req.CaptionSource, pipelineErr)
 }
 

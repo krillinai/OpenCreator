@@ -181,6 +181,9 @@ async function launchDesktop(): Promise<void> {
     fetchImpl: fetchDesktopRequest,
     endpointOverride: process.env.OPENCREATOR_TELEMETRY_URL
   });
+  daemon.on('connection', connection => {
+    if (connection !== null) void telemetry.setEnabled(settings.read().telemetryEnabled);
+  });
   const navigate = (route: string) => {
     if (!workspaceLoaded) {
       pendingRoutes.push(route);
@@ -454,7 +457,7 @@ function registerIpcHandlers(input: {
         ? {}
         : { telemetryEnabled: value.telemetryEnabled })
     });
-    if (value.telemetryEnabled === true) void input.telemetry.enable();
+    if (value.telemetryEnabled !== undefined) void input.telemetry.setEnabled(value.telemetryEnabled);
     return {
       closeBehavior: updated.closeBehavior,
       telemetryEnabled: updated.telemetryEnabled

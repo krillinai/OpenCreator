@@ -14,6 +14,7 @@ import type {
   CreatorExecutorResult
 } from '../executor.js';
 import { CreatorExecutorError } from '../executor.js';
+import { attachFailureDiagnostic, failureDiagnosticFromError } from '../../telemetry/diagnostic.js';
 import { publicFactsFromFailure } from '../public-error-facts.js';
 import { creatorSubtitleStyleSchema } from '../presets/module-schemas.js';
 import { validateMediaFile } from '../validators/media.js';
@@ -350,21 +351,33 @@ function combineKrillinFallbackFailures(platformFailure: KrillinCliError, fallba
     ? fallbackFailure.message
     : 'Unknown audio transcription failure';
   const message = `Platform captions failed: ${platformFailure.message}; audio transcription fallback failed: ${fallbackMessage}`;
+  let combined: Error;
   if (fallbackFailure instanceof KrillinCliError) {
-    return new KrillinCliError(
+    combined = new KrillinCliError(
       fallbackFailure.code,
       message,
       fallbackFailure.kind,
       fallbackFailure.retryable,
       { cause: fallbackFailure }
     );
-  }
-  if (fallbackFailure instanceof CreatorExecutorError) {
-    return new CreatorExecutorError(fallbackFailure.code, message, {},
+  } else if (fallbackFailure instanceof CreatorExecutorError) {
+    combined = new CreatorExecutorError(fallbackFailure.code, message, {},
       fallbackFailure.publicFacts, { cause: fallbackFailure });
+  } else {
+    combined = new CreatorExecutorError(publicErrorCodeFromFailure(fallbackFailure) ?? 'krillin_stage_failed',
+      message, {}, publicFactsFromFailure(fallbackFailure), { cause: fallbackFailure });
   }
-  return new CreatorExecutorError(publicErrorCodeFromFailure(fallbackFailure) ?? 'krillin_stage_failed',
-    message, {}, publicFactsFromFailure(fallbackFailure), { cause: fallbackFailure });
+  const finalDiagnostic = failureDiagnosticFromError(fallbackFailure, 'krillinai.subtitle');
+  if (finalDiagnostic === undefined) return combined;
+  return attachFailureDiagnostic(combined, {
+    ...finalDiagnostic,
+    steps: [
+      { operation: failureDiagnosticFromError(platformFailure, 'krillinai.subtitle')?.operation ?? 'krillinai.subtitle',
+        code: platformFailure.code, result: 'fallback' },
+      { operation: finalDiagnostic.operation,
+        code: publicErrorCodeFromFailure(fallbackFailure) ?? 'krillin_stage_failed', result: 'failed' }
+    ]
+  });
 }
 
 export function buildKrillinSubtitleStyle(value: CreatorJson | undefined): Record<string, unknown> | undefined {

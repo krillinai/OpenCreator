@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { CreatorJob, CreatorStageRun, OpenCreatorIssue } from '@opencreator/protocol';
+import type { CreatorJob, CreatorStageRun, OpenCreatorIssue, PublicErrorFacts } from '@opencreator/protocol';
+import { sanitizeFailureDiagnostic, type FailureDiagnostic } from './diagnostic.js';
 
 export const creatorTelemetryOutcomes = [
   'succeeded',
@@ -16,12 +17,15 @@ export type CreatorTelemetryAuthState = 'signed_in' | 'signed_out' | 'unknown';
 export type CreatorTelemetryRechargeState = 'recharged' | 'not_recharged' | 'pending' | 'unknown';
 
 export type CreatorTelemetryAccountSnapshot = {
+  userId?: string;
   authState: CreatorTelemetryAuthState;
   rechargeState: CreatorTelemetryRechargeState;
   accountStateObservedAt: string;
 };
 
 export type CreatorTelemetryFailure = {
+  diagnostic?: FailureDiagnostic;
+  request_id?: string;
   stage?: string;
   executor?: string;
   category?: string;
@@ -40,6 +44,7 @@ export type CreatorTelemetryFailure = {
 };
 
 export type CreatorTelemetryEvent = {
+  user_id?: string;
   event_id: string;
   event_type: 'task_started' | 'task_finished';
   occurred_at: string;
@@ -66,6 +71,8 @@ export function createCreatorTelemetryEvent(input: {
   outcome?: CreatorTelemetryOutcome;
   account: CreatorTelemetryAccountSnapshot;
   issue?: OpenCreatorIssue;
+  diagnostic?: FailureDiagnostic;
+  failureFacts?: PublicErrorFacts;
   idFactory?(): string;
 }): CreatorTelemetryEvent {
   const event: CreatorTelemetryEvent = {
@@ -75,6 +82,7 @@ export function createCreatorTelemetryEvent(input: {
     task_id: input.job.id,
     attempt_id: input.stage.id,
     feature: input.feature,
+    ...(input.account.userId === undefined ? {} : { user_id: input.account.userId }),
     ...(input.outcome === undefined ? {} : { outcome: input.outcome }),
     auth_state: input.account.authState,
     recharge_state: input.account.rechargeState,
@@ -88,7 +96,9 @@ export function createCreatorTelemetryEvent(input: {
         input.stage,
         input.outcome ?? 'unknown',
         input.job.artifacts?.some(artifact => artifact.status === 'completed') ?? false,
-        input.issue
+        input.issue,
+        input.diagnostic,
+        input.failureFacts
       );
     }
   }
@@ -103,6 +113,7 @@ export function sanitizeCreatorTelemetryEvent(event: CreatorTelemetryEvent): Cre
     task_id: event.task_id,
     attempt_id: event.attempt_id,
     feature: event.feature,
+    ...(safeIdentifier(event.user_id) === undefined ? {} : { user_id: safeIdentifier(event.user_id) }),
     ...(event.outcome === undefined ? {} : { outcome: event.outcome }),
     auth_state: event.auth_state,
     recharge_state: event.recharge_state,
@@ -118,6 +129,8 @@ export function sanitizeCreatorTelemetryEvent(event: CreatorTelemetryEvent): Cre
 
 export function sanitizeCreatorTelemetryFailure(failure: CreatorTelemetryFailure): CreatorTelemetryFailure {
   return {
+    ...(sanitizeFailureDiagnostic(failure.diagnostic) === undefined ? {} : { diagnostic: sanitizeFailureDiagnostic(failure.diagnostic) }),
+    ...(safeGatewayRequestId(failure.request_id) === undefined ? {} : { request_id: failure.request_id }),
     ...(safeIdentifier(failure.stage) === undefined ? {} : { stage: safeIdentifier(failure.stage) }),
     ...(safeIdentifier(failure.executor) === undefined ? {} : { executor: safeIdentifier(failure.executor) }),
     ...(safeIdentifier(failure.category) === undefined ? {} : { category: safeIdentifier(failure.category) }),
@@ -140,16 +153,21 @@ function creatorTelemetryFailure(
   stage: CreatorStageRun,
   outcome: CreatorTelemetryOutcome,
   artifactDelivered: boolean,
-  issue?: OpenCreatorIssue
+  issue?: OpenCreatorIssue,
+  diagnostic?: FailureDiagnostic,
+  failureFacts?: PublicErrorFacts
 ): CreatorTelemetryFailure {
+  const errorCode = stage.errorCode ?? issue?.code ?? 'creator_stage_outcome_unknown';
   return {
+    ...(diagnostic === undefined ? {} : { diagnostic }),
     stage: stage.stageId,
     executor: stage.executor,
     category: issue?.category ?? 'execution',
-    error_code: stage.errorCode ?? issue?.code ?? 'creator_stage_outcome_unknown',
-    http_status: issue?.publicFacts?.httpStatus,
-    provider: issue?.publicFacts?.provider,
-    upstream_code: issue?.publicFacts?.upstreamCode,
+    error_code: errorCode,
+    http_status: failureFacts?.httpStatus ?? issue?.publicFacts?.httpStatus,
+    provider: failureFacts?.provider ?? issue?.publicFacts?.provider,
+    upstream_code: telemetryUpstreamCode(errorCode, failureFacts?.kind === 'unknown' ? issue?.publicFacts ?? failureFacts : failureFacts ?? issue?.publicFacts),
+    request_id: failureFacts?.requestId ?? issue?.publicFacts?.requestId,
     retryable: issue?.retryable ?? false,
     retry_count: Math.max(0, stage.attempt - 1),
     progress_percent: numericProgress(stage.progress.percent),
@@ -159,6 +177,25 @@ function creatorTelemetryFailure(
     artifact_delivered: artifactDelivered,
     user_message: safeOutcomeMessage(outcome)
   };
+}
+
+function telemetryUpstreamCode(errorCode: string, facts?: PublicErrorFacts): string | undefined {
+  const upstreamCode = facts?.upstreamCode;
+  if (upstreamCode !== undefined && upstreamCode !== errorCode) return upstreamCode;
+  if (errorCode !== 'network_unavailable' && errorCode !== 'platform_caption_access_failed') return upstreamCode;
+  const reasons: Partial<Record<PublicErrorFacts['kind'], string>> = {
+    'connection-refused': 'connection_refused',
+    'connection-reset': 'connection_reset',
+    timeout: 'timeout',
+    dns: 'dns_failure',
+    tls: 'tls_failure'
+  };
+  const reason = facts === undefined ? undefined : reasons[facts.kind];
+  if (reason !== undefined) return reason;
+  if (/\b(?:connection refused|econnrefused)\b|\[errno (?:61|111)\]/i.test(facts?.upstreamMessage ?? '')) {
+    return 'connection_refused';
+  }
+  return upstreamCode;
 }
 
 function safeOutcomeMessage(outcome: CreatorTelemetryOutcome): string {
@@ -186,6 +223,10 @@ function safeIdentifier(value: unknown): string | undefined {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value)
     ? value
     : undefined;
+}
+
+function safeGatewayRequestId(value: unknown): string | undefined {
+  return typeof value === 'string' && /^ocreq_[0-9a-f]{48}$/.test(value) ? value : undefined;
 }
 
 function safeText(value: unknown, maximum: number): string | undefined {

@@ -11,6 +11,7 @@ import { CreatorExecutorError } from '../executor.js';
 import { sha256CreatorFile } from '../file-hash.js';
 import { publicErrorKindForCode, sanitizePublicErrorFacts, type PublicErrorFacts } from '@opencreator/protocol';
 import { spawnCreatorProcess } from '../process-tree.js';
+import { attachFailureDiagnostic, processFailureDiagnostic } from '../../telemetry/diagnostic.js';
 import { createKrillinConfigToml } from './config-bridge.js';
 import { gatewayCreatorBinding } from '../../gateway/creator-service-source.js';
 import { isYouTubeSource } from './execution-plan.js';
@@ -60,6 +61,9 @@ type KrillinCliResponse = {
     code?: string;
     message?: string;
     retryable?: boolean;
+    http_status?: number;
+    upstream_code?: string;
+    request_id?: string;
   };
 };
 
@@ -86,7 +90,8 @@ export class KrillinCliError extends Error {
     message: string,
     readonly kind?: string,
     readonly retryable = false,
-    options?: ErrorOptions
+    options?: ErrorOptions,
+    diagnostic?: { http_status?: number; upstream_code?: string; request_id?: string }
   ) {
     super(message, options);
     this.name = 'KrillinCliError';
@@ -100,8 +105,10 @@ export class KrillinCliError extends Error {
       kind: outputRejected ? 'http-rejected' : signatureRequired ? 'unsupported' : sessionRequired ? 'unauthorized' : /^prepare_(?:media|audio_fallback)_failed$/.test(code)
         && /bilibili risk control (?:rejected the media request|blocked media extraction)/i.test(message)
         ? 'http-rejected' : publicErrorKindForCode(code) ?? 'unknown', provider: 'krillinai',
-      upstreamCode: outputRejected ? 'output_too_large' : code, upstreamMessage: message,
-      ...(outputRejected ? { httpStatus: 400 } : status === null ? {} : { httpStatus: Number(status[1]) })
+      upstreamCode: diagnostic?.upstream_code ?? (outputRejected ? 'output_too_large' : code), upstreamMessage: message,
+      ...(diagnostic?.request_id === undefined ? {} : { requestId: diagnostic.request_id }),
+      ...(diagnostic?.http_status !== undefined ? { httpStatus: diagnostic.http_status }
+        : outputRejected ? { httpStatus: 400 } : status === null ? {} : { httpStatus: Number(status[1]) })
     });
   }
 }
@@ -241,6 +248,10 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
       response = await executeCli({
         executable: resolveInside(input.resourceRoot, cli.path),
         args,
+        operation: `krillinai.${args[0]}`,
+        version: input.manifest.cliVersion ?? String(input.manifest.version),
+        proxy: input.config.proxy || process.env.HTTPS_PROXY || process.env.https_proxy || process.env.ALL_PROXY || '',
+        sourceUrl: stringOption(input.options, 'sourceUrl'),
         cwd: launcherRoot,
         runtimeBin,
         resourceRoot: cliResourceRoot,
@@ -464,6 +475,10 @@ async function writeInitialManifest(
 function executeCli(input: {
   executable: string;
   args: string[];
+  operation: string;
+  version: string;
+  proxy: string;
+  sourceUrl?: string;
   cwd: string;
   runtimeBin: string;
   resourceRoot: string;
@@ -499,7 +514,17 @@ function executeCli(input: {
       );
     });
     child.stderr?.on('data', chunk => { stderr = boundedAppend(stderr, String(chunk)); });
-    child.once('error', reject);
+    const diagnostic = (output: string, exitCode?: number | null) => processFailureDiagnostic({
+      operation: /downloadYouTubeSubtitle/i.test(output) ? 'yt-dlp.subtitle'
+        : /yt-dlp/i.test(output) ? 'yt-dlp.prepare-media' : input.operation,
+      tool: 'krillinai',
+      version: input.version,
+      exitCode,
+      output,
+      proxy: input.proxy,
+      sourceUrl: input.sourceUrl
+    });
+    child.once('error', error => reject(attachFailureDiagnostic(error, diagnostic(error.message))));
     child.once('exit', code => {
       if (input.signal.aborted) {
         reject(new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled'));
@@ -508,19 +533,21 @@ function executeCli(input: {
       reportProgressLine(pendingStdoutLine, reportProgress);
       const response = parseResponse(stdout);
       if (response === undefined) {
-        reject(new KrillinCliError(
+        reject(attachFailureDiagnostic(new KrillinCliError(
           'krillin_cli_failed',
           redact(stderr || `KrillinAI CLI exited with code ${code ?? 'unknown'}`)
-        ));
+        ), diagnostic(stderr, code)));
         return;
       }
       if (response.ok !== true || code !== 0) {
-        reject(new KrillinCliError(
+        reject(attachFailureDiagnostic(new KrillinCliError(
           response.error?.code ?? 'krillin_cli_failed',
           redact(response.error?.message ?? (stderr || 'KrillinAI CLI failed')),
           response.error?.kind,
-          response.error?.retryable === true
-        ));
+          response.error?.retryable === true,
+          undefined,
+          response.error
+        ), diagnostic(`${stderr}\n${response.error?.message ?? ''}`, code)));
         return;
       }
       resolvePromise(response);

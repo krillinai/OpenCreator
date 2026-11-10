@@ -620,10 +620,13 @@ export async function buildServer(input: BuildServerInput) {
   await gatewayAccount.initialize();
   const creatorTelemetry = createCreatorTelemetrySink({
     outbox: creatorTelemetryOutbox,
-    readAccount() {
+    enabled: process.env.OPENCREATOR_TELEMETRY_ENABLED !== '0',
+    readAccount(job) {
       const account = gatewayAccount.peekState();
       const recharge = gatewayAccount.peekTelemetryRechargeState();
+      const binding = creatorRepository.getServiceBinding(job.id);
       return {
+        userId: binding.source === 'gateway' ? binding.accountId : account.account?.id,
         authState: account.authState === 'signed_in'
           ? 'signed_in'
           : account.authState === 'signed_out' ? 'signed_out' : 'unknown',
@@ -1723,7 +1726,7 @@ export async function buildServer(input: BuildServerInput) {
     maxSizeBytes: input.attachmentMaxSizeBytes
   });
   await registerApprovalRoutes(server, approvalManager);
-  await registerTelemetryRoutes(server, creatorTelemetryOutbox);
+  await registerTelemetryRoutes(server, creatorTelemetryOutbox, creatorTelemetry);
   await registerNotificationRoutes(server, notificationService);
   await registerTaskRoutes(server, taskService);
   await registerMemoryRoutes(server, memoryService, {

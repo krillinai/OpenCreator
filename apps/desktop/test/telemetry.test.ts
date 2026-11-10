@@ -68,10 +68,13 @@ function daemonEvent() {
     auth_state: 'signed_out',
     recharge_state: 'unknown',
     account_state_observed_at: '2026-09-07T02:00:00.000Z',
+    user_id: 'account-123',
     app_version: 'daemon-must-not-win',
     failure: {
       stage: 'tts',
       error_code: 'creator_stage_failed',
+      upstream_code: 'connection_refused',
+      request_id: `ocreq_${'a'.repeat(48)}`,
       user_message: 'Creator stage failed.',
       technicalDetail: 'must-not-send',
       detail: { prompt: 'must-not-send' }
@@ -413,15 +416,81 @@ describe('desktop telemetry', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       event_id: daemonEvent().event_id,
+      user_id: 'account-123',
       app_version: '3.2.9',
       operating_system: 'darwin',
       architecture: 'arm64'
     });
     expect(events[0]!.failure).toEqual({
-      stage: 'tts', error_code: 'creator_stage_failed', user_message: 'Creator stage failed.'
+      stage: 'tts', error_code: 'creator_stage_failed', upstream_code: 'connection_refused',
+      request_id: `ocreq_${'a'.repeat(48)}`,
+      user_message: 'Creator stage failed.'
     });
     expect(JSON.stringify(delivered?.body)).not.toContain('must-not-send');
     expect(requests.some(request => request.url.endsWith('/telemetry/events/ack'))).toBe(true);
+  });
+
+  it('drops arbitrary diagnostic content and retries the base event when diagnostics are rejected', async () => {
+    const posted: Array<Record<string, unknown>> = [];
+    let acknowledged = false;
+    const event = daemonEvent();
+    event.failure = {
+      ...event.failure,
+      diagnostic: {
+        version: 1, operation: 'yt-dlp.probe', causes: [{ name: 'CreatorExecutorError', code: 'network_unavailable' }],
+        network: { route: 'proxy', peer: 'proxy', proxy_scope: 'loopback', proxy_port: 7890 },
+        evidence: ['connection_refused', 'https://private.test/secret'], raw_log: 'Bearer secret'
+      }
+    } as typeof event.failure;
+    const controller = startDesktopTelemetry({
+      path: '/virtual/telemetry.json', settings: memorySettings(), logger: logger(), appVersion: '3.3.1',
+      isOfficialBuild: false, endpointOverride: 'http://127.0.0.1:8790/api/v1/public/desktop-usage',
+      getDaemonConnection: () => ({ address: 'http://127.0.0.1:31234', token: 'local-token' }),
+      isWindowActive: () => false,
+      fetchImpl: async (url, init) => {
+        const target = String(url);
+        if (target.includes('/telemetry/events?')) return Response.json({ events: acknowledged ? [] : [event] });
+        if (target.endsWith('/telemetry/events/ack')) {
+          acknowledged = true;
+          return Response.json({ acknowledged: 1 });
+        }
+        if (target.endsWith('/desktop-usage/events')) {
+          posted.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+          return Response.json({}, { status: posted.length === 1 ? 400 : 200 });
+        }
+        return Response.json({});
+      },
+      persistence: memoryPersistence().persistence as TelemetryPersistence
+    });
+    await controller.reportNow();
+    controller.dispose();
+    expect(posted).toHaveLength(2);
+    expect(JSON.stringify(posted[0])).not.toMatch(/private\.test|raw_log|Bearer secret/);
+    const first = (posted[0]!.events as Array<{ failure: Record<string, unknown> }>)[0]!.failure;
+    expect(first.diagnostic).toMatchObject({ operation: 'yt-dlp.probe', evidence: ['connection_refused'] });
+    const second = (posted[1]!.events as Array<{ failure: Record<string, unknown> }>)[0]!.failure;
+    expect(second.diagnostic).toBeUndefined();
+    expect(acknowledged).toBe(true);
+  });
+
+  it('serializes rapid telemetry setting changes on the local daemon', async () => {
+    const settings = memorySettings({ telemetryEnabled: false });
+    const observed: boolean[] = [];
+    const controller = startDesktopTelemetry({
+      path: '/virtual/telemetry.json', settings, logger: logger(), appVersion: '3.3.1',
+      isOfficialBuild: false, isWindowActive: () => false,
+      getDaemonConnection: () => ({ address: 'http://127.0.0.1:31234', token: 'local-token' }),
+      fetchImpl: async (_url, init) => {
+        observed.push((JSON.parse(String(init?.body)) as { enabled: boolean }).enabled);
+        return Response.json({});
+      },
+      persistence: memoryPersistence().persistence as TelemetryPersistence
+    });
+    const disabled = controller.setEnabled(false);
+    const enabled = controller.setEnabled(true);
+    await Promise.all([disabled, enabled]);
+    controller.dispose();
+    expect(observed).toEqual([false, true]);
   });
 
   it('retries without ack after a non-2xx event response', async () => {

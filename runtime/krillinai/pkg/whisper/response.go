@@ -6,16 +6,40 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
 )
 
 type TranscriptionError struct {
-	Code    string
-	Message string
-	Cause   error
+	Code         string
+	Message      string
+	Cause        error
+	HTTPStatus   int
+	UpstreamCode string
+	RequestID    string
 }
+
+var diagnosticCode = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
+var gatewayRequestID = regexp.MustCompile(`^ocreq_[0-9a-f]{48}$`)
+
+func safeDiagnosticCode(value string) string {
+	if diagnosticCode.MatchString(value) {
+		return value
+	}
+	return ""
+}
+
+func safeGatewayRequestID(value string) string {
+	if gatewayRequestID.MatchString(value) {
+		return value
+	}
+	return ""
+}
+
+type responseRequestIDKey struct{}
+type responseRequestID struct{ value string }
 
 func (e *TranscriptionError) Error() string { return e.Message }
 func (e *TranscriptionError) Unwrap() error { return e.Cause }
@@ -32,6 +56,11 @@ type audioResponseClient struct {
 
 func (c *audioResponseClient) Do(request *http.Request) (*http.Response, error) {
 	response, err := c.next.Do(request)
+	if err == nil && response != nil {
+		if id, ok := request.Context().Value(responseRequestIDKey{}).(*responseRequestID); ok {
+			id.value = safeGatewayRequestID(response.Header.Get("X-Request-ID"))
+		}
+	}
 	if err != nil || !strings.HasSuffix(request.URL.Path, "/audio/transcriptions") || response.StatusCode < 200 || response.StatusCode >= 300 {
 		return response, err
 	}
@@ -42,7 +71,7 @@ func (c *audioResponseClient) Do(request *http.Request) (*http.Response, error) 
 		return nil, err
 	}
 	invalid := func(reason string) (*http.Response, error) {
-		return nil, &TranscriptionError{Code: "audio_transcription_invalid_response", Message: fmt.Sprintf("transcription service returned HTTP %d but %s", response.StatusCode, reason)}
+		return nil, &TranscriptionError{Code: "audio_transcription_invalid_response", Message: fmt.Sprintf("transcription service returned HTTP %d but %s", response.StatusCode, reason), HTTPStatus: response.StatusCode, RequestID: safeGatewayRequestID(response.Header.Get("X-Request-ID"))}
 	}
 	if len(body) > maxResponseSize {
 		return invalid("the response exceeded the size limit")
