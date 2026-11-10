@@ -73,6 +73,7 @@ function daemonEvent() {
     failure: {
       stage: 'tts',
       error_code: 'creator_stage_failed',
+      upstream_code: 'connection_refused',
       request_id: `ocreq_${'a'.repeat(48)}`,
       user_message: 'Creator stage failed.',
       technicalDetail: 'must-not-send',
@@ -421,7 +422,8 @@ describe('desktop telemetry', () => {
       architecture: 'arm64'
     });
     expect(events[0]!.failure).toEqual({
-      stage: 'tts', error_code: 'creator_stage_failed', request_id: `ocreq_${'a'.repeat(48)}`,
+      stage: 'tts', error_code: 'creator_stage_failed', upstream_code: 'connection_refused',
+      request_id: `ocreq_${'a'.repeat(48)}`,
       user_message: 'Creator stage failed.'
     });
     expect(JSON.stringify(delivered?.body)).not.toContain('must-not-send');

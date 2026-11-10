@@ -188,7 +188,7 @@ describe('OpenCreatorSettingsView', () => {
     expect(screen.getByRole('option', { name: '跟随系统（简体中文）' })).toBeInTheDocument();
     expect(screen.getByText('菜单栏显示')).toBeInTheDocument();
     expect(screen.queryByRole('switch', { name: '动态背景' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('switch', { name: /发送匿名使用数据/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /发送数据帮助我们改进/ })).not.toBeInTheDocument();
     expect(screen.queryByText('工作模式')).not.toBeInTheDocument();
     expect(screen.queryByText('适用于编程')).not.toBeInTheDocument();
   });
@@ -506,7 +506,7 @@ describe('OpenCreatorSettingsView', () => {
     expect(screen.queryByRole('button', { name: 'Select 完成产物位置' })).not.toBeInTheDocument();
   });
 
-  it('shows the anonymous telemetry scope and allows Desktop users to disable it', () => {
+  it('shows the telemetry scope and allows Desktop users to disable it', () => {
     const onDesktopTelemetryEnabledChange = vi.fn();
     render(
       <OpenCreatorSettingsView
@@ -518,11 +518,11 @@ describe('OpenCreatorSettingsView', () => {
       />
     );
 
-    const telemetry = screen.getByRole('switch', { name: /发送匿名使用数据/ });
+    const telemetry = screen.getByRole('switch', { name: /发送数据帮助我们改进/ });
     expect(telemetry).toBeChecked();
     fireEvent.click(telemetry);
     expect(onDesktopTelemetryEnabledChange).toHaveBeenCalledWith(false);
-    expect(screen.getByText(/不包含项目、文件或对话内容/)).toBeInTheDocument();
+    expect(screen.getByText(/发送基本使用情况、错误信息及账号 ID/)).toBeInTheDocument();
   });
 
   it('does not show Codex CLI version on the initial general tab', () => {

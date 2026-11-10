@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CreatorJob, CreatorStageRun, OpenCreatorIssue } from '@opencreator/protocol';
+import type { CreatorJob, CreatorStageRun, OpenCreatorIssue, PublicErrorFacts } from '@opencreator/protocol';
 
 export const creatorTelemetryOutcomes = [
   'succeeded',
@@ -148,14 +148,15 @@ function creatorTelemetryFailure(
   artifactDelivered: boolean,
   issue?: OpenCreatorIssue
 ): CreatorTelemetryFailure {
+  const errorCode = stage.errorCode ?? issue?.code ?? 'creator_stage_outcome_unknown';
   return {
     stage: stage.stageId,
     executor: stage.executor,
     category: issue?.category ?? 'execution',
-    error_code: stage.errorCode ?? issue?.code ?? 'creator_stage_outcome_unknown',
+    error_code: errorCode,
     http_status: issue?.publicFacts?.httpStatus,
     provider: issue?.publicFacts?.provider,
-    upstream_code: issue?.publicFacts?.upstreamCode,
+    upstream_code: telemetryUpstreamCode(errorCode, issue?.publicFacts),
     request_id: issue?.publicFacts?.requestId,
     retryable: issue?.retryable ?? false,
     retry_count: Math.max(0, stage.attempt - 1),
@@ -166,6 +167,25 @@ function creatorTelemetryFailure(
     artifact_delivered: artifactDelivered,
     user_message: safeOutcomeMessage(outcome)
   };
+}
+
+function telemetryUpstreamCode(errorCode: string, facts?: PublicErrorFacts): string | undefined {
+  const upstreamCode = facts?.upstreamCode;
+  if (upstreamCode !== undefined && upstreamCode !== errorCode) return upstreamCode;
+  if (errorCode !== 'network_unavailable' && errorCode !== 'platform_caption_access_failed') return upstreamCode;
+  const reasons: Partial<Record<PublicErrorFacts['kind'], string>> = {
+    'connection-refused': 'connection_refused',
+    'connection-reset': 'connection_reset',
+    timeout: 'timeout',
+    dns: 'dns_failure',
+    tls: 'tls_failure'
+  };
+  const reason = facts === undefined ? undefined : reasons[facts.kind];
+  if (reason !== undefined) return reason;
+  if (/\b(?:connection refused|econnrefused)\b|\[errno (?:61|111)\]/i.test(facts?.upstreamMessage ?? '')) {
+    return 'connection_refused';
+  }
+  return upstreamCode;
 }
 
 function safeOutcomeMessage(outcome: CreatorTelemetryOutcome): string {

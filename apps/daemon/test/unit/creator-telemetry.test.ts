@@ -19,7 +19,9 @@ import { createCreatorService } from '../../src/creator/service.js';
 import { createCreatorIssueService } from '../../src/creator/issues.js';
 import { createCreatorStageRunner } from '../../src/creator/stage-runner.js';
 import { CreatorExecutorError } from '../../src/creator/executor.js';
+import { KrillinCliError } from '../../src/creator/krillin/cli-runner.js';
 import { createDefaultCreatorTemplateRegistry } from '../../src/creator/templates/registry.js';
+import type { OpenCreatorIssue, PublicErrorFacts } from '@opencreator/protocol';
 
 let tempDir = '';
 afterEach(() => {
@@ -153,6 +155,37 @@ describe('creator telemetry event safety', () => {
 });
 
 describe('creator stage telemetry outcome mapping', () => {
+  it('keeps the specific cause of local caption and preview connection failures', () => {
+    const captionError = new KrillinCliError(
+      'platform_caption_access_failed',
+      'platform caption failed: downloadYouTubeSubtitle yt-dlp error after 3 attempts: exit status 1: ERROR: [youtube] Unable to download API page: [Errno 61] Connection refused for https://example.test/private'
+    );
+    const failure = (code: string, facts: PublicErrorFacts) => createCreatorTelemetryEvent({
+      eventType: 'task_finished',
+      occurredAt: '2026-10-26T00:00:01.000Z',
+      job: { id: 'creator_job_1' } as CreatorJob,
+      stage: {
+        id: 'creator_stage_run_1', stageId: 'subtitle', executor: 'krillinai', attempt: 1,
+        startedAt: null, finishedAt: null, errorCode: code, progress: {}
+      } as CreatorStageRun,
+      feature: 'video-translation',
+      outcome: 'failed',
+      account,
+      issue: { code, publicFacts: facts } as OpenCreatorIssue
+    }).failure;
+
+    expect(captionError.publicFacts.upstreamCode).toBe('platform_caption_access_failed');
+    expect(failure('platform_caption_access_failed', captionError.publicFacts)?.upstream_code)
+      .toBe('connection_refused');
+    expect(failure('network_unavailable', { kind: 'connection-refused', provider: 'yt-dlp' })?.upstream_code)
+      .toBe('connection_refused');
+    expect(failure('network_unavailable', {
+      kind: 'connection-refused', provider: 'yt-dlp', upstreamCode: 'PROVIDER_SPECIFIC_CODE'
+    })?.upstream_code).toBe('PROVIDER_SPECIFIC_CODE');
+    expect(JSON.stringify(failure('platform_caption_access_failed', captionError.publicFacts)))
+      .not.toContain('example.test');
+  });
+
   it('preserves blocked, canceled, interrupted and unknown outcomes', () => {
     const job = { status: 'needs_input' } as CreatorJob;
     const stage = { status: 'failed', progress: {} } as CreatorStageRun;
