@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CreatorJob, CreatorStageRun, OpenCreatorIssue, PublicErrorFacts } from '@opencreator/protocol';
+import { sanitizeFailureDiagnostic, type FailureDiagnostic } from './diagnostic.js';
 
 export const creatorTelemetryOutcomes = [
   'succeeded',
@@ -23,6 +24,7 @@ export type CreatorTelemetryAccountSnapshot = {
 };
 
 export type CreatorTelemetryFailure = {
+  diagnostic?: FailureDiagnostic;
   request_id?: string;
   stage?: string;
   executor?: string;
@@ -69,6 +71,8 @@ export function createCreatorTelemetryEvent(input: {
   outcome?: CreatorTelemetryOutcome;
   account: CreatorTelemetryAccountSnapshot;
   issue?: OpenCreatorIssue;
+  diagnostic?: FailureDiagnostic;
+  failureFacts?: PublicErrorFacts;
   idFactory?(): string;
 }): CreatorTelemetryEvent {
   const event: CreatorTelemetryEvent = {
@@ -92,7 +96,9 @@ export function createCreatorTelemetryEvent(input: {
         input.stage,
         input.outcome ?? 'unknown',
         input.job.artifacts?.some(artifact => artifact.status === 'completed') ?? false,
-        input.issue
+        input.issue,
+        input.diagnostic,
+        input.failureFacts
       );
     }
   }
@@ -123,6 +129,7 @@ export function sanitizeCreatorTelemetryEvent(event: CreatorTelemetryEvent): Cre
 
 export function sanitizeCreatorTelemetryFailure(failure: CreatorTelemetryFailure): CreatorTelemetryFailure {
   return {
+    ...(sanitizeFailureDiagnostic(failure.diagnostic) === undefined ? {} : { diagnostic: sanitizeFailureDiagnostic(failure.diagnostic) }),
     ...(safeGatewayRequestId(failure.request_id) === undefined ? {} : { request_id: failure.request_id }),
     ...(safeIdentifier(failure.stage) === undefined ? {} : { stage: safeIdentifier(failure.stage) }),
     ...(safeIdentifier(failure.executor) === undefined ? {} : { executor: safeIdentifier(failure.executor) }),
@@ -146,18 +153,21 @@ function creatorTelemetryFailure(
   stage: CreatorStageRun,
   outcome: CreatorTelemetryOutcome,
   artifactDelivered: boolean,
-  issue?: OpenCreatorIssue
+  issue?: OpenCreatorIssue,
+  diagnostic?: FailureDiagnostic,
+  failureFacts?: PublicErrorFacts
 ): CreatorTelemetryFailure {
   const errorCode = stage.errorCode ?? issue?.code ?? 'creator_stage_outcome_unknown';
   return {
+    ...(diagnostic === undefined ? {} : { diagnostic }),
     stage: stage.stageId,
     executor: stage.executor,
     category: issue?.category ?? 'execution',
     error_code: errorCode,
-    http_status: issue?.publicFacts?.httpStatus,
-    provider: issue?.publicFacts?.provider,
-    upstream_code: telemetryUpstreamCode(errorCode, issue?.publicFacts),
-    request_id: issue?.publicFacts?.requestId,
+    http_status: failureFacts?.httpStatus ?? issue?.publicFacts?.httpStatus,
+    provider: failureFacts?.provider ?? issue?.publicFacts?.provider,
+    upstream_code: telemetryUpstreamCode(errorCode, failureFacts?.kind === 'unknown' ? issue?.publicFacts ?? failureFacts : failureFacts ?? issue?.publicFacts),
+    request_id: failureFacts?.requestId ?? issue?.publicFacts?.requestId,
     retryable: issue?.retryable ?? false,
     retry_count: Math.max(0, stage.attempt - 1),
     progress_percent: numericProgress(stage.progress.percent),

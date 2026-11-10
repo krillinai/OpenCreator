@@ -28,6 +28,7 @@ export type TelemetryPersistence = {
 
 export type DesktopTelemetryController = {
   enable(): Promise<void>;
+  setEnabled(enabled: boolean): Promise<void>;
   reportNow(): Promise<void>;
   stop(): Promise<void>;
   resume(): void;
@@ -60,6 +61,7 @@ export function startDesktopTelemetry(input: {
   let launchRecorded = false;
   let stopped = false;
   let reportQueue = Promise.resolve();
+  let settingQueue = Promise.resolve();
   let activeReport: AbortController | undefined;
   let activeTimer: NodeJS.Timeout | undefined;
   let reportTimer: NodeJS.Timeout | undefined;
@@ -162,11 +164,25 @@ export function startDesktopTelemetry(input: {
         return sanitized === undefined ? [] : [sanitized];
       });
       if (events.length === 0 || stopped || !input.settings.read().telemetryEnabled) return;
-      const sent = await request(eventsEndpoint, {
+      let sent = await request(eventsEndpoint, {
         method: 'POST',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ install_id: installId(), events })
       });
+      if (!sent.ok && [400, 413, 422].includes(sent.status) && events.some(event => (
+        isRecord(event.failure) && event.failure.diagnostic !== undefined
+      ))) {
+        const basicEvents = events.map(event => {
+          if (!isRecord(event.failure)) return event;
+          const { diagnostic: _discarded, ...failure } = event.failure;
+          return { ...event, failure };
+        });
+        sent = await request(eventsEndpoint, {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ install_id: installId(), events: basicEvents })
+        });
+      }
       if (!sent.ok || stopped || !input.settings.read().telemetryEnabled) return;
       const acknowledged = await request(`${connection.address.replace(/\/+$/, '')}/telemetry/events/ack`, {
         method: 'POST',
@@ -236,6 +252,33 @@ export function startDesktopTelemetry(input: {
     async enable() {
       recordLaunch();
       await reportNow();
+    },
+    setEnabled(enabled) {
+      if (!enabled) activeReport?.abort();
+      const work = settingQueue.then(async () => {
+        const connection = input.getDaemonConnection?.();
+        if (connection !== undefined) {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), REPORT_TIMEOUT_MS);
+          timeout.unref();
+          try {
+            const response = await fetchImpl(`${connection.address.replace(/\/+$/, '')}/telemetry/enabled`, {
+              method: 'POST',
+              headers: { Accept: 'application/json', Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ enabled }),
+              signal: controller.signal
+            });
+            if (!response.ok) input.logger.warn('Could not synchronize telemetry setting', { status: response.status });
+          } catch (error) {
+            input.logger.warn('Could not synchronize telemetry setting', { message: error instanceof Error ? error.message : String(error) });
+          } finally {
+            clearTimeout(timeout);
+          }
+        }
+        if (enabled && input.settings.read().telemetryEnabled) await reportNow();
+      });
+      settingQueue = work.catch(() => undefined);
+      return work;
     },
     reportNow,
     async stop() {
@@ -421,6 +464,8 @@ function sanitizeDaemonTelemetryEvent(
 
 function sanitizeDaemonFailure(value: Record<string, unknown>): Record<string, unknown> {
   const failure: Record<string, unknown> = {};
+  const diagnostic = sanitizeDaemonDiagnostic(value.diagnostic);
+  if (diagnostic !== undefined) failure.diagnostic = diagnostic;
   if (typeof value.request_id === 'string' && /^ocreq_[0-9a-f]{48}$/.test(value.request_id)) failure.request_id = value.request_id;
   for (const key of ['stage', 'executor', 'category', 'error_code', 'provider', 'upstream_code'] as const) {
     if (safeEventText(value[key], 128)) failure[key] = value[key];
@@ -439,6 +484,51 @@ function sanitizeDaemonFailure(value: Record<string, unknown>): Record<string, u
     failure.user_message = value.user_message.trim().slice(0, 500);
   }
   return failure;
+}
+
+function sanitizeDaemonDiagnostic(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value) || value.version !== 1 || !safeDiagnosticId(value.operation) || !Array.isArray(value.causes)) return undefined;
+  const causes = value.causes.slice(0, 3).flatMap(item => {
+    if (!isRecord(item) || !safeDiagnosticId(item.name)) return [];
+    return [{ name: item.name, ...(safeDiagnosticId(item.code) ? { code: item.code } : {}) }];
+  });
+  const steps = Array.isArray(value.steps) ? value.steps.slice(0, 4).flatMap(item => (
+    isRecord(item) && safeDiagnosticId(item.operation) && safeDiagnosticId(item.code)
+      && (item.result === 'fallback' || item.result === 'failed')
+      ? [{ operation: item.operation, code: item.code, result: item.result }] : []
+  )) : [];
+  const process = isRecord(value.process) && safeDiagnosticId(value.process.tool) ? {
+    tool: value.process.tool,
+    ...(safeDiagnosticId(value.process.version) ? { version: value.process.version } : {}),
+    ...(typeof value.process.exit_code === 'number' && Number.isInteger(value.process.exit_code)
+      && value.process.exit_code >= -255 && value.process.exit_code <= 255 ? { exit_code: value.process.exit_code } : {})
+  } : undefined;
+  const network = isRecord(value.network) && ['direct', 'proxy', 'unknown'].includes(String(value.network.route))
+    && ['proxy', 'platform', 'gateway', 'unknown'].includes(String(value.network.peer)) ? {
+      route: value.network.route, peer: value.network.peer,
+      ...(safeDiagnosticId(value.network.platform) ? { platform: value.network.platform } : {}),
+      ...(['loopback', 'private', 'public', 'unknown'].includes(String(value.network.proxy_scope))
+        ? { proxy_scope: value.network.proxy_scope } : {}),
+      ...(typeof value.network.proxy_port === 'number' && Number.isInteger(value.network.proxy_port)
+        && value.network.proxy_port > 0 && value.network.proxy_port <= 65535 ? { proxy_port: value.network.proxy_port } : {}),
+      ...(safeDiagnosticId(value.network.reason) ? { reason: value.network.reason } : {})
+    } : undefined;
+  const evidence = Array.isArray(value.evidence) ? value.evidence.slice(0, 12).filter(item => typeof item === 'string'
+    && /^(?:api_page_failed|connection_refused|connection_reset|dns_failed|timeout|tls_failed|proxy_failed|network_unreachable|format_unavailable|login_required|disk_full|extractor_failed|http_[1-5][0-9]{2}|internal_attempts_[1-9][0-9]{0,2})$/.test(item)) : [];
+  const frames = Array.isArray(value.frames) ? value.frames.slice(0, 3).filter(item => typeof item === 'string'
+    && /^(?:apps\/daemon\/src|packages\/protocol\/src)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:ts|js):\d{1,6}$/.test(item)) : [];
+  const missing = Array.isArray(value.missing) ? value.missing.slice(0, 3).filter(item =>
+    ['process_output_unrecognized', 'network_peer_unknown', 'stack_unavailable'].includes(String(item))) : [];
+  const diagnostic = { version: 1, operation: value.operation, causes,
+    ...(steps.length ? { steps } : {}), ...(process ? { process } : {}), ...(network ? { network } : {}),
+    ...(evidence.length ? { evidence } : {}), ...(frames.length ? { frames } : {}), ...(missing.length ? { missing } : {}) };
+  return Buffer.byteLength(JSON.stringify(diagnostic), 'utf8') <= 4_096 ? diagnostic : undefined;
+}
+
+function safeDiagnosticId(value: unknown): boolean {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value)
+    && !value.split(/[._:-]/).some(part => part.length >= 32)
+    && !/^(?:sk[-_]|AIza|AKIA|ASIA|gh[pousr]_|github_pat_|eyJ)/i.test(value);
 }
 
 function safeEventText(value: unknown, maximum: number): boolean {

@@ -392,6 +392,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
       entryPath: this.input.daemonEntryPath,
       cwd: environment.defaultCwd,
       env: environment.env,
+      telemetryEnabled: this.input.settings.read().telemetryEnabled,
       appHome: this.input.appHome,
       codexBin: environment.codexBin,
       codexHome: environment.codexHome,

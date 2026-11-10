@@ -8,7 +8,8 @@ import {
   type CreatorArtifact,
   type CreatorJob,
   type CreatorJson,
-  type CreatorStageRun
+  type CreatorStageRun,
+  type PublicErrorFacts
 } from '@opencreator/protocol';
 import type { CreatorExecutor } from './executor.js';
 import { CreatorExecutorError } from './executor.js';
@@ -16,6 +17,7 @@ import type { CreatorRepository } from './repository.js';
 import type { CreatorIssueService } from './issues.js';
 import { CreatorProviderRequestError, CreatorProviderRequestLedger } from './provider-requests.js';
 import { publicFactsFromFailure } from './public-error-facts.js';
+import { failureDiagnosticFromError, type FailureDiagnostic } from '../telemetry/diagnostic.js';
 import { sha256CreatorFile } from './file-hash.js';
 import {
   appendCreatorResultSnapshot,
@@ -512,7 +514,15 @@ export function createCreatorStageRunner(input: {
             }
           }
         });
-        emitStageFinished(stageRun.id);
+        let diagnostic: FailureDiagnostic | undefined;
+        let failureFacts: PublicErrorFacts | undefined;
+        try {
+          if (!canceled) {
+            diagnostic = failureDiagnosticFromError(error, `${stageRun.executor}.${stageId}`);
+            failureFacts = stageFailureFacts(error, failureCode);
+          }
+        } catch { /* Failure reporting must not change the stage result. */ }
+        emitStageFinished(stageRun.id, diagnostic, failureFacts);
       }
       if (stageRun === undefined) throw error;
     } finally {
@@ -523,7 +533,7 @@ export function createCreatorStageRunner(input: {
     return input.repository.listStageRuns(jobId).find(candidate => candidate.id === stageRun!.id)!;
   }
 
-  function emitStageFinished(stageRunId: string): void {
+  function emitStageFinished(stageRunId: string, diagnostic?: FailureDiagnostic, failureFacts?: PublicErrorFacts): void {
     if (input.telemetry === undefined) return;
     const stage = input.repository.getStageRun(stageRunId);
     const job = stage === undefined ? undefined : input.repository.getJob(stage.jobId);
@@ -531,15 +541,19 @@ export function createCreatorStageRunner(input: {
     const template = input.templates.get(job.templateId, job.templateVersion);
     const unknownRemoteAcceptance = providerLedger.requestsForStage(stageRunId)
       .some(request => request.status === 'unknown_remote_acceptance');
-    const issue = (job.issues ?? []).find(candidate => (
+    const stageIssues = (job.issues ?? []).filter(candidate => (
       candidate.stageRunId === stageRunId && candidate.status !== 'resolved'
     ));
+    const issue = stageIssues.find(candidate => candidate.code === stage.errorCode)
+      ?? (stage.errorCode === null ? stageIssues[0] : undefined);
     input.telemetry.stageFinished(
       job,
       stage,
       template.id,
       creatorStageTelemetryOutcome(job, stage, unknownRemoteAcceptance),
-      issue
+      issue,
+      diagnostic,
+      failureFacts
     );
   }
 

@@ -26,6 +26,7 @@ import {
   runKrillinCli
 } from '../../src/creator/krillin/cli-runner.js';
 import { KrillinCliError } from '../../src/creator/krillin/cli-runner.js';
+import { failureDiagnosticFromError } from '../../src/telemetry/diagnostic.js';
 import { createGatewayCreatorSource } from '../../src/gateway/creator-service-source.js';
 import type { KrillinRuntimeManifest } from '../../src/creator/krillin/manifest.js';
 
@@ -579,7 +580,7 @@ describe('KrillinAI CLI runner', () => {
     });
 
     progress.length = 0;
-    await expect(runKrillinCli({
+    const failure = await runKrillinCli({
       resourceRoot,
       jobsRoot,
       dependencyRoot,
@@ -592,9 +593,13 @@ describe('KrillinAI CLI runner', () => {
         ttsModel: 'qwen3-tts-instruct-flash',
         voiceCode: 'FAIL'
       }
-    })).rejects.toMatchObject({
+    }).then(() => undefined, error => error);
+    expect(failure).toMatchObject({
       code: 'generate_speech_failed',
       message: 'fixture TTS failed'
+    });
+    expect(failureDiagnosticFromError(failure, 'krillinai.tts')).toMatchObject({
+      operation: 'krillinai.tts', process: { tool: 'krillinai', exit_code: 1 }
     });
     expect(progress).toEqual([
       {

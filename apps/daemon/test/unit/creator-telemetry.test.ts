@@ -19,6 +19,7 @@ import { createCreatorService } from '../../src/creator/service.js';
 import { createCreatorIssueService } from '../../src/creator/issues.js';
 import { createCreatorStageRunner } from '../../src/creator/stage-runner.js';
 import { CreatorExecutorError } from '../../src/creator/executor.js';
+import { attachFailureDiagnostic, failureDiagnosticFromError, processFailureDiagnostic } from '../../src/telemetry/diagnostic.js';
 import { KrillinCliError } from '../../src/creator/krillin/cli-runner.js';
 import { createDefaultCreatorTemplateRegistry } from '../../src/creator/templates/registry.js';
 import type { OpenCreatorIssue, PublicErrorFacts } from '@opencreator/protocol';
@@ -84,9 +85,75 @@ describe('creator telemetry outbox', () => {
       db.close();
     });
   });
+
+  it('drops events outside the server acceptance window before reporting', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-telemetry-expired-'));
+    const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const outbox = createCreatorTelemetryOutbox(db);
+    outbox.enqueue({ ...event(), occurred_at: '2026-01-01T00:00:00.000Z' }, 'old');
+    const app = Fastify();
+    await registerTelemetryRoutes(app, outbox);
+    const response = await app.inject('/telemetry/events');
+    expect(response.json()).toEqual({ events: [] });
+    expect(outbox.count()).toBe(0);
+    await app.close();
+    db.close();
+  });
+
+  it('validates the telemetry setting and clears pending events when disabled', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-telemetry-setting-'));
+    const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const outbox = createCreatorTelemetryOutbox(db);
+    const sink = createCreatorTelemetrySink({ outbox, readAccount: () => account });
+    const app = Fastify();
+    await registerTelemetryRoutes(app, outbox, sink);
+    outbox.enqueue(event(), 'first');
+
+    const invalid = await app.inject({ method: 'POST', url: '/telemetry/enabled', payload: { enabled: 'false' } });
+    expect(invalid.statusCode).toBe(400);
+    expect(outbox.count()).toBe(1);
+
+    const disabled = await app.inject({ method: 'POST', url: '/telemetry/enabled', payload: { enabled: false } });
+    expect(disabled.json()).toEqual({ enabled: false });
+    expect((await app.inject('/telemetry/events')).json()).toEqual({ events: [] });
+    sink.stageStarted({ id: 'job_1' } as CreatorJob, { id: 'stage_1' } as CreatorStageRun, 'test');
+    expect(outbox.count()).toBe(0);
+
+    const enabled = await app.inject({ method: 'POST', url: '/telemetry/enabled', payload: { enabled: true } });
+    expect(enabled.json()).toEqual({ enabled: true });
+    outbox.enqueue(event(), 'second');
+    expect(outbox.count()).toBe(1);
+    await app.close();
+    db.close();
+  });
 });
 
 describe('creator telemetry event safety', () => {
+  it('keeps actionable process evidence without source URLs, credentials or paths', () => {
+    const output = 'ERROR: [youtube] Unable to download API page: [Errno 61] Connection refused after 3 attempts https://youtube.com/watch?v=private Authorization: Bearer secret';
+    const diagnostic = processFailureDiagnostic({
+      operation: 'yt-dlp.probe', tool: 'yt-dlp', version: '2026.10.01', exitCode: 1,
+      output, proxy: 'http://user:password@127.0.0.1:7890', sourceUrl: 'https://youtube.com/watch?v=private'
+    });
+    expect(diagnostic).toMatchObject({
+      operation: 'yt-dlp.probe', process: { tool: 'yt-dlp', exit_code: 1 },
+      network: { route: 'proxy', peer: 'unknown', platform: 'youtube', proxy_scope: 'loopback', proxy_port: 7890 },
+      evidence: ['api_page_failed', 'connection_refused', 'internal_attempts_3']
+    });
+    const error = attachFailureDiagnostic(new CreatorExecutorError('network_unavailable', output), diagnostic);
+    const fromError = failureDiagnosticFromError(error, 'download.probe');
+    expect(fromError?.causes).toEqual([{ name: 'CreatorExecutorError', code: 'network_unavailable' }]);
+    expect(JSON.stringify(fromError)).not.toMatch(/private|password|Bearer|youtube\.com/);
+  });
+
+  it('identifies an explicit local proxy refusal and direct platform refusal separately', () => {
+    const proxy = processFailureDiagnostic({ operation: 'yt-dlp.download', tool: 'yt-dlp',
+      output: 'ProxyError: proxy connection refused', proxy: 'http://localhost:7890' });
+    const direct = processFailureDiagnostic({ operation: 'yt-dlp.download', tool: 'yt-dlp',
+      output: 'ERROR: Connection refused', proxy: '', sourceUrl: 'https://www.bilibili.com/video/test' });
+    expect(proxy.network).toMatchObject({ route: 'proxy', peer: 'proxy', proxy_scope: 'loopback' });
+    expect(direct.network).toMatchObject({ route: 'direct', peer: 'platform', platform: 'bilibili' });
+  });
   it('drops arbitrary details and never emits raw error content', () => {
     const sanitized = sanitizeCreatorTelemetryEvent({
       ...event(),
@@ -138,6 +205,21 @@ describe('creator telemetry event safety', () => {
     expect(sanitizeCreatorTelemetryEvent({ ...event(), user_id: 'secret\nvalue' }).user_id).toBeUndefined();
   });
 
+  it('uses the current failure request ID even when an older issue has a different ID', () => {
+    const current = `ocreq_${'c'.repeat(48)}`;
+    const stale = `ocreq_${'d'.repeat(48)}`;
+    const result = createCreatorTelemetryEvent({
+      eventType: 'task_finished', occurredAt: '2026-10-26T00:00:01.000Z',
+      job: { id: 'job_1' } as CreatorJob,
+      stage: { id: 'attempt_1', stageId: 'tts', executor: 'krillinai', attempt: 1,
+        startedAt: null, finishedAt: null, errorCode: 'provider_failed', progress: {} } as CreatorStageRun,
+      feature: 'smart-dubbing', outcome: 'failed', account,
+      issue: { code: 'provider_failed', publicFacts: { kind: 'unavailable', requestId: stale } } as OpenCreatorIssue,
+      failureFacts: { kind: 'unavailable', requestId: current, httpStatus: 502 }
+    });
+    expect(result.failure).toMatchObject({ request_id: current, http_status: 502 });
+  });
+
   it('isolates account lookup and outbox failures from Creator execution', () => {
     const job = { id: 'creator_job_1' } as CreatorJob;
     const stage = { id: 'creator_stage_run_1' } as CreatorStageRun;
@@ -151,6 +233,20 @@ describe('creator telemetry event safety', () => {
       readAccount: () => account
     });
     expect(() => brokenOutbox.stageFinished(job, stage, 'smart-dubbing', 'failed')).not.toThrow();
+  });
+
+  it('stops collection and clears pending events when telemetry is disabled', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-telemetry-disabled-'));
+    const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const outbox = createCreatorTelemetryOutbox(db);
+    outbox.enqueue(event(), 'first');
+    const sink = createCreatorTelemetrySink({ outbox, readAccount: () => account });
+    sink.setEnabled(false);
+    expect(outbox.count()).toBe(0);
+    sink.stageStarted({ id: 'job_1' } as CreatorJob, { id: 'stage_1' } as CreatorStageRun, 'test');
+    expect(outbox.count()).toBe(0);
+    sink.setEnabled(true);
+    db.close();
   });
 });
 
@@ -228,6 +324,31 @@ describe('creator stage telemetry outcome mapping', () => {
 });
 
 describe('creator stage telemetry lifecycle', () => {
+  it('reports the exact failed attempt diagnostic without changing the stage result', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-telemetry-failure-'));
+    const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const repository = createCreatorRepository(db);
+    const templates = createDefaultCreatorTemplateRegistry();
+    const service = createCreatorService({ repository, templates });
+    const outbox = createCreatorTelemetryOutbox(db);
+    const telemetry = createCreatorTelemetrySink({ outbox, readAccount: () => account });
+    const job = service.createJob({ projectId: 'project_1', templateId: 'smart-dubbing', state: {} });
+    const runner = createCreatorStageRunner({
+      repository, templates, telemetry, issueService: createCreatorIssueService(repository),
+      executors: [{ id: 'smart-dubbing', run: async () => {
+        throw attachFailureDiagnostic(new CreatorExecutorError('network_unavailable', 'Connection refused'),
+          processFailureDiagnostic({ operation: 'yt-dlp.probe', tool: 'yt-dlp', output: 'ProxyError: proxy connection refused', proxy: 'http://127.0.0.1:7890' }));
+      } }],
+      workRoot: join(tempDir, 'jobs')
+    });
+    const result = await runner.run(job.id, 'tts');
+    expect(result.status).toBe('failed');
+    expect(outbox.list().find(item => item.event_type === 'task_finished')?.failure?.diagnostic)
+      .toMatchObject({ operation: 'yt-dlp.probe', network: { route: 'proxy', peer: 'proxy', proxy_port: 7890 } });
+    await runner.close();
+    db.close();
+  });
+
   it('records success and needs_input with stable task and attempt ids', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-telemetry-life-'));
     const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
