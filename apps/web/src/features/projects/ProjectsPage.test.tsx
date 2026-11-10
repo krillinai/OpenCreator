@@ -56,13 +56,11 @@ describe('ProjectsPage', () => {
       </LanguageProvider>
     );
 
-    expect(screen.getByRole('heading', { name: 'My Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Generation History' })).toBeInTheDocument();
     expect(screen.getByRole('tablist', { name: 'Project categories' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Copywriting' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open project 夏季新品封面' })).toBeInTheDocument();
-    expect(screen.getByText('Thumbnail generation')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open project 夏季新品封面' }).querySelector('img'))
-      .toHaveAttribute('src', '/dashboard/templates/image-generation-project-cover.png');
+    expect(screen.queryByRole('button', { name: 'Open project 夏季新品封面' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open project 如何建立内容创作流程' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open project youtube.com · launch-talk' }).querySelector('img'))
       .toHaveAttribute('src', 'https://i.ytimg.com/vi/launch-talk/maxresdefault.jpg');
   });
@@ -76,7 +74,7 @@ describe('ProjectsPage', () => {
     expect(youtubeThumbnailUrls('https://www.bilibili.com/video/BV1test')).toEqual([]);
   });
 
-  it('creates the selected project type from the projects page dropdown', async () => {
+  it('hides the new project entry from the projects page', () => {
     const onCreateProject = vi.fn();
 
     render(
@@ -88,28 +86,15 @@ describe('ProjectsPage', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '新建项目' }));
-    expect(screen.getByRole('menu', { name: '项目类型' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: '创建项目' })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('menuitem', { name: /图像生成/ }));
-
-    await waitFor(() => expect(screen.queryByRole('menu', { name: '项目类型' }))
-      .not.toBeInTheDocument());
-    expect(onCreateProject).toHaveBeenCalledOnce();
-    expect(onCreateProject).toHaveBeenCalledWith(
-      expect.objectContaining({ workspace: 'image-generation' })
-    );
+    expect(screen.queryByRole('button', { name: '新建项目' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menu', { name: '项目类型' })).not.toBeInTheDocument();
+    expect(onCreateProject).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['video-translation', '/dashboard/templates/video-translation-project-cover.png'],
-    ['video-download', '/dashboard/templates/video-download-project-cover.png'],
-    ['video-generation', '/dashboard/templates/animated-story.jpg']
-  ])('uses the dedicated fallback cover for %s projects', (templateId, expectedCover) => {
+  it('uses the dedicated fallback cover for video translation projects', () => {
     const job = creatorJob({
-      id: `job_${templateId}_fallback`,
-      templateId,
+      id: 'job_video-translation_fallback',
+      templateId: 'video-translation',
       updatedAt: '2026-09-05T00:00:00.000Z',
       state: { sourceUrl: 'https://www.bilibili.com/video/BV1test' }
     });
@@ -117,7 +102,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage jobs={[job]} workspaces={workspaces} onOpenJob={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: '打开项目 bilibili.com · BV1test' }).querySelector('img'))
-      .toHaveAttribute('src', expectedCover);
+      .toHaveAttribute('src', '/dashboard/templates/video-translation-project-cover.png');
   });
 
   it('shows a video generation Creator job and requests its generated frame cover', async () => {
@@ -153,12 +138,12 @@ describe('ProjectsPage', () => {
       />
     );
     try {
-      expect(screen.getByText('视频生成')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: '打开项目 雨夜中的未来城市' }))
+      fireEvent.click(screen.getByRole('tab', { name: '产出中心' }));
+      expect(screen.getByRole('button', { name: '下载产出 generated.mp4' }))
         .toBeInTheDocument();
       await waitFor(() => expect(service.openProjectCover).toHaveBeenCalledWith(job.id));
       await waitFor(() => expect(
-        screen.getByRole('button', { name: '打开项目 雨夜中的未来城市' }).querySelector('img')
+        screen.getByRole('button', { name: '下载产出 generated.mp4' }).querySelector('img')
       ).toHaveAttribute('src', 'blob:generated-video-cover'));
     } finally {
       rendered.unmount();
@@ -173,6 +158,7 @@ describe('ProjectsPage', () => {
       templateId: 'image-generation',
       state: { prompt: '内部默认提示词不应成为标题' },
       updatedAt: '2026-09-08T08:00:00.000Z',
+      artifacts: [artifact('job_preset_title', 'generated_image', 'generated-image.png')],
       presetOrigin: {
         module: 'image-generation',
         id: 'ecommerce-product',
@@ -185,8 +171,9 @@ describe('ProjectsPage', () => {
 
     render(<ProjectsPage jobs={[job]} workspaces={workspaces} onOpenJob={vi.fn()} />);
 
-    expect(screen.getByRole('button', { name: '打开项目 电商商品主图' }))
-      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '产出中心' }));
+    expect(screen.getByRole('button', { name: '下载产出 generated-image.png' }))
+      .toHaveTextContent('电商商品主图');
     expect(screen.queryByText('内部默认提示词不应成为标题')).not.toBeInTheDocument();
   });
 
@@ -293,7 +280,6 @@ describe('ProjectsPage', () => {
       .getAllByRole('button', { name: /^打开项目/ });
     expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual([
       '打开项目 如何建立内容创作流程',
-      '打开项目 夏季新品封面',
       '打开项目 youtube.com · launch-talk'
     ]);
 
@@ -312,18 +298,18 @@ describe('ProjectsPage', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '删除项目 夏季新品封面' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除项目 如何建立内容创作流程' }));
     const dialog = screen.getByRole('alertdialog', { name: '删除项目' });
     expect(dialog).toHaveTextContent('项目记录及创作历史将无法恢复');
     const deleteFiles = within(dialog).getByRole('checkbox', { name: '同时删除项目文件' });
     expect(deleteFiles).not.toBeChecked();
 
     fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
-    await waitFor(() => expect(onDeleteJob).toHaveBeenCalledWith('job_cover', { deleteFiles: false }));
+    await waitFor(() => expect(onDeleteJob).toHaveBeenCalledWith('job_stickman', { deleteFiles: false }));
     await waitFor(() => expect(screen.queryByRole('alertdialog', { name: '删除项目' }))
       .not.toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: '删除项目 夏季新品封面' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除项目 如何建立内容创作流程' }));
     const dialogWithFiles = screen.getByRole('alertdialog', { name: '删除项目' });
     const deleteFilesAfterReopen = within(dialogWithFiles)
       .getByRole('checkbox', { name: '同时删除项目文件' });
@@ -331,7 +317,7 @@ describe('ProjectsPage', () => {
     fireEvent.click(deleteFilesAfterReopen);
     fireEvent.click(within(dialogWithFiles).getByRole('button', { name: '删除' }));
     await waitFor(() => expect(onDeleteJob)
-      .toHaveBeenLastCalledWith('job_cover', { deleteFiles: true }));
+      .toHaveBeenLastCalledWith('job_stickman', { deleteFiles: true }));
   });
 
   it('selects projects without opening them and selects only the current search results', () => {
@@ -352,7 +338,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByText('已选择 1 个')).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索项目' }), {
-      target: { value: '夏季新品' }
+      target: { value: 'launch-talk' }
     });
     fireEvent.click(screen.getByRole('button', { name: '全选当前结果' }));
     expect(screen.getByText('已选择 2 个')).toBeInTheDocument();
@@ -360,13 +346,12 @@ describe('ProjectsPage', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索项目' }), {
       target: { value: '' }
     });
-    expect(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: '选择项目 如何建立内容创作流程' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: '选择项目 youtube.com · launch-talk' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '选择项目 youtube.com · launch-talk' })).toBeChecked();
 
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(screen.queryByRole('checkbox', { name: /^选择项目/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '打开项目 夏季新品封面' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开项目 如何建立内容创作流程' })).toBeInTheDocument();
   });
 
   it('deletes selected projects in one confirmed batch with the chosen file option', async () => {
@@ -381,7 +366,7 @@ describe('ProjectsPage', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '批量管理' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 如何建立内容创作流程' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 youtube.com · launch-talk' }));
     fireEvent.click(screen.getByRole('button', { name: '删除已选 (2)' }));
 
@@ -392,8 +377,8 @@ describe('ProjectsPage', () => {
 
     await waitFor(() => expect(onDeleteJob).toHaveBeenCalledTimes(2));
     expect(onDeleteJob.mock.calls).toEqual([
-      ['job_cover', { deleteFiles: true }],
-      ['job_translation', { deleteFiles: true }]
+      ['job_translation', { deleteFiles: true }],
+      ['job_stickman', { deleteFiles: true }]
     ]);
     await waitFor(() => expect(screen.queryByRole('alertdialog', { name: '批量删除项目' }))
       .not.toBeInTheDocument());
@@ -402,7 +387,7 @@ describe('ProjectsPage', () => {
 
   it('continues a batch after a failure and keeps only failed projects selected', async () => {
     const onDeleteJob = vi.fn(async (jobId: string) => {
-      if (jobId === 'job_cover') {
+      if (jobId === 'job_stickman') {
         throw new ApiClientError({
           status: 409,
           code: 'creator_job_has_active_run',
@@ -420,7 +405,7 @@ describe('ProjectsPage', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '批量管理' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 youtube.com · launch-talk' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 如何建立内容创作流程' }));
     fireEvent.click(screen.getByRole('button', { name: '删除已选 (2)' }));
     fireEvent.click(within(
@@ -433,8 +418,8 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('status')).toHaveTextContent('已删除 1 个项目');
     expect(screen.queryByText(/另有 1 个项目仍在运行|1 are still running/)).not.toBeInTheDocument();
     expect(screen.getByText('已选择 1 个')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: '选择项目 如何建立内容创作流程' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '选择项目 如何建立内容创作流程' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: '选择项目 youtube.com · launch-talk' })).not.toBeChecked();
   });
 
   it('prevents repeated batch deletion submissions while a deletion is running', async () => {
@@ -444,7 +429,7 @@ describe('ProjectsPage', () => {
     }));
     render(
       <ProjectsPage
-        jobs={[jobs[0]!]}
+        jobs={[jobs[1]!]}
         workspaces={workspaces}
         onOpenJob={vi.fn()}
         onDeleteJob={onDeleteJob}
@@ -452,7 +437,7 @@ describe('ProjectsPage', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '批量管理' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 夏季新品封面' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择项目 youtube.com · launch-talk' }));
     fireEvent.click(screen.getByRole('button', { name: '删除已选 (1)' }));
     fireEvent.click(within(
       screen.getByRole('alertdialog', { name: '批量删除项目' })
@@ -501,8 +486,8 @@ describe('ProjectsPage', () => {
     };
     const editedDraft = creatorJob({
       id: 'job_edited',
-      templateId: 'cover',
-      state: { prompt: '用户修改过的封面需求', ratio: '16:9', sourceUrl: '', candidateCount: 4 },
+      templateId: 'video-translation',
+      state: { sourceUrl: 'https://www.youtube.com/watch?v=edited' },
       updatedAt: '2026-08-20T11:00:00.000Z'
     });
     const failedDraft = { ...emptyDraft, id: 'job_failed', status: 'failed' as const };
@@ -592,16 +577,16 @@ describe('ProjectsPage', () => {
         onOpenJob={vi.fn()}
       />
     );
-    expect(screen.getByRole('list', { name: '项目列表' })).toHaveTextContent('用户修改过的封面需求');
+    expect(screen.getByRole('list', { name: '项目列表' })).toHaveTextContent('youtube.com · edited');
     expect(within(screen.getByRole('list', { name: '项目列表' })).getAllByRole('listitem')).toHaveLength(1);
   });
 
   it('filters real Creator jobs by category and search text', () => {
     render(<ProjectsPage jobs={jobs} workspaces={workspaces} onOpenJob={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
-    expect(screen.getByRole('button', { name: '打开项目 夏季新品封面' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '打开项目 如何建立内容创作流程' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '视频创作' }));
+    expect(screen.getByRole('button', { name: '打开项目 如何建立内容创作流程' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开项目 夏季新品封面' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: '全部' }));
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索项目' }), {
@@ -667,15 +652,12 @@ describe('ProjectsPage', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
-    expect(screen.getByRole('button', { name: '打开项目 清晨海边的产品摄影' }))
-      .toHaveTextContent('图像生成');
-    expect(screen.getByRole('button', { name: '打开项目 清晨海边的产品摄影' }).querySelector('img'))
-      .toHaveAttribute('src', '/dashboard/templates/image-generation-project-cover.png');
+    expect(screen.queryByRole('button', { name: '打开项目 清晨海边的产品摄影' }))
+      .not.toBeInTheDocument();
     fireEvent.click(within(screen.getByRole('tablist', { name: '内容维度' }))
       .getByRole('tab', { name: '产出中心' }));
     const output = screen.getByRole('button', { name: '下载产出 generated-image.png' });
-    expect(output).toBeInTheDocument();
+    expect(output).toHaveTextContent('清晨海边的产品摄影');
     expect(within(output).getByText('PNG')).toBeInTheDocument();
   });
 
@@ -710,15 +692,11 @@ describe('ProjectsPage', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('tab', { name: '文案创作' }));
-    const project = screen.getByRole('button', { name: '打开项目 第一次参与开源项目' });
-    expect(project).toHaveTextContent('小红书帖子');
-    expect(project.querySelector('img')).toHaveAttribute(
-      'src',
-      '/dashboard/templates/digital-presenter.jpg'
-    );
-    expect(within(screen.getByRole('list', { name: '项目列表' })).getAllByRole('listitem'))
-      .toHaveLength(1);
+    fireEvent.click(screen.getByRole('tab', { name: '产出中心' }));
+    const output = screen.getByRole('button', { name: '下载产出 post.md' });
+    expect(output).toHaveTextContent('第一次参与开源项目');
+    expect(screen.queryByRole('button', { name: '打开项目 第一次参与开源项目' }))
+      .not.toBeInTheDocument();
   });
 
   it('lists short video scripts as writing projects and hides untouched drafts', () => {
@@ -753,15 +731,46 @@ describe('ProjectsPage', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('tab', { name: '文案创作' }));
-    const project = screen.getByRole('button', { name: '打开项目 第一次参与开源项目' });
-    expect(project).toHaveTextContent('短视频脚本');
-    expect(project.querySelector('img')).toHaveAttribute(
-      'src',
-      '/skill-market/examples/gpt-image-2-info-poster.png'
-    );
-    expect(within(screen.getByRole('list', { name: '项目列表' })).getAllByRole('listitem'))
-      .toHaveLength(1);
+    fireEvent.click(screen.getByRole('tab', { name: '产出中心' }));
+    const output = screen.getByRole('button', { name: '下载产出 script.md' });
+    expect(output).toHaveTextContent('第一次参与开源项目');
+    expect(screen.queryByRole('button', { name: '打开项目 第一次参与开源项目' }))
+      .not.toBeInTheDocument();
+  });
+
+  it('keeps generation jobs out of projects and groups all their outputs by newest date', () => {
+    const generatedJobs = [
+      creatorJob({
+        id: 'job_output_image', templateId: 'image-generation', state: { prompt: '产品图片' }, updatedAt: '2026-09-10T10:00:00.000Z',
+        artifacts: [{ ...artifact('job_output_image', 'generated_image', 'product.png'), createdAt: '2026-09-10T10:00:00.000Z' }]
+      }),
+      creatorJob({
+        id: 'job_output_video', templateId: 'video-generation', state: { prompt: '城市视频' }, updatedAt: '2026-09-11T10:00:00.000Z',
+        artifacts: [{ ...artifact('job_output_video', 'generated_video', 'city.mp4'), createdAt: '2026-09-11T10:00:00.000Z' }]
+      }),
+      creatorJob({
+        id: 'job_output_script', templateId: 'short-video-script', state: { topic: '短视频脚本' }, updatedAt: '2026-09-12T10:00:00.000Z',
+        artifacts: [{ ...artifact('job_output_script', 'short_video_script', 'script.md'), createdAt: '2026-09-12T10:00:00.000Z' }]
+      }),
+      creatorJob({
+        id: 'job_output_download', templateId: 'video-download', state: { sourceUrl: 'https://www.youtube.com/watch?v=download' }, updatedAt: '2026-09-13T10:00:00.000Z',
+        artifacts: [
+          { ...artifact('job_output_download', 'source_video', 'download.mp4'), createdAt: '2026-09-13T10:00:00.000Z' },
+          { ...artifact('job_output_download', 'source_audio', 'download.mp3'), createdAt: '2026-09-12T11:00:00.000Z' }
+        ]
+      })
+    ];
+    render(<ProjectsPage jobs={generatedJobs} workspaces={workspaces} onOpenJob={vi.fn()} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('还没有创作项目');
+    fireEvent.click(screen.getByRole('tab', { name: '产出中心' }));
+    const groups = [...document.querySelectorAll('.project-output-date-group')];
+    expect(groups.map(group => group.querySelector('h2')?.textContent)).toEqual([
+      '2026年9月13日', '2026年9月12日', '2026年9月11日', '2026年9月10日'
+    ]);
+    for (const name of ['product.png', 'city.mp4', 'script.md', 'download.mp4', 'download.mp3']) {
+      expect(screen.getByText(name)).toBeInTheDocument();
+    }
   });
 
   it('shows loading and runtime errors explicitly', () => {

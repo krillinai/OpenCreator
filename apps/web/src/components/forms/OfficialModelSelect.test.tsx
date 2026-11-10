@@ -72,19 +72,19 @@ it('localizes branded video metadata and search states in Swedish', async () => 
   const user = userEvent.setup();
   await user.click(screen.getByRole('combobox', { name: 'Videomodell' }));
   expect(screen.getByRole('option', { name: 'Veo 3.1' })).toHaveTextContent('Längd 4, 8 sekunder');
-  expect(screen.getByText('1 modeller')).toBeInTheDocument();
+  expect(screen.queryByText('1 modeller')).not.toBeInTheDocument();
   await user.type(screen.getByRole('combobox'), 'zzzzzzzzzz');
   expect(screen.getByText('Inga matchande modeller')).toBeInTheDocument();
 });
 
-it('shows the same concise duration and clear billing rule for recommended video models', async () => {
+it('shows concise duration and per-resolution pricing for recommended video models without a menu heading', async () => {
   const video: GatewayModel = { id: 'sd-2.5', name: 'SD 2.5', modality: 'video', capabilities: [],
     durations: Array.from({ length: 27 }, (_, index) => index + 4), resolutions: ['480p', '720p', '1080p'],
     price: { version: 'db-1', videoUnitsPerSecond: { '480p': 10_000_000, '720p': 30_000_000, '1080p': 60_000_000 } } };
   const change = vi.fn();
   render(<OfficialModelSelect label="视频模型" models={[video]} value={video.id} recommendedModel={video} followsRecommendation onChange={change} />);
   await userEvent.setup().click(screen.getByRole('combobox', { name: '视频模型' }));
-  expect(screen.getByText('按秒计费，价格随清晰度变化')).toBeVisible();
+  expect(screen.queryByText('按秒计费，价格随清晰度变化')).not.toBeInTheDocument();
   const option = screen.getByRole('option', { name: '系统推荐 · SD 2.5' });
   expect(option).toHaveTextContent('时长 4–30 秒 · 480p / 720p / 1080p');
   expect(option).toHaveTextContent('720p：每秒约 30 积分');
@@ -121,7 +121,7 @@ it('shows search results immediately in the same control without retaining unrel
   await user.type(input, 'Model 11');
   const list = screen.getByRole('listbox', { name: '文本模型' });
   expect(within(list).getAllByRole('option')).toHaveLength(1);
-  expect(screen.getByText('1 个匹配项')).toBeInTheDocument();
+  expect(screen.queryByText('1 个匹配项')).not.toBeInTheDocument();
   expect(change).not.toHaveBeenCalled();
   await user.click(within(list).getByRole('option', { name: 'Model 11' }));
   expect(change).toHaveBeenCalledWith('vendor/model-11');
@@ -221,7 +221,7 @@ it('lists the recommended model once and can search its original ID', async () =
   const user = userEvent.setup();
   const input = screen.getByRole('combobox');
   await user.click(input);
-  expect(screen.getByText('2 个模型')).toBeInTheDocument();
+  expect(screen.queryByText('2 个模型')).not.toBeInTheDocument();
   expect(screen.getAllByRole('option')).toHaveLength(2);
   expect(screen.queryByRole('option', { name: 'GPT Image Flare' })).not.toBeInTheDocument();
   const option = screen.getByRole('option', { name: '系统推荐 · GPT Image Flare' });
@@ -273,4 +273,14 @@ it('never displays relay routing in names, groups, details or tooltips, includin
   expect(change).toHaveBeenCalledWith('chatanywhere/gpt-6-luna');
   view.rerender(<OfficialModelSelect label="模型" models={[]} value="88api/gpt-image-2" onChange={change} />);
   expect(screen.getByRole('combobox')).toHaveValue('gpt-image-2');
+});
+
+it('keeps catalog brand navigation without a model count or billing heading', async () => {
+  const models: GatewayModel[] = [{ id: 'bytedance/seedance-2', name: 'Seedance 2.0', modality: 'video', capabilities: [], durations: [5, 10] }];
+  render(<LanguageProvider initialPreference="en-US"><OfficialModelSelect label="视频模型" layout="catalog" models={models} value={models[0]!.id} onChange={vi.fn()} /></LanguageProvider>);
+
+  await userEvent.setup().click(screen.getByRole('combobox', { name: '视频模型' }));
+  expect(document.querySelector('.official-model-menu-count')).not.toBeInTheDocument();
+  expect(screen.getByText('MODELS')).toBeVisible();
+  expect(screen.getByRole('option', { name: 'Seedance 2.0' })).toBeVisible();
 });

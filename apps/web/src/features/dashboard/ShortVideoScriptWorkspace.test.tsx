@@ -1,10 +1,11 @@
 import { changeControl } from '../../test/select-option.js';
-import type { CreatorActionRequest, CreatorArtifact, CreatorJob } from '@opencreator/protocol';
+import { createDefaultCreatorServicesConfig, type CreatorActionRequest, type CreatorArtifact, type CreatorJob } from '@opencreator/protocol';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import ShortVideoScriptWorkspace from './ShortVideoScriptWorkspace.js';
 import { CreatorSessionProvider } from './creator-session-store.js';
+import { OfficialServicesContext } from './official-services.js';
 
 describe('ShortVideoScriptWorkspace', () => {
   it('saves settings, generates a script, and copies and downloads the edited content', async () => {
@@ -129,6 +130,26 @@ describe('ShortVideoScriptWorkspace', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('目标时长应为 15 到 600 秒的整数');
     expect(applyAction).not.toHaveBeenCalled();
+  });
+
+  it('shows the configured text model instead of an unavailable official model', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.llm.model = 'gpt-4o-mini';
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <OfficialServicesContext.Provider value={{ source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null }}>
+          <ShortVideoScriptWorkspace
+            embedded
+            onBack={vi.fn()}
+            creatorServicesService={{ getConfig: vi.fn(async () => ({ config, configuredCredentials: [] })) } as never}
+          />
+        </OfficialServicesContext.Provider>
+      </LanguageProvider>
+    );
+
+    expect(await screen.findByRole('status', { name: '文本模型' })).toHaveTextContent('gpt-4o-mini');
+    expect(screen.queryByDisplayValue('暂不可用')).not.toBeInTheDocument();
+    expect(document.querySelector('.official-model-value .model-brand-icon')).toHaveAttribute('data-brand', 'openai');
   });
 });
 

@@ -3,16 +3,25 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Archive,
+  AudioLines,
+  Captions,
+  ChevronRight,
   CircleAlert,
+  Clapperboard,
   Clock3,
+  Download,
+  FilePenLine,
   Folder,
   FolderCog,
   FolderKanban,
   FolderMinus,
   FolderPlus,
   FolderOpen,
-  LayoutTemplate,
+  Image as ImageIcon,
+  ImagePlus,
+  Languages,
   LoaderCircle,
+  Mic2,
   MoreHorizontal,
   Pencil,
   PanelLeftClose,
@@ -27,9 +36,12 @@ import {
   SquarePen,
   Trash2,
   TriangleAlert,
+  Video,
   type LucideIcon
 } from 'lucide-react';
 import type { ActiveView } from '../../app/app-state.js';
+import type { CreatorWorkspace } from '../dashboard/creator-workspace.js';
+import type { DashboardGenerationMode } from '../dashboard/DashboardGenerationComposer.js';
 import type { GatewayAccountState } from '@opencreator/protocol';
 import { AccountAvatar } from '../account/AccountAvatar.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
@@ -60,6 +72,8 @@ export function OpenCreatorSidebar(props: {
   currentProjectId?: string;
   selectedConversationId?: string;
   activeView: ActiveView;
+  activeWorkspace?: CreatorWorkspace;
+  activeGenerationMode?: DashboardGenerationMode;
   gatewayAccountState?: GatewayAccountState;
   homeActive?: boolean;
   projectNavigationMode?: 'library' | 'tree';
@@ -72,6 +86,7 @@ export function OpenCreatorSidebar(props: {
   onSelectConversation(conversationId: string): void;
   onSelectTask(threadId: string): void;
   onOpenView(view: ActiveView): void;
+  onOpenWorkspace?(workspace: CreatorWorkspace, mode?: DashboardGenerationMode): void;
   onOpenSettings(): void;
   onToggleCollapsed(): void;
   onAddProject?(): void;
@@ -138,14 +153,8 @@ export function OpenCreatorSidebar(props: {
     {
       label: t('nav.dashboard'),
       icon: PanelsTopLeft,
-      current: props.activeView === 'dashboard',
+      current: props.activeView === 'dashboard' && props.activeWorkspace === undefined,
       onClick: () => props.onOpenView('dashboard')
-    },
-    {
-      label: t('nav.home'),
-      icon: LayoutTemplate,
-      current: props.homeActive === true,
-      onClick: props.onOpenHome
     },
     {
       label: t('nav.projects'),
@@ -168,6 +177,140 @@ export function OpenCreatorSidebar(props: {
       onClick: () => props.onOpenView('schedules')
     });
   }
+  const [creationMenu, setCreationMenu] = useState<{
+    id: string;
+    left: number;
+    top: number;
+  }>();
+  const creationMenuRef = useRef<HTMLDivElement>(null);
+  const creationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const creationCloseTimerRef = useRef<number | undefined>(undefined);
+  const restoreCreationFocusRef = useRef(false);
+  const creationGroups: Array<{
+    id: string;
+    label: string;
+    icon: LucideIcon;
+    sections?: Array<{ id: string; label: string }>;
+    children: Array<{
+      workspace: CreatorWorkspace;
+      label: string;
+      icon: LucideIcon;
+      section?: string;
+      mode?: DashboardGenerationMode;
+    }>;
+  }> = [
+    {
+      id: 'video',
+      label: l('视频', 'Video'),
+      icon: Video,
+      sections: [
+        { id: 'translate', label: 'Translate' },
+        { id: 'generate', label: 'Generate' },
+        { id: 'process', label: 'Process' }
+      ],
+      children: [
+        { workspace: 'video-translation', label: l('视频翻译', 'Video Translation'), icon: Languages, section: 'translate' },
+        { workspace: 'video-translation', label: l('字幕翻译', 'Subtitle Translation'), icon: Captions, section: 'translate' },
+        { workspace: 'video-translation', label: l('视频配音', 'Voiceover'), icon: Mic2, section: 'translate' },
+        { workspace: 'video-generation', label: l('文生视频', 'Text to Video'), icon: Video, section: 'generate' },
+        { workspace: 'video-generation', label: l('图生视频', 'Image to Video'), icon: ImageIcon, section: 'generate' },
+        { workspace: 'stickman-video', label: l('火柴人动画', 'Stickman Animation'), icon: Video, section: 'generate' },
+        { workspace: 'video-download', label: l('视频下载', 'Video Downloader'), icon: Download, section: 'process', mode: 'download' },
+        { workspace: 'transcription', label: l('视频转录', 'Video Transcription'), icon: Captions, section: 'process', mode: 'transcription' },
+        { workspace: 'auto-clips', label: l('视频切片', 'Video Clips'), icon: Clapperboard, section: 'process', mode: 'clips' }
+      ]
+    },
+    {
+      id: 'image',
+      label: l('图像', 'Image'),
+      icon: ImageIcon,
+      children: [
+        { workspace: 'image-generation', label: l('文生图', 'Text to Image'), icon: ImageIcon },
+        { workspace: 'image-generation', label: l('图生图', 'Image to Image'), icon: ImagePlus },
+        { workspace: 'cover-generator', label: l('封面生成', 'Cover Generator'), icon: ImagePlus, mode: 'cover' }
+      ]
+    },
+    {
+      id: 'text',
+      label: l('文本', 'Text'),
+      icon: FilePenLine,
+      children: [
+        { workspace: 'short-video-script', label: l('短视频脚本生成', 'Short Video Script'), icon: FilePenLine, mode: 'script' }
+      ]
+    },
+    {
+      id: 'audio',
+      label: l('音频', 'Audio'),
+      icon: AudioLines,
+      children: [
+        { workspace: 'smart-dubbing', label: l('文本转语音', 'Text to Speech'), icon: Mic2 },
+        { workspace: 'transcription', label: l('音频转录', 'Audio Transcription'), icon: Captions, mode: 'audio-transcription' }
+      ]
+    }
+  ];
+  const activeCreationGroup = creationGroups.find(group => group.id === creationMenu?.id);
+  const creationChildActive = (child: (typeof creationGroups)[number]['children'][number]) => {
+    const activeMode = ['video-translation', 'transcription', 'image-generation', 'cover-generator', 'video-generation', 'video-download', 'auto-clips', 'smart-dubbing', 'short-video-script'].includes(child.workspace)
+      ? props.activeGenerationMode
+      : undefined;
+    return props.activeWorkspace === child.workspace
+      && (activeMode ?? defaultCreationMode(child.workspace)) === (child.mode ?? defaultCreationMode(child.workspace));
+  };
+  const activeCreationChild = creationGroups.flatMap(group => group.children).find(creationChildActive);
+  const renderCreationChild = (child: (typeof creationGroups)[number]['children'][number]) => {
+    const ChildIcon = child.icon;
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        className="sidebar-creation-child"
+        key={`${child.section ?? 'default'}:${child.label}`}
+        aria-current={activeCreationChild === child ? 'page' : undefined}
+        onClick={() => {
+          closeCreationMenu();
+          props.onOpenWorkspace?.(child.workspace, child.mode);
+        }}
+      >
+        <span className="sidebar-creation-child-icon" aria-hidden="true">
+          <ChildIcon size={16} strokeWidth={1.8} />
+        </span>
+        <span className="sidebar-creation-child-label">{child.label}</span>
+      </button>
+    );
+  };
+  const cancelCreationMenuClose = () => {
+    if (creationCloseTimerRef.current !== undefined) {
+      window.clearTimeout(creationCloseTimerRef.current);
+      creationCloseTimerRef.current = undefined;
+    }
+  };
+  const scheduleCreationMenuClose = () => {
+    cancelCreationMenuClose();
+    creationCloseTimerRef.current = window.setTimeout(() => {
+      setCreationMenu(undefined);
+      creationCloseTimerRef.current = undefined;
+    }, 120);
+  };
+  const openCreationMenu = (id: string, trigger: HTMLButtonElement, childCount: number) => {
+    cancelCreationMenuClose();
+    creationTriggerRef.current = trigger;
+    const rect = trigger.getBoundingClientRect();
+    const width = Math.min(id === 'video' ? 696 : 220, window.innerWidth - 16);
+    const height = id === 'video' ? 218 : childCount * 42 + 11;
+    setCreationMenu({
+      id,
+      left: Math.max(8, Math.min(window.innerWidth - width - 8, rect.right + 8)),
+      top: Math.max(8, Math.min(window.innerHeight - height - 8, rect.top - 6))
+    });
+  };
+  const closeCreationMenu = (restoreFocus = false) => {
+    cancelCreationMenuClose();
+    setCreationMenu(undefined);
+    if (restoreFocus) {
+      restoreCreationFocusRef.current = true;
+      creationTriggerRef.current?.focus();
+    }
+  };
   const conversationsByProject = new Map<string, OpenCreatorConversation[]>();
   const selectedTaskThread = props.tasks.some(
     task => task.threadId === props.selectedConversationId
@@ -182,6 +325,40 @@ export function OpenCreatorSidebar(props: {
   useEffect(() => {
     setExpandedProjectId(props.currentProjectId);
   }, [props.currentProjectId]);
+
+  useEffect(() => () => {
+    if (creationCloseTimerRef.current !== undefined) {
+      window.clearTimeout(creationCloseTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (creationMenu === undefined) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !creationMenuRef.current?.contains(target)
+        && !creationTriggerRef.current?.contains(target)
+      ) closeCreationMenu();
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeCreationMenu(true);
+      }
+    };
+    const closeOnViewportChange = () => closeCreationMenu();
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnViewportChange);
+    window.addEventListener('scroll', closeOnViewportChange, true);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnViewportChange);
+      window.removeEventListener('scroll', closeOnViewportChange, true);
+    };
+  }, [creationMenu]);
 
   useEffect(() => {
     if (projectMenuId === undefined) return;
@@ -293,7 +470,97 @@ export function OpenCreatorSidebar(props: {
       </div>
 
       <div className="sidebar-primary">
-        {globalActions.map((action) => {
+        {globalActions.slice(0, 1).map((action) => {
+          const Icon = action.icon;
+          return (
+            <button
+              type="button"
+              className="sidebar-row"
+              key={action.label}
+              title={collapsed ? action.label : undefined}
+              aria-current={action.current ? 'page' : undefined}
+              onClick={action.onClick}
+            >
+              <span className="sidebar-nav-icon" aria-hidden="true">
+                <Icon size={18} strokeWidth={1.8} />
+              </span>
+              <span className="sidebar-row-label">{action.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="sidebar-creation-nav" aria-label={l('创作导航', 'Creation navigation')}>
+        {creationGroups.map(group => {
+          const expanded = creationMenu?.id === group.id;
+          const GroupIcon = group.icon;
+          const groupActive = group.children.some(creationChildActive);
+          return (
+            <section className="sidebar-creation-group" key={group.id}>
+              <button
+                type="button"
+                className="sidebar-row sidebar-creation-parent"
+                aria-haspopup="menu"
+                aria-expanded={expanded}
+                aria-controls={expanded ? `sidebar-creation-menu-${group.id}` : undefined}
+                aria-current={groupActive ? 'page' : undefined}
+                title={collapsed ? group.label : undefined}
+                onMouseEnter={event => openCreationMenu(group.id, event.currentTarget, group.children.length)}
+                onMouseLeave={scheduleCreationMenuClose}
+                onFocus={event => {
+                  if (restoreCreationFocusRef.current) {
+                    restoreCreationFocusRef.current = false;
+                    return;
+                  }
+                  openCreationMenu(group.id, event.currentTarget, group.children.length);
+                }}
+                onBlur={event => {
+                  if (!creationMenuRef.current?.contains(event.relatedTarget as Node | null)) {
+                    scheduleCreationMenuClose();
+                  }
+                }}
+                onClick={event => openCreationMenu(group.id, event.currentTarget, group.children.length)}
+              >
+                <span className="sidebar-nav-icon" aria-hidden="true"><GroupIcon size={18} strokeWidth={1.8} /></span>
+                <span className="sidebar-row-label">{group.label}</span>
+                {!collapsed ? <ChevronRight className="sidebar-creation-chevron" size={14} aria-hidden="true" /> : null}
+              </button>
+            </section>
+          );
+        })}
+      </div>
+
+      {activeCreationGroup !== undefined && creationMenu !== undefined ? createPortal((
+        <div
+          id={`sidebar-creation-menu-${activeCreationGroup.id}`}
+          className={`sidebar-creation-menu${activeCreationGroup.sections ? ' sidebar-creation-menu--sections' : ''}`}
+          role="menu"
+          aria-label={activeCreationGroup.label}
+          ref={creationMenuRef}
+          style={{ left: creationMenu.left, top: creationMenu.top }}
+          onMouseEnter={cancelCreationMenuClose}
+          onMouseLeave={scheduleCreationMenuClose}
+          onBlur={event => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              scheduleCreationMenuClose();
+            }
+          }}
+        >
+          {activeCreationGroup.sections ? (
+            <div className="sidebar-creation-sections">
+              {activeCreationGroup.sections.map(section => (
+                <section className="sidebar-creation-section" key={section.id}>
+                  <h3>{section.label}</h3>
+                  {activeCreationGroup.children.filter(child => child.section === section.id).map(renderCreationChild)}
+                </section>
+              ))}
+            </div>
+          ) : activeCreationGroup.children.map(renderCreationChild)}
+        </div>
+      ), document.body) : null}
+
+      <div className="sidebar-primary">
+        {globalActions.slice(1).map((action) => {
           const Icon = action.icon;
           return (
             <button
@@ -933,6 +1200,20 @@ function positionSidebarActionMenu(trigger: DOMRect): { top: number; left: numbe
       )
     )
   };
+}
+
+function defaultCreationMode(workspace: CreatorWorkspace): DashboardGenerationMode {
+  switch (workspace) {
+    case 'image-generation': return 'image';
+    case 'cover-generator': return 'cover';
+    case 'video-generation': return 'video';
+    case 'video-download': return 'download';
+    case 'auto-clips': return 'clips';
+    case 'smart-dubbing': return 'speech';
+    case 'short-video-script': return 'script';
+    case 'transcription': return 'transcription';
+    default: return 'translation';
+  }
 }
 
 function taskStatusVisual(l: LocalizeCopy, status: SidebarTaskStatus): {

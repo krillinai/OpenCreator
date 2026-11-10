@@ -7,7 +7,10 @@ import './select.css';
 type Choice = { value: string; label: string; disabled: boolean; hidden: boolean; group?: string; searchText?: string };
 type TriggerEvents = 'onKeyDown' | 'onFocus' | 'onBlur' | 'onClick';
 type SelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, 'multiple' | 'size' | TriggerEvents>
-  & Pick<ButtonHTMLAttributes<HTMLButtonElement>, TriggerEvents> & { anchorRef?: RefObject<HTMLElement> };
+  & Pick<ButtonHTMLAttributes<HTMLButtonElement>, TriggerEvents> & {
+    anchorRef?: RefObject<HTMLElement>;
+    renderOptionIcon?(value: string): ReactNode;
+  };
 type Position = { left: number; top: number; width: number; maxHeight: number; above: boolean };
 const normalize = (text: string) => text.normalize('NFKC').toLocaleLowerCase().trim();
 
@@ -30,7 +33,7 @@ function choicesFrom(children: ReactNode, group?: string, disabled = false): Cho
 
 /** Shared single select. The hidden native control preserves form values and change events. */
 export default function Select({ children, value, defaultValue, onChange, className, id, name, disabled,
-  title, style, autoFocus, tabIndex, onKeyDown, onFocus, onBlur, onClick, anchorRef,
+  title, style, autoFocus, tabIndex, onKeyDown, onFocus, onBlur, onClick, anchorRef, renderOptionIcon,
   ...nativeProps }: SelectProps) {
   const l = useLocalizedCopy();
   const generatedId = useId();
@@ -203,6 +206,7 @@ export default function Select({ children, value, defaultValue, onChange, classN
       aria-required={nativeProps.required || undefined}
       onClick={event => { onClick?.(event); if (!event.defaultPrevented) { if (expanded) close(); else show(); } }}
       onKeyDown={event => { onKeyDown?.(event); if (!event.defaultPrevented) keyDown(event); }} onFocus={onFocus} onBlur={onBlur}>
+      {selected && renderOptionIcon ? <span className="app-select-option-icon" aria-hidden="true">{renderOptionIcon(selected.value)}</span> : null}
       <span className="app-select-value">{selected?.label ?? '—'}</span>
       <ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" />
     </button>
@@ -229,7 +233,8 @@ export default function Select({ children, value, defaultValue, onChange, classN
             onMouseDown={event => event.preventDefault()}
             onPointerMove={event => { if (event.pointerType === 'mouse' && !choice.disabled) setActiveValue(choice.value); }}
             onClick={() => choose(choice)}>
-            <span>{choice.label}</span>{choice.value === selected?.value ? <Check size={15} aria-hidden="true" /> : <span className="app-select-check" />}
+            {renderOptionIcon ? <span className="app-select-option-icon" aria-hidden="true">{renderOptionIcon(choice.value)}</span> : null}
+            <span className="app-select-option-label">{choice.label}</span>{choice.value === selected?.value ? <Check size={15} aria-hidden="true" /> : <span className="app-select-check" />}
           </div>
         </Fragment>)}
         {!filtered.length ? <div className="app-select-empty" role="status">{l('没有匹配的选项', 'No matching options')}</div> : null}

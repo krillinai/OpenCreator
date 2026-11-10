@@ -4,30 +4,38 @@ import {
   type CreatorJson,
   type CreatorStageRun
 } from '@opencreator/protocol';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useGenerationAccess } from './DashboardGenerationAccess.js';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Check,
   Download,
   FileVideo,
   Grid2X2,
+  Link2,
   List as ListIcon,
   LoaderCircle,
   Scissors,
-  Sparkles
+  Sparkles,
+  X
 } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
+import type { CreatorWebService } from '../../services/creator-service.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
-import { OfficialTaskModelFields } from './official-services.js';
+import DashboardVideoTranslationSettings from './DashboardVideoTranslationSettings.js';
+import { OfficialModelField, OfficialTaskModelFields, useOfficialServices } from './official-services.js';
 import {
   createCreatorArtifactObjectUrl,
   useOptionalCreatorSession
 } from './creator-session-store.js';
 import VideoSourceInput from './VideoSourceInput.js';
 import AutoClipWorkspaceV3 from './AutoClipWorkspaceV3.js';
+import VideoSourcePreview from './VideoSourcePreview.js';
+import SupportedVideoSources from './SupportedVideoSources.js';
+import { VideoTranslationSubtitleImport } from './VideoTranslationSubtitleImport.js';
 
 type AutoClipStep = 0 | 1 | 2;
 type VideoOrientation = 'landscape' | 'portrait' | 'square';
@@ -67,24 +75,31 @@ type AutoClipResultVersion = {
 
 const analysisStageIds = new Set(['probe', 'download', 'subtitle', 'analyze']);
 
-export default function AutoClipWorkspace(props: {
+type AutoClipWorkspaceProps = {
   onBack(): void;
   promptHint?: string;
   videoMetadataService?: VideoMetadataService;
-}) {
+  embedded?: boolean;
+  embeddedTabs?: ReactNode;
+  startInResults?: boolean;
+  forceComposer?: boolean;
+  service?: CreatorWebService;
+  onGenerated?(jobId?: string): void;
+};
+
+export default function AutoClipWorkspace(props: AutoClipWorkspaceProps) {
   const session = useOptionalCreatorSession();
   return session?.job.templateVersion !== undefined && session.job.templateVersion >= 3
     ? <AutoClipWorkspaceV3 {...props} />
     : <LegacyAutoClipWorkspace {...props} />;
 }
 
-function LegacyAutoClipWorkspace(props: {
-  onBack(): void;
-  promptHint?: string;
-  videoMetadataService?: VideoMetadataService;
-}) {
+function LegacyAutoClipWorkspace(props: AutoClipWorkspaceProps) {
   const l = useLocalizedCopy();
+  const requireGenerationAccess = useGenerationAccess();
   const session = useOptionalCreatorSession();
+  const official = useOfficialServices('text');
+  const transcriptionOfficial = useOfficialServices('transcription');
   const draftInitializedRef = useRef(false);
   const [videoUrl, setVideoUrl] = useState(() => readString(session?.state.sourceUrl));
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -97,8 +112,8 @@ function LegacyAutoClipWorkspace(props: {
   const [aspectRatio, setAspectRatio] = useState<ClipAspectRatio>(() => readAspectRatio(session?.state.aspectRatio));
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [currentStep, setCurrentStep] = useState<AutoClipStep>(0);
-  const [furthestStep, setFurthestStep] = useState<AutoClipStep>(0);
+  const [currentStep, setCurrentStep] = useState<AutoClipStep>(props.startInResults ? 2 : 0);
+  const [furthestStep, setFurthestStep] = useState<AutoClipStep>(props.startInResults ? 2 : 0);
   const [resultVersion, setResultVersion] = useState<number>();
   const [resultView, setResultView] = useState<AutoClipResultView>('list');
   const [exportUrls, setExportUrls] = useState<Record<string, string>>({});
@@ -110,8 +125,9 @@ function LegacyAutoClipWorkspace(props: {
     [session?.job.artifacts, session?.state.resultSnapshots]
   );
   const latestVersion = resultVersions.at(-1)?.value;
-  const selectedResult = resultVersions.find(version => version.value === resultVersion)
-    ?? resultVersions.at(-1);
+  const selectedResult = props.forceComposer
+    ? undefined
+    : resultVersions.find(version => version.value === resultVersion) ?? resultVersions.at(-1);
   const candidates = selectedResult?.candidates ?? [];
   const importedSourceArtifact = findArtifact(
     session?.job.artifacts ?? [],
@@ -164,10 +180,10 @@ function LegacyAutoClipWorkspace(props: {
   }, [latestVersion]);
 
   useEffect(() => {
-    if (resultVersions.length === 0) return;
+    if (props.startInResults === false || resultVersions.length === 0) return;
     setCurrentStep(2);
     setFurthestStep(2);
-  }, [resultVersions.length]);
+  }, [props.startInResults, resultVersions.length]);
 
   useEffect(() => {
     if (session === null) return;
@@ -272,6 +288,7 @@ function LegacyAutoClipWorkspace(props: {
 
   async function analyze() {
     if (analyzing || rendering || session === null) return;
+    if (!requireGenerationAccess()) return;
     if (!hasSource) {
       setCurrentStep(0);
       setError(l('请先上传视频或填写公开视频链接', 'Upload a video or enter a public video link first'));
@@ -315,7 +332,7 @@ function LegacyAutoClipWorkspace(props: {
             ? 'subtitle'
             : 'probe';
       }
-      const updatedJob = await session.applyAction({
+      await session.applyAction({
         actor: 'user',
         action: 'run-stage',
         input: {
@@ -323,12 +340,9 @@ function LegacyAutoClipWorkspace(props: {
           workflow: true
         }
       });
-      const completedInResponse = updatedJob.artifacts.some(artifact => (
-        artifact.kind === 'clip_candidates' && artifact.status === 'completed'
-      ));
-      const nextStep: AutoClipStep = completedInResponse ? 2 : 1;
-      setCurrentStep(nextStep);
-      setFurthestStep(previous => Math.max(previous, nextStep) as AutoClipStep);
+      setCurrentStep(2);
+      setFurthestStep(2);
+      props.onGenerated?.();
     } catch {}
   }
 
@@ -369,6 +383,94 @@ function LegacyAutoClipWorkspace(props: {
       }]
     : [];
 
+  if (props.embedded && currentStep !== 2) {
+    const busy = analyzing || rendering;
+    return (
+      <div className="creator-tool-embedded">
+        <div className="creator-tool-stack image-generation-studio">
+          <form className="image-generation-composer dashboard-clips-composer" aria-label={l('视频切片', 'Video Clips')} onSubmit={event => {
+            event.preventDefault();
+            void analyze();
+          }}>
+            <fieldset className="image-generation-fields" disabled={busy}>
+              <div className="image-generation-editor">
+                <div className="image-generation-composer-heading">{props.embeddedTabs}</div>
+                <div className="dashboard-translation-source-row">
+                  <div className="image-generation-reference dashboard-translation-source" data-loaded={hasSource}>
+                    {hasSource ? (
+                      <VideoSourcePreview
+                        file={videoFile}
+                        sourceType={videoFile || sourceArtifactId ? 'file' : 'url'}
+                        url={videoUrl}
+                        metadataService={props.videoMetadataService}
+                        onChooseFile={clearCurrentSource}
+                        onClear={clearCurrentSource}
+                      />
+                    ) : (
+                      <VideoTranslationSubtitleImport
+                        compact
+                        mediaOnly
+                        sourceOnly
+                        sourceLanguage={sourceLanguage}
+                        targetLanguage={sourceLanguage}
+                        accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi"
+                        disabled={hasSource || videoUrl.trim().length > 0 || busy}
+                        onMediaFile={chooseVideo}
+                        onError={setError}
+                      />
+                    )}
+                  </div>
+                  <span className="dashboard-translation-source-divider" aria-hidden="true">{l('或', 'or')}</span>
+                  <div className="image-generation-prompt-field dashboard-translation-url-field">
+                    <div className="dashboard-translation-url-input">
+                      <Link2 size={18} strokeWidth={1.8} aria-hidden="true" />
+                      <input
+                        id="dashboard-clips-video-url"
+                        type="url"
+                        aria-label={l('视频链接', 'Video link')}
+                        placeholder={l('粘贴视频链接', 'Paste a video URL')}
+                        disabled={videoFile !== null || busy}
+                        value={videoUrl}
+                        onChange={event => {
+                          setVideoUrl(event.target.value);
+                          setVideoFile(null);
+                          setSourceArtifactId('');
+                          setError('');
+                        }}
+                      />
+                      {videoUrl ? <button className="dashboard-translation-url-clear" type="button" aria-label={l('清除视频链接', 'Clear video link')} onClick={clearCurrentSource}><X size={16} /></button> : null}
+                    </div>
+                    <SupportedVideoSources compact label={l('支持平台', 'Supported platforms')} />
+                  </div>
+                </div>
+                {visibleError || notice ? <p className={visibleError ? 'dashboard-translation-message is-error' : 'dashboard-translation-message'} role={visibleError ? 'alert' : 'status'}>{visibleError || notice}</p> : null}
+              </div>
+              <div className="image-generation-action-bar">
+                <div className="image-generation-model-row"><OfficialModelField label={l('文本模型', 'Text model')} service={official} disabled={busy} /></div>
+                <DashboardVideoTranslationSettings
+                  label={l('切片设置', 'Clip settings')}
+                  summary={[`${duration} ${l('秒', 'sec')}`, l(`${clipCount} 个切片`, `${clipCount} clips`), aspectRatioLabel(aspectRatio, l)]}
+                  disabled={busy}
+                >
+                  <label className="creator-tool-field video-translation-field"><span>{l('切片时长', 'Clip duration')}</span><NativeSelect aria-label={l('切片时长', 'Clip duration')} value={duration} onChange={event => setDuration(event.target.value as ClipDuration)}><option value="15-30">15-30 {l('秒', 'sec')}</option><option value="30-60">30-60 {l('秒', 'sec')}</option><option value="60-90">60-90 {l('秒', 'sec')}</option></NativeSelect></label>
+                  <label className="creator-tool-field video-translation-field"><span>{l('切片数量', 'Number of clips')}</span><input aria-label={l('切片数量', 'Number of clips')} type="number" min={1} max={20} step={1} value={clipCount} onChange={event => setClipCount(clampClipCount(Number(event.target.value)))} /></label>
+                  <label className="creator-tool-field video-translation-field"><span>{l('输出画幅', 'Output format')}</span><NativeSelect aria-label={l('输出画幅', 'Output format')} value={aspectRatio} onChange={event => setAspectRatio(event.target.value as ClipAspectRatio)}><option value="source">{l('跟随原视频', 'Source')}</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option></NativeSelect></label>
+                  <OfficialModelField label={l('语音识别模型', 'Transcription model')} service={transcriptionOfficial} disabled={busy} />
+                </DashboardVideoTranslationSettings>
+                <div className="image-generation-submit-row">
+                  <button className="creator-tool-primary" type="submit" disabled={busy}>
+                    {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Scissors size={16} />}
+                    {busy ? l('正在切片', 'Clipping') : l('开始切片', 'Create Clips')}
+                  </button>
+                </div>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <CreatorToolShell
       title={l('视频切片', 'Video Clips')}
@@ -407,7 +509,7 @@ function LegacyAutoClipWorkspace(props: {
       onBack={props.onBack}
     >
       <div className="creator-tool-stack auto-clip-tool-stack">
-        <nav className="video-translation-steps creator-tool-steps" aria-label={l('视频切片流程', 'Video clip workflow')}>
+        {currentStep !== 2 ? <nav className="video-translation-steps creator-tool-steps" aria-label={l('视频切片流程', 'Video clip workflow')}>
           <ol>{steps.map((step, index) => {
             const active = index === currentStep;
             const completed = index < currentStep;
@@ -425,7 +527,7 @@ function LegacyAutoClipWorkspace(props: {
               </li>
             );
           })}</ol>
-        </nav>
+        </nav> : null}
 
         {currentStep === 0 ? (
           <>
@@ -671,7 +773,7 @@ function LegacyAutoClipWorkspace(props: {
           </section>
         ) : null}
 
-        {analyzing && currentStep !== 2 ? (
+        {analyzing ? (
           <p className="creator-tool-notice" role="status"><LoaderCircle className="smart-dubbing-spinner" size={14} />{readProgressText(latestAnalysisStage, l)}</p>
         ) : notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
         {error ? <p className="creator-tool-error" role="alert">{error}</p> : null}

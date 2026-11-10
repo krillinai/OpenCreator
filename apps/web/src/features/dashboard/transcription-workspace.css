@@ -37,6 +37,8 @@
 .transcription-spinner { animation: transcription-spin 1s linear infinite; }
 .transcription-workspace-page .transcription-error { margin: 0; flex-wrap: wrap; }
 .transcription-composer :disabled { cursor: not-allowed; }
+.transcription-model-option-logo { display: block; width: 18px; height: 18px; object-fit: contain; }
+:root:not([data-theme='light']) .transcription-model-option-logo.is-monochrome { filter: brightness(0) invert(1) !important; }
 
 @keyframes transcription-spin { to { transform: rotate(360deg); } }
 

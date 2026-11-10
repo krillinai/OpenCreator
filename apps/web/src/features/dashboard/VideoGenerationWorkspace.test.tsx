@@ -79,21 +79,15 @@ describe('VideoGenerationWorkspace', () => {
   });
 
   it.each([
-    { language: 'zh-CN' as const, expand: '展开编辑区', collapse: '收起编辑区', prompt: '提示词' },
-    { language: 'en-US' as const, expand: 'Expand editor', collapse: 'Collapse editor', prompt: 'Prompt' },
-    { language: 'sv-SE' as const, expand: 'Utöka redigeringsytan', collapse: 'Minska redigeringsytan', prompt: 'Prompt' }
-  ])('expands the editor without changing the draft or submitting in $language', copy => {
+    { language: 'zh-CN' as const, expand: '展开编辑区', prompt: '提示词' },
+    { language: 'en-US' as const, expand: 'Expand editor', prompt: 'Prompt' },
+    { language: 'sv-SE' as const, expand: 'Utöka redigeringsytan', prompt: 'Prompt' }
+  ])('keeps a fixed editor without an expand action in $language', copy => {
     const view = renderWorkspace(creatorJob({ state: { prompt: 'A coastal tracking shot' } }), { language: copy.language });
     const prompt = screen.getByRole('textbox', { name: copy.prompt });
-    const expand = screen.getByRole('button', { name: copy.expand });
-    expect(expand).toHaveAttribute('aria-expanded', 'false');
-    expect(expand).toHaveAttribute('aria-controls', prompt.id);
-    fireEvent.click(expand);
-    expect(screen.getByRole('button', { name: copy.collapse })).toHaveAttribute('aria-expanded', 'true');
-    expect(prompt).toHaveAttribute('rows', '14');
+    expect(prompt).toHaveAttribute('rows', '5');
     expect(prompt).toHaveValue('A coastal tracking shot');
-    fireEvent.click(screen.getByRole('button', { name: copy.collapse }));
-    expect(prompt).toHaveAttribute('rows', '7');
+    expect(screen.queryByRole('button', { name: copy.expand })).not.toBeInTheDocument();
     expect(view.applyAction).not.toHaveBeenCalled();
   });
 
@@ -132,9 +126,12 @@ describe('VideoGenerationWorkspace', () => {
   });
 
   it('blocks official generation when account activation is unavailable', () => {
-    renderWorkspace(creatorJob({ state: { prompt: 'city skyline', currentStep: 2, furthestStep: 2 } }), { gatewayState: null });
-    expect(screen.getByRole('button', { name: '开始生成' })).toBeDisabled();
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'city skyline', currentStep: 2, furthestStep: 2 } }), { gatewayState: null });
+    expect(screen.getByRole('button', { name: '开始生成' })).toBeEnabled();
     expect(screen.queryByRole('combobox', { name: '模型' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('官方视频服务暂不可用');
+    expect(view.applyAction).not.toHaveBeenCalled();
   });
 
   it('leaves the running screen and shows the true failure through read-only reconciliation without an SSE event', async () => {
@@ -771,6 +768,18 @@ describe('VideoGenerationWorkspace', () => {
     renderWorkspace(creatorJob({}), {
       creatorServicesService: {
         getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: [] })
+      }
+    });
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Seedance 2.5'));
+  });
+
+  it('migrates the legacy Seedance 1.0 Pro service default to Seedance 2.5', async () => {
+    const config = createVideoConfig();
+    config.video.seedance.model = 'doubao-seedance-1-0-pro-250528';
+    renderWorkspace(creatorJob({}), {
+      creatorServicesService: {
+        getConfig: async () => ({ config, configuredCredentials: [] })
       }
     });
 

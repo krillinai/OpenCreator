@@ -1,13 +1,17 @@
 import { readCreatorResultSnapshots, type CreatorArtifact, type CreatorJson } from '@opencreator/protocol';
-import { Download, FileVideo, LoaderCircle, Scissors } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Download, Link2, LoaderCircle, Scissors, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import NativeSelect from '../../components/forms/NativeSelect.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import type { CreatorWebService } from '../../services/creator-service.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import CreatorToolShell from './CreatorToolShell.js';
+import DashboardVideoTranslationSettings from './DashboardVideoTranslationSettings.js';
+import SupportedVideoSources from './SupportedVideoSources.js';
+import { VideoTranslationSubtitleImport } from './VideoTranslationSubtitleImport.js';
+import VideoSourcePreview from './VideoSourcePreview.js';
 import { createCreatorArtifactObjectUrl, useOptionalCreatorSession } from './creator-session-store.js';
-import VideoSourceInput from './VideoSourceInput.js';
 
 type ClipDuration = '15-30' | '30-60' | '60-90' | '90-180';
 type ClipVersion = { value: number; description: string; artifacts: CreatorArtifact[] };
@@ -19,6 +23,12 @@ export default function AutoClipWorkspaceV3(props: {
   onBack(): void;
   promptHint?: string;
   videoMetadataService?: VideoMetadataService;
+  embedded?: boolean;
+  embeddedTabs?: ReactNode;
+  forceComposer?: boolean;
+  startInResults?: boolean;
+  service?: CreatorWebService;
+  onGenerated?(jobId?: string): void;
 }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
@@ -41,7 +51,9 @@ export default function AutoClipWorkspaceV3(props: {
   const hasSource = videoFile !== null || importedSource !== undefined || isValidUrl(videoUrl);
   const sourceName = videoFile?.name || readString(importedSource?.metadata.fileName) || videoUrl;
   const latestStage = [...(session?.job.stages ?? [])].reverse().find(stage => stage.stageId === 'clip');
-  const running = submitting || latestStage?.status === 'queued' || latestStage?.status === 'running';
+  const stageRunning = latestStage?.status === 'queued' || latestStage?.status === 'running';
+  const running = submitting || stageRunning;
+  const completed = session?.job.status === 'completed';
   const versions = useMemo(() => collectVersions(
     session?.job.artifacts ?? [], session?.state.resultSnapshots
   ), [session?.job.artifacts, session?.state.resultSnapshots]);
@@ -106,7 +118,8 @@ export default function AutoClipWorkspaceV3(props: {
   }
 
   async function startClip() {
-    if (session === null || running) return;
+    if (session === null || submitting) return;
+    if (stageRunning && !props.embedded) return;
     if (!hasSource) {
       setLocalError(l('请添加本地视频或公开视频链接', 'Add a local video or public video link'));
       return;
@@ -114,6 +127,30 @@ export default function AutoClipWorkspaceV3(props: {
     setSubmitting(true);
     setLocalError('');
     try {
+      if (stageRunning) {
+        if (!props.service) return;
+        const { job: next } = await props.service.createJob({
+          projectId: session.job.projectId,
+          templateId: session.job.templateId,
+          templateVersion: session.job.templateVersion,
+          state: {
+            ...session.state,
+            sourceType: videoFile || sourceArtifactId ? 'file' : 'url',
+            sourceUrl: videoFile || sourceArtifactId ? '' : videoUrl.trim(),
+            sourceArtifactId: videoFile ? null : sourceArtifactId || null,
+            clipCount,
+            duration
+          }
+        });
+        if (fileInputRef.current !== null) {
+          await props.service.uploadSourceVideo(next.id, { file: fileInputRef.current, expectedRevision: next.revision });
+          fileInputRef.current = null;
+          setVideoFile(null);
+        }
+        await props.service.applyAction(next.id, { actor: 'user', action: 'run-stage', input: { stageId: 'clip' }, expectedRevision: next.revision });
+        props.onGenerated?.(next.id);
+        return;
+      }
       session.updateDraft({
         sourceType: videoFile || sourceArtifactId ? 'file' : 'url',
         sourceUrl: videoFile || sourceArtifactId ? '' : videoUrl.trim(),
@@ -128,6 +165,7 @@ export default function AutoClipWorkspaceV3(props: {
         setVideoFile(null);
       }
       await session.applyAction({ actor: 'user', action: 'run-stage', input: { stageId: 'clip' } });
+      props.onGenerated?.();
     } catch {
       // The shared Creator session presents API and upload failures.
     } finally {
@@ -150,6 +188,98 @@ export default function AutoClipWorkspaceV3(props: {
     });
   }
 
+  if (props.embedded && (props.forceComposer || !selected || !completed)) {
+    return (
+      <div className="creator-tool-embedded">
+        <div className="creator-tool-stack image-generation-studio">
+          <form className="image-generation-composer dashboard-clips-composer" aria-label={l('视频切片', 'Video Clips')} onSubmit={event => {
+            event.preventDefault();
+            void startClip();
+          }}>
+            <fieldset className="image-generation-fields" disabled={submitting}>
+              <div className="image-generation-editor">
+                <div className="image-generation-composer-heading">{props.embeddedTabs}</div>
+                <div className="dashboard-translation-source-row">
+                  <div className="image-generation-reference dashboard-translation-source" data-loaded={hasSource}>
+                    {hasSource ? (
+                      <VideoSourcePreview
+                        file={videoFile}
+                        registeredFile={importedSource ? {
+                          name: sourceName,
+                          size: readNumber(importedSource.metadata.bytes ?? importedSource.metadata.size),
+                          mime: readString(importedSource.metadata.mimeType ?? importedSource.metadata.mime) || 'video/mp4'
+                        } : undefined}
+                        sourceType={videoFile || importedSource ? 'file' : 'url'}
+                        url={videoUrl}
+                        metadataService={props.videoMetadataService}
+                        onChooseFile={clearSource}
+                        onClear={clearSource}
+                      />
+                    ) : (
+                      <VideoTranslationSubtitleImport
+                        compact
+                        mediaOnly
+                        sourceOnly
+                        sourceLanguage="auto"
+                        targetLanguage="auto"
+                        accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi"
+                        disabled={hasSource || videoUrl.trim().length > 0 || submitting}
+                        onMediaFile={chooseFile}
+                        onError={setLocalError}
+                      />
+                    )}
+                  </div>
+                  <span className="dashboard-translation-source-divider" aria-hidden="true">{l('或', 'or')}</span>
+                  <div className="image-generation-prompt-field dashboard-translation-url-field">
+                    <div className="dashboard-translation-url-input">
+                      <Link2 size={18} strokeWidth={1.8} aria-hidden="true" />
+                      <input
+                        id="dashboard-clips-video-url"
+                        type="url"
+                        aria-label={l('视频链接', 'Video link')}
+                        placeholder={l('粘贴视频链接', 'Paste a video URL')}
+                        disabled={videoFile !== null || submitting}
+                        value={videoUrl}
+                        onChange={event => changeUrl(event.target.value)}
+                      />
+                      {videoUrl ? <button className="dashboard-translation-url-clear" type="button" aria-label={l('清除视频链接', 'Clear video link')} onClick={clearSource}><X size={16} /></button> : null}
+                    </div>
+                    <SupportedVideoSources compact label={l('支持平台', 'Supported platforms')} />
+                  </div>
+                </div>
+                {localError ? <p className="dashboard-translation-message is-error" role="alert">{localError}</p> : null}
+              </div>
+              <div className="image-generation-action-bar">
+                <DashboardVideoTranslationSettings
+                  label={l('切片设置', 'Clip settings')}
+                  summary={[`${duration} ${l('秒', 'sec')}`, l(`${clipCount} 个切片`, `${clipCount} clips`)]}
+                  disabled={submitting}
+                >
+                  <label className="creator-tool-field video-translation-field">
+                    <span>{l('切片时长', 'Clip duration')}</span>
+                    <NativeSelect aria-label={l('切片时长', 'Clip duration')} value={duration} onChange={event => setDuration(event.target.value as ClipDuration)}>
+                      {durations.map(value => <option key={value} value={value}>{value} {l('秒', 'sec')}</option>)}
+                    </NativeSelect>
+                  </label>
+                  <label className="creator-tool-field video-translation-field">
+                    <span>{l('切片数量', 'Number of clips')}</span>
+                    <input aria-label={l('切片数量', 'Number of clips')} type="number" min={1} max={20} step={1} value={clipCount} onChange={event => setClipCount(readCount(Number(event.target.value)))} />
+                  </label>
+                </DashboardVideoTranslationSettings>
+                <div className="image-generation-submit-row">
+                  <button className="creator-tool-primary" type="submit" disabled={!hasSource || submitting}>
+                    {submitting ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Scissors size={16} />}
+                    {submitting ? l('正在生成切片', 'Creating clips') : l('开始切片', 'Create clips')}
+                  </button>
+                </div>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <CreatorToolShell
       title={l('视频切片', 'Video Clips')}
@@ -166,48 +296,6 @@ export default function AutoClipWorkspaceV3(props: {
       onBack={props.onBack}
     >
       <div className="creator-tool-stack auto-clip-v3">
-        <section className="creator-tool-panel" aria-labelledby="auto-clip-v3-source">
-          <div className="creator-tool-panel-heading"><div><h2 id="auto-clip-v3-source">{l('视频来源', 'Video source')}</h2></div></div>
-          {importedSource && videoFile === null ? (
-            <div className="video-result-file-row">
-              <span><FileVideo size={18} aria-hidden="true" /></span>
-              <div><strong>{sourceName}</strong></div>
-              <button type="button" disabled={running} onClick={clearSource}>{l('更换', 'Change')}</button>
-            </div>
-          ) : (
-            <VideoSourceInput
-              file={videoFile}
-              sourceType={videoFile ? 'file' : 'url'}
-              url={videoUrl}
-              hasSource={hasSource}
-              showSupportedPlatforms
-              metadataService={props.videoMetadataService}
-              onFileChange={chooseFile}
-              onUrlChange={changeUrl}
-              onClear={clearSource}
-            />
-          )}
-          <div className="creator-tool-form-row auto-clip-v3-settings">
-            <label className="creator-tool-field">
-              <span>{l('切片数量', 'Number of clips')}</span>
-              <input type="number" min="1" max="20" step="1" value={clipCount}
-                disabled={running} onChange={event => setClipCount(readCount(Number(event.target.value)))} />
-            </label>
-            <label className="creator-tool-field">
-              <span>{l('切片时长', 'Clip duration')}</span>
-              <NativeSelect value={duration} disabled={running} onChange={event => setDuration(event.target.value as ClipDuration)}>
-                {durations.map(value => <option key={value} value={value}>{value} {l('秒', 'sec')}</option>)}
-              </NativeSelect>
-            </label>
-          </div>
-          <div className="creator-tool-actions">
-            <button className="creator-tool-primary" type="button" disabled={!hasSource || running} onClick={() => void startClip()}>
-              {running ? <LoaderCircle className="smart-dubbing-spinner" size={16} aria-hidden="true" /> : <Scissors size={16} aria-hidden="true" />}
-              {running ? l('正在生成切片', 'Creating clips') : selected ? l('生成新版本', 'Create a new version') : l('开始切片', 'Create clips')}
-            </button>
-          </div>
-        </section>
-
         {selected ? (
           <section className="auto-clip-v3-results" aria-label={l('切片结果', 'Clip results')}>
             <div className="auto-clip-v3-results-heading">

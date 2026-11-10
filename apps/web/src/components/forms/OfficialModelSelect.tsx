@@ -115,7 +115,7 @@ export default function OfficialModelSelect(props: {
       const below = viewportBottom - rect.bottom - 14;
       const above = rect.top - viewportTop - 14;
       const opensAbove = (catalog && above > 80) || (below < 300 && above > below);
-      const width = Math.min(Math.max(rect.width, catalog ? 640 : 340), viewportWidth - 16);
+      const width = Math.min(Math.max(rect.width, catalog ? 600 : 340), viewportWidth - 16);
       const menuLeft = getComputedStyle(rootRef.current!).direction === 'rtl' ? rect.right - width : rect.left;
       const next = {
         width, left: Math.max(viewportLeft + 8, Math.min(menuLeft, viewportLeft + viewportWidth - width - 8)),
@@ -212,10 +212,6 @@ export default function OfficialModelSelect(props: {
       left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight,
       transform: position.above ? 'translateY(-100%)' : undefined,
     }}>
-      <div className="official-model-menu-count" role="status">
-        <span>{query.trim() ? l(`${filtered.length} 个匹配项`, `${filtered.length} matches`) : l(`${choices.length} 个模型`, `${choices.length} models`)}</span>
-        {choices.some(choice => choice.model.modality === 'video') ? <span className="official-model-menu-rule">{l('按秒计费，价格随清晰度变化', 'Billed per second; rates vary by resolution', 'Debiteras per sekund; priset varierar med upplösningen')}</span> : null}
-      </div>
       {catalog ? <div className="official-model-catalog-body">
         <nav className="official-model-catalog-brands" aria-label={l('模型服务商', 'Model providers', 'Modellleverantörer')}>
           <span className="official-model-catalog-title">{l('模型', 'MODELS', 'MODELLER')}</span>

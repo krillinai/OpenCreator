@@ -135,8 +135,8 @@ it.each([
   const editor = screen.getByRole('textbox', { name: copy.script });
   fireEvent.click(within(form).getByRole('button', { name: copy.sample }));
   expect((editor as HTMLTextAreaElement).value.length).toBeGreaterThan(20);
-  fireEvent.click(within(form).getByRole('button', { name: copy.expand }));
-  expect(editor).toHaveAttribute('rows', '14');
+  expect(within(form).queryByRole('button', { name: copy.expand })).not.toBeInTheDocument();
+  expect(editor).toHaveAttribute('rows', '5');
   fireEvent.click(within(form).getByRole('button', { name: copy.clear }));
   expect(editor).toHaveValue('');
   expect(within(screen.getByRole('complementary', { name: 'OpenCreator' })).getByRole('complementary', { name: copy.summary })).toBeInTheDocument();
@@ -157,6 +157,19 @@ it('provides voice library search, filters, and gender labels in every client la
     for (const [zh, en] of [['搜索音色', 'Search voices'], ['全部语言', 'All languages'], ['全部性别', 'All genders'], ['全部风格', 'All styles'], ['没有匹配的音色', 'No matching voices'], ['男声', 'Male'], ['女声', 'Female'], ['多语种', 'Multilingual']]) {
       expect(l(zh!, en!), `${value}: ${en}`).not.toBe(en);
     }
+  }
+});
+
+it('shows provider icons in the selected speech model and its options', async () => {
+  await renderWorkspace(createFixture());
+  const trigger = screen.getByRole('combobox', { name: '语音模型' });
+  expect(trigger.querySelector('.model-brand-icon')).toHaveAttribute('data-brand', 'openai');
+  fireEvent.click(trigger);
+
+  for (const [name, brand] of [['OpenAI TTS', 'openai'], ['MiniMax', 'minimax'], ['阿里云百炼', 'qwen'], ['火山引擎', 'bytedance']]) {
+    const option = screen.getByRole('option', { name: new RegExp(`^${name}`) });
+    expect(option.querySelector('.model-brand-icon')).toHaveAttribute('data-brand', brand);
+    expect(option.querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^\/model-brands\//));
   }
 });
 

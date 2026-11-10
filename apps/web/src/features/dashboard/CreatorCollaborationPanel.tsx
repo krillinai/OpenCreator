@@ -659,7 +659,7 @@ export function useCreatorTaskProgress(options: {
 
 export function CreatorTaskProgressBar(props: {
   task: NonNullable<ReturnType<typeof useCreatorTaskProgress>>;
-  onDetails(): void;
+  onDetails?(): void;
   onCancel?(): void;
   onResume?(): void;
   onPreview?(): void;
@@ -701,7 +701,7 @@ export function CreatorTaskProgressBar(props: {
         {stopped && props.onResume ? <button type="button" disabled={busy} onClick={props.onResume}>{props.controlPending === 'resuming' ? l('正在继续…', 'Resuming…') : l('继续任务', 'Resume task')}</button> : null}
         {success && props.onPreview ? <button type="button" onClick={props.onPreview}>{l('查看成片', 'View video')}</button> : null}
         {success && props.onDownload ? <button type="button" onClick={props.onDownload}>{l('下载视频', 'Download video')}</button> : null}
-        <button type="button" onClick={props.onDetails}>{l('查看详情', 'View details')}<ChevronRight size={14} aria-hidden="true" /></button>
+        {props.onDetails ? <button type="button" onClick={props.onDetails}>{l('查看详情', 'View details')}<ChevronRight size={14} aria-hidden="true" /></button> : null}
         {task.active && !task.starting && props.onCancel ? <details className="creator-task-progress-bar-menu" key={`${task.stage?.id}-${task.status}`}
           onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) event.currentTarget.removeAttribute('open'); }}
           onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); event.currentTarget.removeAttribute('open'); event.currentTarget.querySelector('summary')?.focus(); } }}>

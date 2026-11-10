@@ -25,7 +25,11 @@
 .app-select-search input::placeholder { color: var(--muted); }
 .app-select-options { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 5px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .app-select-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; box-sizing: border-box; padding: 7px 10px; border: 1px solid transparent; border-radius: 5px; cursor: pointer; }
-.app-select-option > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.app-select-option-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.app-select-option-icon { display: inline-flex; flex: 0 0 18px; align-items: center; justify-content: center; width: 18px; height: 18px; color: var(--muted); }
+.app-select-option-icon > svg { width: 18px; height: 18px; }
+.app-select-option-icon > .model-brand-icon { width: 18px; height: 18px; border-radius: 4px; background: transparent; }
+.app-select-option-icon > .model-brand-icon > img { width: 18px; height: 18px; }
 .app-select-option > svg, .app-select-check { width: 15px; flex-shrink: 0; }
 .app-select-option.is-active { background: var(--state-hover-bg); }
 .app-select-option[aria-selected='true'] { border-color: color-mix(in srgb, var(--accent) 24%, transparent); background: color-mix(in srgb, var(--accent) 9%, transparent); }

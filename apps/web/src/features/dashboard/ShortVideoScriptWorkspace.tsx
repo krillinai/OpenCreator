@@ -7,11 +7,15 @@ import {
   RotateCcw,
   Sparkles
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { useGenerationAccess } from './DashboardGenerationAccess.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
+import ModelBrandIcon from '../../components/brand/ModelBrandIcon.js';
+import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import CreatorToolShell from './CreatorToolShell.js';
-import { OfficialTaskModelFields } from './official-services.js';
+import DashboardVideoTranslationSettings from './DashboardVideoTranslationSettings.js';
+import { OfficialModelField, OfficialTaskModelFields, useOfficialServices } from './official-services.js';
 import {
   captureCreatorClientFailure,
   readCreatorArtifactText,
@@ -39,9 +43,17 @@ const tones: Array<{ value: ScriptTone; zh: string; en: string }> = [
 export default function ShortVideoScriptWorkspace(props: {
   onBack(): void;
   promptHint?: string;
+  embedded?: boolean;
+  embeddedTabs?: ReactNode;
+  forceComposer?: boolean;
+  onGenerated?(): void;
+  creatorServicesService?: CreatorServicesSettingsService | null;
 }) {
   const l = useLocalizedCopy();
+  const requireGenerationAccess = useGenerationAccess();
   const session = useOptionalCreatorSession();
+  const official = useOfficialServices('text');
+  const [manualTextModel, setManualTextModel] = useState('');
   const [topic, setTopic] = useState(() => readString(session?.state.topic));
   const [audience, setAudience] = useState(() => readString(session?.state.audience));
   const [platform, setPlatform] = useState<ScriptPlatform>(
@@ -59,8 +71,8 @@ export default function ShortVideoScriptWorkspace(props: {
   const [error, setError] = useState('');
   const [taskControlPending, setTaskControlPending] = useState<'canceling' | 'resuming'>();
   const result = useMemo(
-    () => readLatestResult(session?.job.artifacts ?? []),
-    [session?.job.artifacts]
+    () => props.forceComposer ? undefined : readLatestResult(session?.job.artifacts ?? []),
+    [props.forceComposer, session?.job.artifacts]
   );
   const latestStage = session?.job.stages.filter(stage => stage.stageId === 'generate').at(-1);
   const generating = latestStage?.status === 'queued' || latestStage?.status === 'running';
@@ -70,6 +82,18 @@ export default function ShortVideoScriptWorkspace(props: {
       ? ''
       : generationError(session.error.code, session.error.message, l);
   const visibleError = error || runtimeError;
+
+  useEffect(() => {
+    if (official.official || props.creatorServicesService == null) {
+      setManualTextModel('');
+      return;
+    }
+    let active = true;
+    void props.creatorServicesService.getConfig()
+      .then(response => { if (active) setManualTextModel(response.config.llm.model); })
+      .catch(() => { if (active) setManualTextModel(''); });
+    return () => { active = false; };
+  }, [official.official, props.creatorServicesService]);
 
   useEffect(() => {
     setTopic(readString(session?.state.topic));
@@ -146,6 +170,7 @@ export default function ShortVideoScriptWorkspace(props: {
 
   async function generate() {
     if (generating) return;
+    if (!requireGenerationAccess()) return;
     if (session === null) {
       setError(l(
         '短视频脚本生成服务暂不可用，请检查 Runtime 连接',
@@ -187,6 +212,7 @@ export default function ShortVideoScriptWorkspace(props: {
         '生成任务已提交，完成后会自动显示脚本',
         'Generation started. The script will appear automatically.'
       ));
+      props.onGenerated?.();
     } catch {}
   }
 
@@ -245,6 +271,68 @@ export default function ShortVideoScriptWorkspace(props: {
 
   const selectedPlatform = platforms.find(item => item.value === platform) ?? platforms[0]!;
   const selectedTone = tones.find(item => item.value === tone) ?? tones[0]!;
+  if (props.embedded && !result) {
+    return (
+      <div className="creator-tool-embedded">
+        <div className="creator-tool-stack image-generation-studio">
+          <form className="image-generation-composer dashboard-script-composer" aria-label={l('短视频脚本生成', 'Short Video Script')} onSubmit={event => {
+            event.preventDefault();
+            void generate();
+          }}>
+            <fieldset className="image-generation-fields" disabled={generating}>
+              <div className="image-generation-editor">
+                <div className="image-generation-composer-heading">{props.embeddedTabs}</div>
+                <div className="creator-tool-field image-generation-prompt-field">
+                  <label className="image-generation-visually-hidden" htmlFor="short-video-script-topic-input">{l('创作主题或素材', 'Topic or source material')}</label>
+                  <textarea
+                    id="short-video-script-topic-input"
+                    rows={4}
+                    value={topic}
+                    onChange={event => updateTopic(event.target.value)}
+                    placeholder={l('输入短视频主题、产品信息或创作素材', 'Enter a short video topic, product details, or source material')}
+                  />
+                </div>
+                <div className="dashboard-additional-source-row">
+                  <label className="dashboard-additional-text-field">
+                    <span>{l('目标受众', 'Audience')}</span>
+                    <input value={audience} onChange={event => updateAudience(event.target.value)} placeholder={l('例如：初次接触产品的用户', 'For example: first-time product users')} />
+                  </label>
+                </div>
+                {visibleError || notice ? <p className={visibleError ? 'dashboard-translation-message is-error' : 'dashboard-translation-message'} role={visibleError ? 'alert' : 'status'}>{visibleError || notice}</p> : null}
+              </div>
+              <div className="image-generation-action-bar">
+                <div className="image-generation-model-row">
+                  {!official.official && manualTextModel ? (
+                    <label className="creator-tool-field">
+                      <span>{l('文本模型', 'Text model')}</span>
+                      <output className="official-model-value" aria-label={l('文本模型', 'Text model')}>
+                        <ModelBrandIcon model={{ id: manualTextModel }} />{manualTextModel}
+                      </output>
+                    </label>
+                  ) : <OfficialModelField label={l('文本模型', 'Text model')} service={official} disabled={generating} />}
+                </div>
+                <DashboardVideoTranslationSettings
+                  label={l('脚本设置', 'Script settings')}
+                  summary={[l(selectedPlatform.zh, selectedPlatform.en), `${targetDuration || '60'} ${l('秒', 'sec')}`, l(selectedTone.zh, selectedTone.en)]}
+                  disabled={generating}
+                >
+                  <label className="creator-tool-field video-translation-field"><span>{l('发布平台', 'Platform')}</span><NativeSelect aria-label={l('发布平台', 'Platform')} value={platform} onChange={event => updatePlatform(event.target.value as ScriptPlatform)}>{platforms.map(item => <option key={item.value} value={item.value}>{l(item.zh, item.en)}</option>)}</NativeSelect></label>
+                  <label className="creator-tool-field video-translation-field"><span>{l('脚本语气', 'Tone')}</span><NativeSelect aria-label={l('脚本语气', 'Tone')} value={tone} onChange={event => updateTone(event.target.value as ScriptTone)}>{tones.map(item => <option key={item.value} value={item.value}>{l(item.zh, item.en)}</option>)}</NativeSelect></label>
+                  <label className="creator-tool-field video-translation-field"><span>{l('目标时长（秒）', 'Target duration in seconds')}</span><input aria-label={l('目标时长（秒）', 'Target duration in seconds')} type="number" min={15} max={600} step={1} value={targetDuration} onChange={event => updateTargetDuration(event.target.value)} /></label>
+                </DashboardVideoTranslationSettings>
+                <div className="image-generation-submit-row">
+                  <button className="creator-tool-primary" type="submit" disabled={generating}>
+                    {generating ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}
+                    {generating ? l('正在生成', 'Generating') : l('生成脚本', 'Generate Script')}
+                  </button>
+                </div>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+      </div>
+    );
+  }
   return (
     <CreatorToolShell
       title={l('短视频脚本生成器', 'Short Video Script Generator')}

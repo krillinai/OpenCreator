@@ -22,6 +22,7 @@ export default function CreatorResizableLayout(props: {
   workspace: ReactNode;
   agentPanel: ReactNode;
   agentPanelRequest?: { key: number; stageRunId?: string };
+  showAgentPanel?: boolean;
   className?: string;
 }) {
   const l = useLocalizedCopy();
@@ -98,6 +99,12 @@ export default function CreatorResizableLayout(props: {
   const style = workspaceWidth === undefined
     ? undefined
     : ({ '--creator-workspace-pane-width': `${workspaceWidth}px` } as CSSProperties);
+
+  if (props.showAgentPanel === false) {
+    return <div className={`creator-resizable-layout${props.className ? ` ${props.className}` : ''}`} ref={layoutRef} style={style} data-agent-panel="hidden">
+      {props.workspace}
+    </div>;
+  }
 
   return (
     <div

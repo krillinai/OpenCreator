@@ -27,7 +27,7 @@ import {
   Video,
   XCircle
 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
@@ -62,6 +62,10 @@ export default function VideoDownloadWorkspace(props: {
   promptHint?: string;
   runtimeDependencies?: RuntimeDependenciesController;
   onOpenRuntimeComponents?(): void;
+  embedded?: boolean;
+  embeddedTabs?: ReactNode;
+  forceComposer?: boolean;
+  onGenerated?(): void;
   batch?: VideoDownloadBatchView;
 }) {
   const l = useLocalizedCopy();
@@ -84,6 +88,8 @@ export default function VideoDownloadWorkspace(props: {
     () => new Set()
   );
   const submittingOptionIdsRef = useRef(new Set<string>());
+  const localDownloadOptionIdsRef = useRef(new Set<string>());
+  const localDownloadingArtifactIdsRef = useRef(new Set<string>());
   const downloadSubmissionTailRef = useRef<Promise<void>>(Promise.resolve());
   const downloadControlsRef = useRef(new Set<string>());
   const [downloadControlsPending, setDownloadControlsPending] = useState<ReadonlySet<string>>(() => new Set());
@@ -101,10 +107,10 @@ export default function VideoDownloadWorkspace(props: {
     [session?.job.artifacts, url]
   );
   const probe = useMemo(
-    () => probeArtifact === undefined || props.batch?.hasSelectedSource === false
+    () => props.forceComposer || probeArtifact === undefined || props.batch?.hasSelectedSource === false
       ? undefined
       : readDownloadProbe(probeArtifact.metadata),
-    [probeArtifact, props.batch?.hasSelectedSource]
+    [probeArtifact, props.batch?.hasSelectedSource, props.forceComposer]
   );
   const legacy = (session?.job.templateVersion ?? 2) < 2;
   const options = useMemo(() => {
@@ -244,11 +250,24 @@ export default function VideoDownloadWorkspace(props: {
       && artifactMatchesProbe(artifact, probeArtifact, probe)
     ));
     if (newArtifacts.length === 0) return;
+    let openOutputs = false;
     for (const artifact of newArtifacts) {
       seenDownloadArtifactIdsRef.current.add(artifact.id);
+      const optionId = readString(artifact.metadata.optionId);
+      if (optionId !== undefined && localDownloadOptionIdsRef.current.has(optionId)) {
+        localDownloadOptionIdsRef.current.delete(optionId);
+        if (!localDownloadingArtifactIdsRef.current.has(artifact.id)) {
+          localDownloadingArtifactIdsRef.current.add(artifact.id);
+          void downloadArtifact(artifact).finally(() => {
+            localDownloadingArtifactIdsRef.current.delete(artifact.id);
+          });
+        }
+      } else {
+        openOutputs = true;
+      }
     }
     setCurrentStep(1);
-    setResultTab('outputs');
+    if (openOutputs) setResultTab('outputs');
   }, [downloadArtifacts, probe, probeArtifact]);
 
   useEffect(() => {
@@ -313,21 +332,21 @@ export default function VideoDownloadWorkspace(props: {
     });
   }
 
-  async function analyze() {
-    if (probing || hasActiveDownloads) return;
+  async function analyze(): Promise<boolean> {
+    if (probing || hasActiveDownloads) return false;
     if (!validUrl) {
       setError(l(
         '请输入有效的 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书、Pinterest 或 Reddit 公开视频链接',
         'Enter a valid public YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, Pinterest, or Reddit video URL'
       ));
-      return;
+      return false;
     }
     if (session === null) {
       setError(l(
         '视频下载服务暂不可用，请检查 Runtime 连接',
         'Video download is unavailable. Check the Runtime connection.'
       ));
-      return;
+      return false;
     }
     setError('');
     setNotice('');
@@ -346,8 +365,10 @@ export default function VideoDownloadWorkspace(props: {
         '解析任务已提交，真实规格返回后会自动显示',
         'Analysis started. Available formats will appear automatically.'
       ));
+      return true;
     } catch (caught) {
       setError(formatDownloadError(caught, l));
+      return false;
     }
   }
 
@@ -397,6 +418,7 @@ export default function VideoDownloadWorkspace(props: {
       return;
     }
     submittingOptionIdsRef.current.add(option.id);
+    localDownloadOptionIdsRef.current.add(option.id);
     setSubmittingOptionIds(new Set(submittingOptionIdsRef.current));
     setMediaType(option.mediaType);
     setSelectedOptionId(option.id);
@@ -416,13 +438,10 @@ export default function VideoDownloadWorkspace(props: {
             sourceUrl
           }
         });
-        setResultTab('outputs');
-        setNotice(l(
-          '下载任务已加入队列，完成后文件会保存到当前项目',
-          'Download queued. The file will be saved to this project.'
-        ));
+        setResultTab('formats');
       })
       .catch(caught => {
+        localDownloadOptionIdsRef.current.delete(option.id);
         setError(formatDownloadError(caught, l));
       })
       .finally(() => {
@@ -475,7 +494,7 @@ export default function VideoDownloadWorkspace(props: {
       link.download = artifactFileName(artifact);
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
-      setNotice(l('文件下载已开始', 'File download started'));
+      setNotice('');
     } catch (caught) {
       setError(formatDownloadError(caught, l));
     }
@@ -676,6 +695,58 @@ export default function VideoDownloadWorkspace(props: {
     setResultTab('outputs');
   }
 
+  if (props.embedded && probe === undefined) {
+    return (
+      <div className="creator-tool-embedded">
+        <div className="creator-tool-stack image-generation-studio">
+          <form className="image-generation-composer dashboard-download-composer" aria-label={l('视频下载', 'Video Downloader')} onSubmit={event => {
+            event.preventDefault();
+            void analyze().then(succeeded => {
+              if (succeeded) props.onGenerated?.();
+            });
+          }}>
+            <fieldset className="image-generation-fields" disabled={probing || hasActiveDownloads}>
+              <div className="image-generation-editor">
+                <div className="image-generation-composer-heading">{props.embeddedTabs}</div>
+                <div className="image-generation-prompt-field dashboard-download-url-field">
+                  <label className="image-generation-visually-hidden" htmlFor="dashboard-download-video-url">{l('视频链接', 'Video link')}</label>
+                  <div className="dashboard-translation-url-input dashboard-download-url-input">
+                    <Link2 size={18} strokeWidth={1.8} aria-hidden="true" />
+                    <input
+                      id="dashboard-download-video-url"
+                      type="url"
+                      aria-label={l('视频链接', 'Video link')}
+                      placeholder={l('粘贴视频链接', 'Paste a video URL')}
+                      value={url}
+                      onChange={event => updateUrl(event.target.value)}
+                    />
+                    {url ? (
+                      <button className="dashboard-translation-url-clear" type="button" aria-label={l('清除视频链接', 'Clear video link')} title={l('清除视频链接', 'Clear video link')} onClick={() => updateUrl('')}>
+                        <XCircle size={16} strokeWidth={1.8} />
+                      </button>
+                    ) : null}
+                  </div>
+                  <SupportedVideoSources compact label={l('支持平台', 'Supported platforms')} />
+                  <p className={error ? 'dashboard-translation-message is-error' : 'dashboard-translation-message'} role={error ? 'alert' : undefined}>
+                    {error || notice || l('支持公开视频、音频及字幕下载', 'Download public videos, audio, and subtitles')}
+                  </p>
+                </div>
+              </div>
+              <div className="image-generation-action-bar dashboard-download-action-bar">
+                <div className="image-generation-submit-row">
+                  <button className="creator-tool-primary" type="submit" disabled={probing || hasActiveDownloads}>
+                    {probing ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Download size={16} strokeWidth={1.8} />}
+                    {probing ? l('正在解析', 'Analyzing') : l('获取', 'Fetch')}
+                  </button>
+                </div>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   const resultToolbar = (
     <div className="video-result-toolbar video-download-result-toolbar">
       <div className="video-result-tabs" role="tablist" aria-label={l('下载结果类型', 'Download result types')}>
@@ -696,6 +767,7 @@ export default function VideoDownloadWorkspace(props: {
     <CreatorToolShell
       title={l('视频下载', 'Video Downloader')}
       pageClassName="video-download-workspace-page"
+      showAgentPanel={false}
       subtitle={l(
         '解析公开链接并把视频或音频保存到项目',
         'Analyze a public link and save video or audio to the project'
@@ -940,6 +1012,7 @@ export default function VideoDownloadWorkspace(props: {
                             const running = stage?.status === 'running';
                             const normalizing = running
                               && stage.progress.phase === 'normalizing_media';
+                            const percent = downloadProgressPercent(stage, undefined);
                             const inProgress = queued || running;
                             return (
                               <label
@@ -964,10 +1037,10 @@ export default function VideoDownloadWorkspace(props: {
                                 {downloaded ? (
                                   <span
                                     className="video-download-option-complete"
-                                    aria-label={`${l('已完成', 'Completed')} ${optionLabel(option, l)}`}
+                                    aria-label={`OK ${optionLabel(option, l)}`}
                                   >
                                     <CheckCircle2 size={16} strokeWidth={1.9} aria-hidden="true" />
-                                    {l('已完成', 'Completed')}
+                                    OK
                                   </span>
                                 ) : (
                                   <button
@@ -979,6 +1052,7 @@ export default function VideoDownloadWorkspace(props: {
                                     {inProgress
                                       ? <LoaderCircle className="smart-dubbing-spinner" size={16} />
                                       : <Download size={16} strokeWidth={1.8} aria-hidden="true" />}
+                                    {running && !normalizing ? <span className="video-download-option-progress">{Math.round(percent)}%</span> : null}
                                     {normalizing
                                       ? l('转换中', 'Converting')
                                       : running

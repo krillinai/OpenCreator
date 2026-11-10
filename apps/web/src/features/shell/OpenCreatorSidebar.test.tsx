@@ -123,6 +123,156 @@ describe('OpenCreatorSidebar', () => {
     expect(screen.queryByText('a@example.test')).not.toBeInTheDocument();
     expect(screen.getByText('未登录')).toBeInTheDocument();
   });
+  it('opens existing creator workspaces from hover menus and supports keyboard dismissal', async () => {
+    const user = userEvent.setup();
+    const onOpenWorkspace = vi.fn();
+    renderSidebar({ onOpenWorkspace, activeWorkspace: 'image-generation' });
+
+    for (const label of ['视频', '图像', '文本', '音频']) {
+      expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-haspopup', 'menu');
+    }
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    const video = screen.getByRole('button', { name: '视频' });
+    await user.hover(video);
+    expect(screen.getByRole('menu', { name: '视频' }).parentElement).toBe(document.body);
+    expect(screen.getByRole('menu', { name: '视频' })).toHaveStyle({ left: '8px', top: '8px' });
+    for (const label of ['Translate', 'Generate', 'Process']) {
+      expect(screen.getByRole('heading', { name: label })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('menuitem', { name: '视频翻译' }).querySelector('.sidebar-creation-child-icon svg'))
+      .toHaveClass('lucide-languages');
+    await user.click(screen.getByRole('menuitem', { name: '视频翻译' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('video-translation', undefined);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    await user.hover(video);
+    await user.click(screen.getByRole('menuitem', { name: '字幕翻译' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('video-translation', undefined);
+
+    await user.hover(video);
+    await user.click(screen.getByRole('menuitem', { name: '视频转录' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('transcription', 'transcription');
+
+    await user.hover(video);
+    await user.click(screen.getByRole('menuitem', { name: '视频配音' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('video-translation', undefined);
+
+    await user.hover(video);
+    await user.click(screen.getByRole('menuitem', { name: '文生视频' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('video-generation', undefined);
+    await user.hover(video);
+    await user.click(screen.getByRole('menuitem', { name: '图生视频' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('video-generation', undefined);
+    await user.hover(video);
+    await user.click(screen.getByRole('menuitem', { name: '火柴人动画' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('stickman-video', undefined);
+    await user.hover(video);
+    await user.click(screen.getByRole('menuitem', { name: '视频切片' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('auto-clips', 'clips');
+
+    fireEvent.focus(screen.getByRole('button', { name: '文本' }));
+    await user.click(screen.getByRole('menuitem', { name: '短视频脚本生成' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('short-video-script', 'script');
+
+    fireEvent.focus(screen.getByRole('button', { name: '音频' }));
+    await user.click(screen.getByRole('menuitem', { name: '文本转语音' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('smart-dubbing', undefined);
+    await user.hover(screen.getByRole('button', { name: '音频' }));
+    await user.click(screen.getByRole('menuitem', { name: '音频转录' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('transcription', 'audio-transcription');
+
+    await user.hover(screen.getByRole('button', { name: '图像' }));
+    expect(screen.getByRole('menuitem', { name: '文生图' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('menuitem', { name: '图生图' })).not.toHaveAttribute('aria-current');
+    await user.click(screen.getByRole('menuitem', { name: '文生图' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('image-generation', undefined);
+    await user.hover(screen.getByRole('button', { name: '图像' }));
+    await user.click(screen.getByRole('menuitem', { name: '图生图' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('image-generation', undefined);
+    await user.hover(screen.getByRole('button', { name: '图像' }));
+    await user.click(screen.getByRole('menuitem', { name: '封面生成' }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith('cover-generator', 'cover');
+
+    await user.hover(video);
+    expect(screen.getByRole('menu', { name: '视频' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(video).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps additional creator workspaces highlighted after another generation mode', async () => {
+    const user = userEvent.setup();
+    renderSidebar({ activeWorkspace: 'stickman-video', activeGenerationMode: 'translation' });
+
+    await user.hover(screen.getByRole('button', { name: '视频' }));
+    expect(screen.getByRole('button', { name: '视频' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('menuitem', { name: '火柴人动画' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('highlights only the first child when multiple entries open the same workspace', async () => {
+    const user = userEvent.setup();
+    renderSidebar({ activeWorkspace: 'video-translation', activeGenerationMode: 'translation' });
+
+    await user.hover(screen.getByRole('button', { name: '视频' }));
+    expect(screen.getByRole('menuitem', { name: '视频翻译' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('menuitem', { name: '字幕翻译' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('menuitem', { name: '视频配音' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('distinguishes audio transcription from text to speech by mode', async () => {
+    const user = userEvent.setup();
+    renderSidebar({ activeWorkspace: 'transcription', activeGenerationMode: 'audio-transcription' });
+
+    await user.hover(screen.getByRole('button', { name: '音频' }));
+    expect(screen.getByRole('menuitem', { name: '文本转语音' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('menuitem', { name: '音频转录' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('keeps at most one primary navigation item highlighted', () => {
+    const speech = renderSidebar({
+      activeView: 'dashboard',
+      activeWorkspace: 'smart-dubbing',
+      activeGenerationMode: 'speech'
+    });
+    expect(screen.getByRole('button', { name: '工作台' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: '音频' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '视频' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: '图像' })).not.toHaveAttribute('aria-current');
+    speech.unmount();
+
+    const audioTranscription = renderSidebar({
+      activeView: 'dashboard',
+      activeWorkspace: 'transcription',
+      activeGenerationMode: 'audio-transcription'
+    });
+    expect(screen.getByRole('button', { name: '音频' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '视频' })).not.toHaveAttribute('aria-current');
+    audioTranscription.unmount();
+
+    renderSidebar({
+      activeView: 'dashboard',
+      activeWorkspace: 'transcription',
+      activeGenerationMode: 'transcription'
+    });
+    expect(screen.getByRole('button', { name: '视频' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '音频' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: '工作台' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('uses the same flyout menu when the sidebar is collapsed', async () => {
+    const user = userEvent.setup();
+    const onOpenWorkspace = vi.fn();
+    renderSidebar({ collapsed: true, onOpenWorkspace });
+
+    await user.click(screen.getByRole('button', { name: '视频' }));
+    expect(onOpenWorkspace).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('menuitem', { name: '视频转录' }));
+
+    expect(onOpenWorkspace).toHaveBeenCalledWith('transcription', 'transcription');
+  });
+
   it('renders global actions, projects with nested conversations, and the settings footer action', () => {
     renderSidebar();
 
@@ -133,15 +283,18 @@ describe('OpenCreatorSidebar', () => {
     expect(screen.queryByText('Coca-Cola')).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'OpenCreator' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '模版' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '我的项目' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '探索' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '生成历史' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '工作台' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '数据看板' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Agent动态' })).not.toBeInTheDocument();
     const primaryActions = screen.getByRole('button', { name: '工作台' }).parentElement;
+    expect(primaryActions?.children).toHaveLength(1);
     expect(primaryActions?.children[0]).toBe(screen.getByRole('button', { name: '工作台' }));
-    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: '模版' }));
-    expect(primaryActions?.children[2]).toBe(screen.getByRole('button', { name: '我的项目' }));
+    expect(primaryActions?.nextElementSibling).toHaveClass('sidebar-creation-nav');
+    const secondaryActions = screen.getByRole('button', { name: '生成历史' }).parentElement;
+    expect(secondaryActions?.children[0]).toBe(screen.getByRole('button', { name: '生成历史' }));
+    expect(secondaryActions?.children[1]).toBe(screen.getByRole('button', { name: '设置' }));
     expect(screen.queryByRole('separator')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '搜索' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument();
@@ -151,8 +304,8 @@ describe('OpenCreatorSidebar', () => {
     expect(screen.queryByRole('button', { name: '我的资产' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '知识库' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '素材中心' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '我的项目' }).nextElementSibling).toBe(screen.getByRole('button', { name: '设置' }));
-    expect(primaryActions).toContainElement(screen.getByRole('button', { name: '设置' }));
+    expect(screen.getByRole('button', { name: '生成历史' }).nextElementSibling).toBe(screen.getByRole('button', { name: '设置' }));
+    expect(secondaryActions).toContainElement(screen.getByRole('button', { name: '设置' }));
     expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'content-design' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('data-current-project', 'true');
@@ -179,15 +332,21 @@ describe('OpenCreatorSidebar', () => {
 
     expect(screen.getByRole('button', { name: '工作台' })
       .querySelector('.lucide-panels-top-left')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '模版' })
-      .querySelector('.lucide-layout-template')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '插件中心' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '我的资产' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '我的项目' })
+    expect(screen.getByRole('button', { name: '生成历史' })
       .querySelector('.lucide-folder-kanban')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })
       .querySelector('.lucide-sliders-horizontal')).toBeInTheDocument();
-    expect(view.container.querySelectorAll('.sidebar-nav-icon')).toHaveLength(5);
+    expect(screen.getByRole('button', { name: '视频' })
+      .querySelector('.lucide-video')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '图像' })
+      .querySelector('.lucide-image')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '文本' })
+      .querySelector('.lucide-file-pen-line')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '音频' })
+      .querySelector('.lucide-audio-lines')).toBeInTheDocument();
+    expect(view.container.querySelectorAll('.sidebar-nav-icon')).toHaveLength(8);
   });
 
   it('renders global navigation in the selected display language', () => {
@@ -212,10 +371,10 @@ describe('OpenCreatorSidebar', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: 'Templates' })).not.toHaveAttribute('aria-current');
+    expect(screen.queryByRole('button', { name: 'Explore' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Plugins' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'My Assets' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'My Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generation History' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
   });
@@ -621,18 +780,6 @@ describe('OpenCreatorSidebar', () => {
     expect(onNewConversation).toHaveBeenCalledWith('content-design');
   });
 
-  it('opens Templates from primary navigation without starting a chat', async () => {
-    const user = userEvent.setup();
-    const onOpenHome = vi.fn();
-    const onNewConversation = vi.fn();
-    renderSidebar({ onOpenHome, onNewConversation });
-
-    await user.click(screen.getByRole('button', { name: '模版' }));
-
-    expect(onOpenHome).toHaveBeenCalledTimes(1);
-    expect(onNewConversation).not.toHaveBeenCalled();
-  });
-
   it('opens the creator dashboard', async () => {
     const user = userEvent.setup();
     const onOpenView = vi.fn();
@@ -690,7 +837,7 @@ describe('OpenCreatorSidebar', () => {
     expect(screen.queryByText('OC')).not.toBeInTheDocument();
     expect(screen.queryByText('OpenCreator')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '收起侧栏' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '我的项目' })).toHaveAttribute('title', '我的项目');
+    expect(screen.getByRole('button', { name: '生成历史' })).toHaveAttribute('title', '生成历史');
     expect(screen.queryByText('折叠时隐藏的任务')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '登录' })).not.toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'OpenCreator' })).toHaveAttribute('data-collapsed', 'true');

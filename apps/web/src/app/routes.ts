@@ -40,8 +40,7 @@ export type SettingsRouteTab = 'ai-services' | 'local-components' | 'platform-co
 
 export function parseRoute(hash: string): AppRoute {
   const [path = '', query = ''] = hash.split('?', 2);
-  if (path === '#/' || path === '#') return { view: 'home' };
-  if (path === '#/new') return { view: 'home' };
+  if (path === '#/' || path === '#' || path === '#/new') return { view: 'workbench' };
   if (path === '#/chat') return { view: 'chat' };
   if (path.startsWith('#/thread/')) {
     const threadId = safeDecodeURIComponent(path.slice('#/thread/'.length));

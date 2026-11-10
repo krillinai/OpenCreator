@@ -25,6 +25,7 @@ export default function ImageGenerationSettings(props: {
   sections: ImageGenerationSettingSection[];
   countIcon?: 'images' | 'clock';
   disabled?: boolean;
+  hideHeader?: boolean;
 }) {
   const l = useLocalizedCopy();
   const id = useId();
@@ -138,12 +139,14 @@ export default function ImageGenerationSettings(props: {
             transform: position.above ? 'translateY(-100%)' : undefined
           }}
         >
-          <header>
-            <strong>{props.label}</strong>
-            <button type="button" aria-label={l('关闭图片设置', 'Close image settings', 'Stäng bildinställningar')} onClick={() => setOpen(false)}>
-              <X size={16} aria-hidden="true" />
-            </button>
-          </header>
+          {props.hideHeader ? null : (
+            <header>
+              <strong>{props.label}</strong>
+              <button type="button" aria-label={l('关闭图片设置', 'Close image settings', 'Stäng bildinställningar')} onClick={() => setOpen(false)}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </header>
+          )}
           <div className="image-generation-settings-sections">
             {props.sections.map(section => (
               <section key={section.id} aria-labelledby={`${id}-${section.id}`}>

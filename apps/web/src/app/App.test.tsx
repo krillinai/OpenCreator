@@ -172,7 +172,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '保存并开始使用' }));
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument();
-      expect(window.location.hash).toBe('#/new');
+      expect(window.location.hash).toBe('#/workbench');
     });
     expect(screen.queryByText('Agent 尚未配置，暂时无法发送任务。')).not.toBeInTheDocument();
 
@@ -275,6 +275,7 @@ describe('App', () => {
     expect(screen.queryByLabelText('OpenCreator 导航')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '使用本机 Codex，继续' }));
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument());
+    expect(window.location.hash).toBe('#/workbench');
 
     cleanup();
     render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
@@ -340,7 +341,7 @@ describe('App', () => {
     window.location.hash = '#/dashboard';
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /好，创作者$/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByText('数据看板')).not.toBeInTheDocument();
   });
@@ -364,9 +365,10 @@ describe('App', () => {
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
 
     await waitFor(() => {
-      expect(document.querySelector('.conversation-page')).toBeInTheDocument();
+      expect(document.querySelector('.creator-tools-page')).toBeInTheDocument();
+      expect(window.location.hash).toBe('#/new');
     });
-    expect(document.querySelector('.creator-workspace-page')).not.toBeInTheDocument();
+    expect(document.querySelector('.conversation-page')).not.toBeInTheDocument();
   });
 
   it.each(['browser', 'desktop'] as const)(
@@ -536,16 +538,50 @@ describe('App', () => {
     expect(taskRequests).toBe(0);
   });
 
-  it('restores the project library directly from its URL', async () => {
-    window.location.hash = '#/projects';
-    render(<App projectNavigationMode="library" />);
+  function runtimeAppProps() {
+    testRuntimeProjects = [createTestProject('/Users/test/develop/content-design', {
+      id: 'content-design',
+      name: 'content-design'
+    })];
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+    return { hostBridge, runtimeFetch, subscribeRunEvents: async () => undefined };
+  }
 
-    expect(await screen.findByRole('heading', { name: '我的项目' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '我的项目' })).toHaveAttribute('aria-current', 'page');
+  it('restores generation history directly from the projects URL', async () => {
+    window.location.hash = '#/projects';
+    render(<App projectNavigationMode="library" {...runtimeAppProps()} />);
+
+    expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '生成历史' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByLabelText('Projects and conversations')).not.toBeInTheDocument();
   });
 
-  it('returns to My Projects after opening a creator project from the project list', async () => {
+  it('defaults to All when opening generation history from the navigation tab', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/workbench?tool=video-translation';
+    render(<App {...runtimeAppProps()} />);
+
+    expect(await screen.findByRole('form', { name: '视频翻译' }, { timeout: 5_000 })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '生成历史' }));
+    expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('returns to Generation History after opening a creator project from the project list', async () => {
     const user = userEvent.setup();
     const projectId = 'project_creator_return';
     const createdAt = '2026-09-02T08:00:00.000Z';
@@ -579,7 +615,20 @@ describe('App', () => {
       },
       agentThreadId: null,
       stages: [],
-      artifacts: [],
+      artifacts: [{
+        id: 'cover_result',
+        jobId: 'creator_job_return',
+        kind: 'cover_image',
+        version: 1,
+        status: 'completed',
+        path: '/tmp/cover.png',
+        scopeKey: null,
+        inputFingerprint: null,
+        sha256: null,
+        sourceArtifactIds: [],
+        metadata: { fileName: 'cover.png' },
+        createdAt
+      }],
       providerRequests: [],
       activities: [],
       createdAt,
@@ -613,9 +662,7 @@ describe('App', () => {
       />
     );
 
-    await user.click(await screen.findByRole('button', {
-      name: '打开项目 返回项目列表测试封面'
-    }));
+    await user.click(await screen.findByRole('link', { name: '打开 返回项目列表测试封面' }));
     await waitFor(() => expect(window.location.hash).toBe(
       '#/workbench?tool=cover-generator&jobId=creator_job_return&returnTo=projects'
     ));
@@ -623,7 +670,7 @@ describe('App', () => {
 
     await user.click(within(workspace).getAllByRole('button', { name: '返回' })[0]!);
 
-    expect(await screen.findByRole('heading', { name: '我的项目' })).toBeInTheDocument();
+    expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(window.location.hash).toBe('#/projects'));
   });
 
@@ -928,7 +975,7 @@ describe('App', () => {
   });
 
   it.each(['browser', 'desktop'] as const)(
-    'opens the template Home without restoring the previous conversation in the %s host',
+    'opens Dashboard without restoring the previous conversation in the %s host',
     async hostKind => {
     window.history.replaceState(null, '', '#/');
     window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
@@ -938,16 +985,10 @@ describe('App', () => {
     hostBridge.kind = hostKind;
     render(<App fileService={createFileService()} hostBridge={hostBridge} />);
 
-    expect(await screen.findByRole('heading', { name: '精选模板' })).toBeInTheDocument();
-    expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: '输入任务' })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '推荐' }))
-      .toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: '视频创作' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '图像设计' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '模版' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: '工作台' })).not.toHaveAttribute('aria-current');
-    expect(screen.queryByRole('button', { name: '空白视频翻译' })).not.toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('.creator-tools-page')).toBeInTheDocument());
+    expect(window.location.hash).toBe('#/');
+    expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('heading', { name: 'Explore' })).not.toBeInTheDocument();
   });
 
   it('opens a blank creator workspace from Workbench without submitting a prompt hint', async () => {
@@ -976,311 +1017,16 @@ describe('App', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: '工作台' }));
-    await user.click(screen.getByRole('button', { name: /^视频翻译/ }));
+    await user.click(await screen.findByRole('button', { name: /^视频翻译/ }));
 
-    expect(await screen.findByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
-    expect(screen.queryByLabelText('OpenCreator 导航')).not.toBeInTheDocument();
-    const agentInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
-    expect(agentInput).toHaveAttribute(
-      'placeholder',
-      '询问状态，或描述要调整的语言、字幕、配音和成片要求'
-    );
-    expect(agentInput).toHaveValue('');
-    await user.click(within(
-      screen.getByRole('region', { name: '视频翻译操作区' })
-    ).getByRole('button', { name: '返回' }));
-    expect(await screen.findByLabelText('OpenCreator 导航')).toBeInTheDocument();
-    await waitFor(() => expect(window.location.hash).toBe('#/workbench'));
-  });
-
-  it('creates a preset job from the catalog and opens the real job workspace', async () => {
-    const user = userEvent.setup();
-    window.history.replaceState(null, '', '#/new');
-    const [project] = persistProjects('/Users/test/develop/preset-project');
-    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
-      currentProjectId: project.id
-    }));
-    const hostBridge = createHostBridge();
-    hostBridge.readConnectionConfig = async () => ({
-      baseUrl: 'http://127.0.0.1:60764',
-      token: 'runtime-token'
-    });
-    const createBodies: Array<Record<string, unknown>> = [];
-    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const parsedUrl = new URL(url);
-      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
-        createBodies.push(readRequestBody(init));
-      }
-      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
-      if (projectApiResponse !== undefined) return projectApiResponse;
-      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
-      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
-      throw new Error(`Unexpected request ${url}`);
-    };
-
-    render(
-      <App
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
-
-    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
-    await user.click(screen.getByRole('button', {
-      name: '查看电商商品主图增强版模板详情'
-    }));
-    await user.click(screen.getByRole('button', { name: '使用此模板' }));
-
-    await waitFor(() => expect(window.location.hash).toBe(
-      '#/workbench?tool=image-generation&jobId=creator-job-1&returnTo=home'
-    ));
-    expect(await screen.findByRole('heading', { name: '图像生成' })).toBeInTheDocument();
-    expect(createBodies).toHaveLength(1);
-    expect(createBodies[0]).toMatchObject({
-      projectId: project.id,
-      preset: {
-        module: 'image-generation',
-        id: 'ecommerce-product-alt',
-        version: 1
-      },
-      locale: 'zh-CN',
-      creationKey: expect.stringMatching(/^creator_preset_/)
-    });
-    expect(createBodies[0]).not.toHaveProperty('templateId');
-    expect(createBodies[0]).not.toHaveProperty('state');
-    expect(testCreatorJobs[0]).toMatchObject({
-      state: {
-        prompt: '专业电商商品主图',
-        provider: 'openai'
-      },
-      presetOrigin: {
-        module: 'image-generation',
-        id: 'ecommerce-product-alt',
-        version: 1,
-        title: '电商商品主图增强版'
-      },
-      stages: []
-    });
-    expect(creatorPresetCreationStorageKeys()).toHaveLength(0);
-
-    await user.click(within(
-      screen.getByRole('region', { name: '图像生成 操作区' })
-    ).getAllByRole('button', { name: '返回' })[0]!);
-
-    await waitFor(() => expect(window.location.hash).toBe('#/new'));
-    expect(await screen.findByRole('heading', { name: '精选模板' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '推荐' }))
-      .toHaveAttribute('aria-selected', 'true');
-  });
-
-  it('reuses the preset creation key after remounting and clears it after recovery', async () => {
-    const user = userEvent.setup();
-    window.history.replaceState(null, '', '#/new');
-    const [project] = persistProjects('/Users/test/develop/preset-remount');
-    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
-      currentProjectId: project.id
-    }));
-    const hostBridge = createHostBridge();
-    hostBridge.readConnectionConfig = async () => ({
-      baseUrl: 'http://127.0.0.1:60764',
-      token: 'runtime-token'
-    });
-    const creationKeys: string[] = [];
-    let rejectFirstResponse: ((reason: Error) => void) | undefined;
-    const firstResponse = new Promise<Response>((_resolve, reject) => {
-      rejectFirstResponse = reject;
-    });
-    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const parsedUrl = new URL(url);
-      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
-        creationKeys.push(String(readRequestBody(init).creationKey));
-        const committed = handleDefaultProjectApiRequest(url, init)!;
-        if (creationKeys.length === 1) return firstResponse;
-        return committed;
-      }
-      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
-      if (projectApiResponse !== undefined) return projectApiResponse;
-      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
-      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
-      throw new Error(`Unexpected request ${url}`);
-    };
-
-    const firstRender = render(
-      <App
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
-    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
-    await user.click(screen.getByRole('button', {
-      name: '查看电商商品主图增强版模板详情'
-    }));
-    await user.click(screen.getByRole('button', { name: '使用此模板' }));
-    await waitFor(() => expect(testCreatorJobs).toHaveLength(1));
-    expect(creatorPresetCreationStorageKeys()).toHaveLength(1);
-    firstRender.unmount();
-    rejectFirstResponse?.(new TypeError('connection closed after commit'));
-    await act(async () => Promise.resolve());
-
-    render(
-      <App
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
-    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
-    await user.click(screen.getByRole('button', {
-      name: '查看电商商品主图增强版模板详情'
-    }));
-    await user.click(screen.getByRole('button', { name: '使用此模板' }));
-
-    await waitFor(() => expect(window.location.hash).toBe(
-      '#/workbench?tool=image-generation&jobId=creator-job-1&returnTo=home'
-    ));
-    expect(creationKeys).toHaveLength(2);
-    expect(new Set(creationKeys).size).toBe(1);
-    expect(testCreatorJobs).toHaveLength(1);
-    expect(creatorPresetCreationStorageKeys()).toHaveLength(0);
-  });
-
-  it('retries a timed-out preset creation with the same creation key', async () => {
-    const user = userEvent.setup();
-    window.history.replaceState(null, '', '#/new');
-    const [project] = persistProjects('/Users/test/develop/preset-timeout');
-    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
-      currentProjectId: project.id
-    }));
-    const hostBridge = createHostBridge();
-    hostBridge.readConnectionConfig = async () => ({
-      baseUrl: 'http://127.0.0.1:60764',
-      token: 'runtime-token'
-    });
-    const nativeSetTimeout = window.setTimeout.bind(window);
-    vi.spyOn(window, 'setTimeout').mockImplementation(((
-      handler: TimerHandler,
-      timeout?: number,
-      ...args: unknown[]
-    ) => nativeSetTimeout(
-      handler,
-      timeout === 15_000 ? 0 : timeout,
-      ...args
-    )) as typeof window.setTimeout);
-    const creationKeys: string[] = [];
-    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const parsedUrl = new URL(url);
-      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
-        creationKeys.push(String(readRequestBody(init).creationKey));
-        if (creationKeys.length === 1) {
-          return new Promise<Response>(() => undefined);
-        }
-      }
-      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
-      if (projectApiResponse !== undefined) return projectApiResponse;
-      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
-      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
-      throw new Error(`Unexpected request ${url}`);
-    };
-
-    render(
-      <App
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
-    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
-    await user.click(screen.getByRole('button', {
-      name: '查看电商商品主图增强版模板详情'
-    }));
-    await user.click(screen.getByRole('button', { name: '使用此模板' }));
-    const timeoutIssue = await findIssueByDescription('无法启动此模板，请查看诊断后重试。');
-    expect(timeoutIssue).toHaveTextContent('无法启动此模板，请查看诊断后重试。');
-    expect(timeoutIssue).not.toHaveTextContent(/诊断编号：OC-/);
-    expect(timeoutIssue).not.toHaveTextContent('模板任务创建超时');
-    expect(creatorPresetCreationStorageKeys()).toHaveLength(1);
-
-    await user.click(screen.getByRole('button', { name: '使用此模板' }));
-    await waitFor(() => expect(window.location.hash).toBe(
-      '#/workbench?tool=image-generation&jobId=creator-job-1&returnTo=home'
-    ));
-    expect(creationKeys).toHaveLength(2);
-    expect(new Set(creationKeys).size).toBe(1);
-    expect(creatorPresetCreationStorageKeys()).toHaveLength(0);
-  });
-
-  it('refreshes the catalog and clears the creation key when a preset disappears', async () => {
-    const user = userEvent.setup();
-    window.history.replaceState(null, '', '#/new');
-    const [project] = persistProjects('/Users/test/develop/preset-missing');
-    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
-      currentProjectId: project.id
-    }));
-    const hostBridge = createHostBridge();
-    hostBridge.readConnectionConfig = async () => ({
-      baseUrl: 'http://127.0.0.1:60764',
-      token: 'runtime-token'
-    });
-    let catalogRequests = 0;
-    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const parsedUrl = new URL(url);
-      if (parsedUrl.pathname === '/creator/presets' && init?.method === 'GET') {
-        catalogRequests += 1;
-        return jsonResponse({
-          locale: 'zh-CN',
-          catalogHash: `${catalogRequests}`.padStart(64, '0'),
-          presets: testCreatorPresets
-        });
-      }
-      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
-        return jsonResponse({
-          error: {
-            code: 'creator_preset_not_found',
-            message: 'Creator preset asset not found'
-          }
-        }, { status: 404 });
-      }
-      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
-      if (projectApiResponse !== undefined) return projectApiResponse;
-      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
-      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
-      throw new Error(`Unexpected request ${url}`);
-    };
-
-    render(
-      <App
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
-    await user.click(await screen.findByRole('tab', { name: '图像设计' }));
-    await user.click(screen.getByRole('button', {
-      name: '查看电商商品主图增强版模板详情'
-    }));
-    await user.click(screen.getByRole('button', { name: '使用此模板' }));
-
-    const missingPresetIssue = await findIssueByDescription('无法启动此模板，请查看诊断后重试。');
-    expect(missingPresetIssue).toHaveTextContent('无法启动此模板，请查看诊断后重试。');
-    expect(missingPresetIssue).not.toHaveTextContent(/诊断编号：OC-/);
-    expect(missingPresetIssue).not.toHaveTextContent('Creator preset asset not found');
-    await waitFor(() => expect(catalogRequests).toBeGreaterThanOrEqual(2));
-    expect(creatorPresetCreationStorageKeys()).toHaveLength(0);
+    expect(await screen.findByRole('form', { name: '视频翻译' })).toBeInTheDocument();
+    expect(screen.getByLabelText('OpenCreator 导航')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '返回' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'OpenCreator' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '视频链接' })).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: '工作台' }));
+    expect(await screen.findByRole('heading', { name: /好，创作者$/ })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/dashboard'));
   });
 
   it('adds a title bar safe area only when the host exposes the capability', async () => {
@@ -1417,6 +1163,10 @@ describe('App', () => {
       if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/gateway/account')) return jsonResponse({
+        source: 'manual', authState: 'signed_out', activationState: 'inactive',
+        account: null, bindingVersion: null, models: [], activationError: null
+      });
       if (url.endsWith('/threads?status=active&limit=50')) {
         return jsonResponse({ threads: [thread] });
       }
@@ -1457,26 +1207,23 @@ describe('App', () => {
     });
     expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '精选模板' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '推荐' }))
-      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('heading', { name: '精选模板' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: '空白视频翻译' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '工作台' }));
-    expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /好，创作者$/ })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^视频翻译/ }));
-    expect(screen.getByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: '视频翻译' })).toBeInTheDocument();
     await user.type(
       screen.getByRole('textbox', { name: '视频链接' }),
       'https://www.youtube.com/watch?v=test'
     );
-    await user.click(screen.getByRole('button', { name: '继续' }));
-    await user.click(within(
-      screen.getByRole('region', { name: '视频翻译操作区' })
-    ).getByRole('button', { name: '开始翻译' }));
-    expect(screen.getByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toBeInTheDocument();
+    const start = screen.getByRole('button', { name: '开始翻译' });
+    expect(start).toBeEnabled();
+    await user.click(start);
+    expect(await screen.findByRole('heading', { name: '视频翻译项目' }, { timeout: 5_000 })).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: '横屏字幕 1' })).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: '输入任务' })).not.toBeInTheDocument();
   });
 
@@ -1504,6 +1251,10 @@ describe('App', () => {
       if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/gateway/account')) return jsonResponse({
+        source: 'manual', authState: 'signed_out', activationState: 'inactive',
+        account: null, bindingVersion: null, models: [], activationError: null
+      });
       if (url.includes('/threads?')) return jsonResponse({ threads: [] });
       throw new Error(`Unexpected request ${url}`);
     };
@@ -1517,19 +1268,18 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('heading', { name: 'Translate & Dub Video' }))
+    expect(await screen.findByRole('form', { name: 'Video Translation' }))
       .toBeInTheDocument();
     const file = new File(['local-video'], 'local.webm', {
       type: 'video/webm',
       lastModified: 123
     });
-    await user.upload(screen.getByLabelText('Upload a local video'), file);
-    await user.click(screen.getByRole('button', { name: 'Continue' }));
-    await user.click(within(
-      screen.getByRole('region', { name: 'Video translation workspace' })
-    ).getByRole('button', { name: 'Start translation' }));
+    await user.upload(screen.getByLabelText('Upload video, audio, or SRT subtitles'), file);
+    const start = screen.getByRole('button', { name: 'Translate' });
+    expect(start).toBeEnabled();
+    await user.click(start);
 
-    await waitFor(() => expect(workflowRequests).toEqual(['upload-source', 'run-stage']));
+    await waitFor(() => expect(workflowRequests).toEqual(['upload-source', 'run-stage']), { timeout: 5_000 });
   });
 
   it('keeps a browser conversation title inside the conversation page', async () => {
@@ -3091,7 +2841,7 @@ describe('App', () => {
     expect(fetchUrls.some(url => url.endsWith('/codex/mcp'))).toBe(false);
     expect(fetchUrls.some(url => url.endsWith('/codex/profiles'))).toBe(false);
 
-    window.history.pushState(null, '', '#/new');
+    window.history.pushState(null, '', '#/chat');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
     await waitFor(() => {
       expect(fetchUrls.some(url => url.endsWith('/codex/mcp'))).toBe(true);
@@ -4787,52 +4537,13 @@ describe('App', () => {
     expect(readRequestBody(createCall!.init!)).toEqual({ name: '项目' });
   });
 
-  it('creates a typed project from the projects page and opens its workspace', async () => {
-    const user = userEvent.setup();
+  it('shows generation history without a new project entry from the projects page', async () => {
     window.location.hash = '#/projects';
-    testRuntimeProjects = [];
-    testCreatorJobs = [];
-    const hostBridge = createHostBridge();
-    hostBridge.readConnectionConfig = async () => ({
-      baseUrl: 'http://127.0.0.1:60764',
-      token: 'runtime-token'
-    });
-    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
-    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      fetchCalls.push({ url, init });
-      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
-      if (projectApiResponse !== undefined) return projectApiResponse;
-      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
-      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
-      throw new Error(`Unexpected request ${url}`);
-    };
+    render(<App {...runtimeAppProps()} />);
 
-    render(
-      <App
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
-
-    expect(await screen.findByRole('heading', { name: '我的项目' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '新建项目' }));
-    expect(screen.getByRole('menu', { name: '项目类型' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: '创建项目' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('menuitem', { name: /图像生成/ }));
-
-    expect(await screen.findByRole(
-      'heading',
-      { name: '图像生成' },
-      { timeout: 5_000 }
-    )).toBeInTheDocument();
-    expect(window.location.hash).toBe('#/workbench?tool=image-generation&returnTo=projects');
-    const createCall = findPostCall(fetchCalls, '/projects/managed');
-    expect(createCall).toBeDefined();
-    expect(readRequestBody(createCall!.init!)).toEqual({ name: '图像生成项目' });
+    expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: '新建项目' })).not.toBeInTheDocument();
   });
 
   it('adds a project by dropping a folder into the desktop workspace', async () => {
@@ -7865,10 +7576,9 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '返回应用' }));
 
+    await waitFor(() => expect(document.querySelector('.creator-tools-page')).toBeInTheDocument());
     expect(screen.queryByRole('heading', { name: 'New conversation' })).not.toBeInTheDocument();
-    expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
-    expect(await screen.findByText('精选模板')).toBeInTheDocument();
-    expect(window.location.hash).toBe('#/new');
+    expect(window.location.hash).toBe('#/workbench');
   });
 
   it('returns from settings to the empty chat when settings were opened there', async () => {
@@ -7889,8 +7599,7 @@ describe('App', () => {
     render(<App fileService={createFileService()} />);
     await user.click(await screen.findByRole('button', { name: '返回应用' }));
 
-    expect(await screen.findByText('精选模板')).toBeInTheDocument();
-    expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('.creator-tools-page')).toBeInTheDocument());
     expect(window.location.hash).toBe('#/new');
   });
 

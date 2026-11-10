@@ -14,20 +14,19 @@ import {
   type VideoGenerationProvider,
   type VideoGenerationSize
 } from '@opencreator/protocol';
+import { useGenerationAccess } from './DashboardGenerationAccess.js';
 import {
   Clapperboard,
   Download,
   ImagePlus,
   LoaderCircle,
-  Maximize2,
-  Minimize2,
   RotateCcw,
   Sparkles,
   Trash2,
   WandSparkles,
   X
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { publicErrorReason } from '../issues/issue-catalog.js';
 import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
@@ -96,9 +95,14 @@ const maxReferenceImageBytes = 5 * 1024 * 1024;
 export default function VideoGenerationWorkspace(props: {
   onBack(): void;
   promptHint?: string;
+  embedded?: boolean;
+  embeddedTabs?: ReactNode;
+  forceComposer?: boolean;
+  onGenerated?(): void;
   creatorServicesService?: CreatorServicesSettingsService | null;
 }) {
   const l = useLocalizedCopy();
+  const requireGenerationAccess = useGenerationAccess();
   const session = useOptionalCreatorSession();
   const official = useOfficialServices('video');
   const mediaPreviewContextRef = useRef({ session, localize: l });
@@ -128,7 +132,6 @@ export default function VideoGenerationWorkspace(props: {
   const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [uploadingVideoReference, setUploadingVideoReference] = useState(false);
-  const [promptExpanded, setPromptExpanded] = useState(false);
   const videoReferences = readVideoReferences(session?.state.videoReferences);
   const [taskControlPending, setTaskControlPending] = useState<'canceling' | 'resuming'>();
   const characterCount = useMemo(() => [...prompt.trim()].length, [prompt]);
@@ -156,8 +159,9 @@ export default function VideoGenerationWorkspace(props: {
     [session?.job.artifacts, session?.state.resultSnapshots]
   );
   const latestVersion = resultVersions.at(-1)?.value;
-  const selectedResult = resultVersions.find(version => version.value === resultVersion)
-    ?? resultVersions.at(-1);
+  const selectedResult = props.forceComposer
+    ? undefined
+    : resultVersions.find(version => version.value === resultVersion) ?? resultVersions.at(-1);
   const selectedResultArtifactId = selectedResult?.artifact.id;
   const latestStage = session?.job.stages.filter(stage => stage.stageId === 'generate').at(-1);
   const latestStageIssue = session?.job.issues?.find(issue => (
@@ -432,6 +436,7 @@ export default function VideoGenerationWorkspace(props: {
 
   async function generate() {
     if (busy || resumable) return;
+    if (!requireGenerationAccess()) return;
     if (!serviceReady) { setError(l('官方视频服务暂不可用，请在账户页面检查连接状态', 'Official video service is unavailable. Check the connection in your account.')); return; }
     if (session === null) {
       setError(l(
@@ -481,6 +486,7 @@ export default function VideoGenerationWorkspace(props: {
         '视频生成任务已提交，可以离开当前页面，完成后会保留在项目中',
         'Video generation started. You can leave this page and return to the saved result later.'
       ));
+      if (submittedStage?.status !== 'failed' && submittedStage?.status !== 'interrupted') props.onGenerated?.();
     } catch {} finally {
       setSubmitting(false);
     }
@@ -668,9 +674,10 @@ export default function VideoGenerationWorkspace(props: {
       onCancelTask={generating ? () => void cancelTask() : undefined}
       onResumeTask={resumable ? () => void resumeTask() : undefined}
       taskControlPending={taskControlPending}
+      embedded={props.embedded && !selectedResult}
     >
       <div className="creator-tool-stack video-generation-studio">
-        <section className="video-generation-intro" aria-label={l('视频生成功能说明', 'Video generation overview')}>
+        {!props.embedded ? <section className="video-generation-intro" aria-label={l('视频生成功能说明', 'Video generation overview')}>
           <p>{l(
             '描述主体动作、镜头和光线，选择模型、画幅与时长，生成可下载的视频片段。',
             'Describe the action, camera, and lighting, then choose a model, aspect ratio, and duration to generate a downloadable video clip.'
@@ -681,22 +688,16 @@ export default function VideoGenerationWorkspace(props: {
             <span>{l('自定义画幅', 'Custom Ratios')}</span>
             <span>{l('MP4 输出', 'MP4 Output')}</span>
           </div>
-        </section>
+        </section> : null}
         <form className="video-generation-composer" aria-label={l('视频生成', 'Video Generation')} onSubmit={event => {
           event.preventDefault();
           void generate();
         }}>
           <fieldset className="video-generation-fields" disabled={busy}>
-            <div className={`video-generation-editor${promptExpanded ? ' is-expanded' : ''}`}>
+            <div className="video-generation-editor">
               <div className="video-generation-composer-heading">
-                <h2 id="video-prompt-title"><Clapperboard size={18} strokeWidth={1.7} aria-hidden="true" />{l('视频', 'Video')}</h2>
-                <span>{l('文字或参考图生成视频', 'Text or image to video')}</span>
-                <button type="button" className="video-generation-expand" aria-expanded={promptExpanded} aria-controls="video-prompt-input"
-                  aria-label={promptExpanded ? l('收起编辑区', 'Collapse editor', 'Minska redigeringsytan') : l('展开编辑区', 'Expand editor', 'Utöka redigeringsytan')}
-                  title={promptExpanded ? l('收起编辑区', 'Collapse editor', 'Minska redigeringsytan') : l('展开编辑区', 'Expand editor', 'Utöka redigeringsytan')}
-                  onClick={() => setPromptExpanded(value => !value)}>
-                  {promptExpanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-                </button>
+                {props.embeddedTabs ?? <h2 id="video-prompt-title"><Clapperboard size={18} strokeWidth={1.7} aria-hidden="true" />{l('视频', 'Video')}</h2>}
+                {!props.embedded ? <span>{l('文字或参考图生成视频', 'Text or image to video')}</span> : null}
               </div>
               {!official.model?.videoOptions || currentReferenceName ? <div className="video-generation-reference" data-loaded={Boolean(currentReferenceName)}>
                   <label className="video-generation-reference-upload" title={currentReferenceName ? l('更换参考图', 'Replace reference') : l('添加参考图', 'Add reference image')}>
@@ -740,7 +741,7 @@ export default function VideoGenerationWorkspace(props: {
                 <span className="video-generation-visually-hidden">{l('提示词', 'Prompt')}</span>
                 <textarea
                   id="video-prompt-input"
-                  rows={promptExpanded ? 14 : 7}
+                  rows={5}
                   disabled={busy}
                   maxLength={creatorPromptMaxLength}
                   value={prompt}
@@ -789,6 +790,7 @@ export default function VideoGenerationWorkspace(props: {
                 sections={videoSettingSections}
                 countIcon="clock"
                 disabled={busy || !serviceReady}
+                hideHeader={props.embedded}
               />
               <div className="video-generation-submit-row">
                 {resumable ? (
@@ -797,7 +799,7 @@ export default function VideoGenerationWorkspace(props: {
                     {l('继续任务', 'Resume task')}
                   </button>
                 ) : (
-                  <button className="creator-tool-primary" type="submit" disabled={busy || !serviceReady}>
+                  <button className="creator-tool-primary" type="submit" disabled={busy || uploadingVideoReference}>
                     {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : selectedResult ? <RotateCcw size={16} /> : <Sparkles size={16} />}
                     {busy ? l('正在生成', 'Generating') : selectedResult ? l('重新生成', 'Regenerate') : l('开始生成', 'Generate')}
                   </button>
@@ -809,7 +811,7 @@ export default function VideoGenerationWorkspace(props: {
           </fieldset>
         </form>
 
-        {selectedResult || generating ? (
+        {!props.embedded && (selectedResult || generating) ? (
           <section className="video-generation-output" aria-labelledby="video-output-title">
             <div className="creator-tool-panel-heading">
               <div>
@@ -1006,7 +1008,9 @@ function videoModelDefaults(
   config: CreatorServicesConfig
 ): Record<VideoGenerationProvider, string> {
   return {
-    seedance: config.video.seedance.model.trim() || defaultVideoGenerationModels.seedance,
+    seedance: config.video.seedance.model.trim() === 'doubao-seedance-1-0-pro-250528'
+      ? defaultVideoGenerationModels.seedance
+      : config.video.seedance.model.trim() || defaultVideoGenerationModels.seedance,
     kling: config.video.kling.model.trim() || defaultVideoGenerationModels.kling,
     veo: config.video.veo.model.trim() || defaultVideoGenerationModels.veo
   };

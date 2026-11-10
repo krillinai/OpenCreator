@@ -48,14 +48,13 @@
 .smart-dubbing-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; }
 .smart-dubbing-editor-heading h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4; }
 .smart-dubbing-editor-heading h2 > svg { flex-shrink: 0; color: var(--muted); }
-.smart-dubbing-expand, .smart-dubbing-clear { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); }
-.smart-dubbing-expand:hover:enabled, .smart-dubbing-clear:hover:enabled { background: var(--state-hover-bg); color: var(--text); }
+.smart-dubbing-clear { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); }
+.smart-dubbing-clear:hover:enabled { background: var(--state-hover-bg); color: var(--text); }
 .smart-dubbing-editor .smart-dubbing-script-field { min-height: 0; display: flex; padding: 0 18px 8px; }
 .smart-dubbing-editor .smart-dubbing-script-field textarea {
   min-width: 0; width: 100%; min-height: 200px; padding: 0; border: 0; border-radius: 0;
   background: transparent; font-size: 14px; line-height: 1.75; caret-color: var(--accent);
 }
-.smart-dubbing-editor.is-expanded .smart-dubbing-script-field textarea { min-height: 400px; }
 .smart-dubbing-editor .smart-dubbing-script-field textarea:focus { outline: 0; box-shadow: none; }
 .smart-dubbing-script-tools { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border-hairline); }
 .smart-dubbing-script-tools .smart-dubbing-sample { min-width: 0; margin: 0; padding: 0 6px; text-align: start; }
@@ -80,6 +79,145 @@
 .smart-dubbing-submit-row { display: flex; justify-content: flex-end; }
 .smart-dubbing-submit-row > button { width: 100%; justify-content: center; min-width: 144px; min-height: 44px; }
 .smart-dubbing-composer :disabled { cursor: not-allowed; }
+
+.dashboard-speech-composer .smart-dubbing-fields {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.dashboard-speech-composer .smart-dubbing-editor {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(96px, auto) auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dashboard-speech-composer .smart-dubbing-editor-heading {
+  grid-column: 1 / -1;
+  padding-block: 0;
+}
+
+.dashboard-speech-composer .smart-dubbing-script-field {
+  min-height: 96px;
+  padding: 12px 24px 6px;
+}
+
+.dashboard-speech-composer .smart-dubbing-script-field textarea {
+  min-height: 72px;
+}
+
+.dashboard-speech-composer .smart-dubbing-side-fields {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) auto;
+  grid-template-rows: auto;
+  align-items: end;
+  gap: 12px;
+  padding: 12px 16px;
+  border-inline-start: 0;
+  border-block-start: 1px solid var(--border-hairline);
+}
+
+.dashboard-speech-composer .smart-dubbing-configured-model {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-2) 65%, var(--conversation-bg));
+}
+
+.dashboard-speech-composer .smart-dubbing-configured-model > .model-brand-icon {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+}
+
+.dashboard-speech-composer .smart-dubbing-configured-model > div > span:first-child,
+.dashboard-speech-composer .smart-dubbing-configured-model .smart-dubbing-provider-row small {
+  display: none;
+}
+
+.dashboard-speech-composer .smart-dubbing-configured-model .smart-dubbing-provider-row strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.dashboard-speech-composer .smart-dubbing-configured-model > a {
+  width: 24px;
+  height: 24px;
+}
+
+.dashboard-speech-composer .smart-dubbing-model-row > .creator-tool-field {
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.dashboard-speech-composer .smart-dubbing-model-row > .creator-tool-field > span:first-child:not(.official-model-select) {
+  display: none;
+}
+
+.dashboard-speech-composer .smart-dubbing-model-row .official-model-control,
+.dashboard-speech-composer .smart-dubbing-model-row .official-model-control input[role='combobox'] {
+  height: 36px;
+  min-height: 36px;
+}
+
+.dashboard-speech-composer .smart-dubbing-model-row .official-model-control input[role='combobox'] {
+  padding-inline: 42px 32px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.dashboard-speech-composer .smart-dubbing-model-row .official-model-control.is-open input[role='combobox'] {
+  padding-inline-start: 34px;
+  font-weight: 400;
+}
+
+.dashboard-speech-composer .smart-dubbing-model-row .official-model-selected-icon {
+  top: 4px;
+  inset-inline-start: 7px;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+}
+
+.dashboard-speech-composer .smart-dubbing-model-row .official-model-selected-icon > img {
+  width: 20px;
+  height: 20px;
+}
+
+.dashboard-speech-composer .smart-dubbing-model-row .official-model-control button {
+  top: 2px;
+  height: 32px;
+}
+
+.dashboard-speech-composer .smart-dubbing-model-row .official-model-search-icon {
+  top: 10px;
+  inset-inline-start: 10px;
+}
+
+.dashboard-speech-composer .smart-dubbing-settings {
+  display: grid;
+  gap: 18px;
+}
+
+.dashboard-speech-composer .smart-dubbing-settings > * {
+  flex: 1 1 0;
+}
+
+.dashboard-speech-composer .smart-dubbing-submit-row {
+  grid-column: auto;
+  grid-row: auto;
+  align-self: end;
+}
+
+.dashboard-speech-composer .smart-dubbing-submit-row > button {
+  min-height: 36px;
+}
+
 .smart-dubbing-output-panel { min-width: 0; padding-top: 20px; border-top: 1px solid var(--border-hairline); }
 .smart-dubbing-preview-pending { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 100px; color: var(--muted); font-size: 13px; }
 .smart-dubbing-workspace-page .smart-dubbing-error { margin: 0; flex-wrap: wrap; }
@@ -87,10 +225,6 @@
 @container smart-dubbing (max-width: 760px) {
   .smart-dubbing-fields { grid-template-columns: minmax(0, 1fr); }
   .smart-dubbing-side-fields { grid-template-rows: none; padding-inline-start: 0; padding-block-start: 24px; border-inline-start: 0; border-block-start: 1px solid var(--border-hairline); }
-}
-
-@container smart-dubbing (min-width: 761px) {
-  .smart-dubbing-editor.is-expanded .smart-dubbing-script-field textarea { min-height: min(68dvh, 720px); }
 }
 
 @container smart-dubbing (max-width: 520px) {
@@ -105,7 +239,7 @@
 }
 
 @media (pointer: coarse) {
-  .smart-dubbing-expand, .smart-dubbing-clear, .smart-dubbing-configured-model > a { min-width: 44px; min-height: 44px; }
+  .smart-dubbing-clear, .smart-dubbing-configured-model > a { min-width: 44px; min-height: 44px; }
   .smart-dubbing-sample { min-height: 44px; }
   .smart-dubbing-settings .creator-tool-segmented button { min-height: 44px; }
   .smart-dubbing-model-row .official-model-control,

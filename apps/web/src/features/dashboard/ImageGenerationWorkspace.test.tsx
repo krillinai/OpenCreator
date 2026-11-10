@@ -249,7 +249,7 @@ describe('ImageGenerationWorkspace', () => {
     expect(editor).toHaveTextContent('JPG、PNG、WebP，最大 20 MB');
     expect(editor).toHaveTextContent('0/1');
     expect(model.closest('.image-generation-action-bar')).not.toBeNull();
-    expect(prompt).toHaveAttribute('rows', '7');
+    expect(prompt).toHaveAttribute('rows', '5');
     expect(referenceUpload.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING)
       .not.toBe(0);
   });
@@ -286,16 +286,49 @@ describe('ImageGenerationWorkspace', () => {
     expect(fixture.applyAction).not.toHaveBeenCalled();
   });
 
-  it('expands and collapses the editor without changing or submitting the draft', () => {
+  it('switches local services from popular model cards and applies a template without generating', async () => {
+    const fixture = createFixture();
+    renderWorkspace(fixture);
+    const popular = screen.getByRole('region', { name: '热门模型' });
+    expect(within(popular).getAllByRole('button')).toHaveLength(4);
+    expect(screen.getAllByRole('button', { name: /^使用模版 / })).toHaveLength(6);
+
+    fireEvent.click(screen.getByRole('button', { name: '选择模型 Gemini' }));
+    await waitFor(() => expect(fixture.currentJob().state.provider).toBe('gemini'));
+    expect(screen.getByRole('button', { name: '选择模型 Gemini' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: '使用模版 雪山小屋' }));
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '提示词' }).value).toMatch(/^雪山深处的一座红色木屋/);
+    await waitFor(() => expect(fixture.currentJob().state.prompt).toMatch(/^雪山深处的一座红色木屋/));
+    expect(fixture.currentJob().state.aspectRatio).toBe('16:9');
+    expect(fixture.applyAction.mock.calls.every(([, request]) => request.action !== 'run-stage')).toBe(true);
+  });
+
+  it('selects an official model from the popular model gallery', async () => {
+    const fixture = createFixture();
+    const state: GatewayAccountState = {
+      source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', activationError: null,
+      selectedModels: { image: 'official/gpt-image' },
+      models: [
+        { id: 'official/gpt-image', name: 'GPT Image 2', modality: 'image', capabilities: [] },
+        { id: 'official/nano-banana', name: 'Nano Banana 2', modality: 'image', capabilities: ['edit'] }
+      ]
+    };
+    renderWorkspace(fixture, fixture.currentJob(), undefined, state);
+    fireEvent.click(screen.getByRole('button', { name: '选择模型 Nano Banana 2' }));
+    await waitFor(() => expect(fixture.currentJob().state.officialModels).toMatchObject({ image: 'official/nano-banana' }));
+    expect(screen.getByRole('button', { name: '选择模型 Nano Banana 2' })).toHaveAttribute('aria-pressed', 'true');
+    expect(fixture.applyAction.mock.calls.every(([, request]) => request.action !== 'run-stage')).toBe(true);
+  });
+
+  it('keeps the editor at a fixed size without an expand action', () => {
     const fixture = createFixture();
     renderWorkspace(fixture, { ...fixture.currentJob(), state: { prompt: 'A bright studio', provider: 'openai' } });
     const prompt = screen.getByRole('textbox', { name: '提示词' });
-    fireEvent.click(screen.getByRole('button', { name: '展开编辑区' }));
-    expect(prompt).toHaveAttribute('rows', '14');
-    expect(screen.getByRole('button', { name: '收起编辑区' })).toHaveAttribute('aria-expanded', 'true');
+    expect(prompt).toHaveAttribute('rows', '5');
     expect(prompt).toHaveValue('A bright studio');
-    fireEvent.click(screen.getByRole('button', { name: '收起编辑区' }));
-    expect(prompt).toHaveAttribute('rows', '7');
+    expect(screen.queryByRole('button', { name: '展开编辑区' })).not.toBeInTheDocument();
     expect(fixture.applyAction).not.toHaveBeenCalled();
   });
 
@@ -340,6 +373,21 @@ describe('ImageGenerationWorkspace', () => {
     }] });
     expect(screen.getByRole('alert')).toHaveTextContent('Codex 无法获取所需的参考图，请先上传图片后重试');
     expect(screen.getByRole('alert')).not.toHaveTextContent('private-secret');
+  });
+
+  it('hides generation failure details in the embedded composer while keeping input validation', () => {
+    const fixture = createFixture();
+    const job = fixture.currentJob();
+    renderWorkspace(fixture, { ...job, status: 'failed', stages: [{
+      id: 'stage-failed', jobId: job.id, stageId: 'generate', executor: 'image',
+      status: 'failed', dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null,
+      attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: {},
+      errorCode: 'image_generation_failed', errorMessage: 'Image generation did not complete. Check the image provider settings, then retry.',
+      startedAt: job.createdAt, finishedAt: job.createdAt
+    }] }, undefined, undefined, 'zh-CN', true);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('请先描述需要生成的画面');
   });
 
   it.each([
@@ -574,7 +622,8 @@ function renderWorkspace(
     getCodexImageStatus?(): Promise<{ ready: boolean }>;
   },
   gatewayState?: GatewayAccountState,
-  language: AppLanguage = 'zh-CN'
+  language: AppLanguage = 'zh-CN',
+  embedded = false
 ) {
   let currentSession: CreatorSessionContextValue | null = null;
   const view = render(
@@ -593,6 +642,7 @@ function renderWorkspace(
         <SessionObserver onSession={session => { currentSession = session; }} />
         <ImageGenerationWorkspace
           onBack={vi.fn()}
+          embedded={embedded}
           creatorServicesService={creatorServicesService as never}
         />
         </OfficialServicesContext.Provider>

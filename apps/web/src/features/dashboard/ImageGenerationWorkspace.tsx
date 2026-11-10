@@ -15,25 +15,25 @@ import {
   type ImageGenerationSize
 } from '@opencreator/protocol';
 import { OfficialModelField, useOfficialServices } from './official-services.js';
+import { useGenerationAccess } from './DashboardGenerationAccess.js';
 import {
   Download,
   Image as ImageIcon,
   ImagePlus,
   Images,
   LoaderCircle,
-  Maximize2,
-  Minimize2,
   RotateCcw,
   Sparkles,
   Trash2,
   X,
   WandSparkles
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import ImageGenerationSettings, { type ImageGenerationSettingSection } from './ImageGenerationSettings.js';
+import ImageGenerationDiscovery from './ImageGenerationDiscovery.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
 import { publicErrorReason } from '../issues/issue-catalog.js';
@@ -81,9 +81,14 @@ const samplePromptSv = 'En ljus modern kreativ studio i gryningen, naturligt lju
 export default function ImageGenerationWorkspace(props: {
   onBack(): void;
   promptHint?: string;
+  embedded?: boolean;
+  embeddedTabs?: ReactNode;
+  forceComposer?: boolean;
+  onGenerated?(): void;
   creatorServicesService?: CreatorServicesSettingsService | null;
 }) {
   const l = useLocalizedCopy();
+  const requireGenerationAccess = useGenerationAccess();
   const session = useOptionalCreatorSession();
   const official = useOfficialServices('image');
   const [prompt, setPrompt] = useState(() => readString(session?.state.prompt));
@@ -134,7 +139,6 @@ export default function ImageGenerationWorkspace(props: {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [promptExpanded, setPromptExpanded] = useState(false);
   const characterCount = useMemo(() => [...prompt.trim()].length, [prompt]);
   const selectedSize = imageOptions ? { value: resolution, zh: aspectRatio || l('默认', 'Default'), en: aspectRatio || l('默认', 'Default'), ratio: aspectRatio || l('默认', 'Default') } : sizes.find(item => item.value === size) ?? sizes[0]!;
   const selectedQuality = imageOptions ? { zh: imageQualityLabel(activeQuality, l) || l('默认', 'Default'), en: imageQualityLabel(activeQuality, l) || l('默认', 'Default') } : qualities.find(item => item.value === quality) ?? qualities[1]!;
@@ -144,8 +148,9 @@ export default function ImageGenerationWorkspace(props: {
     [session?.job.artifacts, session?.state.resultSnapshots]
   );
   const latestVersion = resultVersions.at(-1)?.value;
-  const selectedResult = resultVersions.find(version => version.value === resultVersion)
-    ?? resultVersions.at(-1);
+  const selectedResult = props.forceComposer
+    ? undefined
+    : resultVersions.find(version => version.value === resultVersion) ?? resultVersions.at(-1);
   const latestStage = session?.job.stages.filter(stage => stage.stageId === 'generate').at(-1);
   const generating = latestStage?.status === 'queued' || latestStage?.status === 'running';
   const busy = generating || submitting;
@@ -155,7 +160,7 @@ export default function ImageGenerationWorkspace(props: {
     : session?.error === null || session?.error === undefined
       ? ''
       : formatImageError(session.error, l);
-  const visibleError = error || runtimeError || previewError;
+  const visibleError = error || (props.embedded ? '' : runtimeError || previewError);
   const resultSettings = selectedResult?.state;
   const resultSize = readSize(resultSettings?.size);
   const resultSizeOption = typeof resultSettings?.aspectRatio === 'string' && resultSettings.aspectRatio
@@ -338,6 +343,23 @@ export default function ImageGenerationWorkspace(props: {
     setError('');
   }
 
+  function applyTemplate(value: string, ratio: string) {
+    updatePrompt(value);
+    if (imageOptions?.aspectRatios?.includes(ratio)) {
+      setAspectRatio(ratio);
+      session?.updateDraft({ aspectRatio: ratio });
+    }
+    setNotice(l('已填入模版提示词，可以继续调整', 'Template prompt added. You can keep refining it.'));
+    const input = document.getElementById('image-prompt-input');
+    input?.focus({ preventScroll: true });
+    if (input && typeof input.scrollIntoView === 'function') {
+      input.scrollIntoView({
+        behavior: typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'center'
+      });
+    }
+  }
+
   function updateProvider(value: ImageGenerationProvider) {
     if (official.official) return;
     setProvider(value);
@@ -401,6 +423,7 @@ export default function ImageGenerationWorkspace(props: {
 
   async function generate() {
     if (busy) return;
+    if (!requireGenerationAccess()) return;
     if (official.official && !official.ready) { setError(l('官方图片服务暂不可用，请在账户页面检查连接状态', 'Official image service is unavailable. Check the connection in your account.')); return; }
     if (session === null) {
       setError(l(
@@ -435,12 +458,14 @@ export default function ImageGenerationWorkspace(props: {
         await session.uploadReferenceImage(referenceFile);
         setReferenceFile(null);
       }
-      await session.applyAction({
+      const next = await session.applyAction({
         actor: 'user',
         action: 'run-stage',
         input: { stageId: 'generate' }
       });
+      const submittedStage = next.stages.filter(stage => stage.stageId === 'generate').at(-1);
       setNotice(l('生成任务已提交，完成后会自动显示结果', 'Generation started. Results will appear automatically.'));
+      if (submittedStage?.status !== 'failed' && submittedStage?.status !== 'interrupted') props.onGenerated?.();
     } catch {} finally {
       setSubmitting(false);
     }
@@ -583,7 +608,7 @@ export default function ImageGenerationWorkspace(props: {
     <span id="image-prompt-label" className="image-generation-visually-hidden">{l('提示词', 'Prompt')}</span>
     <textarea
       id="image-prompt-input"
-      rows={promptExpanded ? 14 : 7}
+      rows={5}
       maxLength={creatorPromptMaxLength}
       value={prompt}
       onChange={event => updatePrompt(event.target.value)}
@@ -634,35 +659,18 @@ export default function ImageGenerationWorkspace(props: {
       onCommand={handleCommand}
       pageClassName="image-generation-workspace-page"
       contentClassName="media-generation-workspace-content"
+      embedded={props.embedded && !selectedResult}
     >
       <div className="creator-tool-stack image-generation-studio">
-        <section className="image-generation-intro" aria-label={l('图像生成功能说明', 'Image generation overview')}>
-          <p>{l(
-            '使用 GPT Image、Nano Banana、Seedream 等模型，从文字生成图像。选择模型、设置画幅，并下载高清结果。',
-            'Generate images from text with GPT Image 2, Nano Banana 2, Seedream 5, and Seedream 3.5 Pro — choose a model, set your aspect ratio, and download HD results.'
-          )}</p>
-          <div aria-label={l('功能特点', 'Features')}>
-            <span>{l('文字生图', 'Text to Image')}</span>
-            <span>{l('多模型', 'Multi-Model')}</span>
-            <span>{l('自定义画幅', 'Custom Ratios')}</span>
-            <span>{l('高清输出', 'HD Output')}</span>
-          </div>
-        </section>
         <form className="image-generation-composer" aria-label={l('图像生成', 'Image Generation')} onSubmit={event => {
           event.preventDefault();
           void generate();
         }}>
           <fieldset className="image-generation-fields" disabled={busy}>
-            <div className={`image-generation-editor${promptExpanded ? ' is-expanded' : ''}`}>
+            <div className="image-generation-editor">
               <div className="image-generation-composer-heading">
-                <h2 id="image-prompt-title"><ImageIcon size={17} strokeWidth={1.7} aria-hidden="true" />{l('图像', 'Image', 'Bild')}</h2>
-                <span>{l('文字生成图像', 'Text to image', 'Text till bild')}</span>
-                <button type="button" className="image-generation-expand" aria-expanded={promptExpanded} aria-controls="image-prompt-input"
-                  aria-label={promptExpanded ? l('收起编辑区', 'Collapse editor', 'Minska redigeringsytan') : l('展开编辑区', 'Expand editor', 'Utöka redigeringsytan')}
-                  title={promptExpanded ? l('收起编辑区', 'Collapse editor', 'Minska redigeringsytan') : l('展开编辑区', 'Expand editor', 'Utöka redigeringsytan')}
-                  onClick={() => setPromptExpanded(value => !value)}>
-                  {promptExpanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-                </button>
+                {props.embeddedTabs ?? <h2 id="image-prompt-title"><ImageIcon size={17} strokeWidth={1.7} aria-hidden="true" />{l('图像', 'Image', 'Bild')}</h2>}
+                {!props.embedded ? <span>{l('文字生成图像', 'Text to image', 'Text till bild')}</span> : null}
               </div>
               {supportsReferenceImage ? (
                 <div className="image-generation-reference" data-loaded={Boolean(currentReferenceName)}>
@@ -704,10 +712,6 @@ export default function ImageGenerationWorkspace(props: {
                 <small>{characterCount} / {creatorPromptMaxLength}</small>
               </div>
             </div>
-            {!official.official && provider === 'codex-native' ? <p className="creator-services-inline-note">{l(
-              '使用本机 Codex 生成图像，无需额外配置；每次任务生成 1 张。',
-              'Use local Codex to generate images with no additional configuration; each task generates 1 image.'
-            )}</p> : null}
             <div className="image-generation-action-bar">
               <div className="image-generation-model-row">
                 {official.official ? <OfficialModelField label={l('图片模型', 'Image model')} service={official} disabled={busy} /> : (
@@ -733,9 +737,10 @@ export default function ImageGenerationWorkspace(props: {
                 summary={imageSettingsSummary}
                 sections={imageSettingSections.filter(section => section.options.length > 0)}
                 disabled={busy || official.taskRunning || (official.official && !official.ready)}
+                hideHeader={props.embedded}
               />
               <div className="image-generation-submit-row">
-                <button className="creator-tool-primary" type="submit" disabled={busy || (official.official && !official.ready)}>
+                <button className="creator-tool-primary" type="submit" disabled={busy}>
                   {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : selectedResult ? <RotateCcw size={16} /> : <Sparkles size={16} />}
                   {busy ? l('正在生成', 'Generating') : selectedResult ? l('重新生成', 'Regenerate') : l('开始生成', 'Generate')}
                 </button>
@@ -744,7 +749,7 @@ export default function ImageGenerationWorkspace(props: {
           </fieldset>
         </form>
 
-        {selectedResult || generating ? (
+        {!props.embedded && (selectedResult || generating) ? (
           <section className="image-generation-output media-generation-output-panel" aria-labelledby="image-output-title">
             <div className="creator-tool-panel-heading">
               <div>
@@ -805,6 +810,17 @@ export default function ImageGenerationWorkspace(props: {
         ) : null}
         {visibleError ? <p className="creator-tool-error" role="alert">{visibleError}</p> : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
+        {!props.embedded ? (
+          <ImageGenerationDiscovery
+            official={official}
+            provider={provider}
+            providers={providers}
+            imageConfig={imageConfig}
+            busy={busy}
+            onProviderChange={updateProvider}
+            onTemplate={applyTemplate}
+          />
+        ) : null}
       </div>
     </CreatorToolShell>
   );

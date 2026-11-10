@@ -169,11 +169,6 @@ export function StartupAgentSetup(props: {
   return (
     <main className="startup-agent-setup">
       <section className="startup-agent-setup__card" aria-label={l('开始使用 Agent', 'Get started with Agent')}>
-        <div className="startup-agent-setup__language">
-          <LanguageSelect id="startup-display-language" label={t('settings.language')}
-            value={preference} systemLabel={t('settings.language.system', { language: systemLanguageName })}
-            onChange={setPreference} />
-        </div>
         <OpenCreatorMark size={48} aria-hidden="true" />
         <h1>OpenCreator</h1>
         {entry === 'choose' ? <div className="startup-agent-setup__entry">
@@ -245,6 +240,11 @@ export function StartupAgentSetup(props: {
         <button className="startup-agent-setup__skip" type="button" disabled={busy} onClick={() => void skip()}>
           {l('稍后配置，进入本地模式', 'Continue locally and set up later')}
         </button>
+        <div className="startup-agent-setup__language">
+          <LanguageSelect id="startup-display-language" label={t('settings.language')}
+            value={preference} systemLabel={t('settings.language.system', { language: systemLanguageName })}
+            onChange={setPreference} />
+        </div>
       </section>
     </main>
   );

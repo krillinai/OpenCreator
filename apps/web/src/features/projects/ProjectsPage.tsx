@@ -21,7 +21,6 @@ import { createLocalizedCopy } from '../../i18n/localized-copy.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { ApiClientError } from '../../runtime/client.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
-import { CreateProjectDropdown } from './CreateProjectDropdown.js';
 import type { OpenCreatorProject } from './project-model.js';
 import type { CreatorProjectType } from './project-types.js';
 import { IssueList } from '../issues/IssuePresenter.js';
@@ -48,8 +47,18 @@ type ProjectOutput = {
   updatedAt: string;
 };
 
+const outputOnlyTemplates = new Set([
+  'cover',
+  'image-generation',
+  'video-generation',
+  'video-download',
+  'short-video-script',
+  'xiaohongshu-post'
+]);
+
 const projectArtifactKinds = new Set([
   'source_video',
+  'source_audio',
   'source_subtitle',
   'target_subtitle',
   'bilingual_subtitle',
@@ -61,6 +70,9 @@ const projectArtifactKinds = new Set([
   'bilingual_video',
   'cover_image',
   'generated_image',
+  'generated_video',
+  'short_video_script',
+  'xiaohongshu_post',
   'publish_copy',
   'script_manifest',
   'shot_image',
@@ -136,12 +148,16 @@ export default function ProjectsPage(props: {
       l('新建项目失败，请重试。', 'Could not create the project. Try again.')
     );
   }, [l, pageIssues.captureOperationFailure, pageIssues.resolveOperation, props.createProjectError]);
-  const projects = useMemo(
+  const allProjects = useMemo(
     () => props.jobs
       .filter(isMeaningfulCreatorJob)
       .map(job => createCreatorProject(job, props.workspaces, l))
       .filter((project): project is CreatorProject => project !== undefined),
     [l, props.jobs, props.workspaces]
+  );
+  const projects = useMemo(
+    () => allProjects.filter(project => !outputOnlyTemplates.has(project.job.templateId)),
+    [allProjects]
   );
   const visibleProjects = useMemo(() => projects
     .filter(project => category === '全部' || project.category === category)
@@ -154,8 +170,8 @@ export default function ProjectsPage(props: {
     .sort((left, right) => right.job.updatedAt.localeCompare(left.job.updatedAt)),
   [category, normalizedQuery, projects]);
   const outputs = useMemo(
-    () => projects.flatMap(project => createProjectOutputs(project, l)),
-    [l, projects]
+    () => allProjects.flatMap(project => createProjectOutputs(project, l)),
+    [l, allProjects]
   );
   const visibleOutputs = useMemo(() => outputs
     .filter(output => outputCategory === '全部' || output.kind === outputCategory)
@@ -164,6 +180,16 @@ export default function ProjectsPage(props: {
       .includes(normalizedQuery))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
   [normalizedQuery, outputCategory, outputs]);
+  const outputGroups = useMemo(() => {
+    const groups: Array<{ date: string; items: ProjectOutput[] }> = [];
+    for (const output of visibleOutputs) {
+      const date = output.updatedAt.slice(0, 10);
+      const group = groups.at(-1);
+      if (group?.date === date) group.items.push(output);
+      else groups.push({ date, items: [output] });
+    }
+    return groups;
+  }, [visibleOutputs]);
   const selectedProjectCount = selectedProjectIds.size;
   const allVisibleProjectsSelected = visibleProjects.length > 0
     && visibleProjects.every(project => selectedProjectIds.has(project.job.id));
@@ -229,17 +255,10 @@ export default function ProjectsPage(props: {
       <div className="opencreator-page-content projects-page-inner">
         <header className="projects-page-header">
           <div>
-            <h1>{l('我的项目', 'My Projects')}</h1>
+            <h1>{l('生成历史', 'Generation History')}</h1>
             <p>{view === 'projects'
               ? l('继续最近的创作项目，保留完整设置、进度和历史', 'Continue recent creator projects with their settings, progress, and history')
               : l('集中查看所有创作项目产生的真实文件', 'Review real files generated across creator projects')}</p>
-          </div>
-          <div className="projects-header-actions">
-            {props.onCreateProject ? (
-              <CreateProjectDropdown
-                onCreate={props.onCreateProject}
-              />
-            ) : null}
           </div>
         </header>
         <IssueList
@@ -464,8 +483,12 @@ export default function ProjectsPage(props: {
                   : l('完成对应类型的创作后，项目会显示在这里。', 'Projects of this type will appear here after you create them.')}</p>
             </div>
           ) : visibleOutputs.length > 0 ? (
-            <div className="project-output-grid" role="list" aria-label={l('产出列表', 'Output list')}>
-              {visibleOutputs.map(output => (
+            <div className="project-output-groups" role="list" aria-label={l('产出列表', 'Output list')}>
+              {outputGroups.map(group => (
+                <section className="project-output-date-group" key={group.date} aria-label={formatOutputDate(group.date, language)}>
+                  <h2>{formatOutputDate(group.date, language)}</h2>
+                  <div className="project-output-grid">
+                    {group.items.map(output => (
                 <article className="project-output-card" role="listitem" key={output.id}>
                   <button
                     type="button"
@@ -506,6 +529,9 @@ export default function ProjectsPage(props: {
                     </span>
                   </button>
                 </article>
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           ) : (
@@ -989,7 +1015,7 @@ function localizeOutputCategory(category: OutputCategory, l: LocalizeCopy): stri
   return l(category, 'Documents');
 }
 
-function projectCover(templateId: string): string {
+export function projectCover(templateId: string): string {
   if (templateId === 'video-translation') {
     return '/dashboard/templates/video-translation-project-cover.png';
   }
@@ -1005,7 +1031,7 @@ function projectCover(templateId: string): string {
   return '/dashboard/templates/digital-presenter.jpg';
 }
 
-function ProjectCoverImage(props: {
+export function ProjectCoverImage(props: {
   job: CreatorJob;
   youtubeCovers: string[];
   fallback: string;
@@ -1096,6 +1122,16 @@ export function youtubeThumbnailUrls(value: string): string[] {
 
 function readString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function formatOutputDate(value: string, language: AppLanguage): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value;
+  return new Intl.DateTimeFormat(language, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  }).format(timestamp);
 }
 
 function formatProjectTime(value: string, language: AppLanguage): string {

@@ -6,7 +6,8 @@ import './model-brand-icon.css';
 type ModelIdentity = Pick<GatewayModel, 'id' | 'name'>;
 
 const brands = [
-  { id: 'bytedance', name: 'ByteDance', match: /seedance|seedream|doubao|bytedance|jimeng|字节|豆包|即梦/i, asset: 'bytedance-color.svg' },
+  { id: 'bytedance', name: 'ByteDance', match: /seedance|seedream|doubao|bytedance|jimeng|volcengine|volcano|字节|豆包|即梦/i, asset: 'bytedance-color.svg' },
+  { id: 'minimax', name: 'MiniMax', match: /minimax|speech-[\d.]+-hd/i, asset: 'minimax-color.svg' },
   { id: 'kling', name: 'Kling', match: /kling|可灵/i, asset: 'kling-color.svg' },
   { id: 'google', name: 'Google', match: /google|gemini|\bveo\b|nano[- ]?banana/i, asset: 'google-color.svg' },
   { id: 'openai', name: 'OpenAI', match: /openai|codex-native|\bgpt\b|\bsora\b|\bdall[- ]?e\b|\bo[134](?:\b|-)/i, asset: 'openai.svg', monochrome: true },

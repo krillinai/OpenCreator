@@ -47,8 +47,8 @@ describe('app routes', () => {
   });
 
   it('parses every primary page route', () => {
-    expect(parseRoute('#/')).toEqual({ view: 'home' });
-    expect(parseRoute('#/new')).toEqual({ view: 'home' });
+    expect(parseRoute('#/')).toEqual({ view: 'workbench' });
+    expect(parseRoute('#/new')).toEqual({ view: 'workbench' });
     expect(parseRoute('#/chat')).toEqual({ view: 'chat' });
     expect(parseRoute('#/search')).toEqual({ view: 'search' });
     expect(parseRoute('#/projects')).toEqual({ view: 'projects' });

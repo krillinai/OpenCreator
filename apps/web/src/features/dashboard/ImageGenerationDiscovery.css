@@ -1,0 +1,310 @@
+.image-generation-discovery {
+  min-width: 0;
+  display: grid;
+  gap: 34px;
+  padding: 6px 0 24px;
+}
+
+.image-generation-popular,
+.image-generation-templates {
+  min-width: 0;
+}
+
+.image-generation-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.image-generation-section-heading h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.image-generation-section-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.image-generation-model-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.image-generation-model-card,
+.image-generation-template-card {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+}
+
+.image-generation-model-card:disabled,
+.image-generation-template-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.image-generation-model-artwork,
+.image-generation-template-artwork {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 13px;
+  background: var(--surface-2);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--shadow-base) 22%, transparent);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.image-generation-model-artwork {
+  aspect-ratio: 16 / 10;
+}
+
+.image-generation-template-artwork {
+  aspect-ratio: 4 / 3;
+}
+
+.image-generation-model-artwork::after {
+  position: absolute;
+  inset: 30% 0 0;
+  background: linear-gradient(180deg, transparent, #090909d9);
+  content: '';
+}
+
+.image-generation-model-artwork > img,
+.image-generation-template-artwork > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transition: transform 220ms ease;
+}
+
+.image-generation-model-card:hover:not(:disabled) .image-generation-model-artwork,
+.image-generation-template-card:hover:not(:disabled) .image-generation-template-artwork {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--shadow-base) 38%, transparent);
+  transform: translateY(-2px);
+}
+
+.image-generation-model-card:hover:not(:disabled) img,
+.image-generation-template-card:hover:not(:disabled) img {
+  transform: scale(1.04);
+}
+
+.image-generation-model-card[data-selected="true"] .image-generation-model-artwork {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 10px 26px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.image-generation-model-card:focus-visible,
+.image-generation-template-card:focus-visible {
+  border-radius: 13px;
+  outline: 2px solid var(--state-focus-ring);
+  outline-offset: 3px;
+}
+
+.image-generation-model-name {
+  position: absolute;
+  z-index: 1;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: white;
+}
+
+.image-generation-model-name > .model-brand-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #ffffff14;
+  backdrop-filter: blur(8px);
+}
+
+.image-generation-model-name > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.image-generation-model-name strong,
+.image-generation-model-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-generation-model-name strong {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-shadow: 0 1px 4px #0009;
+}
+
+.image-generation-model-name small {
+  color: #ffffffb8;
+  font-size: 9px;
+  line-height: 1.3;
+}
+
+.image-generation-model-selected {
+  position: absolute;
+  z-index: 2;
+  top: 9px;
+  right: 9px;
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 3px 10px #0005;
+}
+
+.image-generation-model-description {
+  display: block;
+  margin: 9px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.image-generation-template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.image-generation-template-artwork::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #00000038, transparent 35%, transparent 72%, #00000024);
+  content: '';
+}
+
+.image-generation-template-tag {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: 10px;
+  max-width: calc(100% - 52px);
+  overflow: hidden;
+  padding: 5px 8px;
+  border: 1px solid #ffffff24;
+  border-radius: 6px;
+  background: #111111a6;
+  backdrop-filter: blur(8px);
+  color: white;
+  font-size: 10px;
+  font-weight: 550;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-generation-template-open {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #ffffff24;
+  border-radius: 50%;
+  background: #1111118c;
+  backdrop-filter: blur(8px);
+  color: white;
+  opacity: 0;
+  transform: translate(-3px, 3px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.image-generation-template-card:hover .image-generation-template-open,
+.image-generation-template-card:focus-visible .image-generation-template-open {
+  opacity: 1;
+  transform: none;
+}
+
+.image-generation-template-copy {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 9px 2px 0;
+}
+
+.image-generation-template-copy strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-generation-template-copy small {
+  flex: 0 0 auto;
+  color: var(--subtle);
+  font-size: 10px;
+}
+
+@container image-generation (max-width: 800px) {
+  .image-generation-model-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .image-generation-template-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container image-generation (max-width: 480px) {
+  .image-generation-model-cards,
+  .image-generation-template-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .image-generation-template-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-generation-model-artwork,
+  .image-generation-template-artwork,
+  .image-generation-model-artwork > img,
+  .image-generation-template-artwork > img,
+  .image-generation-template-open {
+    transition: none;
+  }
+
+  .image-generation-model-card:hover:not(:disabled) .image-generation-model-artwork,
+  .image-generation-template-card:hover:not(:disabled) .image-generation-template-artwork,
+  .image-generation-model-card:hover:not(:disabled) img,
+  .image-generation-template-card:hover:not(:disabled) img {
+    transform: none;
+  }
+}

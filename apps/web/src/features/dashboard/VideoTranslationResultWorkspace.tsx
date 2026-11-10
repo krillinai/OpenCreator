@@ -875,7 +875,7 @@ export default function VideoTranslationResultWorkspace(props: {
                 disabled={props.subtitleSavePending} onClick={() => props.workbench ? props.onBack?.() : props.onImmersiveChange?.(false)}>
                 <ArrowLeft size={17} />{props.workbench ? l('返回', 'Back') : l('返回项目', 'Back to project')}
               </button> : null}
-              <h2>{props.workbench ? props.subtitleOnly ? l('字幕翻译工作区', 'Subtitle translation workspace') : l('视频翻译工作区', 'Video translation workspace')
+              <h2>{props.workbench ? props.subtitleOnly ? l('字幕翻译', 'Subtitle Translation') : l('视频翻译', 'Video Translation')
                 : props.immersive ? l('字幕编辑', 'Subtitle editor') : l('字幕', 'Subtitles')}</h2>
               <p role={props.subtitleAutosave ? 'status' : undefined}>
                 {props.workbench ? props.targetLanguage : `${l('项目', 'Project')} V${props.version}`}

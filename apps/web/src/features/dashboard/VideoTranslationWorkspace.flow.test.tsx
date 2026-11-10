@@ -169,7 +169,7 @@ describe('video translation two-step flow', () => {
     await act(async () => finish());
   });
 
-  it('shows recovered dubbing progress with the assistant closed and opens it from details', async () => {
+  it('shows recovered dubbing progress without opening an Agent details panel', async () => {
     const initial = initialJob({ composeVideo: true, dubbing: true });
     initial.status = 'running';
     initial.stages = [{ id: 'running_tts', jobId: initial.id, stageId: 'tts', executor: 'test', status: 'running', dispatchStatus: 'claimed',
@@ -193,15 +193,12 @@ describe('video translation two-step flow', () => {
     expect(within(bar).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '14');
     expect(screen.getByRole('progressbar', { name: '原视频下载进度' })).toHaveAttribute('aria-valuenow', '75');
     expect(screen.getByRole('button', { name: 'AI 助手' })).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.click(within(bar).getByRole('button', { name: '查看详情' }));
-    expect(screen.getByRole('button', { name: 'AI 助手' })).toHaveAttribute('aria-pressed', 'true');
-    expect(document.querySelector('[data-stage-run-id="running_tts"]')).toHaveFocus();
-    fireEvent.click(within(bar).getByRole('button', { name: '查看详情' }));
-    expect(screen.getByRole('button', { name: 'AI 助手' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(bar).queryByRole('button', { name: '查看详情' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('log', { name: '协作时间线' })).not.toBeInTheDocument();
     expect(stageCalls(session.applyAction)).toHaveLength(0);
   });
 
-  it.each(['running', 'failed'] as const)('opens current task details before subtitles exist when the task is %s', status => {
+  it.each(['running', 'failed'] as const)('does not open an Agent details panel before subtitles exist when the task is %s', status => {
     const initial = initialJob({}, []);
     initial.status = status;
     initial.stages = [{ id: 'current_subtitle', jobId: initial.id, stageId: 'subtitle', executor: 'test', status, dispatchStatus: 'claimed',
@@ -212,14 +209,8 @@ describe('video translation two-step flow', () => {
       startedAt: initial.createdAt, finishedAt: status === 'failed' ? initial.updatedAt : null }];
     const session = mount(initial);
     expect(screen.queryByRole('button', { name: 'AI 助手' })).not.toBeInTheDocument();
-    const detailsButton = within(screen.getByRole('region', { name: '当前任务进度' })).getByRole('button', { name: '查看详情' });
-    const stage = within(screen.getByRole('log', { name: '协作时间线' })).getByRole('article');
-    fireEvent.click(detailsButton);
-    expect(stage).toHaveFocus();
-    expect(screen.getByRole('tab', { name: 'Agent' })).toHaveAttribute('aria-selected', 'true');
-    detailsButton.focus();
-    fireEvent.click(detailsButton);
-    expect(stage).toHaveFocus();
+    expect(within(screen.getByRole('region', { name: '当前任务进度' })).queryByRole('button', { name: '查看详情' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('log', { name: '协作时间线' })).not.toBeInTheDocument();
     expect(stageCalls(session.applyAction)).toHaveLength(0);
   });
 
@@ -506,7 +497,7 @@ describe('video translation two-step flow', () => {
 
   it('opens completed subtitles with a full-width timeline and preserves settings when collapsing the sidebar', async () => {
     const session = mount();
-    expect(screen.getByRole('heading', { name: '视频翻译工作区' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: '视频翻译', level: 2 })).toBeVisible();
     expect(document.querySelector('main')).toHaveAttribute('data-subtitle-immersive', 'true');
     expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toHaveValue('Hello');
     expect(screen.getByRole('button', { name: '字幕样式' })).toBeVisible();
@@ -544,7 +535,7 @@ describe('video translation two-step flow', () => {
 
   it('keeps subtitle-only work free of video settings', () => {
     mount(initialJob({ sourceType: 'subtitle' }));
-    expect(screen.getByRole('heading', { name: '字幕翻译工作区' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: '字幕翻译', level: 2 })).toBeVisible();
     expect(screen.queryByRole('button', { name: '合成视频' })).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: '同步视频预览' })).not.toBeInTheDocument();
   });

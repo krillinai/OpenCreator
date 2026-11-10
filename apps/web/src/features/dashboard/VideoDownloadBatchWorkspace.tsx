@@ -1,7 +1,8 @@
 import type { CreatorJob } from '@opencreator/protocol';
-import { CheckCircle2, FileVideo, LoaderCircle, Plus, RefreshCw, X } from 'lucide-react';
+import { CheckCircle2, FileVideo, Link2, LoaderCircle, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { useGenerationAccess } from './DashboardGenerationAccess.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
 import {
   CreatorSessionProvider,
@@ -37,6 +38,7 @@ export default function VideoDownloadBatchWorkspace(props: ComponentProps<typeof
 }) {
   const root = useCreatorSession();
   const l = useLocalizedCopy();
+  const requireGenerationAccess = useGenerationAccess();
   const [jobs, setJobs] = useState<CreatorJob[]>([]);
   const [selectedId, setSelectedId] = useState(ROOT);
   const [editorOpen, setEditorOpen] = useState(() => downloadSourceForJob({ ...root.job, state: root.state }) === undefined
@@ -139,6 +141,7 @@ export default function VideoDownloadBatchWorkspace(props: ComponentProps<typeof
 
   async function addLink() {
     if (busyRef.current || loading) return;
+    if (!requireGenerationAccess()) return;
     const parsed = parseDownloadLink(linksText);
     if (parsed.error) {
       setError(linkError(parsed.error));
@@ -263,7 +266,7 @@ export default function VideoDownloadBatchWorkspace(props: ComponentProps<typeof
             onClick={() => setSelectedId(source.id === root.job.id ? ROOT : source.id)} title={jobErrors[source.id] ?? source.url}>
             {source.thumbnail ? <VideoDownloadThumbnail key={source.thumbnailArtifactId} src={source.thumbnail} alt=""
               load={source.thumbnailArtifactId ? () => props.service.openDownloadThumbnail(source.id, source.thumbnailArtifactId!) : undefined} /> : <FileVideo size={24} aria-hidden="true" />}
-            <span><strong>{source.title}</strong><small>{status}{source.percent === undefined ? '' : ` · ${Math.round(source.percent)}%`}</small></span>
+            <span><strong>{source.title}</strong><small>{status}</small></span>
           </button>
           {failed || source.status === 'waiting' || source.status === 'canceled' ? <button className="video-download-source-action" type="button"
             disabled={busy || active} onClick={() => void retrySource(source)} aria-label={`${l('重试', 'Retry')} ${source.title}`} title={l('重试', 'Retry')}>
@@ -282,6 +285,7 @@ export default function VideoDownloadBatchWorkspace(props: ComponentProps<typeof
       {sources.length === 0 ? <SupportedVideoSources label={l('支持的视频来源', 'Supported video sources')} /> : null}
       <label htmlFor="video-download-add-links">{l('视频链接', 'Video URL')}</label>
       <div className="video-download-link-input" data-valid={validLink || undefined}>
+        <Link2 className="video-download-link-icon" size={18} strokeWidth={1.8} aria-hidden="true" />
         <input id="video-download-add-links" ref={inputRef} value={linksText} disabled={busy} type="text" inputMode="url"
           aria-invalid={inputError && parsedLink.error ? true : undefined}
           aria-describedby={inputError ? 'video-download-link-error' : validLink ? 'video-download-link-valid' : undefined}

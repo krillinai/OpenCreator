@@ -4,26 +4,35 @@ import {
   normalizeVideoSourceUrl,
   type CreatorArtifact,
   type CreatorJson,
-  type CreatorServicesConfig
+  type CreatorServicesConfig,
+  type CreatorTranscriptionProvider
 } from '@opencreator/protocol';
+import { useGenerationAccess } from './DashboardGenerationAccess.js';
 import {
   ArrowLeft,
   ArrowRight,
+  AudioLines,
   Captions,
   Check,
   FileVideo,
+  Link2,
   LoaderCircle,
   RotateCcw,
-  Settings2
+  Settings2,
+  X
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import AppSelect from '../../components/forms/Select.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
+import DashboardVideoTranslationSettings from './DashboardVideoTranslationSettings.js';
 import TranscriptionSubtitleEditor from './TranscriptionSubtitleEditor.js';
 import VideoSourceInput from './VideoSourceInput.js';
+import { LocalVideoPreview } from './VideoSourcePreview.js';
+import SupportedVideoSources from './SupportedVideoSources.js';
+import { VideoTranslationSubtitleImport } from './VideoTranslationSubtitleImport.js';
 import { parseTranscriptionSrt, transcriptionSrtToText } from './transcription-srt.js';
 import {
   readCreatorArtifactText,
@@ -34,13 +43,37 @@ import './transcription-workspace.css';
 
 const sourceLanguages = creatorLanguages.filter(language => language.speech)
   .sort((left, right) => Number(right.sourcePreferred) - Number(left.sourcePreferred));
+const transcriptionProviderLogos: Partial<Record<CreatorTranscriptionProvider, string>> = {
+  openai: '/model-brands/openai.svg',
+  'faster-whisper': '/components/faster-whisper.png',
+  whisperkit: '/components/whisperkit.png',
+  'whisper.cpp': '/components/whisper-cpp.png',
+  aliyun: '/model-brands/alibaba-color.svg',
+  volcengine: '/model-brands/bytedance-color.svg'
+};
+
+function transcriptionModelIcon(value: string) {
+  const provider = value.split(':')[0] as CreatorTranscriptionProvider;
+  const src = transcriptionProviderLogos[provider];
+  return src ? <img
+    className={`transcription-model-option-logo${provider === 'openai' ? ' is-monochrome' : ''}`}
+    src={src}
+    alt=""
+    aria-hidden="true"
+  /> : <AudioLines size={18} strokeWidth={1.7} aria-hidden="true" />;
+}
 
 export default function TranscriptionWorkspace(props: {
   onBack(): void;
   promptHint?: string;
+  embedded?: boolean;
+  embeddedTabs?: ReactNode;
+  forceComposer?: boolean;
+  onGenerated?(): void;
   creatorServicesService?: CreatorServicesSettingsService | null;
 }) {
   const l = useLocalizedCopy();
+  const requireGenerationAccess = useGenerationAccess();
   const session = useOptionalCreatorSession();
   const official = useOfficialServices('transcription');
   const [sourceType, setSourceType] = useState<'url' | 'file'>(() => (
@@ -54,6 +87,10 @@ export default function TranscriptionWorkspace(props: {
   const [currentStep, setCurrentStep] = useState<0 | 1>(() => readStep(session?.state.currentStep));
   const [furthestStep, setFurthestStep] = useState<0 | 1>(() => readStep(session?.state.furthestStep));
   const [config, setConfig] = useState<CreatorServicesConfig>();
+  const [selectedProvider, setSelectedProvider] = useState<CreatorTranscriptionProvider>(() => (
+    readTranscriptionProvider(session?.state.transcriptionProvider) ?? 'openai'
+  ));
+  const [selectedModel, setSelectedModel] = useState(() => readString(session?.state.transcriptionModel));
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -70,12 +107,12 @@ export default function TranscriptionWorkspace(props: {
     && artifact.status === 'completed'
   ));
   const result = useMemo(
-    () => [...(session?.job.artifacts ?? [])].reverse().find(artifact => (
+    () => props.forceComposer ? undefined : [...(session?.job.artifacts ?? [])].reverse().find(artifact => (
       artifact.kind === 'source_subtitle'
       && artifact.status === 'completed'
       && artifact.path !== null
     )),
-    [session?.job.artifacts]
+    [props.forceComposer, session?.job.artifacts]
   );
   const previewSourceArtifact = result === undefined ? undefined : result.sourceArtifactIds
     .map(id => session?.job.artifacts.find(artifact => artifact.id === id && artifact.kind === 'source_video' && artifact.status === 'completed'))
@@ -100,16 +137,45 @@ export default function TranscriptionWorkspace(props: {
       ? formatTranscriptionError(session.error.code, l)
       : '';
   const visibleError = error || runtimeError;
-  const model = official.official
-    ? official.model?.id ?? ''
-    : config ? creatorTranscriptionModel(config) : '';
-  const provider = official.official ? 'openai' : config?.transcription.provider;
+  const model = official.official ? official.model?.id ?? '' : selectedModel;
+  const provider = official.official ? 'openai' : selectedProvider;
+  const modelOptions = useMemo(() => {
+    if (config === undefined) return [];
+    const providers: CreatorTranscriptionProvider[] = [
+      'openai', 'faster-whisper', 'whisperkit', 'whisper.cpp', 'aliyun', 'volcengine', 'funasr'
+    ];
+    return providers.flatMap(nextProvider => {
+      const models = nextProvider === 'whisper.cpp'
+        ? ['tiny', 'medium', 'large-v2', 'large-v3-turbo']
+        : nextProvider === 'faster-whisper'
+          ? ['tiny', 'medium', 'large-v2']
+          : nextProvider === 'whisperkit'
+            ? ['large-v2']
+            : [creatorTranscriptionModel({
+              ...config,
+              transcription: { ...config.transcription, provider: nextProvider }
+            })];
+      return models.map(nextModel => ({
+        provider: nextProvider,
+        model: nextModel,
+        value: `${nextProvider}:${nextModel}`,
+        label: `${providerLabel(nextProvider, l)} · ${nextModel}`
+      }));
+    });
+  }, [config, l]);
 
   useEffect(() => {
     let active = true;
     if (!props.creatorServicesService) return () => { active = false; };
     void props.creatorServicesService.getConfig().then(response => {
-      if (active) setConfig(response.config);
+      if (!active) return;
+      setConfig(response.config);
+      const nextProvider = readTranscriptionProvider(session?.state.transcriptionProvider) ?? response.config.transcription.provider;
+      setSelectedProvider(nextProvider);
+      setSelectedModel(readString(session?.state.transcriptionModel) || creatorTranscriptionModel({
+        ...response.config,
+        transcription: { ...response.config.transcription, provider: nextProvider }
+      }));
     }).catch(cause => {
       if (!active) return;
       session?.captureCreatorFailure(
@@ -193,6 +259,24 @@ export default function TranscriptionWorkspace(props: {
     });
   }
 
+  function changeModel(value: string) {
+    const choice = modelOptions.find(option => option.value === value);
+    if (choice === undefined) return;
+    setSelectedProvider(choice.provider);
+    setSelectedModel(choice.model);
+    setError('');
+    session?.updateDraft({
+      transcriptionProvider: choice.provider,
+      transcriptionModel: choice.model
+    });
+    if (config !== undefined && props.creatorServicesService?.saveConfig !== undefined) {
+      const nextConfig = withTranscriptionModel(config, choice.provider, choice.model);
+      void props.creatorServicesService.saveConfig(nextConfig)
+        .then(response => setConfig(response.config))
+        .catch(() => setError(l('模型保存失败，请稍后重试', 'Could not save the model. Try again.')));
+    }
+  }
+
   function openStep(step: 0 | 1) {
     if (busy) return;
     if (step === 1 && !hasSource) {
@@ -209,21 +293,22 @@ export default function TranscriptionWorkspace(props: {
     session?.updateDraft({ currentStep: step, furthestStep: nextFurthest });
   }
 
-  async function transcribe() {
-    if (busy || currentStep !== 1) return;
+  async function transcribe(): Promise<boolean> {
+    if (busy || (!props.embedded && currentStep !== 1)) return false;
+    if (!requireGenerationAccess()) return false;
     if (!session) {
       setError(l('视频转录服务暂不可用，请检查 Runtime 连接', 'Video transcription is unavailable. Check the Runtime connection.'));
-      return;
+      return false;
     }
     if (!hasSource) {
       setError(sourceType === 'file'
         ? l('请先选择需要转录的视频或音频', 'Choose a video or audio file to transcribe')
         : l('请输入有效的 HTTP 或 HTTPS 视频链接', 'Enter a valid HTTP or HTTPS video URL'));
-      return;
+      return false;
     }
     if (official.official && !official.ready) {
       setError(l('官方转录服务暂不可用，请检查账户与模型设置', 'Official transcription is unavailable. Check your account and model settings.'));
-      return;
+      return false;
     }
     setError('');
     setNotice('');
@@ -248,8 +333,10 @@ export default function TranscriptionWorkspace(props: {
         input: { stageId: 'transcription' }
       });
       setNotice(l('转录任务已提交，完成后会自动显示文本和字幕', 'Transcription started. The text and subtitles will appear automatically.'));
+      return true;
     } catch (cause) {
       setError(formatTranscriptionError((cause as { code?: string }).code, l));
+      return false;
     } finally {
       setSubmitting(false);
     }
@@ -265,6 +352,116 @@ export default function TranscriptionWorkspace(props: {
     if (!session || taskControlPending) return;
     setTaskControlPending('resuming');
     try { await session.resumeJob(); } catch {} finally { setTaskControlPending(undefined); }
+  }
+
+  if (props.embedded && !result) {
+    const hasUrlSource = sourceType === 'url' && sourceUrl.trim().length > 0;
+    return (
+      <div className="creator-tool-embedded">
+        <div className="creator-tool-stack image-generation-studio">
+          <form className="image-generation-composer dashboard-transcription-composer" aria-label={l('视频转录', 'Video Transcription')} onSubmit={event => {
+            event.preventDefault();
+            void transcribe().then(succeeded => {
+              if (succeeded) props.onGenerated?.();
+            });
+          }}>
+            <fieldset className="image-generation-fields" disabled={busy}>
+              <div className="image-generation-editor">
+                <div className="image-generation-composer-heading">{props.embeddedTabs}</div>
+                <div className="image-generation-reference dashboard-translation-source" data-loaded={hasSource || hasUrlSource}>
+                  {hasUrlSource ? (
+                    <div className="dashboard-translation-link-preview" aria-label={l('视频链接预览', 'Video link preview')}>
+                      <span><Link2 size={23} strokeWidth={1.5} /><strong>{l('链接预览', 'Link preview')}</strong><small>{l('已添加链接', 'Link added')}</small></span>
+                    </div>
+                  ) : file ? (
+                    <div className="dashboard-translation-link-preview dashboard-translation-file-preview">
+                      <LocalVideoPreview file={file} />
+                    </div>
+                  ) : hasSource ? (
+                    <div className="dashboard-translation-link-preview" aria-label={l('本地视频预览', 'Local video preview')}>
+                      <span><FileVideo size={23} strokeWidth={1.5} /><strong>{sourceName}</strong><small>{l('已选择视频', 'Video selected')}</small></span>
+                    </div>
+                  ) : (
+                    <VideoTranslationSubtitleImport
+                      compact
+                      mediaOnly
+                      sourceOnly
+                      sourceLanguage={sourceLanguage}
+                      targetLanguage={sourceLanguage}
+                      accept="video/*,audio/*,.mp4,.mov,.m4v,.webm,.mkv,.avi,.mp3,.wav,.m4a,.aac,.flac,.ogg"
+                      disabled={hasSource || hasUrlSource || busy}
+                      onMediaFile={chooseFile}
+                      onError={setError}
+                    />
+                  )}
+                  {!hasUrlSource && hasSource ? (
+                    <button className="image-generation-reference-remove" type="button" aria-label={l('移除当前来源', 'Clear current source')} title={l('移除当前来源', 'Clear current source')} onClick={clearSource}>
+                      <X size={16} strokeWidth={1.8} />
+                    </button>
+                  ) : null}
+                </div>
+                <span className="dashboard-translation-source-divider" aria-hidden="true">{l('或', 'or')}</span>
+                <div className="image-generation-prompt-field dashboard-translation-url-field">
+                  <label className="image-generation-visually-hidden" htmlFor="dashboard-transcription-video-url">{l('视频链接', 'Video link')}</label>
+                  <div className="dashboard-translation-url-input">
+                    <Link2 size={18} strokeWidth={1.8} aria-hidden="true" />
+                    <input
+                      id="dashboard-transcription-video-url"
+                      type="url"
+                      aria-label={l('视频链接', 'Video link')}
+                      placeholder={l('粘贴视频链接', 'Paste a video URL')}
+                      disabled={hasSource || busy}
+                      value={sourceUrl}
+                      onChange={event => updateUrl(event.target.value)}
+                    />
+                    {hasUrlSource ? (
+                      <button className="dashboard-translation-url-clear" type="button" aria-label={l('清除视频链接', 'Clear video link')} title={l('清除视频链接', 'Clear video link')} onClick={clearSource}>
+                        <X size={16} strokeWidth={1.8} />
+                      </button>
+                    ) : null}
+                  </div>
+                  <SupportedVideoSources compact label={l('支持平台', 'Supported platforms')} />
+                  {error || notice ? <p className={error ? 'dashboard-translation-message is-error' : 'dashboard-translation-message'} role={error ? 'alert' : 'status'}>{error || notice}</p> : null}
+                </div>
+              </div>
+              <div className="image-generation-action-bar dashboard-translation-action-bar dashboard-transcription-action-bar">
+                <div className="image-generation-model-row dashboard-transcription-model">
+                  {official.official ? <OfficialModelField label={l('语音识别模型', 'Transcription model')} service={official} disabled={busy} /> : (
+                    <AppSelect
+                      aria-label={l('语音识别模型', 'Transcription model')}
+                      value={`${provider}:${model}`}
+                      disabled={busy || modelOptions.length === 0}
+                      renderOptionIcon={transcriptionModelIcon}
+                      onChange={event => changeModel(event.target.value)}
+                    >
+                      {modelOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </AppSelect>
+                  )}
+                </div>
+                <DashboardVideoTranslationSettings
+                  label={l('转录设置', 'Transcription settings')}
+                  summary={[creatorLanguageLabel(sourceLanguage), model || l('跟随服务设置', 'Service default')]}
+                  disabled={busy}
+                >
+                  <label className="creator-tool-field video-translation-field">
+                    <span>{l('源语言', 'Source language')}</span>
+                    <AppSelect aria-label={l('源语言', 'Source language')} value={sourceLanguage} disabled={busy} onChange={event => setSourceLanguage(event.target.value)}>
+                      {sourceLanguages.map(language => <option key={language.code} value={language.code}>{language.nativeName}</option>)}
+                    </AppSelect>
+                  </label>
+                </DashboardVideoTranslationSettings>
+                <div className="image-generation-submit-row">
+                  <button className="creator-tool-primary" type="submit" disabled={busy}>
+                    {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Captions size={16} />}
+                    {busy ? l('正在转录', 'Transcribing') : l('开始转录', 'Transcribe')}
+                  </button>
+                </div>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -386,7 +583,7 @@ export default function TranscriptionWorkspace(props: {
               </button> : <span />}
               {currentStep === 0 ? <button className="creator-tool-primary" type="submit">
                 {l('继续', 'Continue')}<ArrowRight size={16} aria-hidden="true" />
-              </button> : <button className="creator-tool-primary transcription-submit" type="submit" disabled={busy || (official.official && !official.ready)}>
+              </button> : <button className="creator-tool-primary transcription-submit" type="submit" disabled={busy}>
                 {busy ? <LoaderCircle className="transcription-spinner" size={16} aria-hidden="true" /> : result ? <RotateCcw size={16} aria-hidden="true" /> : <Captions size={16} aria-hidden="true" />}
                 {busy ? l('正在转录', 'Transcribing') : result ? l('重新转录', 'Transcribe again') : l('开始转录', 'Start transcription')}
               </button>}
@@ -439,6 +636,31 @@ function transcriptBaseName(sourceName: string): string {
 
 function creatorLanguageLabel(code: string): string {
   return creatorLanguages.find(language => language.code === code)?.nativeName ?? code;
+}
+
+function readTranscriptionProvider(value: unknown): CreatorTranscriptionProvider | undefined {
+  return value === 'openai' || value === 'faster-whisper' || value === 'whisperkit'
+    || value === 'whisper.cpp' || value === 'aliyun' || value === 'volcengine' || value === 'funasr'
+    ? value
+    : undefined;
+}
+
+function withTranscriptionModel(
+  current: CreatorServicesConfig,
+  provider: CreatorTranscriptionProvider,
+  model: string
+): CreatorServicesConfig {
+  const next = structuredClone(current);
+  next.transcription.provider = provider;
+  switch (provider) {
+    case 'openai': next.transcription.openai.model = model; break;
+    case 'faster-whisper': next.transcription.fasterWhisper.model = model as 'tiny' | 'medium' | 'large-v2'; break;
+    case 'whisperkit': next.transcription.whisperKit.model = 'large-v2'; break;
+    case 'whisper.cpp': next.transcription.whisperCpp.model = model as 'tiny' | 'medium' | 'large-v2' | 'large-v3-turbo'; break;
+    case 'volcengine': next.transcription.volcengine.resourceId = model; break;
+    case 'funasr': next.transcription.funasr.model = model; break;
+  }
+  return next;
 }
 
 function providerLabel(provider: CreatorServicesConfig['transcription']['provider'] | undefined, l: (zh: string, en: string) => string): string {

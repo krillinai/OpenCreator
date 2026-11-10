@@ -116,6 +116,30 @@ it('opens the subtitle editor, autosaves changes, and downloads results after re
   expect(fixture.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
 });
 
+it('only accepts video and audio uploads in the embedded composer', async () => {
+  const fixture = createFixture();
+  const config = createDefaultCreatorServicesConfig();
+  const service = { getConfig: vi.fn(async () => ({ config, configuredCredentials: [] })) };
+  render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={fixture.currentJob()} service={fixture}>
+    <TranscriptionWorkspace embedded onBack={vi.fn()} creatorServicesService={service as unknown as CreatorServicesSettingsService} />
+  </CreatorSessionProvider></LanguageProvider>);
+  await act(async () => { await Promise.resolve(); });
+
+  expect(screen.getByText('视频 / 音频')).toBeInTheDocument();
+  expect(screen.queryByText('视频 / 音频 / SRT')).not.toBeInTheDocument();
+  const modelSelect = screen.getByRole('combobox', { name: '语音识别模型' });
+  expect(modelSelect.querySelector('img')).toHaveAttribute('src', '/model-brands/openai.svg');
+  fireEvent.click(modelSelect);
+  expect(screen.getByRole('option', { name: 'WhisperKit · large-v2' }).querySelector('img'))
+    .toHaveAttribute('src', '/components/whisperkit.png');
+  fireEvent.keyDown(modelSelect, { key: 'Escape' });
+  const input = screen.getByLabelText('上传视频或音频');
+  expect(input).toHaveAttribute('accept', expect.not.stringContaining('.srt'));
+  fireEvent.change(input, { target: { files: [new File(['subtitle'], 'source.srt')] } });
+  expect(screen.getByRole('alert')).toHaveTextContent('请选择视频或音频文件');
+  expect(fixture.applyAction).not.toHaveBeenCalled();
+});
+
 function createFixture(state: Record<string, CreatorJson> = {}) {
   const createdAt = '2026-11-05T00:00:00Z';
   let job: CreatorJob = {

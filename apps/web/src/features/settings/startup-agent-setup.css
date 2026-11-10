@@ -5,16 +5,30 @@
   padding: 24px;
 }
 
-.startup-agent-setup__language { justify-self: stretch; width: 100%; }
+.startup-agent-setup__language {
+  justify-self: center;
+  width: 200px;
+  margin-top: 2px;
+}
 .startup-agent-setup__language .language-select { width: 100%; }
-.startup-agent-setup__language .language-select-control input { height: 40px; padding-inline: 10px 38px; }
+.startup-agent-setup__language .language-select-control input {
+  height: 40px;
+  min-height: 40px;
+  padding-inline: 12px 36px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  text-align: center;
+}
 .startup-agent-setup__language .language-select-control button {
-  width: 38px;
+  width: 36px;
   height: 38px;
   min-height: 38px;
   padding: 0;
   border: 0;
   background: transparent;
+  color: var(--text);
 }
 .startup-agent-setup__language .language-select-search-icon { top: 13px; }
 

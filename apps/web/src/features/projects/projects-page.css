@@ -328,6 +328,17 @@
   white-space: nowrap;
 }
 
+.project-output-date-group + .project-output-date-group {
+  margin-top: 28px;
+}
+
+.project-output-date-group > h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .project-output-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
