@@ -1,5 +1,9 @@
 # OpenCreator Project Agent Rules
 
+## Network Operations
+
+- When a network operation is slow or stalls, retry the affected command through the local proxy at `http://127.0.0.1:7897` after confirming the proxy is available. Configure the proxy for that command only.
+
 ## Language Requirements for Git Commit Messages and Release Materials
 
 - Mandatory: All Git commit messages in this project must be in English, including subjects, bodies, and messages produced by merge, squash, revert, and similar operations.
