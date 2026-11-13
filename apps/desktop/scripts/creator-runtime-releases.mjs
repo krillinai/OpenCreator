@@ -20,6 +20,7 @@ export function creatorRuntimeReleases() {
     'linux-arm64': creatorRuntimeRelease({
       mediaTarget: 'linux-arm64',
       nodeSha256: '013b59cfd2819703a6f4a14ab891fc46fc2a4e3f5bcd92de3fb4929b43e35b30',
+      mediaVersion: '7.0.2',
       ffmpegSha256: '6bb182d0d75d23028db82e9e4f723ca69b853d055698486e6984ddb2c06fb8ce',
       ffprobeSha256: 'd17ae9b4c297d48e2521ba14e417bb0537c6ff77c584cdbcd6bb0d8d0307a2e8',
       pythonAsset: 'cpython-3.13.15+20260825-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz',
@@ -28,6 +29,7 @@ export function creatorRuntimeReleases() {
     'linux-x64': creatorRuntimeRelease({
       mediaTarget: 'linux-x64',
       nodeSha256: 'b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a',
+      mediaVersion: '7.0.2',
       ffmpegSha256: 'e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99',
       ffprobeSha256: '4f231a1960d83e403d08f7971e271707bec278a9ae18e21b8b5b03186668450d',
       pythonAsset: 'cpython-3.13.15+20260825-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz',
