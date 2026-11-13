@@ -92,6 +92,20 @@ describe('Desktop release runtime regressions', () => {
     )).toBe(true);
   });
 
+  it('pins the static FFmpeg build version shipped for Linux', () => {
+    const releases = creatorRuntimeReleases();
+    for (const target of ['linux-x64', 'linux-arm64']) {
+      expect(releases[target].ffmpeg.version).toBe('7.0.2');
+      expect(releases[target].ffprobe.version).toBe('7.0.2');
+      expect(releases[target].ffmpeg.expected.test(
+        'ffmpeg version 7.0.2-static https://johnvansickle.com/ffmpeg/ Copyright'
+      )).toBe(true);
+      expect(releases[target].ffprobe.expected.test(
+        'ffprobe version 7.0.2-static https://johnvansickle.com/ffmpeg/ Copyright'
+      )).toBe(true);
+    }
+  });
+
   it('reports executable output when a runtime version check fails', () => {
     root = mkdtempSync(join(tmpdir(), 'opencreator-runtime-check-test-'));
     const executable = join(root, 'runtime-check.cjs');
