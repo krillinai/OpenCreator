@@ -68,7 +68,7 @@ const messages = {
     'settings.quit': '退出 OpenCreator',
     'settings.telemetry': '发送数据帮助我们改进',
     'settings.telemetryDescription': '发送基本使用情况、错误信息及账号 ID，用于定位和修复问题。可随时关闭。',
-    'settings.accent.neutral': '默认灰',
+    'settings.accent.neutral': '中性灰',
     'settings.accent.blue': '蓝色',
     'settings.accent.cyan': '青色',
     'settings.accent.purple': '紫色',

@@ -297,7 +297,10 @@ export default function StickmanVideoWorkspace(props: {
       setImageConfigurationStatus(!officialImage.ready ? 'unavailable' : officialImage.model?.capabilities.includes('edit') ? 'configured' : 'unsupported');
       if (scriptArtifact === undefined) {
         const voices = officialSpeech.model?.voices ?? [];
-        session.updateDraft({ ttsProvider: 'openai', ttsModel: officialSpeech.model?.id ?? '', voiceCode: voices.includes(voiceCode) ? voiceCode : voices[0] ?? '', voiceName: voices.includes(voiceCode) ? voiceName : voices[0] ?? '' });
+        session.updateDraft(
+          { ttsProvider: 'openai', ttsModel: officialSpeech.model?.id ?? '', voiceCode: voices.includes(voiceCode) ? voiceCode : voices[0] ?? '', voiceName: voices.includes(voiceCode) ? voiceName : voices[0] ?? '' },
+          { persist: job.id.startsWith('pending:') ? false : undefined, userEdited: false }
+        );
       }
       return;
     }
@@ -339,7 +342,7 @@ export default function StickmanVideoWorkspace(props: {
           ttsModel: providerConfig?.model ?? '',
           voiceCode: configured ? providerConfig?.defaultVoiceId ?? '' : '',
           voiceName: configured ? providerConfig?.defaultVoiceId ?? '' : ''
-        });
+        }, { persist: job.id.startsWith('pending:') ? false : undefined, userEdited: false });
       })
       .catch(cause => {
         if (active) {

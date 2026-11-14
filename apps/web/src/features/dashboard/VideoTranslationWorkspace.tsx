@@ -1,6 +1,6 @@
 import AppSelect from '../../components/forms/Select.js';
 import { useGenerationAccess } from './DashboardGenerationAccess.js';
-import { gatewayModelIdMatches, normalizeSubtitleRenderCues } from '@opencreator/protocol';
+import { gatewayModelIdMatches, gatewayModelReady, gatewayModelSupports, gatewayTranslationFlashModel, normalizeSubtitleRenderCues } from '@opencreator/protocol';
 import {
   useCallback,
   useEffect,
@@ -27,6 +27,7 @@ import {
   Mic2,
   Pencil,
   Plus,
+  RefreshCw,
   RotateCcw,
   RectangleHorizontal,
   RectangleVertical,
@@ -37,10 +38,12 @@ import {
 } from 'lucide-react';
 import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
 import { OfficialModelField, useOfficialServices } from './official-services.js';
+import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
 import { LocalTranscriptionNotice } from './LocalTranscriptionNotice.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
+import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import { CreatorTaskProgressBar, CreatorTaskProgressNotice, useCreatorTaskProgress } from './CreatorCollaborationPanel.js';
 import { creatorStageProgressPercent } from './creator-panel-adapters.js';
@@ -83,6 +86,9 @@ import {
   type CreatorJson,
   type CreatorResultSnapshot,
   type CreatorServicesConfig,
+  type GatewayAccountState,
+  type GatewayModel,
+  type GatewayModelCatalog,
   type CreatorSubtitlePreviewRequest,
   type CreatorTtsProvider,
   type VideoMetadataResponse
@@ -99,6 +105,7 @@ type WizardStep = 0 | 1;
 type WorkspacePhase = 'configure' | 'result';
 type ResultProposal = 'regenerate' | 'video' | 'voice';
 type TranslationStageId = 'subtitle' | 'tts' | 'render-horizontal' | 'render-vertical';
+const localTranslationModelId = '__local_text__';
 
 type TranslationSettingsSnapshot = {
   sourceLanguage: string;
@@ -1757,6 +1764,8 @@ export default function VideoTranslationWorkspace(props: {
   initialComposeVideo?: boolean;
   videoMetadataService?: VideoMetadataService;
   creatorServicesService?: CreatorServicesSettingsService | null;
+  gatewayAccountService?: GatewayAccountSettingsService | null;
+  onGatewayStateChange?(state: GatewayAccountState): void;
   runtimeDependencies?: RuntimeDependenciesController;
 }) {
   const l = useLocalizedCopy();
@@ -1768,6 +1777,106 @@ export default function VideoTranslationWorkspace(props: {
   const creatorSession = useOptionalCreatorSession();
   const officialText = useOfficialServices('text');
   const officialSpeech = useOfficialServices('speech');
+  const [textConfig, setTextConfig] = useState<CreatorServicesConfig['llm']>();
+  const [textCredentialConfigured, setTextCredentialConfigured] = useState(false);
+  const [codexTextReady, setCodexTextReady] = useState(false);
+  const [publicTextCatalog, setPublicTextCatalog] = useState<GatewayModelCatalog | undefined>(() => props.gatewayAccountService?.getCachedTextCatalog?.());
+  const [textCatalogState, setTextCatalogState] = useState<'loading' | 'ready' | 'error'>(() => props.gatewayAccountService?.getCachedTextCatalog?.() ? 'ready' : 'loading');
+  const textCatalogRequest = useRef(0);
+  const textCatalogWork = useRef<{ service: GatewayAccountSettingsService; promise: Promise<GatewayModelCatalog> }>();
+  const [pendingTextModelId, setPendingTextModelId] = useState<string>();
+  const pendingTextValidation = useRef<string>();
+  const [textModelNotice, setTextModelNotice] = useState('');
+  const [localModelSettingsOpen, setLocalModelSettingsOpen] = useState(false);
+  const localTextReady = (textConfig?.source === 'codex' && codexTextReady) || (textConfig?.source === 'custom'
+    && !!textConfig.model.trim() && !!textConfig.baseUrl.trim() && textCredentialConfigured);
+  const localTextModel: GatewayModel = {
+    id: localTranslationModelId, modality: 'text', capabilities: [], vendor: l('本地模型', 'Local model'),
+    name: textConfig?.source === 'codex' ? l('本机 Codex', 'Local Codex runtime')
+      : textConfig?.model.trim() || l('自定义模型服务', 'Custom model service'),
+    status: localTextReady ? 'ready' : 'temporarily_unavailable'
+  };
+  const publicTextModels = publicTextCatalog?.models.filter(model => gatewayModelSupports(model, 'text')) ?? [];
+  const textCatalogModels = officialText.official ? officialText.models : [localTextModel, ...publicTextModels];
+  const textLoginRequiredModelIds = new Set(officialText.official ? [] : publicTextModels.map(model => model.id));
+  const selectedTextCatalogId = officialText.official ? officialText.selected ?? officialText.model?.id ?? ''
+    : pendingTextModelId ?? (localTextReady ? localTranslationModelId : '');
+  function loadPublicTextCatalog(force = false) {
+    const request = ++textCatalogRequest.current;
+    const service = props.gatewayAccountService;
+    if (!service?.getTextCatalog) { setTextCatalogState('error'); return; }
+    const cached = service.getCachedTextCatalog?.();
+    if (cached) { setPublicTextCatalog(cached); setTextCatalogState('ready'); }
+    else setTextCatalogState('loading');
+    const promise = !force && textCatalogWork.current?.service === service
+      ? textCatalogWork.current.promise : service.getTextCatalog({ refresh: force });
+    textCatalogWork.current = { service, promise };
+    void promise.then(catalog => {
+      if (request === textCatalogRequest.current) { setPublicTextCatalog(catalog); setTextCatalogState('ready'); }
+    }).catch(() => {
+      if (request === textCatalogRequest.current) setTextCatalogState(cached ? 'ready' : 'error');
+    }).finally(() => {
+      if (textCatalogWork.current?.promise === promise) textCatalogWork.current = undefined;
+    });
+  }
+  useEffect(() => {
+    if (!officialText.official) loadPublicTextCatalog();
+    return () => { textCatalogRequest.current++; };
+  }, [props.gatewayAccountService, officialText.official]);
+  const refreshLocalTextModel = useCallback(async () => {
+    const service = props.creatorServicesService;
+    if (!service) return;
+    try {
+      const response = await service.getConfig();
+      setTextConfig(response.config.llm);
+      setTextCredentialConfigured(response.configuredCredentials?.includes('llm.apiKey') ?? !!response.config.llm.apiKey);
+      if (response.config.llm.source === 'codex') {
+        const provider = await service.getCodexModelStatus?.();
+        setCodexTextReady(provider?.authentication === 'chatgpt' || provider?.apiKeyConfigured === true);
+      } else setCodexTextReady(false);
+    } catch { setCodexTextReady(false); }
+  }, [props.creatorServicesService]);
+  useEffect(() => {
+    if (!officialText.official) void refreshLocalTextModel();
+  }, [officialText.official, refreshLocalTextModel]);
+  useEffect(() => {
+    if (!pendingTextModelId || officialText.authState !== 'signed_in' || officialText.activationState !== 'ready'
+      || pendingTextValidation.current === pendingTextModelId || !props.gatewayAccountService) return;
+    pendingTextValidation.current = pendingTextModelId;
+    let active = true;
+    void props.gatewayAccountService.getState({ refreshModels: true }).then(state => {
+      if (!active) return;
+      props.onGatewayStateChange?.(state);
+      const ready = state.models.filter(model => gatewayModelSupports(model, 'text') && gatewayModelReady(model));
+      const requested = ready.find(model => gatewayModelIdMatches(model.id, pendingTextModelId));
+      const recommended = ready.find(model => gatewayModelIdMatches(model.id, state.recommendedModels?.text))
+        ?? ready.find(model => model.recommended) ?? gatewayTranslationFlashModel(ready);
+      const chosen = requested ?? recommended ?? ready[0];
+      if (chosen) creatorSession?.updateDraft({ officialModels: { text: chosen.id } });
+      if (!requested) setTextModelNotice(chosen
+        ? l('所选模型当前账户不可用，已切换为可用的翻译模型。', 'The selected model is unavailable for this account. Another model is selected.')
+        : l('暂无可用模型', 'No models available'));
+      setPendingTextModelId(undefined);
+    }).catch(() => {
+      if (active) {
+        setPendingTextModelId(undefined);
+        setTextModelNotice(l('模型列表加载失败，请重试。', 'Could not load the model list. Try again.'));
+      }
+    });
+    return () => { active = false; };
+  }, [pendingTextModelId, officialText.authState, officialText.activationState, props.gatewayAccountService, props.onGatewayStateChange, creatorSession?.job.id]);
+  function selectTextCatalogModel(id: string) {
+    if (id === localTranslationModelId) {
+      if (!localTextReady) setLocalModelSettingsOpen(true);
+      else { setPendingTextModelId(undefined); pendingTextValidation.current = undefined; }
+      return;
+    }
+    if (officialText.official) { officialText.selectModel(id); setTextModelNotice(''); return; }
+    if (!publicTextModels.some(model => gatewayModelIdMatches(model.id, id) && gatewayModelReady(model))) return;
+    setPendingTextModelId(id);
+    pendingTextValidation.current = undefined;
+    requireGenerationAccess();
+  }
   const legacyModelBaselines = useRef(new Map<string, { text?: string; transcription?: string }>());
   const mediaPreviewContextRef = useRef({ session: creatorSession, localize: l });
   mediaPreviewContextRef.current = { session: creatorSession, localize: l };
@@ -3276,7 +3385,7 @@ export default function VideoTranslationWorkspace(props: {
 
   async function submit() {
     if (subtitleImportPending) return;
-    if (!requireGenerationAccess()) return;
+    if (!requireGenerationAccess(!officialText.official && !pendingTextModelId)) return;
     if (importedSourceSubtitle && sourceLanguage === 'auto') {
       setCurrentStep(1);
       setResultNotice(l('未能可靠识别字幕语言，请手动选择源语言。', 'The subtitle language could not be reliably detected. Select the source language.'));
@@ -4173,12 +4282,31 @@ export default function VideoTranslationWorkspace(props: {
               </div>
               <div className="image-generation-action-bar dashboard-translation-action-bar">
                 <div className="image-generation-model-row dashboard-translation-model">
-                  {translationModelControl ?? (
-                    <DashboardTranslationModelSettings
+                  <OfficialModelSelect
+                    label={l('翻译模型', 'Translation model')}
+                    models={textCatalogModels}
+                    value={selectedTextCatalogId}
+                    layout="grouped"
+                    loginRequiredModelIds={textLoginRequiredModelIds}
+                    disabled={submitting || activeGenerationStage !== undefined || (officialText.official && !officialText.selectable)}
+                    configureModel={{ id: localTranslationModelId, title: l('打开文本模型设置', 'Open text model settings'), onConfigure: () => setLocalModelSettingsOpen(true) }}
+                    onChange={selectTextCatalogModel}
+                  />
+                  {!officialText.official ? <DashboardTranslationModelSettings
                       service={props.creatorServicesService}
                       disabled={submitting || activeGenerationStage !== undefined}
-                    />
-                  )}
+                      compact
+                      requestedOpen={localModelSettingsOpen}
+                      onRequestedOpenChange={setLocalModelSettingsOpen}
+                      onClose={() => void refreshLocalTextModel()}
+                    /> : null}
+                  {!officialText.official && props.gatewayAccountService && textCatalogState !== 'ready' ? <div className="dashboard-translation-catalog-status" role="status">
+                    {textCatalogState === 'loading' ? l('正在加载模型', 'Loading models') : <>
+                      <span>{l('模型列表加载失败，请重试。', 'Could not load the model list. Try again.')}</span>
+                      <button type="button" onClick={() => loadPublicTextCatalog(true)} aria-label={l('重试', 'Retry')}><RefreshCw size={14} />{l('重试', 'Retry')}</button>
+                    </>}
+                  </div> : null}
+                  {textModelNotice ? <p className="dashboard-translation-model-notice" role="status" aria-label={l('翻译模型', 'Translation model')}>{textModelNotice}</p> : null}
                 </div>
                 <DashboardVideoTranslationSettings
                   disabled={submitting || activeGenerationStage !== undefined}
@@ -4243,7 +4371,7 @@ export default function VideoTranslationWorkspace(props: {
       <div className="video-translation-page-inner video-translation-wizard">
         <CreatorResizableLayout
           className="video-translation-collab-layout"
-          showAgentPanel={workspacePhase !== 'result'}
+          showAgentPanel={workspacePhase !== 'result' || (subtitleImmersive && subtitleAssistantOpen)}
           agentPanelRequest={taskDetailsRequest}
           workspace={<div
             className="video-translation-wizard-main"

@@ -1,20 +1,10 @@
-import {
-  createDefaultCreatorServicesConfig,
-  gatewayModelIdMatches,
-  gatewayModelReady,
-  type CreatorServicesConfig,
-  type GatewayModel,
-  type ImageGenerationProvider
-} from '@opencreator/protocol';
+import { gatewayModelIdMatches, gatewayModelReady, type GatewayModel } from '@opencreator/protocol';
 import { ArrowUpRight, Check } from 'lucide-react';
 import ModelBrandIcon from '../../components/brand/ModelBrandIcon.js';
-import { officialModelLabel } from '../../components/forms/OfficialModelSelect.js';
-import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
+import { modelVendor, officialModelLabel } from '../../components/forms/OfficialModelSelect.js';
+import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { useOfficialServices } from './official-services.js';
 import './ImageGenerationDiscovery.css';
-
-const defaultImageConfig = createDefaultCreatorServicesConfig().image;
-const localModelOrder = ['openai', 'gemini', 'jimeng', 'kling'] as const;
 
 const templates = [
   {
@@ -75,66 +65,59 @@ const templates = [
 
 export default function ImageGenerationDiscovery(props: {
   official: ReturnType<typeof useOfficialServices>;
-  provider: ImageGenerationProvider;
-  providers: Array<{ value: ImageGenerationProvider; zh: string; en: string }>;
-  imageConfig: CreatorServicesConfig['image'] | null;
+  models: GatewayModel[];
+  localModelId: string;
+  selectedId: string;
+  catalogState: 'loading' | 'ready' | 'error';
   busy: boolean;
-  onProviderChange(provider: ImageGenerationProvider): void;
+  onModelSelect(id: string): void;
   onTemplate(prompt: string, aspectRatio: string): void;
 }) {
   const l = useLocalizedCopy();
-  const config = props.imageConfig ?? defaultImageConfig;
-  const officialModels = [...props.official.models]
-    .sort((left, right) => popularModelScore(right) - popularModelScore(left))
-    .slice(0, 4);
-  const localModels = localModelOrder.flatMap(value => {
-    const item = props.providers.find(provider => provider.value === value);
-    return item ? [{ ...item, configuredModel: config[value].model }] : [];
-  });
+  const local = props.models.find(model => model.id === props.localModelId);
+  const officialModels = props.models.filter(model => model.id !== props.localModelId)
+    .sort((left, right) => Number(right.recommended) - Number(left.recommended));
+  const displayedModels = [...(local ? [local] : []), ...officialModels];
+  const companies: Array<{ name: string; model: GatewayModel; models: GatewayModel[] }> = [];
+  for (const model of displayedModels) {
+    const name = modelVendor(model) ?? l('其他', 'Other', 'Övriga');
+    const company = companies.find(entry => entry.name === name);
+    if (company) company.models.push(model);
+    else companies.push({ name, model, models: [model] });
+  }
 
   return (
     <div className="image-generation-discovery">
       <section className="image-generation-popular" aria-labelledby="image-popular-models-title">
         <header className="image-generation-section-heading">
           <div>
-            <h2 id="image-popular-models-title">{l('热门模型', 'Popular models')}</h2>
-            <p>{l('按画面类型选择模型，点击即可切换', 'Choose a model for your visual style. Select a card to switch.')}</p>
+            <h2 id="image-popular-models-title">{l('图片模型', 'Image models')}</h2>
           </div>
         </header>
-        <div className="image-generation-model-cards">
-          {props.official.official ? officialModels.map(model => {
-            const name = officialModelLabel(model, l('自动选择', 'Automatic'));
-            const selected = gatewayModelIdMatches(props.official.selected ?? props.official.model?.id, model.id);
-            return (
-              <ModelCard
-                key={model.id}
-                name={name}
-                description={modelStrength(`${model.id} ${model.name ?? ''}`, l)}
-                image={modelArtwork(`${model.id} ${model.name ?? ''}`)}
-                iconModel={model}
-                selected={selected}
-                disabled={props.busy || !props.official.selectable || !gatewayModelReady(model)}
-                onClick={() => props.official.selectModel(model.id)}
-                label={l(`选择模型 ${name}`, `Use model ${name}`)}
-              />
-            );
-          }) : localModels.map(item => {
-            const name = l(item.zh, item.en);
-            return (
-              <ModelCard
-                key={item.value}
-                name={name}
-                detail={item.configuredModel}
-                description={modelStrength(item.value, l)}
-                image={modelArtwork(item.value)}
-                iconModel={{ id: item.value, name: item.en }}
-                selected={props.provider === item.value}
-                disabled={props.busy}
-                onClick={() => props.onProviderChange(item.value)}
-                label={l(`选择模型 ${name}`, `Use model ${name}`)}
-              />
-            );
-          })}
+        <div className="image-generation-model-groups">
+          {companies.map(company => <div className="image-generation-model-group" role="group" aria-label={company.name} key={company.name}>
+            <h3><ModelBrandIcon model={company.model} />{company.name}</h3>
+            <div className="image-generation-model-cards">
+              {company.models.map(model => {
+                const name = officialModelLabel(model, l('自动选择', 'Automatic'));
+                const selected = gatewayModelIdMatches(props.selectedId, model.id);
+                return (
+                  <ModelCard
+                    key={model.id}
+                    name={name}
+                    iconModel={model}
+                    selected={selected}
+                    disabled={props.busy || !gatewayModelReady(model) || (props.official.official && !props.official.canChooseModel)}
+                    onClick={() => props.onModelSelect(model.id)}
+                    label={l(`选择模型 ${name}`, `Use model ${name}`)}
+                  />
+                );
+              })}
+            </div>
+          </div>)}
+          {!props.official.official && props.catalogState === 'loading' ? <p role="status">{l('正在加载图片模型…', 'Loading image models…')}</p> : null}
+          {!props.official.official && props.catalogState === 'error' ? <p role="status">{l('图片模型目录加载失败', 'Image model catalog is unavailable')}</p> : null}
+          {!props.official.official && props.catalogState === 'ready' && officialModels.length === 0 ? <p role="status">{l('暂无官方图片模型', 'No official image models available')}</p> : null}
         </div>
       </section>
 
@@ -174,13 +157,9 @@ export default function ImageGenerationDiscovery(props: {
     </div>
   );
 }
-
 function ModelCard(props: {
   name: string;
-  detail?: string;
-  description: string;
-  image: string;
-  iconModel: Pick<GatewayModel, 'id' | 'name'>;
+  iconModel: Pick<GatewayModel, 'id' | 'name'> & Partial<Pick<GatewayModel, 'vendor'>>;
   selected: boolean;
   disabled: boolean;
   label: string;
@@ -196,37 +175,11 @@ function ModelCard(props: {
       disabled={props.disabled}
       onClick={props.onClick}
     >
-      <span className="image-generation-model-artwork">
-        <img src={props.image} alt="" loading="lazy" decoding="async" />
-        <span className="image-generation-model-name">
-          <ModelBrandIcon model={props.iconModel} />
-          <span><strong>{props.name}</strong>{props.detail ? <small>{props.detail}</small> : null}</span>
-        </span>
-        {props.selected ? <span className="image-generation-model-selected"><Check size={13} aria-hidden="true" /></span> : null}
+      <span className="image-generation-model-name">
+        <ModelBrandIcon model={props.iconModel} />
+        <strong>{props.name}</strong>
+        {props.selected ? <Check className="image-generation-model-selected" size={16} aria-hidden="true" /> : null}
       </span>
-      <span className="image-generation-model-description">{props.description}</span>
     </button>
   );
-}
-
-function popularModelScore(model: GatewayModel) {
-  const identity = `${model.id} ${model.name ?? ''}`;
-  const preferred = /gpt[- ]?image|nano[- ]?banana|seedream|gemini|jimeng|kling/i.test(identity);
-  return Number(model.recommended) * 20 + Number(preferred) * 10 + Number(gatewayModelReady(model));
-}
-
-function modelArtwork(identity: string) {
-  if (/openai|gpt[- ]?image|codex/i.test(identity)) return '/skill-market/examples/gpt-image-2-info-poster.png';
-  if (/gemini|nano[- ]?banana|google/i.test(identity)) return '/skill-market/examples/nano-banana-pro-product-visual.png';
-  if (/seedream|jimeng|doubao|bytedance/i.test(identity)) return '/dashboard/templates/seedream-showcase.webp';
-  if (/kling/i.test(identity)) return '/dashboard/templates/retrofuturism.webp';
-  return '/dashboard/templates/nb21-mountain-hut.webp';
-}
-
-function modelStrength(identity: string, l: LocalizeCopy) {
-  if (/openai|gpt[- ]?image|codex/i.test(identity)) return l('精准提示词、清晰文字与商业海报', 'Precise prompts, clean typography, and editorial visuals.');
-  if (/gemini|nano[- ]?banana|google/i.test(identity)) return l('多参考图编辑与快速风格控制', 'Multi-reference edits with fast style control.');
-  if (/seedream|jimeng|doubao|bytedance/i.test(identity)) return l('电影感写实画面与戏剧化光影', 'Cinematic realism and dramatic lighting.');
-  if (/kling/i.test(identity)) return l('一致的人物表现与品牌视觉', 'Consistent portraits and brand visuals.');
-  return l('高质量文字生图与丰富画面细节', 'High-quality text-to-image generation with rich detail.');
 }

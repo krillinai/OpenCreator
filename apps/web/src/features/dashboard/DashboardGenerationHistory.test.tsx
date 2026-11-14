@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CreatorArtifact, CreatorJob } from '@opencreator/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
+import { loadLanguageCatalog } from '../../i18n/translated-copy.js';
 import DashboardGenerationHistory from './DashboardGenerationHistory.js';
 import { generationHistoryTypeForWorkspace } from './generation-history-type.js';
 
@@ -29,6 +30,18 @@ describe('DashboardGenerationHistory', () => {
     expect(generationHistoryTypeForWorkspace('short-video-script')).toBe('text');
     expect(generationHistoryTypeForWorkspace('smart-dubbing')).toBe('audio');
     expect(generationHistoryTypeForWorkspace()).toBe('all');
+  });
+
+  it('shows only the load error when history cannot be fetched', async () => {
+    render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => { throw new Error('runtime unavailable'); }), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('生成记录加载失败，请稍后重试。');
+    expect(screen.queryByText('还没有生成记录')).not.toBeInTheDocument();
   });
 
   it('filters all outputs by media type and downloads an artifact', async () => {
@@ -83,12 +96,57 @@ describe('DashboardGenerationHistory', () => {
     expect(await screen.findByText('45%')).toBeInTheDocument();
     expect(document.querySelector('.dashboard-generation-running-card.dashboard-generation-result-card')).toBeInTheDocument();
     expect(screen.getByRole('status', { name: '正在生成 图像生成' })).toHaveTextContent('Generating image');
-    expect(document.querySelector('.dashboard-generation-running .dashboard-generation-history-date > h2')).toHaveTextContent('2026年11月7日');
+    expect(document.querySelector('.dashboard-generation-history-date > h2')).toHaveTextContent('2026年11月7日');
+    expect(document.querySelector('.dashboard-generation-history-date .dashboard-generation-running-card')).toBeInTheDocument();
     expect(screen.queryByText('还没有生成记录')).not.toBeInTheDocument();
     const dates = [...document.querySelectorAll('.dashboard-generation-history-date > h2')].map(item => item.textContent);
-    expect(dates).toEqual(['2026年11月7日', '2026年11月7日', '2026年11月6日']);
+    expect(dates).toEqual(['2026年11月7日', '2026年11月6日']);
     fireEvent.click(screen.getByRole('button', { name: 'video' }));
     expect(document.querySelector('.dashboard-generation-running-card')).not.toBeInTheDocument();
+  });
+
+  it('shows a newly completed video before an older pending project', async () => {
+    const completed = job('job_completed_video', 'video-generation', [
+      artifact('job_completed_video', 'artifact_completed_video', 'generated_video', 'today.mp4', '2026-11-11T06:19:25.489Z')
+    ]);
+    completed.state = { prompt: 'Moon video' };
+    const pending = job('job_pending_video', 'video-generation', []);
+    pending.status = 'draft';
+    pending.state = { prompt: 'Older draft' };
+    pending.createdAt = '2026-11-10T08:16:36.619Z';
+    render(<LanguageProvider initialPreference="en-US"><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [completed, pending] })), openArtifact: vi.fn(async () => new Response(new Blob(['video']))) }}
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    expect(await screen.findByText(/today\.mp4/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Pending setup Older draft' })).toBeInTheDocument();
+    const dates = [...document.querySelectorAll('.dashboard-generation-history-date > h2')].map(item => item.textContent);
+    expect(dates).toEqual(['November 11, 2026', 'November 10, 2026']);
+  });
+
+  it('uses an uploaded reference image as a pending video generation cover', async () => {
+    const videoJob = job('job_reference_video', 'video-generation', [
+      artifact('job_reference_video', 'reference_photo', 'reference_image', 'reference.png', '2026-11-11T06:19:25.489Z')
+    ]);
+    videoJob.status = 'draft';
+    videoJob.state = { prompt: 'A coast at dusk', referenceImageArtifactId: 'reference_photo' };
+    const openArtifact = vi.fn(async () => new Response(new Blob(['reference'], { type: 'image/png' })));
+    const rendered = render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [videoJob] })), openArtifact }}
+      initialType="video"
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    />);
+
+    const card = await screen.findByRole('link', { name: '待配置 A coast at dusk' });
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(videoJob.id, 'reference_photo'));
+    await waitFor(() => expect(card.querySelector('img')).toHaveAttribute('src', 'blob:generation-preview'));
+    rendered.unmount();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:generation-preview');
   });
 
   it('shows failed jobs without artifacts and opens the job details', async () => {
@@ -115,6 +173,53 @@ describe('DashboardGenerationHistory', () => {
     expect(screen.queryByText('还没有生成记录')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '打开 youtube.com' }));
     expect(onOpenJob).toHaveBeenCalledWith(failedJob);
+  });
+
+  it('shows failure instead of stale submission progress for a rejected video', async () => {
+    const failedJob = job('job_rejected_video', 'video-generation', []);
+    failedJob.status = 'failed';
+    failedJob.state = { prompt: 'Sunset over the sea' };
+    failedJob.stages = [{
+      id: 'stage_rejected', jobId: failedJob.id, stageId: 'generate', executor: 'video', status: 'failed', dispatchStatus: 'finished',
+      claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { phase: 'provider_failed', percent: 8, message: 'The official video service could not complete this task' },
+      errorCode: 'creator_video_generation_failed', errorMessage: 'The official video service could not complete this task',
+      startedAt: '2026-11-12T04:21:48.000Z', finishedAt: '2026-11-12T04:21:52.000Z'
+    }];
+    render(<LanguageProvider initialPreference="zh-CN"><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [failedJob] })), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    const card = await screen.findByRole('link', { name: '生成失败 Sunset over the sea' });
+    expect(within(card).getByText('生成失败')).toBeInTheDocument();
+    expect(within(card).queryByText('8%')).not.toBeInTheDocument();
+  });
+
+  it('omits untouched video drafts but keeps drafts with a prompt', async () => {
+    const empty = job('job_empty_video', 'video-generation', []);
+    empty.status = 'draft';
+    empty.state = {
+      prompt: '', provider: 'seedance', size: '1280x720', duration: 5,
+      referenceImageArtifactId: null, currentStage: null
+    };
+    const edited = job('job_edited_video', 'video-generation', []);
+    edited.status = 'draft';
+    edited.state = { ...empty.state, prompt: 'A coastal tracking shot' };
+    const onOpenJob = vi.fn();
+    render(<LanguageProvider initialPreference="en-US"><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [empty, edited] })), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()}
+      onOpenJob={onOpenJob}
+    /></LanguageProvider>);
+
+    expect(await screen.findByRole('link', { name: 'Pending setup A coastal tracking shot' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Pending setup Video Generation' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Pending setup A coastal tracking shot' }));
+    expect(onOpenJob).toHaveBeenCalledWith(edited);
   });
 
   it('shows a video download waiting for format selection and opens its project', async () => {
@@ -148,6 +253,40 @@ describe('DashboardGenerationHistory', () => {
     expect(onOpenJob).toHaveBeenCalledWith(downloadJob);
     fireEvent.click(screen.getByRole('button', { name: 'image' }));
     expect(screen.queryByRole('link', { name: '待配置 Download project title' })).not.toBeInTheDocument();
+  });
+
+  it('reopens a running video download without making other running jobs clickable', async () => {
+    const downloadJob = job('job_download', 'video-download', []);
+    downloadJob.status = 'running';
+    downloadJob.state.title = 'Download project';
+    downloadJob.stages = [{
+      id: 'stage_download', jobId: downloadJob.id, stageId: 'download', executor: 'download', status: 'running', dispatchStatus: 'claimed',
+      claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { phase: 'downloading', percent: 15, message: 'Downloading video' }, errorCode: null, errorMessage: null,
+      startedAt: '2026-11-10T04:52:40.505Z', finishedAt: null
+    }];
+    const videoJob = job('job_video', 'video-generation', []);
+    videoJob.status = 'running';
+    videoJob.stages = [{ ...downloadJob.stages[0]!, id: 'stage_video', jobId: videoJob.id, stageId: 'generate' }];
+    const onOpenJob = vi.fn();
+    render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [downloadJob, videoJob] })), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()}
+      onOpenJob={onOpenJob}
+    />);
+
+    const downloadCard = await screen.findByRole('link', { name: '正在生成 Download project' });
+    expect(downloadCard).toHaveTextContent('15%');
+    const videoCard = screen.getByRole('status', { name: '正在生成 视频生成' });
+    fireEvent.click(videoCard);
+    expect(onOpenJob).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole('button', { name: '打开 Download project' }), { key: 'Enter' });
+    expect(onOpenJob).not.toHaveBeenCalled();
+    fireEvent.click(downloadCard);
+    fireEvent.keyDown(downloadCard, { key: 'Enter' });
+    expect(onOpenJob).toHaveBeenCalledTimes(2);
+    expect(onOpenJob).toHaveBeenCalledWith(downloadJob);
   });
 
   it('downloads a project artifact and deletes its project after confirmation', async () => {
@@ -207,9 +346,100 @@ describe('DashboardGenerationHistory', () => {
     expect(screen.getByText(/voice\.mp3/)).toBeInTheDocument();
   });
 
-  it('opens workflow artifacts in their editor instead of only downloading them', async () => {
+  it('shows the source video cover for a subtitle result while keeping the result openable', async () => {
+    const translation = job('job_translation', 'video-translation', [
+      artifact('job_translation', 'artifact_source', 'source_video', 'source.mp4', '2026-11-07T09:00:00.000Z'),
+      artifact('job_translation', 'artifact_subtitle', 'bilingual_subtitle', 'translated.srt', '2026-11-07T10:00:00.000Z')
+    ]);
+    translation.state.topic = 'Moon translation';
+    const openProjectCover = vi.fn(async () => new Response(new Blob(['cover'], { type: 'image/jpeg' })));
     const onOpenJob = vi.fn();
-    const translationJob = job('job_translation', 'video-translation', [artifact('job_translation', 'artifact_translation', 'horizontal_video', 'translated.mp4', '2026-11-07T10:00:00.000Z')]);
+    render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [translation] })), openArtifact: vi.fn(async () => new Response(new Blob(['video']))), openProjectCover }}
+      onBackCreation={vi.fn()}
+      onOpenJob={onOpenJob}
+    />);
+
+    const card = (await screen.findAllByRole('link', { name: '打开 Moon translation' }))
+      .find(element => element.querySelector('[data-kind="subtitle"]'))!;
+    const media = card.querySelector('[data-kind="subtitle"]');
+    expect(media).not.toBeNull();
+    await waitFor(() => expect(openProjectCover).toHaveBeenCalledWith(translation.id));
+    await waitFor(() => expect(media?.querySelector('img')).toHaveAttribute('src', 'blob:generation-preview'));
+    fireEvent.click(card);
+    expect(onOpenJob).toHaveBeenCalledWith(translation);
+  });
+
+  it('previews a generated video instead of opening its workbench', async () => {
+    const onOpenJob = vi.fn();
+    const videoJob = job('job_moon', 'video-generation', [artifact('job_moon', 'artifact_moon', 'generated_video', 'moon.mp4', '2026-11-11T06:19:25.489Z')]);
+    videoJob.state.prompt = 'Moon video';
+    render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [videoJob] })), openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))) }}
+      onBackCreation={vi.fn()}
+      onOpenJob={onOpenJob}
+    />);
+
+    const card = await screen.findByRole('button', { name: '预览 Moon video' });
+    card.focus();
+    fireEvent.click(await screen.findByLabelText('moon.mp4'));
+    const dialog = await screen.findByRole('dialog', { name: '预览 Moon video' });
+    expect(within(dialog).getByLabelText('moon.mp4')).toHaveAttribute('controls');
+    expect(onOpenJob).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '预览 Moon video' })).not.toBeInTheDocument();
+    await waitFor(() => expect(card).toHaveFocus());
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(await screen.findByRole('dialog', { name: '预览 Moon video' })).toBeInTheDocument();
+  });
+
+  it('previews a generated image instead of opening its workbench', async () => {
+    const onOpenJob = vi.fn();
+    const imageJob = job('job_image', 'image-generation', [artifact('job_image', 'artifact_image', 'generated_image', 'product.png', '2026-11-11T06:19:25.489Z')]);
+    imageJob.state.prompt = 'Product image';
+    render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [imageJob] })), openArtifact: vi.fn(async () => new Response(new Blob(['image'], { type: 'image/png' }))) }}
+      onBackCreation={vi.fn()}
+      onOpenJob={onOpenJob}
+    />);
+
+    await screen.findByRole('button', { name: '预览 Product image' });
+    fireEvent.click(await screen.findByRole('img', { name: 'product.png' }));
+    const dialog = await screen.findByRole('dialog', { name: '预览 Product image' });
+    expect(within(dialog).getByRole('img', { name: 'product.png' })).toHaveAttribute('src', 'blob:generation-preview');
+    expect(onOpenJob).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '关闭预览' }));
+    expect(screen.queryByRole('dialog', { name: '预览 Product image' })).not.toBeInTheDocument();
+  });
+
+  it('localizes preview loading and failure in Swedish', async () => {
+    await loadLanguageCatalog('sv-SE');
+    const imageJob = job('job_image', 'image-generation', [artifact('job_image', 'artifact_image', 'generated_image', 'product.png', '2026-11-11T06:19:25.489Z')]);
+    imageJob.state.prompt = 'Product image';
+    let failPreview: (reason: Error) => void = () => undefined;
+    const openArtifact = vi.fn()
+      .mockResolvedValueOnce(new Response(new Blob(['image'], { type: 'image/png' })))
+      .mockImplementationOnce(() => new Promise<Response>((_resolve, reject) => { failPreview = reject; }));
+    render(<LanguageProvider initialPreference="sv-SE"><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [imageJob] })), openArtifact }}
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Förhandsvisning Product image' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Läser in förhandsvisning');
+    failPreview(new Error('Preview unavailable'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Filförhandsgranskningen kunde inte läsas in. Försök igen senare.');
+    expect(screen.getByRole('button', { name: 'Försök igen' })).toBeInTheDocument();
+  });
+
+  it('opens a video translation workbench from both All and video history', async () => {
+    const onOpenJob = vi.fn();
+    const translationJob = job('job_translation', 'video-translation', [artifact('job_translation', 'artifact_translation', 'source_video', 'source.mp4', '2026-11-07T10:00:00.000Z')]);
     translationJob.state.topic = 'Original talk';
     render(<DashboardGenerationHistory
       projectId="project_1"
@@ -222,19 +452,17 @@ describe('DashboardGenerationHistory', () => {
     />);
 
     expect(await screen.findByText('Original talk')).toBeInTheDocument();
-    expect(screen.getByText(/视频翻译 · translated.mp4/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '打开 translated.mp4' })).not.toBeInTheDocument();
-    const preview = await screen.findByLabelText('translated.mp4');
-    expect(preview).not.toHaveAttribute('controls');
-    fireEvent.mouseEnter(preview.closest('.dashboard-generation-result-media')!);
-    expect(preview).toHaveAttribute('controls');
-    fireEvent.click(screen.getByRole('button', { name: '打开项目编辑区 · Original talk' }));
-    expect(onOpenJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'job_translation', templateId: 'video-translation' }));
-    fireEvent.mouseLeave(preview.closest('.dashboard-generation-result-media')!);
-    expect(preview).not.toHaveAttribute('controls');
-    onOpenJob.mockClear();
-    fireEvent.click(screen.getByRole('link', { name: '打开 Original talk' }));
-    expect(onOpenJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'job_translation', templateId: 'video-translation' }));
+    expect(screen.getByText(/视频翻译 · source.mp4/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByLabelText('source.mp4'));
+    expect(onOpenJob).toHaveBeenCalledWith(translationJob);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'video' }));
+    const card = screen.getByRole('link', { name: '打开 Original talk' });
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(onOpenJob).toHaveBeenCalledTimes(2);
+    expect(onOpenJob).toHaveBeenLastCalledWith(translationJob);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
 

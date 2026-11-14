@@ -286,7 +286,7 @@ export default function VideoDownloadBatchWorkspace(props: ComponentProps<typeof
       <label htmlFor="video-download-add-links">{l('视频链接', 'Video URL')}</label>
       <div className="video-download-link-input" data-valid={validLink || undefined}>
         <Link2 className="video-download-link-icon" size={18} strokeWidth={1.8} aria-hidden="true" />
-        <input id="video-download-add-links" ref={inputRef} value={linksText} disabled={busy} type="text" inputMode="url"
+        <input id="video-download-add-links" ref={inputRef} value={linksText} disabled={busy} type="text" inputMode="url" autoComplete="off"
           aria-invalid={inputError && parsedLink.error ? true : undefined}
           aria-describedby={inputError ? 'video-download-link-error' : validLink ? 'video-download-link-valid' : undefined}
           onChange={event => { setLinksText(event.target.value); setError(''); setLinkTouched(false); }}

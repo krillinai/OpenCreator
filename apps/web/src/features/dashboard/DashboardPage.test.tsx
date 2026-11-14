@@ -1,5 +1,5 @@
 import { changeControl } from '../../test/select-option.js';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import {
   createDefaultCreatorServicesConfig,
   readCreatorResultSnapshots,
@@ -19,6 +19,7 @@ import DashboardPageView, {
   createCreatorJobWithRecovery
 } from './DashboardPage.js';
 import type { CreatorWorkspace } from './creator-workspace.js';
+import { isMeaningfulCreatorJob } from '../projects/ProjectsPage.js';
 
 function DashboardPage(props: ComponentProps<typeof DashboardPageView>) {
   return (
@@ -28,6 +29,19 @@ function DashboardPage(props: ComponentProps<typeof DashboardPageView>) {
       {...props}
     />
   );
+}
+
+function configuredImageService(provider: 'openai' | 'gemini' = 'openai', videoModel?: string) {
+  const config = createDefaultCreatorServicesConfig();
+  config.image.provider = provider;
+  if (videoModel) config.video.seedance.model = videoModel;
+  return { getConfig: vi.fn(async () => ({ config, configuredCredentials: [`image.${provider}.apiKey`, ...(videoModel ? ['video.seedance.apiKey'] : [])] })) } as unknown as CreatorServicesSettingsService;
+}
+
+function configuredVideoService(provider: 'seedance' | 'veo' = 'seedance') {
+  const config = createDefaultCreatorServicesConfig();
+  config.video.provider = provider;
+  return { getConfig: vi.fn(async () => ({ config, configuredCredentials: [`video.${provider}.apiKey`] })) } as unknown as CreatorServicesSettingsService;
 }
 
 function RoutedDashboardPage(props: { service: CreatorWebService; initialWorkspace?: CreatorWorkspace }) {
@@ -808,6 +822,82 @@ describe('DashboardPage', () => {
     if (authState === 'signed_in') expect(dialog).toHaveTextContent('当前使用本地模型服务');
   });
 
+  it('generates with a configured local image service while signed out', async () => {
+    const creatorService = createInMemoryCreatorService();
+    const applyAction = vi.spyOn(creatorService, 'applyAction');
+    const gatewayState: NonNullable<ComponentProps<typeof DashboardPageView>['gatewayState']> = {
+      source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null,
+      bindingVersion: null, models: [], activationError: null
+    };
+    render(<DashboardPage
+      onSelectPrompt={vi.fn()}
+      workspace="image-generation"
+      creatorService={creatorService}
+      creatorServicesService={configuredImageService()}
+      gatewayState={gatewayState}
+      gatewayAccountService={{ getImageCatalog: vi.fn(async () => ({ models: [] })) } as unknown as ComponentProps<typeof DashboardPageView>['gatewayAccountService']}
+    />);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务'));
+    fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: '海边城市' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
+    expect(await screen.findByRole('button', { name: 'image' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { available: true, selected: 'Requested Image', notice: false },
+    { available: false, selected: 'Recommended Image', notice: true }
+  ])('validates a pending public image model after sign-in (available: $available)', async ({ available, selected, notice }) => {
+    const creatorService = createInMemoryCreatorService();
+    const applyAction = vi.spyOn(creatorService, 'applyAction');
+    const requested = { id: 'vendor/requested', name: 'Requested Image', vendor: 'Vendor', modality: 'image' as const, capabilities: [] };
+    const recommended = { id: 'vendor/recommended', name: 'Recommended Image', vendor: 'Vendor', modality: 'image' as const, capabilities: [], recommended: true };
+    const other = { id: 'vendor/other', name: 'Other Image', vendor: 'Vendor', modality: 'image' as const, capabilities: [] };
+    const signedOut: NonNullable<ComponentProps<typeof DashboardPageView>['gatewayState']> = {
+      source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null,
+      bindingVersion: null, models: [], activationError: null
+    };
+    const signedIn: NonNullable<ComponentProps<typeof DashboardPageView>['gatewayState']> = {
+      source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account-1', email: 'user@example.test', verified: true }, bindingVersion: 'account-1:1',
+      models: available ? [requested, recommended] : [recommended, other],
+      selectedModels: { image: recommended.id }, recommendedModels: { image: recommended.id }, activationError: null
+    };
+    let currentState = signedOut;
+    const gatewayAccountService = {
+      getImageCatalog: vi.fn(async () => ({ models: [requested, recommended], recommendedModelId: recommended.id })),
+      getState: vi.fn(async () => currentState)
+    } as unknown as NonNullable<ComponentProps<typeof DashboardPageView>['gatewayAccountService']>;
+    const common = { onSelectPrompt: vi.fn(), workspace: 'image-generation' as const, creatorService,
+      creatorServicesService: configuredImageService(), gatewayAccountService, onGatewayStateChange: vi.fn() };
+    const view = render(<DashboardPage {...common} gatewayState={signedOut} />);
+    fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: '保留这段提示词' } });
+    await waitFor(() => expect(gatewayAccountService.getImageCatalog).toHaveBeenCalled());
+    const selector = screen.getByRole('combobox', { name: '模型' });
+    fireEvent.click(selector);
+    fireEvent.change(selector, { target: { value: 'Requested Image' } });
+    fireEvent.click(await screen.findByRole('option', { name: 'Requested Image' }));
+    expect(await screen.findByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Requested Image');
+    expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('保留这段提示词');
+    if (available) {
+      fireEvent.click(screen.getByRole('button', { name: '关闭登录窗口' }));
+      fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+      expect(screen.getByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
+      expect(applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+    }
+
+    currentState = signedIn;
+    view.rerender(<DashboardPage {...common} gatewayState={signedIn} />);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '图片模型' })).toHaveValue(selected));
+    expect(gatewayAccountService.getState).toHaveBeenCalledWith({ refreshModels: true });
+    expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('保留这段提示词');
+    if (notice) expect(screen.getByRole('status')).toHaveTextContent('所选模型当前账户不可用');
+    expect(applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+  });
+
   it('does not retry a deterministic job creation response', async () => {
     const error = new ApiClientError({
       status: 500,
@@ -917,6 +1007,70 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('button', { name: '返回' })).not.toBeInTheDocument();
     expect(screen.queryByRole('complementary', { name: 'OpenCreator' })).not.toBeInTheDocument();
     expect(onWorkspaceModeChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it.each([
+    ['video-translation', '视频翻译'],
+    ['transcription', '视频转录'],
+    ['image-generation', '图像生成'],
+    ['cover-generator', '封面生成'],
+    ['video-generation', '视频生成'],
+    ['video-download', '视频下载'],
+    ['auto-clips', '视频切片'],
+    ['smart-dubbing', '文本转语音'],
+    ['short-video-script', '短视频脚本生成'],
+    ['stickman-video', '火柴人动画'],
+    ['xiaohongshu-post', '小红书帖子生成器'],
+    ['wechat-article', '文章写作']
+  ] as const)('does not save an untouched %s project after default models load', async (workspace, form) => {
+    const creatorService = createInMemoryCreatorService();
+    const createJob = vi.spyOn(creatorService, 'createJob');
+    const gatewayState: NonNullable<ComponentProps<typeof DashboardPageView>['gatewayState']> = {
+      source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account-1', email: 'user@example.test', verified: true },
+      bindingVersion: 'account-1:1', activationError: null,
+      selectedModels: { text: 'text-model', image: 'image-model', video: 'video-model', speech: 'speech-model', transcription: 'transcription-model' },
+      models: [
+        { id: 'text-model', modality: 'text', capabilities: ['responses', 'chat'] },
+        { id: 'image-model', modality: 'image', capabilities: ['text_to_image'] },
+        { id: 'video-model', modality: 'video', capabilities: ['text_to_video'] },
+        { id: 'speech-model', modality: 'speech', capabilities: ['speech_generation'] },
+        { id: 'transcription-model', modality: 'transcription', capabilities: ['subtitle_timestamps'] }
+      ]
+    };
+    render(<DashboardPage onSelectPrompt={vi.fn()} workspace={workspace} creatorService={creatorService} gatewayState={gatewayState} />);
+
+    if (workspace === 'stickman-video' || workspace === 'xiaohongshu-post' || workspace === 'wechat-article') {
+      expect(await screen.findByRole('heading', { name: form })).toBeInTheDocument();
+    } else {
+      expect(await screen.findByRole('form', { name: form })).toBeInTheDocument();
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+    expect(createJob).not.toHaveBeenCalled();
+  });
+
+  it('creates a visible draft when the user only selects a video model', async () => {
+    const creatorService = createInMemoryCreatorService();
+    const createJob = vi.spyOn(creatorService, 'createJob');
+    const gatewayState: NonNullable<ComponentProps<typeof DashboardPageView>['gatewayState']> = {
+      source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account-1', email: 'user@example.test', verified: true },
+      bindingVersion: 'account-1:1', activationError: null,
+      selectedModels: { video: 'video-first' },
+      models: [
+        { id: 'video-first', name: 'First Video', modality: 'video', capabilities: ['generate'] },
+        { id: 'video-second', name: 'Second Video', modality: 'video', capabilities: ['generate'] }
+      ]
+    };
+    render(<DashboardPage onSelectPrompt={vi.fn()} workspace="video-generation" creatorService={creatorService} gatewayState={gatewayState} />);
+
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Second Video' }));
+
+    await waitFor(() => expect(createJob).toHaveBeenCalledOnce());
+    const { job } = await creatorService.getJob('creator_test_job_1');
+    expect(job.state).toMatchObject({ officialModels: { video: 'video-second' }, __creatorUserEdited: true });
+    expect(isMeaningfulCreatorJob(job)).toBe(true);
   });
 
   it.each([
@@ -1143,15 +1297,33 @@ describe('DashboardPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '生成记录' }));
     expect(screen.getByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'video' }));
-    fireEvent.click(await screen.findByRole('button', { name: '打开项目编辑区 · youtube.com' }));
+    fireEvent.click(screen.getByRole('button', { name: 'text' }));
+    fireEvent.click((await screen.findAllByRole('link', { name: '打开 youtube.com' }))[0]!);
     expect(await screen.findByRole('heading', { name: '视频翻译', level: 2 })).toBeVisible();
 
     fireEvent.click(within(screen.getByRole('region', { name: '视频翻译项目产出' })).getByRole('button', { name: '返回' }));
     expect(await screen.findByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'text' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getAllByText('youtube.com').length).toBeGreaterThan(0);
     expect(screen.queryByRole('form', { name: '视频翻译' })).not.toBeInTheDocument();
+  });
+
+  it('returns directly to the generation list from a project opened there', async () => {
+    const service = createInMemoryCreatorService();
+    const translation = await createCompletedTranslationJob(service);
+    const onWorkspaceNavigate = vi.fn();
+    render(<DashboardPage
+      onSelectPrompt={vi.fn()}
+      creatorService={service}
+      workspace="video-translation"
+      jobId={translation.id}
+      returnTo="projects"
+      onWorkspaceNavigate={onWorkspaceNavigate}
+    />);
+
+    const result = await screen.findByRole('region', { name: '视频翻译项目产出' });
+    fireEvent.click(within(result).getByRole('button', { name: '返回' }));
+    await waitFor(() => expect(onWorkspaceNavigate).toHaveBeenCalledWith(null));
   });
 
   it('restores the original tool and type filter after opening a different workflow', async () => {
@@ -1175,6 +1347,63 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('form', { name: '视频翻译' })).toBeVisible();
   });
 
+  it('opens a history job while its fresh snapshot is still loading', async () => {
+    const baseService = createInMemoryCreatorService();
+    const translation = await createCompletedTranslationJob(baseService);
+    let resolveSnapshot!: (value: { job: CreatorJob }) => void;
+    const getJob = vi.fn(() => new Promise<{ job: CreatorJob }>(resolve => {
+      resolveSnapshot = resolve;
+    }));
+    const service = {
+      ...withHistoryJobs(baseService, [translation]),
+      getJob,
+      subscribeJobEvents: vi.fn(() => ({ close() {} }))
+    } as CreatorWebService;
+    render(<RoutedDashboardPage service={service} initialWorkspace="image-generation" />);
+
+    fireEvent.click(screen.getByRole('button', { name: '生成记录' }));
+    fireEvent.click(screen.getByRole('button', { name: 'video' }));
+    fireEvent.click(await screen.findByRole('button', { name: '打开项目编辑区 · youtube.com' }));
+
+    expect(screen.getByRole('heading', { name: '视频翻译', level: 2 })).toBeVisible();
+    expect(screen.queryByText('正在恢复创作项目')).not.toBeInTheDocument();
+    await waitFor(() => expect(getJob).toHaveBeenCalledWith(translation.id, expect.anything()));
+    await act(async () => resolveSnapshot({ job: translation }));
+  });
+
+  it('reopens a running video download from history with its saved progress', async () => {
+    const baseService = createInMemoryCreatorService();
+    const sourceUrl = 'https://www.youtube.com/watch?v=resume';
+    const { job } = await baseService.createJob({ projectId: 'project_1', templateId: 'video-download', state: {
+      sourceUrl, title: 'Resume download'
+    } });
+    const probe = translationArtifact(job, { kind: 'download_probe', version: 1, fileName: 'probe.json', metadata: {
+      id: 'resume', title: 'Resume download', requestedUrl: sourceUrl, url: sourceUrl,
+      platform: 'youtube', formats: [], options: [{ id: 'video-1080', mediaType: 'video', container: 'mp4',
+        width: 1920, height: 1080, videoFormatId: '399', audioFormatId: '140' }]
+    } });
+    const download: CreatorJob = { ...job, templateVersion: 2, status: 'running', artifacts: [probe], stages: [{
+      id: 'stage_download', jobId: job.id, stageId: 'download', executor: 'download', status: 'running', dispatchStatus: 'claimed',
+      claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { phase: 'downloading', percent: 15, optionId: 'video-1080', probeArtifactId: probe.id,
+        sourceUrl }, errorCode: null, errorMessage: null,
+      startedAt: job.createdAt, finishedAt: null
+    }] };
+    const service = {
+      ...withHistoryJobs(baseService, [download]),
+      subscribeJobEvents: vi.fn(() => ({ close() {} }))
+    } as CreatorWebService;
+    const applyAction = vi.spyOn(service, 'applyAction');
+    render(<RoutedDashboardPage service={service} initialWorkspace="video-download" />);
+
+    fireEvent.click(screen.getByRole('button', { name: '生成记录' }));
+    fireEvent.click(await screen.findByRole('link', { name: '正在生成 Resume download' }));
+    expect(await screen.findByRole('heading', { name: '视频下载' })).toBeVisible();
+    expect(await screen.findByText('15%')).toBeVisible();
+    await waitFor(() => expect(service.getJob).toHaveBeenCalled());
+    expect(applyAction).not.toHaveBeenCalled();
+  });
+
   it('returns to the dashboard home instead of the fallback image workspace', async () => {
     const service = withHistoryJobs(createInMemoryCreatorService(), []);
     render(<RoutedDashboardPage service={service} />);
@@ -1195,6 +1424,50 @@ describe('DashboardPage', () => {
     view.rerender(<DashboardPage creatorService={service} workspace={undefined} onSelectPrompt={vi.fn()} />);
     expect(await screen.findByRole('heading', { name: /好，创作者$/ })).toBeVisible();
     expect(screen.queryByRole('form', { name: '视频翻译' })).not.toBeInTheDocument();
+  });
+
+  it('starts with a fresh image composer after returning to the dashboard route', async () => {
+    const service = createInMemoryCreatorService();
+    const { job } = await service.createJob({ projectId: 'project_1', templateId: 'image-generation', state: { prompt: '之前的生图提示词' } });
+    const onSelectPrompt = vi.fn();
+    const creatorServicesService = configuredImageService();
+    const view = render(<DashboardPage creatorService={service} creatorServicesService={creatorServicesService}
+      workspace="image-generation" jobId={job.id} onSelectPrompt={onSelectPrompt} />);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('之前的生图提示词'));
+
+    view.rerender(<DashboardPage creatorService={service} creatorServicesService={creatorServicesService}
+      onSelectPrompt={onSelectPrompt} />);
+    expect(await screen.findByRole('heading', { name: /好，创作者$/ })).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue(''));
+    expect(screen.queryByRole('heading', { name: '图像生成' })).not.toBeInTheDocument();
+  });
+
+  it('shows completed image results from a direct workbench route and from history', async () => {
+    const baseService = createInMemoryCreatorService();
+    const { job } = await baseService.createJob({ projectId: 'project_1', templateId: 'image-generation', state: {
+      prompt: 'A red bicycle in a bright studio'
+    } });
+    const artifact = translationArtifact(job, { kind: 'generated_image', version: 1, fileName: 'bicycle.png' });
+    const completed: CreatorJob = { ...job, status: 'completed', artifacts: [artifact], state: {
+      ...job.state, resultVersion: 1
+    } };
+    const service = {
+      ...withHistoryJobs(baseService, [completed]),
+      openArtifact: vi.fn(async () => new Response(new Blob(['image'], { type: 'image/png' })))
+    } as CreatorWebService;
+
+    const direct = render(<DashboardPage onSelectPrompt={vi.fn()} workspace="image-generation" jobId={job.id} creatorService={service} />);
+
+    expect(await screen.findByRole('heading', { name: '生成结果' })).toBeVisible();
+    expect(await screen.findByRole('img', { name: '生成图片 1' })).toBeVisible();
+    expect(document.querySelector('.image-generation-result-grid')).toBeInTheDocument();
+
+    direct.unmount();
+    render(<RoutedDashboardPage service={service} initialWorkspace="image-generation" />);
+    fireEvent.click(screen.getByRole('button', { name: '生成记录' }));
+    fireEvent.click(await screen.findByRole('button', { name: '打开项目编辑区 · A red bicycle in a bright studio' }));
+    expect(await screen.findByRole('heading', { name: '生成结果' })).toBeVisible();
+    expect(await screen.findByRole('img', { name: '生成图片 1' })).toBeVisible();
   });
 
   it('renders the generation composer and searchable creator app directory', () => {
@@ -1333,32 +1606,32 @@ describe('DashboardPage', () => {
 
   it('opens image and video workspaces after generating with the selected models and prompts', async () => {
     const creatorService = createInMemoryCreatorService();
-    const view = render(<DashboardPage onSelectPrompt={vi.fn()} creatorService={creatorService} />);
+    const creatorServicesService = configuredImageService('gemini', 'doubao-seedance-2-0-260128');
+    const view = render(<DashboardPage onSelectPrompt={vi.fn()} creatorService={creatorService} creatorServicesService={creatorServicesService} />);
 
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
       target: { value: '晨光中的未来城市' }
     });
-    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Google 1 个模型' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Gemini' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务'));
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     fireEvent.click(await screen.findByRole('button', { name: '展开创作对话框' }));
     expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('晨光中的未来城市'));
-    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Gemini');
+    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务');
 
-    view.rerender(<DashboardPage onSelectPrompt={vi.fn()} creatorService={creatorService} workspace="video-generation" />);
+    view.rerender(<DashboardPage onSelectPrompt={vi.fn()} creatorService={creatorService} creatorServicesService={creatorServicesService} workspace="video-generation" />);
     fireEvent.click(await screen.findByRole('tab', { name: '视频生成' }));
     const videoPrompt = screen.getByRole('textbox', { name: '提示词' });
     expect(videoPrompt).toHaveValue('');
     fireEvent.change(videoPrompt, { target: { value: '镜头穿过未来城市' } });
-    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Seedance 2.0' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     fireEvent.click(await screen.findByRole('button', { name: '展开创作对话框' }));
     expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true');
     await waitFor(() => expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('镜头穿过未来城市'));
-    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Seedance 2.0');
+    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务');
+    await waitFor(async () => expect((await creatorService.getJob('creator_test_job_2')).job.state).toMatchObject({ provider: 'seedance', model: 'doubao-seedance-2-0-260128' }));
   });
 
   it('uses the workspace prompt controls in the dashboard composer', () => {
@@ -1376,10 +1649,11 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('一辆复古红色跑车沿着海岸公路行驶，黄昏金色阳光，低机位跟拍，海风吹动路边植物，电影级真实质感，镜头运动平稳');
   });
 
-  it('removes image and video settings headers from dashboard popovers', () => {
-    render(<DashboardPage onSelectPrompt={vi.fn()} />);
+  it('removes image and video settings headers from dashboard popovers', async () => {
+    render(<DashboardPage onSelectPrompt={vi.fn()} creatorServicesService={configuredImageService('openai', 'doubao-seedance-2-5-260628')} />);
     for (const [tab, label] of [['图像生成', '图片设置'], ['视频生成', '视频设置']] as const) {
       fireEvent.click(screen.getByRole('tab', { name: tab }));
+      await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue(tab === '视频生成' ? '本地视频服务' : '本地生图服务'));
       fireEvent.click(screen.getByRole('button', { name: label }));
       const dialog = screen.getByRole('dialog', { name: label });
       expect(dialog.querySelector('header')).toBeNull();
@@ -1674,6 +1948,7 @@ describe('DashboardPage', () => {
       action: 'run-stage', input: { stageId: 'probe' }
     })));
     expect(await screen.findByRole('textbox', { name: '继续创作' })).toHaveAttribute('placeholder', '粘贴一个公开视频链接…');
+    expect(screen.getByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('form', { name: '视频下载' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '展开创作对话框' }));
     expect(await screen.findByRole('form', { name: '视频下载' })).toBeInTheDocument();
@@ -2505,6 +2780,7 @@ describe('DashboardPage', () => {
         onSelectPrompt={vi.fn()}
         projectId="project_1"
         creatorService={creatorService}
+        creatorServicesService={configuredImageService()}
       />
     );
 
@@ -2514,7 +2790,7 @@ describe('DashboardPage', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
       target: { value: prompt }
     });
-    expect(screen.getByRole('combobox', { name: /^模型$/ })).toHaveValue('GPT Image');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /^模型$/ })).toHaveValue('本地生图服务'));
     fireEvent.click(screen.getByRole('button', { name: '图片设置' }));
     fireEvent.click(screen.getByRole('radio', { name: '3:2' }));
     fireEvent.click(screen.getByRole('radio', { name: '高清' }));
@@ -2546,6 +2822,38 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('menu')).toHaveTextContent('项目 V1');
     expect(openArtifact).toHaveBeenCalledWith(job.id, 'image_artifact_v2_1');
     expect(openArtifact).toHaveBeenCalledWith(job.id, 'image_artifact_v2_2');
+  });
+
+  it('keeps a selected video reference when prompt autosave creates the job', async () => {
+    const service = createInMemoryCreatorService();
+    const videoService = configuredVideoService();
+    const onJobCreated = vi.fn();
+    function VideoPage() {
+      const [, rerender] = useState(0);
+      return <DashboardPage
+        onSelectPrompt={vi.fn()}
+        workspace="video-generation"
+        creatorService={service}
+        creatorServicesService={videoService}
+        onJobCreated={job => {
+          onJobCreated(job);
+          rerender(value => value + 1);
+        }}
+      />;
+    }
+    render(<VideoPage />);
+
+    const file = new File(['reference'], 'reference.png', { type: 'image/png' });
+    changeControl(screen.getByLabelText('上传视频参考图'), { target: { files: [file] } });
+    expect(await screen.findByRole('img', { name: '视频参考图预览' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
+      target: { value: 'A coastline at dusk' }
+    });
+
+    await waitFor(() => expect(onJobCreated).toHaveBeenCalledOnce());
+    expect(screen.getByRole('img', { name: '视频参考图预览' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '移除参考图' })).toBeEnabled();
+    expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('A coastline at dusk');
   });
 
   it('submits and previews a video generation result', async () => {
@@ -2734,6 +3042,7 @@ describe('DashboardPage', () => {
         onSelectPrompt={vi.fn()}
         workspace="video-generation"
         creatorService={creatorService}
+        creatorServicesService={configuredVideoService('veo')}
       />
     );
 
@@ -2756,11 +3065,7 @@ describe('DashboardPage', () => {
       target: { files: [referenceImage] }
     });
     const modelSelect = screen.getByRole('combobox', { name: /^模型$/ });
-    expect(modelSelect).toHaveValue('Seedance 2.5');
-    fireEvent.click(modelSelect);
-    fireEvent.click(screen.getByRole('button', { name: /^Veo/ }));
-    fireEvent.click(screen.getByRole('option', { name: 'Veo 3.1' }));
-    expect(modelSelect).toHaveValue('Veo 3.1');
+    await waitFor(() => expect(modelSelect).toHaveValue('本地视频服务'));
     fireEvent.click(screen.getByRole('button', { name: '视频设置' }));
     expect(screen.getByRole('radio', { name: '4 秒' })).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(screen.getByRole('radio', { name: '9:16' }));

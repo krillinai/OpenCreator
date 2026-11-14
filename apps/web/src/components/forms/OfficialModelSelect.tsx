@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Search, X } from 'lucide-react';
+import { Check, ChevronDown, Search, Settings2, X } from 'lucide-react';
 import Fuse from 'fuse.js';
-import { gatewayModelDisplayName, gatewayModelIdMatches, gatewayRelayIdentity, gatewayModelReady, gatewayRecommendedModelId, type GatewayModel } from '@opencreator/protocol';
+import { gatewayModelDisplayName, gatewayModelIdMatches, gatewayRelayIdentity, gatewayModelReady, gatewayRecommendedModelId, gatewayVideoSizes, type GatewayModel } from '@opencreator/protocol';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
-import { officialModelPrice, officialModelPriceDescription } from './official-model-pricing.js';
+import { officialModelPrice, officialModelPriceDescription, officialVideoModelListPrice } from './official-model-pricing.js';
 import ModelBrandIcon, { modelBrand } from '../brand/ModelBrandIcon.js';
 import './official-model-select.css';
 
@@ -17,7 +17,10 @@ export function officialModelLabel(model: GatewayModel, automatic: string): stri
 export default function OfficialModelSelect(props: {
   label: string; describedBy?: string; models: GatewayModel[]; value: string;
   recommendedModel?: GatewayModel; followsRecommendation?: boolean;
-  disabled?: boolean; layout?: 'list' | 'catalog'; onChange(value: string): void;
+  disabled?: boolean; layout?: 'list' | 'catalog' | 'grouped'; loginRequiredModelIds?: ReadonlySet<string>;
+  compactOptions?: boolean;
+  configureModel?: { id: string; title: string; onConfigure(): void };
+  onChange(value: string): void;
 }) {
   const l = useLocalizedCopy();
   const id = useId();
@@ -31,16 +34,19 @@ export default function OfficialModelSelect(props: {
   const [position, setPosition] = useState<{ left: number; top: number; width: number; maxHeight: number; above: boolean }>();
   const automatic = l('自动选择', 'Automatic');
   const catalog = props.layout === 'catalog';
+  const grouped = props.layout === 'grouped';
   const selectionValue = props.recommendedModel && (props.followsRecommendation || gatewayModelIdMatches(props.value, props.recommendedModel.id)) ? gatewayRecommendedModelId : props.models.find(model => gatewayModelIdMatches(model.id, props.value))?.id ?? props.value;
   const choices = useMemo(() => {
     const models = [...new Map(props.models.map(model => [model.id, model])).values()];
     return [...(props.recommendedModel ? [props.recommendedModel] : []), ...models.filter(model => model.id !== props.recommendedModel?.id)].map(model => {
       const recommended = model.id === props.recommendedModel?.id;
       const name = officialModelLabel(model, automatic);
-      const label = recommended ? l(`系统推荐 · ${name}`, `Recommended · ${name}`) : name;
+      const label = recommended && model.modality !== 'image' ? l(`系统推荐 · ${name}`, `Recommended · ${name}`) : name;
       return { model, value: recommended ? gatewayRecommendedModelId : model.id, label, brand: modelVendor(model), nameSearch: normalizeSearch(label), idSearch: normalizeSearch(gatewayModelDisplayName({ id: model.id }, "")) };
     });
   }, [props.models, props.recommendedModel, automatic, l]);
+  const otherGroupName = choices.find(choice => choice.model.modality === 'video' && /^others$/i.test(choice.brand ?? ''))?.brand
+    ?? l('其他', 'Other', 'Övriga');
   const search = useMemo(() => new Fuse(choices, {
     keys: [{ name: 'nameSearch', weight: 0.7 }, { name: 'idSearch', weight: 0.3 }],
     threshold: 0.3, ignoreLocation: true,
@@ -63,16 +69,33 @@ export default function OfficialModelSelect(props: {
   const brands = useMemo(() => {
     const result: Array<{ name: string; model: GatewayModel; count: number }> = [];
     for (const choice of choices) {
-      const name = choice.brand ?? l('其他', 'Other', 'Övriga');
+      const name = choice.brand ?? otherGroupName;
       const existing = result.find(brand => brand.name === name);
       if (existing) existing.count += 1;
       else result.push({ name, model: choice.model, count: 1 });
     }
-    return result;
-  }, [choices, l]);
-  const visible = useMemo(() => catalog && !query.trim() && activeBrand !== undefined
-    ? filtered.filter(choice => (choice.brand ?? l('其他', 'Other', 'Övriga')) === activeBrand)
-    : filtered, [activeBrand, catalog, filtered, l, query]);
+    const priority = (brand: typeof result[number]) => brand.model.id === '__local_image__' || brand.model.id === '__local_video__'
+      ? 0 : brand.name === 'ByteDance' ? 1 : brand.name === otherGroupName || /^others$/i.test(brand.name) ? 3 : 2;
+    return props.compactOptions
+      ? result.sort((left, right) => priority(left) - priority(right) || left.name.localeCompare(right.name))
+      : result;
+  }, [choices, otherGroupName, props.compactOptions]);
+  const visible = useMemo(() => {
+    if (grouped) return brands.flatMap(brand => filtered.filter(choice => (choice.brand ?? otherGroupName) === brand.name));
+    return catalog && !query.trim() && activeBrand !== undefined
+      ? filtered.filter(choice => (choice.brand ?? otherGroupName) === activeBrand)
+      : filtered;
+  }, [activeBrand, brands, catalog, filtered, grouped, otherGroupName, query]);
+  const visibleGroups = useMemo(() => {
+    const groups: Array<{ name: string; model: GatewayModel; choices: Array<{ choice: typeof choices[number]; index: number }> }> = [];
+    visible.forEach((choice, index) => {
+      const name = choice.brand ?? otherGroupName;
+      const group = groups.find(candidate => candidate.name === name);
+      if (group) group.choices.push({ choice, index });
+      else groups.push({ name, model: choice.model, choices: [{ choice, index }] });
+    });
+    return groups;
+  }, [visible, otherGroupName]);
   const selectedLabel = selected?.label ?? (gatewayModelDisplayName({ id: props.value }, '') || (props.models.length === 0 ? l('暂不可用', 'Unavailable') : l('选择模型', 'Select model')));
   const expanded = open && !props.disabled;
   const currentIndex = Math.min(activeIndex, visible.length - 1);
@@ -84,10 +107,15 @@ export default function OfficialModelSelect(props: {
     setQuery(''); setActiveIndex(0); setActiveBrand(selected?.brand ?? brands[0]?.name); setOpen(true);
   }
   function select(value: string) {
+    if (props.configureModel?.id === value && !props.models.some(model => model.id === value && gatewayModelReady(model))) {
+      close();
+      props.configureModel.onConfigure();
+      return;
+    }
     if (!(value === gatewayRecommendedModelId && props.recommendedModel) && !props.models.some(model=>model.id===value&&gatewayModelReady(model)))return;
     inputRef.current?.focus();
     close();
-    if (value !== selectionValue || (value === gatewayRecommendedModelId && !props.followsRecommendation)) props.onChange(value);
+    if (value !== selectionValue || props.loginRequiredModelIds?.has(value) || (value === gatewayRecommendedModelId && !props.followsRecommendation)) props.onChange(value);
   }
 
   useEffect(() => { if (props.disabled) close(); }, [props.disabled]);
@@ -115,7 +143,7 @@ export default function OfficialModelSelect(props: {
       const below = viewportBottom - rect.bottom - 14;
       const above = rect.top - viewportTop - 14;
       const opensAbove = (catalog && above > 80) || (below < 300 && above > below);
-      const width = Math.min(Math.max(rect.width, catalog ? 600 : 340), viewportWidth - 16);
+      const width = Math.min(Math.max(rect.width, catalog ? 600 : props.compactOptions ? 320 : grouped ? 420 : 340), viewportWidth - 16);
       const menuLeft = getComputedStyle(rootRef.current!).direction === 'rtl' ? rect.right - width : rect.left;
       const next = {
         width, left: Math.max(viewportLeft + 8, Math.min(menuLeft, viewportLeft + viewportWidth - width - 8)),
@@ -136,7 +164,7 @@ export default function OfficialModelSelect(props: {
       window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true);
       window.visualViewport?.removeEventListener('resize', place); window.visualViewport?.removeEventListener('scroll', place);
     };
-  }, [expanded, catalog]);
+  }, [expanded, catalog, grouped, props.compactOptions]);
 
   useEffect(() => {
     if (expanded && currentIndex >= 0) document.getElementById(optionId(currentIndex))?.scrollIntoView?.({ block: 'nearest' });
@@ -157,27 +185,42 @@ export default function OfficialModelSelect(props: {
     } else if (event.key === 'Tab') close();
   }
 
-  const options = <div id={`${id}-listbox`} className="official-model-options" role="listbox" aria-label={props.label}>
-    {visible.map((choice, index) => <Fragment key={choice.model.id}>
-      {!catalog && choice.value !== gatewayRecommendedModelId && choice.brand && (choice.brand !== visible[index-1]?.brand || visible[index-1]?.value === gatewayRecommendedModelId) ? <div className="official-model-menu-group" role="presentation">{choice.brand}</div> : null}
-      <button id={optionId(index)} type="button" role="option" tabIndex={-1}
-        aria-label={choice.label} aria-selected={choice.value === selectionValue}
-        disabled={!gatewayModelReady(choice.model)} aria-disabled={!gatewayModelReady(choice.model)}
+  const renderOption = (choice: typeof choices[number], index: number) => {
+    const image = choice.model.modality === 'image';
+    const configurable = props.configureModel?.id === choice.model.id && !gatewayModelReady(choice.model);
+    const disabled = !gatewayModelReady(choice.model) && !configurable;
+    const compactVideoPrice = props.compactOptions && choice.model.modality === 'video' && choice.model.id !== '__local_video__'
+      ? officialVideoModelListPrice(choice.model, l) : undefined;
+    return <button key={choice.model.id} id={optionId(index)} type="button" role="option" tabIndex={-1}
+        aria-label={choice.label} aria-describedby={compactVideoPrice ? `${optionId(index)}-price` : undefined} aria-selected={choice.value === selectionValue}
+        disabled={disabled} aria-disabled={disabled}
         className={`official-model-option${index === currentIndex ? ' is-active' : ''}`}
-        title={[choice.label, officialModelPriceDescription(choice.model, l)].filter(Boolean).join('\n')} onMouseDown={event => event.preventDefault()}
+        title={configurable ? props.configureModel?.title : image ? choice.label : props.compactOptions
+          ? [choice.label, choice.model.price ? officialModelPriceDescription(choice.model, l) : ''].filter(Boolean).join('\n')
+          : [choice.label, officialModelPriceDescription(choice.model, l)].filter(Boolean).join('\n')} onMouseDown={event => event.preventDefault()}
         onPointerMove={event => { if (event.pointerType === 'mouse') setActiveIndex(index); }}
         onClick={() => select(choice.value)}>
         <ModelBrandIcon model={choice.model} />
         <span className="official-model-option-text"><span className="official-model-option-heading">
           <span className="official-model-option-name">{choice.label}</span>
-          {choice.model.recommended && choice.value !== gatewayRecommendedModelId ? <span className="official-model-option-badge">{l('推荐','Recommended')}</span> : null}
-          {!gatewayModelReady(choice.model) ? <span className="official-model-option-badge is-unavailable">{l('暂不可用','Temporarily unavailable')}</span> : null}
+          {!image && !props.compactOptions && choice.model.recommended && choice.value !== gatewayRecommendedModelId ? <span className="official-model-option-badge">{l('推荐','Recommended')}</span> : null}
+          {!image && !props.compactOptions && !gatewayModelReady(choice.model) ? <span className="official-model-option-badge is-unavailable">{l('暂不可用','Temporarily unavailable')}</span> : null}
         </span>
-          {!/openrouter/i.test(choice.model.id) && (choice.model.modality === 'video' || choice.value !== gatewayRecommendedModelId) && modelDetail(choice.model, l) ? <span className="official-model-option-id">{modelDetail(choice.model, l)}</span> : null}
-          {choice.model.price ? <span className={`official-model-option-price${choice.model.modality === 'video' ? ' is-video' : ''}`}>{officialModelPrice(choice.model,l)}</span> : null}
+          {!image && !props.compactOptions && !/openrouter/i.test(choice.model.id) && (choice.model.modality === 'video' || choice.value !== gatewayRecommendedModelId) && modelDetail(choice.model, l) ? <span className="official-model-option-id">{modelDetail(choice.model, l)}</span> : null}
+          {compactVideoPrice ? <span id={`${optionId(index)}-price`} className="official-model-option-price is-video">{compactVideoPrice}</span>
+            : !image && !props.compactOptions && choice.model.price ? <span className={`official-model-option-price${choice.model.modality === 'video' ? ' is-video' : ''}`}>{officialModelPrice(choice.model,l)}</span> : null}
         </span>
-        {choice.value === selectionValue ? <Check size={16} aria-hidden="true" /> : <span className="official-model-check-space" />}
-      </button>
+        {configurable ? <Settings2 size={16} aria-hidden="true" className="official-model-configure-icon" />
+          : choice.value === selectionValue ? <Check size={16} aria-hidden="true" /> : <span className="official-model-check-space" />}
+    </button>;
+  };
+  const options = <div id={`${id}-listbox`} className="official-model-options" role="listbox" aria-label={props.label}>
+    {grouped ? visibleGroups.map(group => <div className="official-model-company" role="group" aria-label={group.name} key={group.name}>
+      <div className="official-model-company-heading"><ModelBrandIcon model={group.model} /><strong>{group.name}</strong></div>
+      {group.choices.map(({ choice, index }) => renderOption(choice, index))}
+    </div>) : visible.map((choice, index) => <Fragment key={choice.model.id}>
+      {!catalog && choice.value !== gatewayRecommendedModelId && choice.brand && (choice.brand !== visible[index-1]?.brand || visible[index-1]?.value === gatewayRecommendedModelId) ? <div className="official-model-menu-group" role="presentation">{choice.brand}</div> : null}
+      {renderOption(choice, index)}
     </Fragment>)}
     {visible.length === 0 ? <div className="official-model-empty" role="status">{l('未找到匹配模型', 'No matching models')}</div> : null}
   </div>;
@@ -208,7 +251,7 @@ export default function OfficialModelSelect(props: {
         <ChevronDown size={16} aria-hidden="true" />
       </button>
     </span>
-    {expanded && position ? createPortal(<div ref={menuRef} className={`official-model-menu${catalog ? ' official-model-menu--catalog' : ''}`} style={{
+    {expanded && position ? createPortal(<div ref={menuRef} className={`official-model-menu${catalog ? ' official-model-menu--catalog' : ''}${grouped ? ' official-model-menu--grouped' : ''}${props.compactOptions ? ' official-model-menu--compact' : ''}`} style={{
       left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight,
       transform: position.above ? 'translateY(-100%)' : undefined,
     }}>
@@ -244,11 +287,12 @@ function modelDetail(model: GatewayModel, l: LocalizeCopy): string {
       ranges.push(start === end ? `${start}` : `${start}–${end}`);
     }
     const duration = ranges.length ? l(`时长 ${ranges.join('、')} 秒`, `Duration ${ranges.join(', ')} seconds`, `Längd ${ranges.join(', ')} sekunder`) : '';
-    return [duration, model.resolutions?.join(' / ')].filter(Boolean).join(' · ');
+    return [duration, (gatewayVideoSizes(model).length ? gatewayVideoSizes(model) : model.resolutions)?.join(' / ')].filter(Boolean).join(' · ');
   }
   return brand ?? '';
 }
 
-function modelVendor(model: GatewayModel): string | undefined {
-  return model.vendor && !gatewayRelayIdentity.test(model.vendor) ? model.vendor : modelBrand(model)?.name;
+export function modelVendor(model: GatewayModel): string | undefined {
+  if (model.vendor && !gatewayRelayIdentity.test(model.vendor)) return model.vendor;
+  return model.modality === 'video' ? undefined : modelBrand(model)?.name;
 }

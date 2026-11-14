@@ -201,25 +201,20 @@
   background: #000;
 }
 
-.dashboard-generation-result-media-open {
-  position: absolute;
-  inset: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-
-.dashboard-generation-result-media:hover .dashboard-generation-result-media-open {
-  bottom: 56px;
-}
-
 .dashboard-generation-result-play,
 .dashboard-generation-result-loading {
   position: absolute;
   display: grid;
   place-items: center;
   pointer-events: none;
+}
+
+.dashboard-generation-result-play {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 56%);
+  color: #fff;
 }
 
 .dashboard-generation-result-copy {
@@ -248,17 +243,112 @@
   white-space: nowrap;
 }
 
-.dashboard-generation-result-card[role="link"] {
+.dashboard-generation-result-card:is([role="link"], [role="button"]) {
   cursor: pointer;
 }
 
-.dashboard-generation-result-card[role="link"]:hover {
+.dashboard-generation-result-card:is([role="link"], [role="button"]):hover {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
-.dashboard-generation-result-card[role="link"]:focus-visible {
+.dashboard-generation-result-card:is([role="link"], [role="button"]):focus-visible {
   outline: 2px solid var(--state-focus-ring);
   outline-offset: 2px;
+}
+
+.dashboard-generation-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 88%);
+}
+
+.dashboard-generation-preview {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1200px, 100%);
+  height: min(900px, calc(100dvh - 32px));
+  min-height: 0;
+  color: #f5f5f5;
+}
+
+.dashboard-generation-preview > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 52px;
+}
+
+.dashboard-generation-preview > header > strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-generation-preview > header > div {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.dashboard-generation-preview > header button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 6px;
+  background: rgb(35 35 38 / 90%);
+  color: #f5f5f5;
+  cursor: pointer;
+}
+
+.dashboard-generation-preview > header button:hover {
+  background: rgb(60 60 64 / 96%);
+}
+
+.dashboard-generation-preview-media {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+.dashboard-generation-preview-media > :is(img, video) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.dashboard-generation-preview-media > video {
+  background: #000;
+}
+
+.dashboard-generation-preview-media > p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #f5f5f5;
+}
+
+.dashboard-generation-preview-media > p button {
+  padding: 5px 10px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 6px;
+  background: rgb(35 35 38 / 90%);
+  color: #f5f5f5;
+  cursor: pointer;
 }
 
 .dashboard-generation-result-download,

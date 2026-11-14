@@ -10,6 +10,7 @@ export type ImageGenerationSettingSection = {
   value: string;
   options: Array<{ value: string; label: string }>;
   ratio?: boolean;
+  slider?: boolean;
   disabled?: boolean;
   onChange(value: string): void;
 };
@@ -117,10 +118,10 @@ export default function ImageGenerationSettings(props: {
         onClick={() => setOpen(value => !value)}
       >
         <span className="image-generation-settings-summary">
-          <span><RectangleHorizontal size={15} strokeWidth={1.6} aria-hidden="true" />{props.summary.aspectRatio}</span>
-          <span>{props.countIcon === 'clock' ? <Clock3 size={14} strokeWidth={1.6} aria-hidden="true" /> : <Images size={14} strokeWidth={1.6} aria-hidden="true" />}{props.summary.count}</span>
-          <span>{props.summary.resolution}</span>
-          <span>{props.summary.quality}</span>
+          {props.summary.aspectRatio ? <span><RectangleHorizontal size={15} strokeWidth={1.6} aria-hidden="true" />{props.summary.aspectRatio}</span> : null}
+          {props.summary.count ? <span>{props.countIcon === 'clock' ? <Clock3 size={14} strokeWidth={1.6} aria-hidden="true" /> : <Images size={14} strokeWidth={1.6} aria-hidden="true" />}{props.summary.count}</span> : null}
+          {props.summary.resolution ? <span>{props.summary.resolution}</span> : null}
+          {props.summary.quality ? <span>{props.summary.quality}</span> : null}
         </span>
         <ChevronUp size={14} className={open ? 'is-open' : undefined} aria-hidden="true" />
       </button>
@@ -151,7 +152,7 @@ export default function ImageGenerationSettings(props: {
             {props.sections.map(section => (
               <section key={section.id} aria-labelledby={`${id}-${section.id}`}>
                 <h3 id={`${id}-${section.id}`}>{section.label}</h3>
-                <div
+                {section.slider ? <RangeSettingSection section={section} /> : <div
                   className={section.ratio ? 'image-generation-ratio-options' : 'image-generation-segment-options'}
                   role="radiogroup"
                   aria-label={section.label}
@@ -171,7 +172,7 @@ export default function ImageGenerationSettings(props: {
                       <span>{option.label}</span>
                     </button>
                   ))}
-                </div>
+                </div>}
               </section>
             ))}
           </div>
@@ -180,6 +181,61 @@ export default function ImageGenerationSettings(props: {
       ) : null}
     </div>
   );
+}
+
+function RangeSettingSection({ section }: { section: ImageGenerationSettingSection }) {
+  const l = useLocalizedCopy();
+  const [draft, setDraft] = useState(section.value);
+  const values = section.options.map(option => Number(option.value));
+  const selectedIndex = Math.max(0, section.options.findIndex(option => option.value === section.value));
+  const maxIndex = Math.max(0, section.options.length - 1);
+  const marks = [...new Set([0, Math.floor(maxIndex / 2), maxIndex])];
+
+  useEffect(() => setDraft(section.value), [section.value]);
+
+  function commitDraft() {
+    const requested = Number(draft);
+    if (draft.trim() && Number.isFinite(requested) && values.length) {
+      const nearest = values.reduce((best, value) => Math.abs(value - requested) < Math.abs(best - requested) ? value : best);
+      section.onChange(String(nearest));
+      setDraft(String(nearest));
+    } else setDraft(section.value);
+  }
+
+  return <div className="image-generation-range-setting">
+    <div className="image-generation-range-main">
+      <input
+        type="range"
+        aria-label={section.label}
+        aria-valuetext={section.options[selectedIndex]?.label}
+        min={0}
+        max={maxIndex}
+        step={1}
+        value={selectedIndex}
+        disabled={section.disabled || maxIndex === 0}
+        onChange={event => section.options[Number(event.target.value)] && section.onChange(section.options[Number(event.target.value)]!.value)}
+        style={{ background: `linear-gradient(to right, var(--accent) ${maxIndex ? selectedIndex / maxIndex * 100 : 0}%, var(--border-strong) 0)` }}
+      />
+      <div className="image-generation-range-marks" aria-hidden="true">
+        {marks.map(index => <span key={index}>{section.options[index]?.value}</span>)}
+      </div>
+    </div>
+    <label className="image-generation-range-value">
+      <input
+        type="number"
+        aria-label={section.label}
+        min={values.length ? Math.min(...values) : undefined}
+        max={values.length ? Math.max(...values) : undefined}
+        step={1}
+        value={draft}
+        disabled={section.disabled || values.length === 0}
+        onChange={event => setDraft(event.target.value)}
+        onBlur={commitDraft}
+        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
+      />
+      <span>{l('秒', 's', 's')}</span>
+    </label>
+  </div>;
 }
 
 function ratioShape(value: string): { width: number; height: number } {

@@ -21,7 +21,10 @@ export function GatewayAccountSettingsView(props: {
   const l = useLocalizedCopy();
   const [state, setState] = useState<GatewayAccountState | undefined>(props.accountState);
   const [authorization, setAuthorization] = useState<GatewayAuthorization>();
-  const [confirmingAuthorization, setConfirmingAuthorization] = useState(() => window.location.hash === '#/account?login=complete');
+  const [confirmingAuthorization, setConfirmingAuthorization] = useState(() =>
+    window.location.hash.startsWith('#/account?')
+    && new URLSearchParams(window.location.hash.split('?')[1]).get('login') === 'complete'
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const callback = useRef(props.onStateChange); callback.current = props.onStateChange;
@@ -56,7 +59,7 @@ export function GatewayAccountSettingsView(props: {
   }
   useEffect(() => {
     alive.current = true;
-    void refresh().catch(() => { if (alive.current) setError(l('账户服务暂不可用，请稍后重试', 'Account service is unavailable. Try again later.')); });
+    void refresh(confirmingAuthorization).catch(() => { if (alive.current) setError(l('账户服务暂不可用，请稍后重试', 'Account service is unavailable. Try again later.')); });
     const onReturn = () => {
       if (busyRef.current) return;
       setConfirmingAuthorization(true);

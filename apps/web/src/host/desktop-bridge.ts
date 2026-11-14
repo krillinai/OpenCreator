@@ -6,6 +6,8 @@ import type {
   HostNotification
 } from './bridge.js';
 
+const authorizationReturnEvent = 'opencreator:authorization-return';
+
 type DesktopApi = {
   kind: 'desktop';
   windowChrome?: {
@@ -76,6 +78,10 @@ export function readDesktopHostBridge(): DesktopHostBridge | undefined {
     kind: 'desktop',
     authorizationReturnUrl: 'opencreator://auth/complete',
     billingReturnUrl: 'opencreator://billing/return',
+    subscribeAuthorizationReturn: listener => {
+      window.addEventListener(authorizationReturnEvent, listener);
+      return () => window.removeEventListener(authorizationReturnEvent, listener);
+    },
     ...(windowChrome === undefined ? {} : { windowChrome }),
     readAppVersion: () => api.readAppVersion(),
     readConnectionConfig: () => api.readConnectionConfig(),
@@ -102,7 +108,10 @@ export function readDesktopHostBridge(): DesktopHostBridge | undefined {
 }
 
 export function subscribeDesktopNavigation(listener: (route: string) => void): () => void {
-  return window.opencreatorDesktop?.subscribeNavigation(listener) ?? (() => undefined);
+  return window.opencreatorDesktop?.subscribeNavigation(route => {
+    if (route === '#/account?login=complete') window.dispatchEvent(new Event(authorizationReturnEvent));
+    else listener(route);
+  }) ?? (() => undefined);
 }
 
 export function signalDesktopWorkspaceReady(): void {

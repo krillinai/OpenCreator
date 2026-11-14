@@ -621,7 +621,7 @@ OpenCreator/
 | ماحول کا متغیر | طے شدہ | مقصد |
 | --- | --- | --- |
 | `OPENCREATOR_DATA_DIR` | `.runtime` | OpenCreator ڈیٹابیس، Run، منسلکات اور زیرِ انتظام ورک اسپیس |
-| `OPENCREATOR_GATEWAY_ORIGIN` | `https://www.open-creator.ai` | لاگ اِن، رکنیت، کریڈٹ اور آفیشل ماڈل خدمات کا Gateway؛ مقامی Gateway کے لیے بدلیں |
+| `OPENCREATOR_GATEWAY_ORIGIN` | `https://open-creator.ai` | لاگ اِن، رکنیت، کریڈٹ اور آفیشل ماڈل خدمات کا Gateway؛ مقامی Gateway کے لیے بدلیں |
 | `OPENCREATOR_CODEX_BIN` | `codex` | Codex CLI کی قابلِ اجرا فائل کا راستہ |
 | `CODEX_HOME` | `~/.codex` | Codex سیشن، ترتیب، Skills، MCP اور Profiles کا مستند ذریعہ |
 | `OPENCREATOR_DEFAULT_CWD` | موجودہ کام کا فولڈر | daemon کا طے شدہ کام کا فولڈر |

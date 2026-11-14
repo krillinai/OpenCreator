@@ -239,8 +239,9 @@ async function videoRequest(
   }
   const reference = stage.inputArtifacts.find(artifact => artifact.kind === 'reference_image');
   const officialModels = stage.job.state.officialModels;
-  const model = officialModels && typeof officialModels === 'object' && !Array.isArray(officialModels)
-    ? readString(officialModels.video) : readString(stage.job.state.model);
+  const source = stage.stageRun.progress.videoServiceSource ?? stage.job.state.videoServiceSource;
+  const model = readString(stage.stageRun.progress.videoModelId) || (source !== 'manual' && officialModels && typeof officialModels === 'object' && !Array.isArray(officialModels)
+    ? readString(officialModels.video) : readString(stage.job.state.model));
   return {
     prompt,
     provider: readProvider(stage.job.state.provider),

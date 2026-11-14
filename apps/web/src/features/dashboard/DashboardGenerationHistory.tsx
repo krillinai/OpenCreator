@@ -1,11 +1,12 @@
 import type { CreatorArtifact, CreatorJob } from '@opencreator/protocol';
-import { ArrowLeft, ArrowUpRight, CircleAlert, Download, FileText, Image as ImageIcon, LoaderCircle, Music2, PackageOpen, Trash2, Video } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, ArrowUpRight, CircleAlert, Download, FileText, Image as ImageIcon, LoaderCircle, Music2, PackageOpen, Play, Trash2, Video, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
-import { ProjectCoverImage, projectCover, youtubeThumbnailUrls } from '../projects/ProjectsPage.js';
+import { isMeaningfulCreatorJob, ProjectCoverImage, projectCover, youtubeThumbnailUrls } from '../projects/ProjectsPage.js';
 import { generationHistoryTypeForWorkspace, type GenerationHistoryType } from './generation-history-type.js';
 import { creatorWorkspaceForTemplate } from './creator-workspace.js';
 import './DashboardGenerationHistory.css';
@@ -37,6 +38,10 @@ type HistoryOutput = {
   kind: 'video' | 'image' | 'audio' | 'subtitle' | 'document';
 };
 
+type HistoryEntry =
+  | { kind: 'process'; job: CreatorJob; createdAt: string }
+  | { kind: 'output'; output: HistoryOutput; createdAt: string };
+
 export default function DashboardGenerationHistory(props: {
   projectId: string;
   service: Pick<CreatorWebService, 'listJobs' | 'openArtifact'>
@@ -55,6 +60,8 @@ export default function DashboardGenerationHistory(props: {
   const [type, setType] = useState<GenerationHistoryType>(props.initialType ?? 'all');
   const [visibleCount, setVisibleCount] = useState(props.initialVisibleCount ?? pageSize);
   const [downloadingId, setDownloadingId] = useState<string>();
+  const [previewOutput, setPreviewOutput] = useState<HistoryOutput>();
+  const previewTriggerRef = useRef<HTMLElement | null>(null);
   const [jobPendingDeletion, setJobPendingDeletion] = useState<CreatorJob>();
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -90,35 +97,29 @@ export default function DashboardGenerationHistory(props: {
       : output.kind === type))
     .sort((left, right) => right.artifact.createdAt.localeCompare(left.artifact.createdAt)),
   [jobs, l, type]);
-  const groups = useMemo(() => {
-    const result: Array<{ date: string; items: HistoryOutput[] }> = [];
-    for (const output of outputs) {
-      const date = output.artifact.createdAt.slice(0, 10);
-      const group = result.at(-1);
-      if (group?.date === date) group.items.push(output);
-      else result.push({ date, items: [output] });
-    }
-    return result;
-  }, [outputs]);
   const processJobs = jobs.filter(job => (
     (type === 'all' || generationHistoryTypeForWorkspace(creatorWorkspaceForTemplate(job.templateId)) === type)
+    && isMeaningfulCreatorJob(job)
     && processStageForJob(job) !== undefined
   ));
-  const processGroups = useMemo(() => {
-    const result: Array<{ date: string; jobs: CreatorJob[] }> = [];
-    for (const job of processJobs) {
-      const stage = processStageForJob(job)!;
-      const date = (stage.startedAt ?? job.createdAt).slice(0, 10);
+  const historyGroups = useMemo(() => {
+    const entries: HistoryEntry[] = [
+      ...processJobs.map(job => ({
+        kind: 'process' as const, job, createdAt: processStageForJob(job)?.startedAt ?? job.createdAt
+      })),
+      ...outputs.slice(0, visibleCount).map(output => ({
+        kind: 'output' as const, output, createdAt: output.artifact.createdAt
+      }))
+    ].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const result: Array<{ date: string; items: HistoryEntry[] }> = [];
+    for (const entry of entries) {
+      const date = entry.createdAt.slice(0, 10);
       const group = result.at(-1);
-      if (group?.date === date) group.jobs.push(job);
-      else result.push({ date, jobs: [job] });
+      if (group?.date === date) group.items.push(entry);
+      else result.push({ date, items: [entry] });
     }
     return result;
-  }, [processJobs]);
-  const visibleGroups = groups.map(group => {
-    const start = outputs.indexOf(group.items[0]!);
-    return { ...group, items: group.items.slice(0, Math.max(0, visibleCount - start)) };
-  }).filter(group => group.items.length > 0);
+  }, [outputs, processJobs, visibleCount]);
 
   async function download(output: HistoryOutput) {
     if (downloadingId !== undefined) return;
@@ -136,6 +137,21 @@ export default function DashboardGenerationHistory(props: {
       setError(l('文件下载失败，请重试。', 'Could not download the file. Try again.'));
     } finally {
       setDownloadingId(undefined);
+    }
+  }
+
+  const closePreview = useCallback(() => {
+    const trigger = previewTriggerRef.current;
+    setPreviewOutput(undefined);
+    window.setTimeout(() => trigger?.focus(), 0);
+  }, []);
+
+  function openOutput(output: HistoryOutput, trigger: HTMLElement) {
+    if (isPreviewableOutput(output)) {
+      previewTriggerRef.current = trigger;
+      setPreviewOutput(output);
+    } else {
+      props.onOpenJob(output.job);
     }
   }
 
@@ -183,15 +199,17 @@ export default function DashboardGenerationHistory(props: {
           >{item.label}</button>)}
         </div>
 
-        {processGroups.length > 0 ? <section className="dashboard-generation-running" aria-label={l('生成项目', 'Generation projects')}>
-          {processGroups.map(group => <section className="dashboard-generation-history-date" key={group.date}>
+        {historyGroups.map(group => <section className="dashboard-generation-history-date" key={group.date}>
             <h2>{formatDate(group.date, language)}</h2>
             <div className="dashboard-generation-history-grid">
-              {group.jobs.map(job => {
+              {group.items.map(item => {
+                if (item.kind === 'process') {
+                const job = item.job;
                 const stage = processStageForJob(job)!;
                 const failed = stage.status === 'failed';
                 const pending = !failed && (job.status === 'draft' || job.status === 'needs_input');
-                const openable = failed || pending;
+                const openable = failed || pending || (job.templateId === 'video-download'
+                  && (stage.status === 'queued' || stage.status === 'running'));
                 const percent = typeof stage.progress.percent === 'number' ? Math.round(stage.progress.percent) : 0;
                 const message = pending
                   ? job.templateId === 'video-download'
@@ -214,15 +232,18 @@ export default function DashboardGenerationHistory(props: {
                     props.onOpenJob(job);
                   }}
                   onKeyDown={event => {
-                    if (!openable || (event.key !== 'Enter' && event.key !== ' ')) return;
+                    if (!openable || (job.templateId === 'video-download' && event.target !== event.currentTarget)
+                      || (event.key !== 'Enter' && event.key !== ' ')) return;
                     event.preventDefault();
                     props.onOpenJob(job);
                   }}
                 >
                   <div className="dashboard-generation-result-media">
-                    <ProjectCoverImage job={job} youtubeCovers={projectPreviewUrls(job)} fallback={projectCover(job.templateId)} service={props.service.openProjectCover ? props.service as Pick<CreatorWebService, 'openProjectCover'> : undefined} />
+                    {job.templateId === 'video-generation'
+                      ? <VideoGenerationHistoryCover job={job} service={props.service} />
+                      : <ProjectCoverImage job={job} youtubeCovers={projectPreviewUrls(job)} fallback={projectCover(job.templateId)} service={props.service.openProjectCover ? props.service as Pick<CreatorWebService, 'openProjectCover'> : undefined} />}
                     <span className="dashboard-generation-job-status">{failed ? <CircleAlert size={20} /> : pending ? <PackageOpen size={20} /> : <LoaderCircle size={20} className="smart-dubbing-spinner" />}</span>
-                    <span className="dashboard-generation-running-percent">{pending ? statusLabel : `${percent}%`}</span>
+                    <span className="dashboard-generation-running-percent">{failed || pending ? statusLabel : `${percent}%`}</span>
                     {downloadable ? <button type="button" className="dashboard-generation-result-download" disabled={downloadingId !== undefined} aria-busy={downloadingId === downloadable.id} aria-label={`${l('下载', 'Download')} ${artifactName(downloadable, l)}`} title={l('下载', 'Download')} onClick={event => { event.stopPropagation(); void downloadJob(job); }}>
                       {downloadingId === downloadable.id ? <LoaderCircle size={16} className="smart-dubbing-spinner" /> : <Download size={16} />}
                     </button> : null}
@@ -234,39 +255,31 @@ export default function DashboardGenerationHistory(props: {
                     <small>{workflowLabel(job.templateId, l)} · {message}</small>
                   </div>
                 </article>;
-              })}
-            </div>
-          </section>)}
-        </section> : null}
-        {error ? <p className="dashboard-generation-history-error" role="alert">{error}<button type="button" onClick={() => void load()}>{l('重试', 'Retry')}</button></p> : null}
-        {loading && outputs.length === 0 && processJobs.length === 0 ? <div className="dashboard-generation-history-empty" role="status"><LoaderCircle className="smart-dubbing-spinner" size={24} />{l('正在加载生成记录', 'Loading generation history')}</div> : null}
-        {!loading && outputs.length === 0 && processJobs.length === 0 ? <div className="dashboard-generation-history-empty"><PackageOpen size={28} /><strong>{l('还没有生成记录', 'No generation history yet')}</strong><p>{l('完成一次创作后，结果会显示在这里。', 'Your results will appear here after you create something.')}</p></div> : null}
-
-        {visibleGroups.map(group => <section className="dashboard-generation-history-date" key={group.date}>
-          <h2>{formatDate(group.date, language)}</h2>
-          <div className="dashboard-generation-history-grid">
-            {group.items.map(output => {
+                }
+              const output = item.output;
               const openable = [
                 'video-translation', 'transcription', 'video-download', 'cover', 'cover-generator',
                 'image-generation', 'video-generation', 'smart-dubbing', 'short-video-script', 'auto-clip'
               ].includes(output.job.templateId);
+              const previewable = isPreviewableOutput(output);
               return <article
                 className="dashboard-generation-result-card"
                 key={output.artifact.id}
-                role={openable ? 'link' : undefined}
-                tabIndex={openable ? 0 : undefined}
-                aria-label={openable ? `${l('打开', 'Open')} ${output.title}` : undefined}
+                role={previewable ? 'button' : openable ? 'link' : undefined}
+                tabIndex={previewable || openable ? 0 : undefined}
+                aria-label={previewable ? `${l('预览', 'Preview')} ${output.title}` : openable ? `${l('打开', 'Open')} ${output.title}` : undefined}
                 onClick={event => {
-                  if (!openable || (event.target as HTMLElement).closest('button, video')) return;
-                  props.onOpenJob(output.job);
+                  if ((!previewable && !openable) || (event.target as HTMLElement).closest('button')) return;
+                  openOutput(output, event.currentTarget);
                 }}
                 onKeyDown={event => {
-                  if (!openable || (event.key !== 'Enter' && event.key !== ' ')) return;
+                  if ((!previewable && !openable) || event.target !== event.currentTarget
+                    || (event.key !== 'Enter' && event.key !== ' ')) return;
                   event.preventDefault();
-                  props.onOpenJob(output.job);
+                  openOutput(output, event.currentTarget);
                 }}
               >
-                <GenerationArtifactMedia output={output} service={props.service} onOpen={openable ? () => props.onOpenJob(output.job) : undefined} />
+                <GenerationArtifactMedia output={output} service={props.service} />
                 <div className="dashboard-generation-result-copy">
                   <strong title={output.title}>{output.title}</strong>
                   <small>{output.type} · {output.name} · V{output.artifact.version} · {formatDateTime(output.artifact.createdAt, language)}</small>
@@ -276,9 +289,12 @@ export default function DashboardGenerationHistory(props: {
                 </button>
                 {props.service.deleteJob ? <button type="button" className="dashboard-generation-result-delete" aria-label={`${l('删除项目', 'Delete project')} ${output.title}`} title={l('删除项目', 'Delete project')} onClick={event => { event.stopPropagation(); requestDeletion(output.job); }}><Trash2 size={16} /></button> : null}
               </article>;
-            })}
+              })}
           </div>
         </section>)}
+        {error ? <p className="dashboard-generation-history-error" role="alert">{error}<button type="button" onClick={() => void load()}>{l('重试', 'Retry')}</button></p> : null}
+        {loading && outputs.length === 0 && processJobs.length === 0 ? <div className="dashboard-generation-history-empty" role="status"><LoaderCircle className="smart-dubbing-spinner" size={24} />{l('正在加载生成记录', 'Loading generation history')}</div> : null}
+        {!loading && !error && outputs.length === 0 && processJobs.length === 0 ? <div className="dashboard-generation-history-empty"><PackageOpen size={28} /><strong>{l('还没有生成记录', 'No generation history yet')}</strong><p>{l('完成一次创作后，结果会显示在这里。', 'Your results will appear here after you create something.')}</p></div> : null}
         {visibleCount < outputs.length ? <button type="button" className="dashboard-generation-history-more" onClick={() => setVisibleCount(count => count + pageSize)}>{l('加载更多', 'Load more')}</button> : null}
       </div>
       <ConfirmDialog
@@ -294,20 +310,25 @@ export default function DashboardGenerationHistory(props: {
         onCancel={() => { if (!deleting) { setJobPendingDeletion(undefined); setDeleteFiles(false); } }}
         onConfirm={() => void confirmDeletion()}
       />
+      {previewOutput ? <HistoryMediaPreviewDialog
+        output={previewOutput}
+        service={props.service}
+        downloading={downloadingId === previewOutput.artifact.id}
+        onDownload={() => void download(previewOutput)}
+        onClose={closePreview}
+      /> : null}
     </main>
   );
 }
 
 function GenerationArtifactMedia(props: {
   output: HistoryOutput;
-  service: Pick<CreatorWebService, 'openArtifact'>;
-  onOpen?(): void;
+  service: Pick<CreatorWebService, 'openArtifact'> & Partial<Pick<CreatorWebService, 'openProjectCover'>>;
 }) {
-  const l = useLocalizedCopy();
   const { output } = props;
+  const subtitlePreview = output.kind === 'subtitle' && output.job.templateId === 'video-translation';
   const [url, setUrl] = useState<string>();
   const [failed, setFailed] = useState(false);
-  const [controls, setControls] = useState(false);
   useEffect(() => {
     if (output.kind !== 'video' && output.kind !== 'image') return;
     let active = true;
@@ -328,17 +349,105 @@ function GenerationArtifactMedia(props: {
     };
   }, [output.artifact.id, output.job.id, output.kind, props.service]);
 
-  return <div className="dashboard-generation-result-media" data-kind={output.kind}
-    onMouseEnter={() => setControls(true)} onMouseLeave={() => setControls(false)}>
-    {output.kind === 'video' && url ? <video src={url} controls={controls} preload="metadata" aria-label={output.name} /> : null}
+  return <div className="dashboard-generation-result-media" data-kind={output.kind}>
+    {output.kind === 'video' && url ? <video src={url} preload="metadata" aria-label={output.name} /> : null}
     {output.kind === 'image' && url ? <img src={url} alt={output.name} /> : null}
-    {props.onOpen && url ? <button type="button" tabIndex={-1} className="dashboard-generation-result-media-open"
-      aria-label={`${l('打开项目编辑区', 'Open project editor')} · ${output.title}`}
-      onClick={event => { event.stopPropagation(); props.onOpen?.(); }} /> : null}
-    {(output.kind !== 'video' && output.kind !== 'image') || failed ? <span>{artifactIcon(output.kind, 30)}</span> : null}
-    {output.kind === 'video' && !url ? <span className="dashboard-generation-result-play"><Video size={28} /></span> : null}
+    {subtitlePreview ? <ProjectCoverImage job={output.job} youtubeCovers={projectPreviewUrls(output.job)} fallback={projectCover(output.job.templateId)} service={props.service.openProjectCover ? props.service as Pick<CreatorWebService, 'openProjectCover'> : undefined} /> : null}
+    {((output.kind !== 'video' && output.kind !== 'image' && !subtitlePreview) || failed) ? <span>{artifactIcon(output.kind, 30)}</span> : null}
+    {output.kind === 'video' && isPreviewableOutput(output) ? <span className="dashboard-generation-result-play"><Play size={24} fill="currentColor" /></span> : null}
     {(output.kind === 'video' || output.kind === 'image') && !url && !failed ? <span className="dashboard-generation-result-loading"><LoaderCircle size={22} className="smart-dubbing-spinner" /></span> : null}
   </div>;
+}
+
+function HistoryMediaPreviewDialog(props: {
+  output: HistoryOutput;
+  service: Pick<CreatorWebService, 'openArtifact'>;
+  downloading: boolean;
+  onDownload(): void;
+  onClose(): void;
+}) {
+  const l = useLocalizedCopy();
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const [url, setUrl] = useState<string>();
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | undefined;
+    setUrl(undefined);
+    setLoading(true);
+    setFailed(false);
+    void props.service.openArtifact(props.output.job.id, props.output.artifact.id)
+      .then(async response => {
+        if (!response.ok) throw new Error('preview_failed');
+        objectUrl = URL.createObjectURL(await response.blob());
+        if (active) setUrl(objectUrl);
+        else URL.revokeObjectURL(objectUrl);
+      })
+      .catch(() => { if (active) setFailed(true); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [props.output.artifact.id, props.output.job.id, props.service, retryCount]);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        props.onClose();
+      } else if (event.key === 'Tab') {
+        const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), video[controls]') ?? [])];
+        if (focusable.length === 0) return;
+        const index = focusable.indexOf(document.activeElement as HTMLElement);
+        event.preventDefault();
+        focusable[(index + (event.shiftKey ? focusable.length - 1 : 1)) % focusable.length]?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [props.onClose]);
+
+  return createPortal(
+    <div className="dashboard-generation-preview-backdrop" onMouseDown={event => {
+      if (event.target === event.currentTarget) props.onClose();
+    }}>
+      <section ref={dialogRef} className="dashboard-generation-preview" role="dialog" aria-modal="true"
+        aria-label={`${l('预览', 'Preview')} ${props.output.title}`}>
+        <header>
+          <strong>{props.output.title}</strong>
+          <div>
+            <button type="button" disabled={props.downloading} onClick={props.onDownload}
+              aria-label={`${l('下载', 'Download')} ${props.output.name}`} title={l('下载', 'Download')}>
+              {props.downloading ? <LoaderCircle size={18} className="smart-dubbing-spinner" /> : <Download size={18} />}
+            </button>
+            <button ref={closeRef} type="button" onClick={props.onClose}
+              aria-label={l('关闭预览', 'Close preview')} title={l('关闭预览', 'Close preview')}>
+              <X size={20} />
+            </button>
+          </div>
+        </header>
+        <div className="dashboard-generation-preview-media">
+          {loading ? <p role="status"><LoaderCircle size={20} className="smart-dubbing-spinner" />{l('正在加载预览', 'Loading preview')}</p> : null}
+          {failed ? <p role="alert">{l('文件预览加载失败，请稍后重试。', 'The file preview failed to load. Try again later.')}
+            <button type="button" onClick={() => setRetryCount(count => count + 1)}>{l('重试', 'Retry')}</button>
+          </p> : null}
+          {url && props.output.kind === 'video' ? <video src={url} controls autoPlay playsInline tabIndex={0} aria-label={props.output.name} /> : null}
+          {url && props.output.kind === 'image' ? <img src={url} alt={props.output.name} /> : null}
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function isPreviewableOutput(output: HistoryOutput): boolean {
+  return output.kind === 'image' || (output.kind === 'video' && output.job.templateId !== 'video-translation');
 }
 
 function processStageForJob(job: CreatorJob): CreatorJob['stages'][number] | undefined {
@@ -359,6 +468,47 @@ function downloadableArtifact(job: CreatorJob): CreatorArtifact | undefined {
 function projectPreviewUrls(job: CreatorJob): string[] {
   const thumbnail = readString(job.artifacts.find(artifact => artifact.kind === 'download_probe')?.metadata.thumbnailUrl);
   return [...new Set([...(thumbnail ? [thumbnail] : []), ...youtubeThumbnailUrls(readString(job.state.sourceUrl))])];
+}
+
+function VideoGenerationHistoryCover(props: {
+  job: CreatorJob;
+  service: Pick<CreatorWebService, 'openArtifact'> & Partial<Pick<CreatorWebService, 'openProjectCover'>>;
+}) {
+  const referenceId = props.job.state.referenceImageArtifactId;
+  const reference = typeof referenceId === 'string' ? props.job.artifacts.find(artifact => (
+    artifact.id === referenceId && artifact.kind === 'reference_image'
+    && artifact.path !== null && artifact.status !== 'stale'
+  )) : undefined;
+  const [cover, setCover] = useState<{ artifactId: string; url: string }>();
+  const [failedId, setFailedId] = useState<string>();
+
+  useEffect(() => {
+    if (!reference || failedId === reference.id) return;
+    let active = true;
+    let objectUrl: string | undefined;
+    void props.service.openArtifact(props.job.id, reference.id)
+      .then(async response => {
+        if (!response.ok) throw new Error('reference_cover_unavailable');
+        objectUrl = URL.createObjectURL(await response.blob());
+        if (active) setCover({ artifactId: reference.id, url: objectUrl });
+        else URL.revokeObjectURL(objectUrl);
+      })
+      .catch(() => { if (active) setFailedId(reference.id); });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [failedId, props.job.id, props.service, reference?.id]);
+
+  if (reference && cover?.artifactId === reference.id && failedId !== reference.id) {
+    return <img src={cover.url} alt="" onError={() => setFailedId(reference.id)} />;
+  }
+  return <ProjectCoverImage
+    job={props.job}
+    youtubeCovers={projectPreviewUrls(props.job)}
+    fallback={projectCover(props.job.templateId)}
+    service={props.service.openProjectCover ? props.service as Pick<CreatorWebService, 'openProjectCover'> : undefined}
+  />;
 }
 
 function artifactKind(kind: string): HistoryOutput['kind'] {

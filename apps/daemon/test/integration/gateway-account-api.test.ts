@@ -53,6 +53,44 @@ it('validates and forwards explicit model refreshes without caching the account 
   } finally { await server.close(); }
 });
 
+it('serves the public image catalog without an account session', async () => {
+  const readPublicImageCatalog = vi.fn(async () => ({ models: [{ id: 'vendor/image', modality: 'image', capabilities: [] }] }));
+  const server = Fastify();
+  try {
+    await registerGatewayAccountRoutes(server, { readPublicImageCatalog } as unknown as GatewayAccountService);
+    const response = await server.inject('/gateway/models/catalog');
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json().models).toHaveLength(1);
+    expect(readPublicImageCatalog).toHaveBeenCalledOnce();
+  } finally { await server.close(); }
+});
+
+it('serves the public video catalog without an account session', async () => {
+  const readPublicVideoCatalog = vi.fn(async () => ({ models: [{ id: 'vendor/video', modality: 'video', capabilities: [], durations: [5] }] }));
+  const server = Fastify();
+  try {
+    await registerGatewayAccountRoutes(server, { readPublicVideoCatalog } as unknown as GatewayAccountService);
+    const response = await server.inject('/gateway/models/catalog?modality=video');
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json().models).toEqual([{ id: 'vendor/video', modality: 'video', capabilities: [], durations: [5] }]);
+    expect(readPublicVideoCatalog).toHaveBeenCalledOnce();
+  } finally { await server.close(); }
+});
+
+it('serves the public text catalog without an account session', async () => {
+  const readPublicTextCatalog = vi.fn(async () => ({ models: [{ id: 'vendor/text', modality: 'text', vendor: 'Vendor', capabilities: ['chat'] }] }));
+  const server = Fastify();
+  try {
+    await registerGatewayAccountRoutes(server, { readPublicTextCatalog } as unknown as GatewayAccountService);
+    const response = await server.inject('/gateway/models/catalog?modality=text');
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).toEqual([{ id: 'vendor/text', modality: 'text', vendor: 'Vendor', capabilities: ['chat'] }]);
+    expect(readPublicTextCatalog).toHaveBeenCalledOnce();
+  } finally { await server.close(); }
+});
+
 it('proxies account-owned orders and encoded grant cursors without caching', async () => {
   const billing = vi.fn(async () => ({ items: [] }));
   const server = Fastify();

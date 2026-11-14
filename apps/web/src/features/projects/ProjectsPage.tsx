@@ -693,6 +693,8 @@ export function isMeaningfulCreatorJob(job: CreatorJob): boolean {
   ))) {
     return true;
   }
+  if (job.state.__creatorUserEdited === true) return true;
+  if (job.state.__creatorUserEdited === false) return false;
   return hasMeaningfulDraftState(job.templateId, job.state);
 }
 
@@ -711,6 +713,7 @@ function hasMeaningfulDraftState(templateId: string, state: CreatorJob['state'])
   }
   const defaults = creatorDraftDefaults(templateId);
   return Object.entries(state).some(([field, value]) => {
+    if (field === 'officialModels') return false;
     if (ignoredFields?.has(field)) return false;
     const alternatives = defaults[field];
     if (alternatives !== undefined) {

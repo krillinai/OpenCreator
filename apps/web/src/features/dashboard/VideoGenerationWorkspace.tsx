@@ -1,15 +1,18 @@
-import { gatewayModelDisplayName, gatewayModelIdMatches } from '@opencreator/protocol';
+import { gatewayModelDisplayName, gatewayModelIdMatches, gatewayModelReady } from '@opencreator/protocol';
 import {
   creatorPromptMaxLength,
   defaultVideoGenerationModels,
   gatewayVideoSizes,
   isPublicErrorFacts,
   readCreatorResultSnapshots,
-  videoGenerationModelIds,
   type CreatorArtifact,
   type CreatorJson,
   type CreatorServicesConfig,
+  type CreatorServicesCredentialField,
   type CreatorStageRun,
+  type GatewayAccountState,
+  type GatewayModel,
+  type GatewayVideoCatalog,
   type VideoGenerationDuration,
   type VideoGenerationProvider,
   type VideoGenerationSize
@@ -20,6 +23,7 @@ import {
   Download,
   ImagePlus,
   LoaderCircle,
+  RefreshCw,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -30,10 +34,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { publicErrorReason } from '../issues/issue-catalog.js';
 import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
-import { OfficialModelField, useOfficialServices } from './official-services.js';
-import OfficialVideoReferences, { readVideoReferences, videoReferenceIssue } from './OfficialVideoReferences.js';
-import { formatGatewayCreditAmount } from '../account/billing-display.js';
+import { useOfficialServices } from './official-services.js';
+import { readVideoReferences, videoReferenceIssue } from './OfficialVideoReferences.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
+import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import ImageGenerationSettings, { type ImageGenerationSettingSection } from './ImageGenerationSettings.js';
 import { CreatorTaskProgressNotice } from './CreatorCollaborationPanel.js';
@@ -52,11 +56,6 @@ type VideoResultVersion = {
   artifact: CreatorArtifact;
   state: Record<string, CreatorJson>;
 };
-type VideoModelOption = {
-  value: string;
-  label: string;
-};
-
 const sizes: Array<{ value: VideoGenerationSize; zh: string; en: string; ratio: string }> = [
   { value: '1280x720', zh: '横屏', en: 'Landscape', ratio: '16:9' },
   { value: '720x1280', zh: '竖屏', en: 'Portrait', ratio: '9:16' },
@@ -68,6 +67,7 @@ const providers: Array<{ value: VideoGenerationProvider; zh: string; en: string 
   { value: 'kling', zh: '可灵', en: 'Kling' },
   { value: 'veo', zh: 'Veo', en: 'Veo' }
 ];
+const localVideoModelId = '__local_video__';
 
 const providerDurations: Record<VideoGenerationProvider, VideoGenerationDuration[]> = {
   seedance: [5, 10],
@@ -100,11 +100,14 @@ export default function VideoGenerationWorkspace(props: {
   forceComposer?: boolean;
   onGenerated?(): void;
   creatorServicesService?: CreatorServicesSettingsService | null;
+  gatewayAccountService?: GatewayAccountSettingsService | null;
+  onGatewayStateChange?(state: GatewayAccountState): void;
 }) {
   const l = useLocalizedCopy();
   const requireGenerationAccess = useGenerationAccess();
   const session = useOptionalCreatorSession();
-  const official = useOfficialServices('video');
+  const official = useOfficialServices('video', true, models => session?.job.stages.length === 0 && session.job.artifacts.length === 0
+    ? preferredSeedanceVideoModel(models) : undefined);
   const mediaPreviewContextRef = useRef({ session, localize: l });
   mediaPreviewContextRef.current = { session, localize: l };
   const mediaPreviewJobId = session?.job.id;
@@ -117,13 +120,41 @@ export default function VideoGenerationWorkspace(props: {
   const [modelDefaults, setModelDefaults] = useState<Record<VideoGenerationProvider, string>>(
     () => ({ ...defaultVideoGenerationModels })
   );
+  const [videoConfig, setVideoConfig] = useState<CreatorServicesConfig['video'] | null>(null);
+  const [configuredCredentials, setConfiguredCredentials] = useState<CreatorServicesCredentialField[]>([]);
+  const [publicCatalog, setPublicCatalog] = useState<GatewayVideoCatalog | undefined>(() => props.gatewayAccountService?.getCachedVideoCatalog?.());
+  const [catalogState, setCatalogState] = useState<'loading' | 'ready' | 'error'>(() => props.gatewayAccountService?.getCachedVideoCatalog?.() ? 'ready' : 'loading');
+  const catalogRequest = useRef(0);
+  const catalogWork = useRef<{ service: GatewayAccountSettingsService; promise: Promise<GatewayVideoCatalog> }>();
+  const [pendingModelId, setPendingModelId] = useState<string | undefined>(() => readOptionalModel(session?.state.pendingVideoModelId));
+  const pendingValidation = useRef<string>();
   const [provider, setProvider] = useState<VideoGenerationProvider>(() => (
     initialProvider
   ));
+  const [selectedSource, setSelectedSource] = useState<'manual' | 'gateway'>(() => (
+    session?.state.videoServiceSource === 'manual' || session?.state.videoServiceSource === 'gateway'
+      ? session.state.videoServiceSource
+      : session?.state.officialModels || official.hasRememberedModel
+        || (official.ready && official.model?.id === preferredSeedanceVideoModel(official.models)?.id)
+        ? 'gateway' : 'manual'
+  ));
+  const usingOfficial = selectedSource === 'gateway';
+  const shouldDefaultOfficial = session?.job.stages.length === 0 && session.job.artifacts.length === 0
+    && !session.state.videoServiceSource && !session.state.pendingVideoModelId && official.ready
+    && (official.hasRememberedModel || official.model?.id === preferredSeedanceVideoModel(official.models)?.id);
+  useEffect(() => {
+    if (shouldDefaultOfficial && selectedSource === 'manual') {
+      setSelectedSource('gateway');
+      session?.updateDraft({ videoServiceSource: 'gateway' }, {
+        persist: session.job.id.startsWith('pending:') ? false : undefined,
+        userEdited: false
+      });
+    }
+  }, [shouldDefaultOfficial, selectedSource, session?.job.id]);
   const [model, setModel] = useState(() => readModel(session?.state.model, initialProvider));
-  const [size, setSize] = useState<VideoGenerationSize>(() => readSize(session?.state.size, official.official));
+  const [size, setSize] = useState<VideoGenerationSize>(() => readSize(session?.state.size, usingOfficial));
   const [duration, setDuration] = useState<VideoGenerationDuration>(() => (
-    readDuration(session?.state.duration, readProvider(session?.state.provider), official.official)
+    readDuration(session?.state.duration, readProvider(session?.state.provider), usingOfficial)
   ));
   const resultVersion = session?.job.state.resultVersion;
   const [videoUrl, setVideoUrl] = useState('');
@@ -131,29 +162,54 @@ export default function VideoGenerationWorkspace(props: {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [uploadingVideoReference, setUploadingVideoReference] = useState(false);
   const videoReferences = readVideoReferences(session?.state.videoReferences);
   const [taskControlPending, setTaskControlPending] = useState<'canceling' | 'resuming'>();
   const characterCount = useMemo(() => [...prompt.trim()].length, [prompt]);
-  const selectedProvider = official.official ? { zh: '官方服务', en: 'Official service' } : providers.find(item => item.value === provider) ?? providers[0]!;
-  const allModelOptions = useMemo(
-    () => providers.flatMap(item => createVideoModelOptions(
-      item.value,
-      modelDefaults[item.value],
-      item.value === provider ? model : ''
-    ).map(option => ({ ...option, vendor: item.en, durations: providerDurations[item.value] }))),
-    [model, modelDefaults, provider]
-  );
-  const activeModel = official.official ? official.model?.id ?? '' : model;
-  const selectedModelLabel = official.model ? gatewayModelDisplayName(official.model, l('官方模型', 'Official model')) : videoModelLabel(activeModel);
-  const availableSizes = official.official ? gatewayVideoSizes(official.model).map(videoSizeOption) : sizes;
+  const selectedProvider = usingOfficial ? { zh: '官方服务', en: 'Official service' } : { zh: '本地视频服务', en: 'Local video service' };
+  const localConfigured = videoConfig !== null && localVideoProviderReady(videoConfig, configuredCredentials, provider);
+  const localModel: GatewayModel | undefined = videoConfig ? {
+    id: localVideoModelId, name: l('本地视频服务', 'Local video service', 'Lokal videotjänst'),
+    vendor: l('本地', 'Local', 'Lokal'), modality: 'video', capabilities: [],
+    status: localConfigured ? 'ready' : 'temporarily_unavailable', durations: providerDurations[provider]
+  } : undefined;
+  const publicModels = publicCatalog?.models ?? [];
+  const catalogModels = [...(localModel ? [localModel] : []), ...(official.official ? official.models : publicModels)];
+  const loginRequiredModelIds = new Set(official.official ? [] : publicModels.map(item => item.id));
+  const selectedCatalogId = usingOfficial ? official.selected ?? official.model?.id ?? '' : pendingModelId ?? (localConfigured ? localVideoModelId : '');
+  function loadPublicCatalog(force = false) {
+    const request = ++catalogRequest.current;
+    const service = props.gatewayAccountService;
+    if (!service?.getVideoCatalog) { setCatalogState('error'); return; }
+    const cached = service.getCachedVideoCatalog?.();
+    if (cached) { setPublicCatalog(cached); setCatalogState('ready'); }
+    else setCatalogState('loading');
+    const promise = !force && catalogWork.current?.service === service
+      ? catalogWork.current.promise : service.getVideoCatalog({ refresh: force });
+    catalogWork.current = { service, promise };
+    void promise.then(catalog => {
+      if (request === catalogRequest.current) { setPublicCatalog(catalog); setCatalogState('ready'); }
+    }).catch(() => {
+      if (request === catalogRequest.current) setCatalogState(cached ? 'ready' : 'error');
+    }).finally(() => {
+      if (catalogWork.current?.promise === promise) catalogWork.current = undefined;
+    });
+  }
+  useEffect(() => {
+    if (!official.official) loadPublicCatalog();
+    return () => { catalogRequest.current++; };
+  }, [props.gatewayAccountService, official.official]);
+  const activeModel = usingOfficial ? official.model?.id ?? '' : model;
+  const selectedModelLabel = usingOfficial && official.model ? gatewayModelDisplayName(official.model, l('官方模型', 'Official model')) : videoModelLabel(activeModel);
+  const availableSizes = usingOfficial ? gatewayVideoSizes(official.model).map(videoSizeOption) : sizes;
   const selectedSize = availableSizes.find(item => item.value === size) ?? videoSizeOption(size);
+  const availableRatios = [...new Set(availableSizes.map(item => item.ratio))];
+  const resolutionSizes = availableSizes.filter(item => item.ratio === selectedSize.ratio);
   const referenceDuration = official.model?.videoOptions?.referenceDuration;
   const hasReferenceImage = !!referenceImageFile || (session?.job.artifacts ?? []).some(artifact => artifact.id === session?.state.referenceImageArtifactId && artifact.kind === 'reference_image') || videoReferences.some(ref => ref.role === 'image');
-  const durations = official.official ? (official.model?.durations ?? []).filter(value => !referenceDuration || !hasReferenceImage || value === referenceDuration) : providerDurations[provider];
-  const serviceReady = !uploadingVideoReference && (!official.official || (official.ready && availableSizes.length > 0 && durations.length > 0));
-  const quotedUnitsPerSecond = official.model?.price?.videoUnitsPerSecond?.[size.split('@')[0]!];
-  const quotedCredits = quotedUnitsPerSecond === undefined ? undefined : quotedUnitsPerSecond * duration / 1_000_000;
+  const referenceSupported = !usingOfficial || official.model?.capabilities.includes('image_to_video') === true;
+  const durations = usingOfficial ? (official.model?.durations ?? []).filter(value => !referenceDuration || !hasReferenceImage || value === referenceDuration) : providerDurations[provider];
+  const serviceReady = (usingOfficial
+    ? official.ready && availableSizes.length > 0 && durations.length > 0 : localConfigured);
   const resultVersions = useMemo(
     () => createVideoResultVersions(session?.job.artifacts ?? [], session?.state.resultSnapshots),
     [session?.job.artifacts, session?.state.resultSnapshots]
@@ -196,17 +252,22 @@ export default function VideoGenerationWorkspace(props: {
     session?.state.referenceImageArtifactId,
     'reference_image'
   );
+  const savedVideoImage = referenceImageFile || activeReferenceArtifact
+    ? undefined : videoReferences.find(ref => ref.role === 'image');
+  const selectedVideoReferences = savedVideoImage ? [savedVideoImage] : [];
   const currentReferenceName = referenceImageFile?.name
-    ?? readArtifactString(activeReferenceArtifact, 'fileName');
+    ?? readArtifactString(activeReferenceArtifact, 'fileName')
+    ?? savedVideoImage?.fileName;
   const referencePreviewArtifactId = referenceImageFile === undefined
     ? activeReferenceArtifact?.id
     : undefined;
-  const followsReferenceRatio = !official.official && provider === 'seedance' && Boolean(currentReferenceName);
+  const followsReferenceRatio = !usingOfficial && provider === 'seedance' && Boolean(currentReferenceName);
   const resultSettings = selectedResult?.state;
-  const resultProvider = resultSettings?.officialModels ? { value: 'seedance' as const, zh: '官方服务', en: 'Official service' } : providers.find(item => (
+  const resultOfficial = resultSettings?.videoServiceSource === 'gateway' || (!resultSettings?.videoServiceSource && !!resultSettings?.officialModels);
+  const resultProvider = resultOfficial ? { value: 'seedance' as const, zh: '官方服务', en: 'Official service' } : providers.find(item => (
     item.value === readProvider(resultSettings?.provider)
   )) ?? providers[0]!;
-  const resultSize = readSize(resultSettings?.size, !!resultSettings?.officialModels);
+  const resultSize = readSize(resultSettings?.size, resultOfficial);
   const resultSizeOption = videoSizeOption(resultSize);
   const resultWidth = readArtifactNumber(selectedResult?.artifact, 'width');
   const resultHeight = readArtifactNumber(selectedResult?.artifact, 'height');
@@ -221,38 +282,44 @@ export default function VideoGenerationWorkspace(props: {
     : l(resultSizeOption.zh, resultSizeOption.en);
   const resultArtifactDuration = readVideoDuration(selectedResult?.artifact.metadata.duration);
   const resultDuration = resultArtifactDuration === undefined
-    ? readDuration(resultSettings?.duration, resultProvider.value, !!resultSettings?.officialModels)
+    ? readDuration(resultSettings?.duration, resultProvider.value, resultOfficial)
     : Math.round(resultArtifactDuration * 100) / 100;
   const resultModel = readArtifactString(selectedResult?.artifact, 'model')
     ?? readOptionalModel(resultSettings?.model)
     ?? modelDefaults[resultProvider.value];
   const resultModelLabel = gatewayModelDisplayName(official.models.find(candidate => gatewayModelIdMatches(candidate.id, resultModel)) ?? { id: resultModel, name: modelLabels[resultModel] }, l('官方模型', 'Official model'));
+  const shouldLoadDefaultProvider = session !== null && (
+    session.state.provider === undefined || (
+      session.state.providerSource === undefined
+      && session.job.presetOrigin === null
+      && session.job.stages.length === 0
+      && session.job.artifacts.length === 0
+    )
+  );
 
   useEffect(() => {
-    if (official.official) return;
     if (props.creatorServicesService === null || props.creatorServicesService === undefined) {
       return undefined;
     }
     let active = true;
     const revision = settingsRevision.current;
-    void props.creatorServicesService.getConfig()
+    void (props.creatorServicesService.getLocalVideoConfig?.() ?? props.creatorServicesService.getConfig())
       .then(response => {
         if (!active) return;
         const defaults = videoModelDefaults(response.config);
+        setVideoConfig(response.config.video);
+        setConfiguredCredentials(response.configuredCredentials ?? []);
         setModelDefaults(defaults);
         if (settingsRevision.current !== revision) return;
-        const savedProvider = readOptionalProvider(session?.state.provider);
-        const nextProvider = savedProvider ?? response.config.video.provider;
-        const nextModel = readOptionalModel(session?.state.model) ?? defaults[nextProvider];
+        const savedProvider = shouldLoadDefaultProvider ? undefined : readOptionalProvider(session?.state.provider);
+        const candidates = [savedProvider, response.config.video.provider, ...providers.map(item => item.value)];
+        const nextProvider = candidates.find(candidate => candidate && localVideoProviderReady(response.config.video, response.configuredCredentials ?? [], candidate))
+          ?? savedProvider ?? response.config.video.provider;
+        const nextModel = (shouldLoadDefaultProvider ? undefined : readOptionalModel(session?.state.model)) ?? defaults[nextProvider];
         const nextDuration = readDuration(session?.state.duration, nextProvider);
         setProvider(nextProvider);
         setModel(nextModel);
         setDuration(nextDuration);
-        session?.updateDraft({
-          provider: nextProvider,
-          model: nextModel,
-          duration: nextDuration
-        }, { persist: false });
       })
       .catch(cause => {
         if (!active) return;
@@ -266,13 +333,42 @@ export default function VideoGenerationWorkspace(props: {
     return () => {
       active = false;
     };
-  }, [props.creatorServicesService, session?.job.id, official.official]);
+  }, [props.creatorServicesService, session?.job.id]);
 
   useEffect(() => {
-    if (!official.official) return;
+    if (!pendingModelId || official.authState !== 'signed_in' || official.activationState !== 'ready'
+      || pendingValidation.current === pendingModelId || !props.gatewayAccountService) return;
+    pendingValidation.current = pendingModelId;
+    let active = true;
+    void props.gatewayAccountService.getState({ refreshModels: true }).then(state => {
+      if (!active) return;
+      props.onGatewayStateChange?.(state);
+      const ready = state.models.filter(item => item.modality === 'video' && gatewayModelReady(item));
+      const requested = ready.find(item => gatewayModelIdMatches(item.id, pendingModelId));
+      const recommended = ready.find(item => gatewayModelIdMatches(item.id, state.recommendedModels?.video))
+        ?? ready.find(item => item.recommended);
+      const chosen = requested ?? recommended ?? ready[0];
+      if (chosen) {
+        setSelectedSource('gateway');
+        session?.updateDraft({ videoServiceSource: 'gateway', pendingVideoModelId: null, officialModels: { video: chosen.id } });
+      }
+      if (!requested) setNotice(chosen
+        ? recommended
+          ? l('所选模型当前账户不可用，已切换为推荐视频模型。', 'That model is unavailable for this account. A recommended video model is selected.', 'Modellen är inte tillgänglig för kontot. En rekommenderad videomodell har valts.')
+          : l('所选模型当前账户不可用，已切换为可用视频模型。', 'That model is unavailable for this account. An available video model is selected.', 'Modellen är inte tillgänglig för kontot. En tillgänglig videomodell har valts.')
+        : l('当前账户暂无可用的视频模型。', 'No video model is available for this account.', 'Inga videomodeller är tillgängliga för kontot.'));
+      if (!chosen) session?.updateDraft({ pendingVideoModelId: null });
+      setPendingModelId(undefined);
+    }).catch(() => {
+      if (active) { session?.updateDraft({ pendingVideoModelId: null }); setPendingModelId(undefined); setNotice(l('账户模型目录刷新失败，请重新选择模型。', 'Could not refresh your account models. Select a model again.', 'Kunde inte uppdatera kontots modeller. Välj en modell igen.')); }
+    });
+    return () => { active = false; };
+  }, [pendingModelId, official.authState, official.activationState, props.gatewayAccountService, props.onGatewayStateChange, session?.job.id]);
+
+  useEffect(() => {
     if (availableSizes.length && !availableSizes.some(item => item.value === size)) setSize(availableSizes[0]!.value);
     if (durations.length && !durations.includes(duration)) setDuration(durations[0]!);
-  }, [official.official, activeModel, size, duration, availableSizes.map(item => item.value).join(','), durations.join(',')]);
+  }, [usingOfficial, activeModel, size, duration, availableSizes.map(item => item.value).join(','), durations.join(',')]);
 
   useEffect(() => {
     const { session, localize } = mediaPreviewContextRef.current;
@@ -363,7 +459,7 @@ export default function VideoGenerationWorkspace(props: {
   }
 
   function updateProvider(nextProvider: VideoGenerationProvider) {
-    if (official.official) return;
+    if (usingOfficial) return;
     settingsRevision.current += 1;
     const nextDurations = providerDurations[nextProvider];
     const nextDuration = nextDurations.includes(duration) ? duration : nextDurations[0]!;
@@ -379,21 +475,25 @@ export default function VideoGenerationWorkspace(props: {
     setError('');
   }
 
-  function updateModel(nextModel: string) {
-    if (official.official) { official.selectModel(nextModel); return; }
-    settingsRevision.current += 1;
-    setModel(nextModel);
-    session?.updateDraft({ model: nextModel });
-    setError('');
-  }
-
-  function updateModelAndProvider(nextModel: string) {
-    const nextProvider = providers.find(item => (
-      modelDefaults[item.value] === nextModel
-      || (videoGenerationModelIds[item.value] as readonly string[]).includes(nextModel)
-    ))?.value ?? provider;
-    if (nextProvider !== undefined && nextProvider !== provider) updateProvider(nextProvider);
-    updateModel(nextModel);
+  function selectCatalogModel(id: string) {
+    if (id === localVideoModelId) {
+      setPendingModelId(undefined);
+      pendingValidation.current = undefined;
+      setSelectedSource('manual');
+      session?.updateDraft({ videoServiceSource: 'manual', pendingVideoModelId: null }, { semantic: true });
+      return;
+    }
+    if (official.official) {
+      official.selectModel(id);
+      setSelectedSource('gateway');
+      session?.updateDraft({ videoServiceSource: 'gateway' }, { semantic: true });
+      return;
+    }
+    if (!publicModels.some(item => gatewayModelIdMatches(item.id, id) && gatewayModelReady(item))) return;
+    setPendingModelId(id);
+    pendingValidation.current = undefined;
+    session?.updateDraft({ pendingVideoModelId: id }, { semantic: true });
+    requireGenerationAccess();
   }
 
   function updateSize(nextSize: VideoGenerationSize) {
@@ -429,15 +529,19 @@ export default function VideoGenerationWorkspace(props: {
   function removeReferenceImage() {
     setReferenceImageFile(undefined);
     setReferenceImageUrl('');
-    session?.updateDraft({ referenceImageArtifactId: null }, { semantic: true });
+    session?.updateDraft({ referenceImageArtifactId: null, videoReferences: [] }, { semantic: true });
     setError('');
     setNotice(l('参考图已移除', 'Reference image removed'));
   }
 
   async function generate() {
     if (busy || resumable) return;
-    if (!requireGenerationAccess()) return;
-    if (!serviceReady) { setError(l('官方视频服务暂不可用，请在账户页面检查连接状态', 'Official video service is unavailable. Check the connection in your account.')); return; }
+    if (!requireGenerationAccess(!usingOfficial && !pendingModelId)) return;
+    if (usingOfficial && official.ready && (!availableSizes.length || !durations.length)) {
+      setError(l('当前模型缺少画幅或时长配置，请更换模型', 'The selected model has no available format or duration. Select another model.'));
+      return;
+    }
+    if (usingOfficial && !serviceReady) { setError(l('官方视频服务暂不可用，请在账户页面检查连接状态', 'Official video service is unavailable. Check the connection in your account.')); return; }
     if (session === null) {
       setError(l(
         '视频生成服务暂不可用，请检查 Runtime 连接',
@@ -449,7 +553,21 @@ export default function VideoGenerationWorkspace(props: {
       setError(l('请先描述需要生成的视频', 'Describe the video you want to create'));
       return;
     }
-    const referenceIssue = official.official ? videoReferenceIssue(official.model, videoReferences, !!currentReferenceName) : undefined;
+    if (!usingOfficial && !localConfigured) {
+      setError(l('请先在设置中配置可用的本地视频服务。', 'Configure a ready local video service in Settings first.', 'Konfigurera en tillgänglig lokal videotjänst i inställningarna först.'));
+      return;
+    }
+    if (!usingOfficial && savedVideoImage) {
+      setError(l('请重新上传参考图后使用本地视频服务', 'Upload the reference image again to use a local video service'));
+      return;
+    }
+    if (usingOfficial && hasReferenceImage && !referenceSupported) {
+      setError(l('当前模型不支持参考图', 'The selected model does not support reference images'));
+      return;
+    }
+    const referenceIssue = usingOfficial
+      ? videoReferenceIssue(official.model, selectedVideoReferences, !!(referenceImageFile || activeReferenceArtifact))
+      : undefined;
     if (referenceIssue) {
       setError(referenceIssue === 'frames' ? l('请先添加首帧', 'Add a first frame before a last frame') : referenceIssue === 'mixed' ? l('首尾帧不能与参考素材同时使用', 'First and last frames cannot be combined with reference media') : referenceIssue === 'audio' ? l('参考音频需要搭配参考图片', 'Reference audio requires reference images') : l('参考素材超出当前模型支持范围，请移除多余素材', 'Reference media exceeds the selected model limits. Remove unsupported references.'));
       return;
@@ -459,12 +577,14 @@ export default function VideoGenerationWorkspace(props: {
     setSubmitting(true);
     session.updateDraft({
       prompt: prompt.trim(),
-      provider: official.official ? 'seedance' : provider,
+      videoServiceSource: selectedSource,
+      provider: usingOfficial ? 'seedance' : provider,
       model: activeModel,
       size,
       duration,
-      ...(official.official ? { videoPriceVersion: official.model?.price?.version ?? null, generateAudio: official.model?.videoOptions?.generateAudio ? session.state.generateAudio ?? true : null } : {}),
-      ...(official.official ? official.draftPatch : {})
+      videoReferences: usingOfficial ? selectedVideoReferences : [],
+      ...(usingOfficial ? { videoPriceVersion: official.model?.price?.version ?? null, generateAudio: official.model?.videoOptions?.generateAudio ? session.state.generateAudio ?? true : null } : {}),
+      ...(usingOfficial ? official.draftPatch : {})
     }, { semantic: true });
     try {
       await session.flush();
@@ -571,19 +691,6 @@ export default function VideoGenerationWorkspace(props: {
       updateSize('720x1280');
       return l('视频画幅已改为竖屏 9:16。', 'Video format changed to portrait 9:16.');
     }
-    const normalized = command.toLowerCase();
-    const providerMatch = providers.find(item => (
-      normalized.includes(item.value)
-      || command.includes(item.zh)
-      || normalized.includes(item.en.toLowerCase())
-    ));
-    if (providerMatch) {
-      updateProvider(providerMatch.value);
-      return l(
-        `视频服务已改为${providerMatch.zh}。`,
-        `Video provider changed to ${providerMatch.en}.`
-      );
-    }
     if (command.trim().length > 8) {
       updatePrompt(command.trim());
       return l('视频描述已同步，可以继续设置生成参数。', 'The video description is synchronized. Continue with generation settings.');
@@ -594,9 +701,20 @@ export default function VideoGenerationWorkspace(props: {
   const videoSettingSections: ImageGenerationSettingSection[] = [{
     id: 'format',
     label: l('画幅', 'Format'),
-    value: size,
-    options: availableSizes.map(item => ({ value: item.value, label: item.ratio })),
+    value: selectedSize.ratio,
+    options: availableRatios.map(ratio => ({ value: ratio, label: ratio })),
     ratio: true,
+    disabled: followsReferenceRatio,
+    onChange: ratio => {
+      const sameResolution = availableSizes.find(item => item.ratio === ratio && videoResolutionLabel(item.value) === videoResolutionLabel(size));
+      const next = sameResolution ?? availableSizes.find(item => item.ratio === ratio);
+      if (next) updateSize(next.value);
+    }
+  }, {
+    id: 'resolution',
+    label: l('清晰度', 'Resolution'),
+    value: size,
+    options: resolutionSizes.map(item => ({ value: item.value, label: videoResolutionLabel(item.value) })),
     disabled: followsReferenceRatio,
     onChange: value => updateSize(value as VideoGenerationSize)
   }, {
@@ -604,12 +722,13 @@ export default function VideoGenerationWorkspace(props: {
     label: l('视频时长', 'Video duration'),
     value: String(duration),
     options: durations.map(value => ({ value: String(value), label: l(`${value} 秒`, `${value}s`, `${value} sekunder`) })),
+    slider: true,
     onChange: value => updateDuration(Number(value) as VideoGenerationDuration)
   }];
   const videoSettingsSummary = {
     aspectRatio: followsReferenceRatio ? l('原图', 'Source') : selectedSize.ratio,
     count: l(`${duration} 秒`, `${duration}s`, `${duration} sekunder`),
-    resolution: followsReferenceRatio ? l('原图', 'Source') : videoSizeDisplay(size),
+    resolution: followsReferenceRatio ? l('原图', 'Source') : videoResolutionLabel(size),
     quality: 'MP4'
   };
 
@@ -699,11 +818,11 @@ export default function VideoGenerationWorkspace(props: {
                 {props.embeddedTabs ?? <h2 id="video-prompt-title"><Clapperboard size={18} strokeWidth={1.7} aria-hidden="true" />{l('视频', 'Video')}</h2>}
                 {!props.embedded ? <span>{l('文字或参考图生成视频', 'Text or image to video')}</span> : null}
               </div>
-              {!official.model?.videoOptions || currentReferenceName ? <div className="video-generation-reference" data-loaded={Boolean(currentReferenceName)}>
-                  <label className="video-generation-reference-upload" title={currentReferenceName ? l('更换参考图', 'Replace reference') : l('添加参考图', 'Add reference image')}>
+              <div className="video-generation-reference" data-loaded={Boolean(currentReferenceName)}>
+                  <label className="video-generation-reference-upload" title={!referenceSupported ? l('当前模型不支持参考图', 'The selected model does not support reference images') : currentReferenceName ? l('更换参考图', 'Replace reference') : l('添加参考图', 'Add reference image')}>
                     <input
                       type="file"
-                      disabled={busy}
+                      disabled={busy || !referenceSupported}
                       accept="image/jpeg,image/png,image/webp"
                       aria-label={l('上传视频参考图', 'Upload video reference image')}
                       onChange={event => {
@@ -716,11 +835,11 @@ export default function VideoGenerationWorkspace(props: {
                         ? <img src={referenceImageUrl} alt={l('视频参考图预览', 'Video reference preview')} />
                         : <ImagePlus size={24} strokeWidth={1.5} />}
                     </span>
-                    <span className="video-generation-reference-copy">
-                      <span><strong>{currentReferenceName ?? l('参考图', 'Reference', 'Referens')}</strong>
-                        {!currentReferenceName ? <small>{l('选填', 'Optional')}</small> : null}</span>
-                      <small>{currentReferenceName ? l('更换参考图', 'Replace reference') : l('支持 JPG、PNG、WebP，最大 5MB', 'JPG, PNG, or WebP, up to 5 MB')}</small>
-                    </span>
+                    {!currentReferenceName ? <span className="video-generation-reference-copy">
+                      <span><strong>{l('参考图', 'Reference', 'Referens')}</strong>
+                        <small>{l('选填', 'Optional')}</small></span>
+                      <small>{l('支持 JPG、PNG、WebP，最大 5MB', 'JPG, PNG, or WebP, up to 5 MB')}</small>
+                    </span> : null}
                     <span className="video-generation-reference-count">{currentReferenceName ? 1 : 0}/1</span>
                   </label>
                   {currentReferenceName ? (
@@ -735,8 +854,7 @@ export default function VideoGenerationWorkspace(props: {
                       <X size={15} strokeWidth={1.8} />
                     </button>
                   ) : null}
-              </div> : null}
-              {official.official && official.model?.videoOptions ? <OfficialVideoReferences model={official.model} references={videoReferences} disabled={busy} onBusyChange={setUploadingVideoReference} onError={setError} /> : null}
+              </div>
               <label className="creator-tool-field video-generation-prompt-field">
                 <span className="video-generation-visually-hidden">{l('提示词', 'Prompt')}</span>
                 <textarea
@@ -764,25 +882,29 @@ export default function VideoGenerationWorkspace(props: {
             </div>
             <div className="video-generation-action-bar">
               <div className="video-generation-model-row">
-                {official.official ? <OfficialModelField label={l('视频模型', 'Video model')} service={official} disabled={busy || uploadingVideoReference} /> : (
                   <label className="creator-tool-field">
                     <OfficialModelSelect
                       label={l('模型', 'Model')}
-                      value={model}
+                      value={selectedCatalogId}
                       disabled={busy}
-                      layout="catalog"
-                      onChange={updateModelAndProvider}
-                      models={allModelOptions.map(item => ({
-                        id: item.value,
-                        name: item.label,
-                        modality: 'video',
-                        capabilities: [],
-                        vendor: item.vendor,
-                        durations: item.durations
-                      }))}
+                      layout="grouped"
+                      compactOptions
+                      loginRequiredModelIds={loginRequiredModelIds}
+                      configureModel={localModel && !localConfigured ? {
+                        id: localVideoModelId,
+                        title: l('配置本地视频服务', 'Configure local video service', 'Konfigurera lokal videotjänst'),
+                        onConfigure: () => { window.location.hash = '#/settings?tab=ai-services&section=video'; }
+                      } : undefined}
+                      onChange={selectCatalogModel}
+                      models={catalogModels}
                     />
                   </label>
-                )}
+                {!official.official && catalogState !== 'ready' ? <div className="video-generation-catalog-status" role="status">
+                  {catalogState === 'loading' ? l('正在加载官方视频模型…', 'Loading official video models…', 'Läser in officiella videomodeller…') : <>
+                    <span>{l('官方视频模型目录加载失败', 'Official video models could not load', 'Kunde inte läsa in officiella videomodeller')}</span>
+                    <button type="button" onClick={() => loadPublicCatalog(true)} aria-label={l('重试加载视频模型', 'Retry loading video models', 'Försök läsa in videomodeller igen')}><RefreshCw size={14} />{l('重试', 'Retry', 'Försök igen')}</button>
+                  </>}
+                </div> : null}
               </div>
               <ImageGenerationSettings
                 label={l('视频设置', 'Video settings', 'Videoinställningar')}
@@ -799,15 +921,13 @@ export default function VideoGenerationWorkspace(props: {
                     {l('继续任务', 'Resume task')}
                   </button>
                 ) : (
-                  <button className="creator-tool-primary" type="submit" disabled={busy || uploadingVideoReference}>
+                  <button className="creator-tool-primary" type="submit" disabled={busy}>
                     {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : selectedResult ? <RotateCcw size={16} /> : <Sparkles size={16} />}
                     {busy ? l('正在生成', 'Generating') : selectedResult ? l('重新生成', 'Regenerate') : l('开始生成', 'Generate')}
                   </button>
                 )}
               </div>
             </div>
-            {official.official && official.model?.videoOptions?.generateAudio ? <label className="official-video-audio"><input type="checkbox" checked={session?.state.generateAudio !== false} disabled={busy} onChange={event => session?.updateDraft({ generateAudio: event.target.checked }, { semantic: true })} />{l('生成音频', 'Generate audio')}</label> : null}
-            {quotedCredits !== undefined ? <output className="official-video-quote" aria-label={l('积分报价', 'Credit quote')}>{l(`本次消耗 ${formatGatewayCreditAmount(quotedCredits)} 积分`, `This generation costs ${formatGatewayCreditAmount(quotedCredits)} credits`)}</output> : null}
           </fieldset>
         </form>
 
@@ -1016,20 +1136,21 @@ function videoModelDefaults(
   };
 }
 
-function createVideoModelOptions(
-  provider: VideoGenerationProvider,
-  configuredDefault: string,
-  current: string
-): VideoModelOption[] {
-  const ids = [
-    configuredDefault,
-    ...videoGenerationModelIds[provider],
-    current
-  ].filter((value, index, values) => value && values.indexOf(value) === index);
-  return ids.map(value => ({
-    value,
-    label: videoModelLabel(value)
-  }));
+function localVideoProviderReady(
+  config: CreatorServicesConfig['video'],
+  credentials: CreatorServicesCredentialField[],
+  provider: VideoGenerationProvider
+): boolean {
+  if (!config[provider].model.trim()) return false;
+  return provider === 'kling'
+    ? credentials.includes('video.kling.accessKey') && credentials.includes('video.kling.secretKey')
+    : credentials.includes(`video.${provider}.apiKey` as CreatorServicesCredentialField);
+}
+
+function preferredSeedanceVideoModel(models: readonly GatewayModel[]): GatewayModel | undefined {
+  const ready = models.filter(gatewayModelReady);
+  return ready.find(model => /^seedance[ .-]*2[.-]5$/i.test(model.name?.trim() ?? ''))
+    ?? ready.find(model => /seedance[ .-]*2[.-]5/i.test(`${model.name ?? ''} ${model.id}`));
 }
 
 function videoModelLabel(model: string): string {
@@ -1048,6 +1169,8 @@ function videoSizeOption(value: string): typeof sizes[number] {
 }
 
 function videoSizeDisplay(value: string): string { return value.replace('@', ' · '); }
+
+function videoResolutionLabel(value: string): string { return value.split('@')[0] ?? value; }
 
 function readSize(value: CreatorJson | undefined, official = false): VideoGenerationSize {
   if (official && typeof value === 'string' && /^(?:\d+x\d+|[A-Za-z0-9._-]+@\d+:\d+)$/.test(value)) return value as VideoGenerationSize;

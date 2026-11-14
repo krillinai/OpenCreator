@@ -15,6 +15,8 @@
     "release:verify-scheduled-task-upgrade": "pnpm --filter @opencreator/daemon verify:schedule-upgrade",
     "daemon:dev": "pnpm --filter @opencreator/daemon dev",
     "web:dev": "pnpm --filter @opencreator/web dev",
+    "dev:test": "node scripts/start-web-mode.mjs test",
+    "dev:production": "node scripts/start-web-mode.mjs production",
     "harness": "pnpm --filter @opencreator/harness start",
     "desktop:dev": "pnpm --filter @opencreator/desktop dev",
     "desktop:build": "pnpm --filter @opencreator/desktop build",

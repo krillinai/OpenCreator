@@ -40,6 +40,24 @@ describe('additional language catalogs', () => {
     }
   });
 
+  it('localizes translation model selection and credit estimates in every additional language', () => {
+    const reusedMessages = ['Loading models', 'Could not load the model list. Try again.',
+      'Local model', 'Custom model service', 'Open text model settings', 'Retry'];
+    const newMessages = ['Translation model',
+      'The selected model is unavailable for this account. Another model is selected.',
+      'Price unavailable', 'Input {{0}} / output {{1}} credits/M tokens'];
+    for (const [language, catalog] of Object.entries(additionalLanguageCatalogs)) {
+      for (const message of [...reusedMessages, ...newMessages]) {
+        expect(Object.hasOwn(catalog!, message), `${language}: ${message}`).toBe(true);
+      }
+      for (const message of newMessages) {
+        expect(translateEnglishCopy(language as AppLanguage, message), `${language}: ${message}`).not.toBe(message);
+      }
+      expect(translateEnglishCopy(language as AppLanguage, 'Input 1 / output 2 credits/M tokens'))
+        .toBe(catalog!['Input {{0}} / output {{1}} credits/M tokens']!.replace('{{0}}', '1').replace('{{1}}', '2'));
+    }
+  });
+
   it('localizes the shared generation editor controls in every additional language', () => {
     for (const language of Object.keys(additionalLanguageCatalogs) as AppLanguage[]) {
       expect(additionalLanguageCatalogs[language]).toHaveProperty('Model');

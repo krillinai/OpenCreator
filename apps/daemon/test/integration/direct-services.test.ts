@@ -56,13 +56,61 @@ async function fixture(ledger?: CreatorProviderRequestLedger, options: Partial<P
   const account: Pick<GatewayAccountService, 'peekState' | 'modelCredentials'> & Partial<Pick<GatewayAccountService, 'beginModelUse' | 'reportModelFailure'>> = {
     reportModelFailure, peekState: () => state, modelCredentials: async () => ({ accountId: 'a', bindingVersion: 'a:1', keyVersion: '1', modelKey: 'private-user-key', baseUrl: 'https://openrouter.ai/api/v1', transport: 'openrouter-direct', models, defaults })
   };
+  const manualStore = { read: async () => structuredClone(manual), write: async (config: typeof manual) => { Object.assign(manual, config); return structuredClone(manual); }, reset: async () => manual };
   const source = createGatewayCreatorSource({ ...options, directRequestsRoot: join(root, 'receipts'), ledger, account,
-    manual: { read: async () => structuredClone(manual), write: async config => config, reset: async () => manual }, getLocalOrigin: () => 'http://127.0.0.1:39999', fetcher
+    manual: manualStore, getLocalOrigin: () => 'http://127.0.0.1:39999', fetcher
   });
   const server = Fastify(); cleanup.push(() => server.close()); cleanup.push(() => source.revoke());
-  await source.register(server); await registerCreatorServicesRoutes(server, source.store);
+  await source.register(server); await registerCreatorServicesRoutes(server, source.store, undefined, undefined, undefined, undefined, undefined, undefined, manualStore);
   return { server, source, fetcher, state, manual, root, account, reportModelFailure };
 }
+it('uses the manual video configuration for a signed-in local video task', async () => {
+  const f = await fixture(undefined, {
+    readJobBinding: () => ({ source: 'manual' }),
+    readJobTemplateId: () => 'video-generation',
+    readJobState: () => ({ videoServiceSource: 'manual' }) as never
+  });
+  const credentials = vi.spyOn(f.account, 'modelCredentials');
+  const config = await f.source.runForJob('local-video', 'stage-1', () => f.source.store.read());
+  expect(config.video).toEqual(f.manual.video);
+  expect(credentials).not.toHaveBeenCalled();
+});
+it('routes a signed-in local video request to its configured provider', async () => {
+  const f = await fixture(undefined, {
+    readJobBinding: () => ({ source: 'gateway', accountId: 'a', bindingVersion: 'a:1', models: { video: 'vendor/video' }, capabilities: { video: ['image_to_video'] } }),
+    readJobTemplateId: () => 'video-generation',
+    readJobState: () => ({ videoServiceSource: 'manual', model: 'local-model', provider: 'seedance' }) as never
+  });
+  f.manual.video.seedance.baseUrl = 'https://personal-video.test/api/v3';
+  f.manual.video.seedance.apiKey = 'local-test-key';
+  f.manual.video.seedance.model = 'local-model';
+  vi.mocked(f.fetcher).mockResolvedValue(Response.json({ id: 'local-task', status: 'queued' }));
+  const service = createVideoGenerationService({ dataDir: f.root, configStore: f.source.store, gatewaySource: f.source, fetchImpl: f.fetcher });
+  await f.source.runForJob('local-video', 'stage-1', () => service.create({ prompt: 'A city', provider: 'seedance', model: 'local-model', size: '1280x720', duration: 5 }));
+  expect(String(vi.mocked(f.fetcher).mock.calls[0]?.[0])).toContain('personal-video.test');
+  expect(vi.mocked(f.fetcher).mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: 'Bearer local-test-key' });
+});
+it('routes a formerly local video task through the selected official model after sign-in', async () => {
+  const f = await fixture(undefined, {
+    readJobBinding: () => ({ source: 'manual' }),
+    readJobTemplateId: () => 'video-generation',
+    readJobState: () => ({ videoServiceSource: 'gateway', officialModels: { video: 'vendor/video' } }) as never
+  });
+  const config = await f.source.runForJob('official-video', 'stage-1', () => f.source.store.read());
+  expect(config.video.provider).toBe('seedance');
+  expect(await f.source.runForJob('official-video', 'stage-2', () => f.source.binding())).toMatchObject({ models: { video: 'vendor/video' } });
+});
+it('reads and saves local video settings without changing signed-in official settings', async () => {
+  const f = await fixture();
+  const read = await f.server.inject('/creator-services/video/local');
+  expect(read.statusCode).toBe(200);
+  expect(read.json().config.video).toEqual(expect.objectContaining({ provider: f.manual.video.provider }));
+  const video = { ...read.json().config.video, provider: 'veo' };
+  const saved = await f.server.inject({ method: 'PATCH', url: '/creator-services/video/local', payload: { video } });
+  expect(saved.statusCode).toBe(200);
+  expect(f.manual.video.provider).toBe('veo');
+  expect((await f.server.inject('/creator-services/config')).json().config.video.provider).not.toBe('veo');
+});
 it.each(['tech', 'org'])('routes Creator subtitle transcription directly through ChatAnywhere (%s)', async domain => {
   const f = await fixture();
   const transcription: GatewayModel = { id: 'whisper-1', modality: 'transcription', capabilities: ['transcription_text', 'subtitle_timestamps'] };

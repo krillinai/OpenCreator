@@ -182,6 +182,46 @@
   box-shadow: none;
 }
 
+.creator-tool-embedded .video-generation-editor .video-generation-prompt-field {
+  align-self: stretch;
+  overflow: hidden;
+}
+
+.creator-tool-embedded .video-generation-editor .video-generation-prompt-field textarea {
+  flex: 1 1 0;
+  height: 0;
+  min-height: 0;
+}
+
+@container video-generation (max-width: 520px) {
+  .creator-tool-embedded .video-generation-composer {
+    height: auto;
+    min-height: 248px;
+    max-height: none;
+  }
+
+  .creator-tool-embedded .video-generation-fields {
+    height: auto;
+    grid-template-rows: auto auto;
+    overflow: visible;
+  }
+
+  .creator-tool-embedded .video-generation-editor {
+    min-height: 190px;
+    overflow: visible;
+  }
+
+  .creator-tool-embedded .video-generation-editor .video-generation-prompt-field {
+    overflow: visible;
+  }
+
+  .creator-tool-embedded .video-generation-editor .video-generation-prompt-field textarea {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 104px;
+  }
+}
+
 .dashboard-generation-tabs {
   align-self: stretch;
   display: flex;
@@ -704,6 +744,49 @@
   margin: 0;
 }
 
+.image-generation-model-row.dashboard-translation-model {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dashboard-translation-model > .official-model-select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.dashboard-translation-model .dashboard-translation-model-trigger.is-compact {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  justify-content: center;
+  padding: 0;
+}
+
+.dashboard-translation-catalog-status,
+.dashboard-translation-model-notice {
+  order: -1;
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dashboard-translation-catalog-status button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  padding: 2px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
 .dashboard-translation-model-trigger {
   display: flex;
   align-items: center;
@@ -801,9 +884,15 @@
   display: none;
 }
 
-.dashboard-translation-model .official-model-control,
-.dashboard-translation-model .official-model-value {
+.dashboard-translation-model .official-model-control {
   width: 100%;
+}
+
+@media (max-width: 760px) {
+  .image-generation-model-row.dashboard-translation-model .official-model-control {
+    height: var(--control-touch);
+    min-height: var(--control-touch);
+  }
 }
 
 .dashboard-translation-settings {

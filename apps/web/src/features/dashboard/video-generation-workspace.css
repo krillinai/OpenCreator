@@ -360,6 +360,28 @@
   margin: 0;
 }
 
+.video-generation-catalog-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.video-generation-catalog-status button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
 .video-generation-model-row .official-model-control,
 .video-generation-model-row .official-model-control input[role="combobox"] {
   height: 36px;

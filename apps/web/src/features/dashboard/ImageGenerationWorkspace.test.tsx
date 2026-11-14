@@ -5,7 +5,8 @@ import type {
   CreatorArtifact,
   CreatorJob,
   CreatorJson,
-  GatewayAccountState
+  GatewayAccountState,
+  GatewayImageCatalog
 } from '@opencreator/protocol';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,6 +29,7 @@ describe('ImageGenerationWorkspace', () => {
   ])('matches manual controls to $model', async ({ provider, model, ratios, resolutions, qualities }) => {
     const fixture = createFixture();
     const config = createDefaultCreatorServicesConfig();
+    config.image.provider = provider;
     config.image[provider].model = model;
     const getConfig = vi.fn(async () => ({ config }));
     renderWorkspace(fixture, { ...fixture.currentJob(), state: { prompt: 'A city', provider, providerSource: 'user' } }, { getConfig });
@@ -45,9 +47,10 @@ describe('ImageGenerationWorkspace', () => {
     expect(fixture.applyAction).not.toHaveBeenCalled();
   });
 
-  it('submits Gemini settings and resets incompatible selections when switching models', async () => {
+  it('submits the configured local Gemini model settings', async () => {
     const fixture = createFixture();
     const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'gemini';
     config.image.gemini.model = 'gemini-3-pro-image-preview';
     renderWorkspace(fixture, { ...fixture.currentJob(), state: { prompt: 'A city', provider: 'gemini', providerSource: 'user' } }, { getConfig: async () => ({ config }) });
     const settings = openImageSettings();
@@ -58,16 +61,10 @@ describe('ImageGenerationWorkspace', () => {
     await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
     expect(fixture.currentJob().state)
       .toMatchObject({ aspectRatio: '21:9', resolution: '4K', modelQuality: '' });
-    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
-    fireEvent.click(screen.getByRole('button', { name: 'OpenAI 2 个模型' }));
-    fireEvent.click(screen.getByRole('option', { name: 'GPT Image' }));
-    openImageSettings();
-    expect(screen.getByRole('radio', { name: '1:1' })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByRole('radio', { name: '1K' })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByRole('radio', { name: '标准' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务');
   });
 
-  it('falls back to GPT when the default Codex provider is unavailable', async () => {
+  it('does not invent a fallback model when the configured Codex service is unavailable', async () => {
     const fixture = createFixture({ pending: true });
     const config = createDefaultCreatorServicesConfig();
     renderWorkspace(fixture, fixture.currentJob(), {
@@ -75,7 +72,11 @@ describe('ImageGenerationWorkspace', () => {
       getCodexImageStatus: vi.fn(async () => ({ ready: false }))
     });
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('GPT Image'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('选择模型'));
+    expect(screen.queryByText('GPT Image')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: 'A city' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('请先在设置中配置可用的本地生图服务');
     expect(fixture.ensureJob).not.toHaveBeenCalled();
   });
 
@@ -85,7 +86,7 @@ describe('ImageGenerationWorkspace', () => {
     config.image.provider = 'gemini';
     config.image.gemini.model = 'gemini-3-pro-image-preview';
     renderWorkspace(fixture, fixture.currentJob(), { getConfig: async () => ({ config }) });
-    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Gemini'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务'));
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: 'A city' } });
     openImageSettings();
     chooseImageSetting('图片画幅', '16:9');
@@ -111,14 +112,50 @@ describe('ImageGenerationWorkspace', () => {
     const update = fixture.applyAction.mock.calls.find(([, request]) => request.action === 'update-settings');
     expect(update?.[1].input.patch).toMatchObject({ aspectRatio: '16:9', resolution: '2K', officialQuality: 'hd', candidateCount: 1 });
   });
+  it('keeps image settings accessible when a catalog model has no selectable parameters', () => {
+    const fixture = createFixture({ pending: true });
+    const state: GatewayAccountState = {
+      source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', activationError: null,
+      models: [{ id: 'gpt-image-2.6-flare', catalogSchema: 2, modality: 'image', capabilities: ['generate', 'edit'],
+        imageOptions: { imagesPerRequest: 1, maxImages: 1, maxReferences: 1 } }]
+    };
+    renderWorkspace(fixture, fixture.currentJob(), undefined, state);
+
+    expect(screen.getByRole('button', { name: '选择模型 gpt-image-2.6-flare' })).toHaveAttribute('aria-pressed', 'true');
+    const settings = openImageSettings();
+    expect(within(settings).getByRole('radio', { name: '1 张' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(settings).queryByRole('radiogroup', { name: '图片画幅' })).not.toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: '任务摘要' })).not.toHaveTextContent('默认');
+    expect(screen.getByRole('button', { name: '开始生成' })).toBeInTheDocument();
+  });
+
+  it('omits unavailable image parameters from the settings summary', () => {
+    const fixture = createFixture({ pending: true });
+    const state: GatewayAccountState = {
+      source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', activationError: null,
+      models: [{ id: 'image-with-format', catalogSchema: 2, modality: 'image', capabilities: ['generate'],
+        imageOptions: { aspectRatios: ['1:1', '16:9'], maxImages: 1, maxReferences: 0 } }]
+    };
+    renderWorkspace(fixture, fixture.currentJob(), undefined, state);
+
+    const trigger = screen.getByRole('button', { name: '图片设置' });
+    expect(trigger).toHaveTextContent('1:1');
+    expect(trigger).not.toHaveTextContent('默认');
+    const settings = openImageSettings();
+    expect(within(settings).getByRole('radiogroup', { name: '图片画幅' })).toBeInTheDocument();
+    expect(within(settings).queryByRole('radiogroup', { name: '分辨率' })).not.toBeInTheDocument();
+    expect(within(settings).queryByRole('radiogroup', { name: '图片质量' })).not.toBeInTheDocument();
+  });
   it('shows a four-image batch as four images and clears unsupported references before submission', async () => {
     const fixture = createFixture();
     const state: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', models: [{ id: 'midjourney-v8.2', catalogSchema: 2, modality: 'image', capabilities: ['generate'], imageOptions: { maxImages: 1, imagesPerRequest: 4, maxReferences: 0 } }], activationError: null };
     const reference = { ...imageArtifact('creator_job_image_ui', 1, new Date().toISOString()), kind: 'reference_image' as const };
     renderWorkspace(fixture, { ...fixture.currentJob(), artifacts: [reference], state: { prompt: 'city', currentStep: 1, furthestStep: 1, referenceImageArtifactId: reference.id } }, { getConfig: vi.fn() }, state);
-    openImageSettings();
-    expect(screen.getByRole('radio', { name: '4 张' })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.queryByRole('radio', { name: '1 张' })).not.toBeInTheDocument();
+    const settings = openImageSettings();
+    expect(within(settings).getByRole('radio', { name: '4 张' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('complementary', { name: '任务摘要' })).toHaveTextContent('4 张');
     expect(screen.queryByLabelText('上传图像生成参考图')).not.toBeInTheDocument();
     await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'update-settings', input: expect.objectContaining({ patch: expect.objectContaining({ referenceImageArtifactId: null }) }) })));
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
@@ -145,6 +182,66 @@ describe('ImageGenerationWorkspace', () => {
     expect(getConfig).not.toHaveBeenCalled();
   });
 
+  it('defaults a new official image draft to the first listed model without saving it', async () => {
+    const fixture = createFixture({ pending: true });
+    const state: GatewayAccountState = {
+      source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1',
+      activationError: null, selectedModels: {}, models: [
+        { id: 'openai/gpt-image-2', name: 'GPT Image 2', vendor: 'OpenAI', modality: 'image', capabilities: [] },
+        { id: 'google/nano-banana', name: 'Nano Banana', vendor: 'Google', modality: 'image', capabilities: [] }
+      ]
+    };
+    renderWorkspace(fixture, fixture.currentJob(), undefined, state);
+
+    const model = screen.getByRole('combobox', { name: '图片模型' });
+    expect(model).toHaveValue('GPT Image 2');
+    fireEvent.click(model);
+    expect(within(screen.getByRole('listbox', { name: '图片模型' })).getAllByRole('option')[0]).toHaveAccessibleName('GPT Image 2');
+    await new Promise(resolve => setTimeout(resolve, 400));
+    expect(fixture.ensureJob).not.toHaveBeenCalled();
+    expect(fixture.applyAction).not.toHaveBeenCalled();
+  });
+
+  it('keeps the account image model when it differs from the first listed model', () => {
+    const fixture = createFixture({ pending: true });
+    const state: GatewayAccountState = {
+      source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1',
+      activationError: null, selectedModels: { image: 'google/nano-banana' }, models: [
+        { id: 'openai/gpt-image-2', name: 'GPT Image 2', vendor: 'OpenAI', modality: 'image', capabilities: [] },
+        { id: 'google/nano-banana', name: 'Nano Banana', vendor: 'Google', modality: 'image', capabilities: [] }
+      ]
+    };
+    renderWorkspace(fixture, fixture.currentJob(), undefined, state);
+
+    expect(screen.getByRole('combobox', { name: '图片模型' })).toHaveValue('Nano Banana');
+  });
+
+  it('lets a signed-in user choose a cached image model while the gateway is unavailable', async () => {
+    const fixture = createFixture();
+    const state: GatewayAccountState = {
+      source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'blocked',
+      account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1',
+      activationError: { code: 'gateway_unavailable', message: 'Connection reset' },
+      selectedModels: {}, models: [
+        { id: 'official/first', modality: 'image', capabilities: [] },
+        { id: 'official/second', modality: 'image', capabilities: [] }
+      ]
+    };
+    renderWorkspace(fixture, { ...fixture.currentJob(), state: { prompt: 'city skyline' } }, undefined, state);
+
+    const model = screen.getByRole('combobox', { name: '图片模型' });
+    expect(model).toBeEnabled();
+    fireEvent.click(model);
+    fireEvent.click(screen.getByRole('option', { name: 'second' }));
+    await waitFor(() => expect(fixture.currentJob().state.officialModels).toMatchObject({ image: 'official/second' }));
+    expect(screen.getByRole('button', { name: '选择模型 first' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('官方图片服务暂不可用');
+    expect(fixture.applyAction.mock.calls.every(([, request]) => request.action !== 'run-stage')).toBe(true);
+  });
+
   beforeEach(() => {
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
@@ -167,6 +264,7 @@ describe('ImageGenerationWorkspace', () => {
     chooseImageSetting('图片画幅', '3:2');
     chooseImageSetting('图片质量', '高清');
     fireEvent.click(screen.getByRole('radio', { name: '4 张' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务'));
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith('creator_job_image_ui', expect.objectContaining({ action: 'run-stage' })));
     const updates = fixture.applyAction.mock.calls.filter(([, request]) => request.action === 'update-settings');
@@ -184,7 +282,7 @@ describe('ImageGenerationWorkspace', () => {
     const image = new File([png('reference')], 'reference.png', { type: 'image/png' });
     changeControl(input, { target: { files: [image] } });
     expect(await screen.findByRole('img', { name: '图像生成参考图' })).toBeVisible();
-    expect(document.querySelector('.image-generation-reference')).toHaveTextContent('reference.png');
+    expect(document.querySelector('.image-generation-reference')).not.toHaveTextContent('reference.png');
     expect(document.querySelector('.image-generation-reference')).toHaveTextContent('1/1');
     fireEvent.click(screen.getByRole('button', { name: '移除参考图' }));
     expect(screen.queryByRole('img', { name: '图像生成参考图' })).not.toBeInTheDocument();
@@ -203,6 +301,7 @@ describe('ImageGenerationWorkspace', () => {
       return upload(...args);
     });
     renderWorkspace(fixture);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务'));
     const form = screen.getByRole('form', { name: '图像生成' });
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: 'A landscape' } });
     changeControl(screen.getByLabelText('上传图像生成参考图'), {
@@ -255,53 +354,117 @@ describe('ImageGenerationWorkspace', () => {
   });
 
   it.each([
-    { language: 'zh-CN' as const, model: '模型', jimeng: '即梦' },
-    { language: 'en-US' as const, model: 'Model', jimeng: 'Jimeng' },
-    { language: 'el-GR' as const, model: 'Μοντέλο', jimeng: 'Jimeng' }
-  ])('searches and selects branded image models without submitting in $language', copy => {
+    { language: 'zh-CN' as const, model: '模型', login: '登录后使用' },
+    { language: 'en-US' as const, model: 'Model', login: 'Sign in to use' },
+    { language: 'el-GR' as const, model: 'Μοντέλο', login: 'Sign in to use' }
+  ])('searches the public image catalog without submitting in $language', async copy => {
     const fixture = createFixture({ pending: true });
-    renderWorkspace(fixture, fixture.currentJob(), undefined, undefined, copy.language);
+    const catalog = { models: [
+      { id: 'openai/image-2', name: 'Image 2', vendor: 'OpenAI', modality: 'image', capabilities: [], imageOptions: { aspectRatios: ['1:1'], resolutions: ['1K'], maxImages: 1, maxReferences: 0 } },
+      { id: 'bytedance/seedream', name: 'Seedream', vendor: 'ByteDance', modality: 'image', capabilities: [] }
+    ] };
+    renderWorkspace(fixture, fixture.currentJob(), undefined, undefined, copy.language, false, { getImageCatalog: async () => catalog });
+    await screen.findByRole('button', { name: /Seedream/ });
     const model = screen.getByRole('combobox', { name: copy.model });
     expect(model.tagName).toBe('INPUT');
     fireEvent.click(model);
-    const options = within(screen.getByRole('listbox', { name: copy.model })).getAllByRole('option');
-    expect(options).toHaveLength(2);
-    expect(options.every(option => option.querySelector('[data-brand="openai"] img'))).toBe(true);
-    const catalog = document.querySelector('.official-model-catalog-brands')!;
-    for (const brand of ['openai', 'bytedance', 'kling', 'google']) {
-      expect(catalog.querySelector(`[data-brand="${brand}"] img`)).not.toBeNull();
-    }
-    fireEvent.click(screen.getByRole('button', { name: /ByteDance/ }));
-    const byteDanceOptions = within(screen.getByRole('listbox', { name: copy.model })).getAllByRole('option');
+    const list = screen.getByRole('listbox', { name: copy.model });
+    expect(within(list).getAllByRole('option')).toHaveLength(3);
+    expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual([
+      copy.language === 'zh-CN' ? '本地' : 'Local', 'OpenAI', 'ByteDance'
+    ]);
+    expect(within(list).getByRole('group', { name: 'OpenAI' }).querySelector('[data-brand="openai"] img')).not.toBeNull();
+    const imageCard = screen.getByRole('button', { name: copy.language === 'zh-CN' ? '选择模型 Image 2' : 'Use model Image 2' });
+    expect(imageCard).not.toHaveTextContent('1:1');
+    expect(imageCard).not.toHaveTextContent('1K');
+    const byteDanceOptions = within(within(list).getByRole('group', { name: 'ByteDance' })).getAllByRole('option');
     expect(byteDanceOptions).toHaveLength(1);
-    expect(byteDanceOptions[0]).toHaveAccessibleName(copy.jimeng);
-    changeControl(model, { target: { value: 'jimeng' } });
-    expect(within(screen.getByRole('listbox', { name: copy.model })).getAllByRole('option')).toHaveLength(1);
-    expect(model).toHaveValue('jimeng');
-    fireEvent.keyDown(model, { key: 'Enter' });
-    expect(model).toHaveValue(copy.jimeng);
-    expect(model.parentElement?.querySelector('[data-brand="bytedance"] img')).not.toBeNull();
+    expect(byteDanceOptions[0]).toHaveAccessibleName('Seedream');
+    expect(list).not.toHaveTextContent(copy.login);
+    fireEvent.click(byteDanceOptions[0]!);
+    expect(model).toHaveValue('Seedream');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     expect(fixture.ensureJob).not.toHaveBeenCalled();
     expect(fixture.applyAction).not.toHaveBeenCalled();
   });
 
-  it('switches local services from popular model cards and applies a template without generating', async () => {
+  it('shows the configured local service and public catalog cards without generating', async () => {
     const fixture = createFixture();
-    renderWorkspace(fixture);
-    const popular = screen.getByRole('region', { name: '热门模型' });
-    expect(within(popular).getAllByRole('button')).toHaveLength(4);
+    renderWorkspace(fixture, fixture.currentJob(), undefined, undefined, 'zh-CN', false, { getImageCatalog: async () => ({ models: [
+      { id: 'grok-imagine-image', name: 'Grok Imagine', vendor: 'xAI', modality: 'image', capabilities: [] },
+      { id: 'grok-imagine-image-2.0', name: 'Grok Imagine 2', vendor: 'xAI', modality: 'image', capabilities: [] }
+    ] }) });
+    const popular = screen.getByRole('region', { name: '图片模型' });
+    await screen.findByRole('button', { name: '选择模型 Grok Imagine 2' });
+    expect(within(popular).getAllByRole('button')).toHaveLength(3);
+    expect(within(popular).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['本地', 'xAI']);
+    const xaiModels = within(within(popular).getByRole('group', { name: 'xAI' })).getAllByRole('button');
+    expect(xaiModels).toHaveLength(2);
+    expect(within(popular).getByRole('group', { name: 'xAI' }).querySelector('[data-brand="xai"] img')).toHaveAttribute('src', '/model-brands/xai.svg');
     expect(screen.getAllByRole('button', { name: /^使用模版 / })).toHaveLength(6);
 
-    fireEvent.click(screen.getByRole('button', { name: '选择模型 Gemini' }));
-    await waitFor(() => expect(fixture.currentJob().state.provider).toBe('gemini'));
-    expect(screen.getByRole('button', { name: '选择模型 Gemini' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '选择模型 本地生图服务' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '选择模型 Grok Imagine' })).not.toHaveTextContent('登录后使用');
 
     fireEvent.click(screen.getByRole('button', { name: '使用模版 雪山小屋' }));
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '提示词' }).value).toMatch(/^雪山深处的一座红色木屋/);
     await waitFor(() => expect(fixture.currentJob().state.prompt).toMatch(/^雪山深处的一座红色木屋/));
     expect(fixture.currentJob().state.aspectRatio).toBe('16:9');
     expect(fixture.applyAction.mock.calls.every(([, request]) => request.action !== 'run-stage')).toBe(true);
+  });
+
+  it('keeps the local model available when the public catalog fails and recovers on retry', async () => {
+    const fixture = createFixture();
+    const getImageCatalog = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({
+      models: [{ id: 'vendor/image', name: 'Catalog Image', modality: 'image', capabilities: [] }]
+    });
+    renderWorkspace(fixture, fixture.currentJob(), undefined, undefined, 'zh-CN', false, { getImageCatalog });
+    expect(await screen.findByRole('button', { name: '重试加载图片模型' })).toBeEnabled();
+    expect(screen.getByText('官方图片模型目录加载失败').closest('[role="status"]')).not.toBeNull();
+    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务');
+    fireEvent.click(screen.getByRole('button', { name: '重试加载图片模型' }));
+    expect(await screen.findByRole('button', { name: '选择模型 Catalog Image' })).toBeInTheDocument();
+    expect(getImageCatalog).toHaveBeenCalledTimes(2);
+    expect(fixture.applyAction).not.toHaveBeenCalled();
+  });
+
+  it('shows a cached public image catalog immediately while it refreshes', () => {
+    const fixture = createFixture();
+    const catalog = { models: [{ id: 'vendor/cached-image', name: 'Cached Image', vendor: 'Vendor', modality: 'image' as const, capabilities: [] }] };
+    const getImageCatalog = vi.fn(() => new Promise<typeof catalog>(() => undefined));
+    renderWorkspace(fixture, fixture.currentJob(), undefined, undefined, 'zh-CN', false, {
+      getCachedImageCatalog: () => catalog, getImageCatalog
+    });
+    expect(screen.queryByText('正在加载官方图片模型…')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    expect(screen.getByRole('option', { name: 'Cached Image' })).toBeInTheDocument();
+    expect(getImageCatalog).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an in-flight public catalog request through account state changes', async () => {
+    let resolveCatalog!: (catalog: GatewayImageCatalog) => void;
+    const catalog = new Promise<GatewayImageCatalog>(resolve => { resolveCatalog = resolve; });
+    const getImageCatalog = vi.fn(() => catalog);
+    const service = { getImageCatalog };
+    const state: GatewayAccountState = {
+      source: 'manual', authState: 'signed_out', activationState: 'inactive',
+      account: null, bindingVersion: null, activationError: null, selectedModels: {}, models: []
+    };
+    const content = (gatewayState: GatewayAccountState | null) => (
+      <LanguageProvider initialPreference="zh-CN">
+        <OfficialServicesContext.Provider value={gatewayState}>
+          <ImageGenerationWorkspace onBack={vi.fn()} gatewayAccountService={service as never} />
+        </OfficialServicesContext.Provider>
+      </LanguageProvider>
+    );
+    const view = render(content(state));
+    await waitFor(() => expect(getImageCatalog).toHaveBeenCalledOnce());
+    expect(screen.getByText('正在加载官方图片模型…')).toBeInTheDocument();
+    view.rerender(content(null));
+    view.rerender(content(state));
+    await act(async () => { resolveCatalog({ models: [{ id: 'vendor/image', name: 'Catalog Image', modality: 'image', capabilities: [] }] }); });
+    await screen.findByRole('button', { name: '选择模型 Catalog Image' });
+    expect(getImageCatalog).toHaveBeenCalledOnce();
   });
 
   it('selects an official model from the popular model gallery', async () => {
@@ -335,10 +498,11 @@ describe('ImageGenerationWorkspace', () => {
   it('validates required reference input while typing and blocks generation until uploaded', async () => {
     const fixture = createFixture();
     renderWorkspace(fixture);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务'));
     const prompt = screen.getByRole('textbox', { name: '提示词' });
     fireEvent.change(prompt, { target: { value: '以上传的人物照片为唯一主体，生成复古海报' } });
     expect(prompt).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByRole('status')).toHaveTextContent('请先上传参考图');
+    expect(screen.getByText(/当前提示词需要基于已有图片生成/)).toHaveTextContent('请先上传参考图');
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     expect(screen.getByRole('textbox', { name: '提示词' })).toBeInTheDocument();
     expect(fixture.uploadReferenceImage).not.toHaveBeenCalled();
@@ -463,7 +627,7 @@ describe('ImageGenerationWorkspace', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
       target: { value: '使用默认 Codex 生成一张图片' }
     });
-    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本机 Codex 生图'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务'));
     openImageSettings();
     expect(screen.getByRole('radio', { name: '1 张' })).toHaveAttribute('aria-checked', 'true');
     expect(fixture.ensureJob).not.toHaveBeenCalled();
@@ -496,7 +660,8 @@ describe('ImageGenerationWorkspace', () => {
       };
 
       renderWorkspace(fixture, initialJob);
-      expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue(label);
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务');
       await act(() => vi.advanceTimersByTimeAsync(500));
       expect(fixture.applyAction).not.toHaveBeenCalled();
     } finally {
@@ -567,6 +732,7 @@ describe('ImageGenerationWorkspace', () => {
   it('uploads the selected reference before starting image generation', async () => {
     const fixture = createFixture();
     renderWorkspace(fixture);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务'));
     const workspace = screen.getByRole('region', { name: '图像生成 操作区' });
     const reference = new File([png('reference')], 'reference.png', {
       type: 'image/png',
@@ -623,8 +789,23 @@ function renderWorkspace(
   },
   gatewayState?: GatewayAccountState,
   language: AppLanguage = 'zh-CN',
-  embedded = false
+  embedded = false,
+  gatewayService?: { getImageCatalog(): Promise<unknown>; getCachedImageCatalog?(): unknown; getState?(options?: { refreshModels?: boolean }): Promise<GatewayAccountState> }
 ) {
+  const defaultConfig = createDefaultCreatorServicesConfig();
+  defaultConfig.image.provider = 'openai';
+  const fallbackService = { getConfig: async () => ({ config: defaultConfig, configuredCredentials: ['image.openai.apiKey'] }) };
+  const selectedService = creatorServicesService ?? fallbackService;
+  const readyService = {
+    ...selectedService,
+    async getConfig() {
+      const response = await selectedService.getConfig() as { config: ReturnType<typeof createDefaultCreatorServicesConfig>; configuredCredentials?: string[] };
+      if (response.configuredCredentials) return response;
+      const provider = response.config.image.provider;
+      return { ...response, configuredCredentials: provider === 'kling' ? ['image.kling.accessKey', 'image.kling.secretKey']
+        : provider === 'codex-native' ? [] : [`image.${provider}.apiKey`] };
+    }
+  };
   let currentSession: CreatorSessionContextValue | null = null;
   const view = render(
     <LanguageProvider initialPreference={language}>
@@ -643,7 +824,8 @@ function renderWorkspace(
         <ImageGenerationWorkspace
           onBack={vi.fn()}
           embedded={embedded}
-          creatorServicesService={creatorServicesService as never}
+          creatorServicesService={readyService as never}
+          gatewayAccountService={gatewayService as never}
         />
         </OfficialServicesContext.Provider>
       </CreatorSessionProvider>

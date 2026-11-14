@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, X } from 'lucide-react';
+import { ChevronDown, Settings2, X } from 'lucide-react';
 import ModelBrandIcon from '../../components/brand/ModelBrandIcon.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
@@ -13,9 +13,18 @@ const CreatorServicesSettingsView = lazy(async () => {
 export default function DashboardTranslationModelSettings(props: {
   service?: CreatorServicesSettingsService | null;
   disabled?: boolean;
+  compact?: boolean;
+  requestedOpen?: boolean;
+  onRequestedOpenChange?(open: boolean): void;
+  onClose?(): void;
 }) {
   const l = useLocalizedCopy();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = props.requestedOpen ?? internalOpen;
+  function setOpen(value: boolean) {
+    if (props.requestedOpen === undefined) setInternalOpen(value);
+    props.onRequestedOpenChange?.(value);
+  }
   const [summary, setSummary] = useState(() => l('跟随服务设置', 'Service default'));
   const [modelId, setModelId] = useState('codex-native');
   const refresh = useCallback(async () => {
@@ -38,7 +47,7 @@ export default function DashboardTranslationModelSettings(props: {
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') close();
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
@@ -47,20 +56,23 @@ export default function DashboardTranslationModelSettings(props: {
   function close() {
     setOpen(false);
     void refresh();
+    props.onClose?.();
   }
 
   return (
     <>
       <button
         type="button"
-        className="official-model-value dashboard-translation-model-trigger"
+        className={`official-model-value dashboard-translation-model-trigger${props.compact ? ' is-compact' : ''}`}
         aria-label={l('设置翻译模型', 'Configure translation model')}
         disabled={props.disabled || !props.service}
         onClick={() => setOpen(true)}
       >
-        <ModelBrandIcon model={{ id: modelId }} className="dashboard-translation-model-brand" />
-        <span>{summary}</span>
-        <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" />
+        {props.compact ? <Settings2 size={18} aria-hidden="true" /> : <>
+          <ModelBrandIcon model={{ id: modelId }} className="dashboard-translation-model-brand" />
+          <span>{summary}</span>
+          <ChevronDown size={14} strokeWidth={1.8} aria-hidden="true" />
+        </>}
       </button>
       {open ? createPortal(
         <div className="dashboard-translation-model-backdrop" onMouseDown={event => {

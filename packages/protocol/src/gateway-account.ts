@@ -78,6 +78,15 @@ export type GatewayModel = {
   };
 };
 export type GatewayModelPurpose = GatewayModel['modality'];
+export type GatewayModelCatalog = {
+  models: GatewayModel[];
+  recommendedModelId?: string;
+  catalogVersion?: string;
+  updatedAt?: string;
+  refreshState?: 'ready' | 'stale' | 'unavailable';
+};
+export type GatewayImageCatalog = GatewayModelCatalog;
+export type GatewayVideoCatalog = GatewayModelCatalog;
 export function gatewayModelSupports(model: GatewayModel, purpose: GatewayModelPurpose): boolean {
   return model.modality === purpose && (purpose !== 'text' || model.capabilities.includes('responses'));
 }
@@ -124,6 +133,7 @@ export type GatewayAccountState = {
   models: GatewayModel[];
   modelAvailability?: GatewayModelAvailability[];
   selectedModels?: Partial<Record<GatewayModelPurpose, string>>;
+  taskModels?: Record<string, Partial<Record<GatewayModelPurpose, string>>>;
   recommendedModels?: Partial<Record<GatewayModelPurpose, string>>;
   modelSelectionModes?: Partial<Record<GatewayModelPurpose, 'recommended' | 'manual'>>;
   modelSelectionNotice?: 'selection_updated';

@@ -70,6 +70,7 @@ describe('creator agent context', () => {
       }]
     });
     const serialized = JSON.stringify(context);
+    expect(context.state).not.toHaveProperty('__creatorUserEdited');
     expect(serialized).not.toContain('D:\\private\\jobs');
     expect(serialized).not.toContain('完整字幕正文');
   });
@@ -91,6 +92,7 @@ function job(): CreatorJob {
       bilingual: true,
       subtitlePosition: 'top',
       composeVideo: true,
+      __creatorUserEdited: true,
       resultVersion: 4,
       latestResultVersion: 4,
       resultSnapshots: [{

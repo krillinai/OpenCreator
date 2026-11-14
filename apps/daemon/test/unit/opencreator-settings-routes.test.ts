@@ -96,6 +96,17 @@ describe('OpenCreator settings routes', () => {
     expect(store.updateUi).not.toHaveBeenCalled();
   });
 
+  it('accepts the OpenCreator brand accent', async () => {
+    const response = await server.inject({
+      method: 'PATCH',
+      url: '/settings/ui',
+      payload: { accentColor: 'brand' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(store.updateUi).toHaveBeenCalledWith({ accentColor: 'brand' });
+  });
+
   it.each(openCreatorLanguagePreferences)('accepts language preference %s', async language => {
     const response = await server.inject({ method: 'PATCH', url: '/settings/ui', payload: { language } });
     expect(response.statusCode).toBe(200);

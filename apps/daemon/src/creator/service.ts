@@ -1381,6 +1381,7 @@ function writeActivity(input: {
 }
 
 const creatorUiOnlyStateFields = new Set([
+  '__creatorUserEdited',
   'currentStep',
   'furthestStep',
   'workspacePhase',

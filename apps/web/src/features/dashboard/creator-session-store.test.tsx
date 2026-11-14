@@ -325,9 +325,29 @@ describe('CreatorSessionStore', () => {
     await act(async () => vi.advanceTimersByTimeAsync(350));
 
     expect(ensureJob).toHaveBeenCalledTimes(1);
-    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'ja', dubbing: false });
+    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'ja', dubbing: false, __creatorUserEdited: true });
     expect(applyAction).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it('persists automatic settings on an existing job without marking user input', async () => {
+    let session!: ReturnType<typeof useCreatorSession>;
+    const applyAction = vi.fn(async (_id: string, request: { input: { patch: Record<string, unknown> } }) => ({
+      job: job(1, { ...request.input.patch })
+    }));
+    function AutoSettings() { session = useCreatorSession(); return null; }
+    render(<CreatorSessionProvider initialJob={job(0, {})} service={{ applyAction } as never}><AutoSettings /></CreatorSessionProvider>);
+
+    await act(async () => {
+      session.updateDraft({ candidateCount: 1 }, { userEdited: false });
+      await session.flush();
+    });
+
+    expect(applyAction).toHaveBeenCalledWith('job_1', expect.objectContaining({
+      action: 'update-settings',
+      input: expect.objectContaining({ patch: { candidateCount: 1 } })
+    }));
+    expect(session.state.__creatorUserEdited).toBeUndefined();
   });
 
   it('creates a pending job before sending the first Agent message', async () => {
@@ -350,7 +370,7 @@ describe('CreatorSessionStore', () => {
     fireEvent.click(screen.getByRole('button', { name: 'pending-agent' }));
     await waitFor(() => expect(startAgentTurn).toHaveBeenCalledTimes(1));
     expect(ensureJob).toHaveBeenCalledTimes(1);
-    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'en', dubbing: false });
+    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'en', dubbing: false, __creatorUserEdited: true });
     expect(startAgentTurn).toHaveBeenCalledWith('job_1', expect.objectContaining({
       message: 'start from agent'
     }));
@@ -557,7 +577,7 @@ describe('CreatorSessionStore', () => {
       expect.objectContaining({
         action: 'update-settings',
         input: expect.objectContaining({
-          patch: { targetLanguage: 'ja' }
+          patch: { targetLanguage: 'ja', __creatorUserEdited: true }
         })
       })
     ));

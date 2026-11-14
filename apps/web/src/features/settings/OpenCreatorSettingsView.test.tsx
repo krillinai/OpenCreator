@@ -353,7 +353,7 @@ describe('OpenCreatorSettingsView', () => {
     expect(onColorModeChange).toHaveBeenCalledWith('light');
   });
 
-  it('renders seven accent color swatches and notifies when the selection changes', () => {
+  it('renders the OpenCreator yellow swatch first and notifies when the selection changes', () => {
     const onAccentColorChange = vi.fn();
     render(
       <OpenCreatorSettingsView
@@ -365,8 +365,11 @@ describe('OpenCreatorSettingsView', () => {
     );
 
     const accentControl = screen.getByRole('radiogroup', { name: '重点色' });
-    expect(within(accentControl).getAllByRole('radio')).toHaveLength(7);
-    expect(within(accentControl).getByRole('radio', { name: '默认灰' }))
+    const swatches = within(accentControl).getAllByRole('radio');
+    expect(swatches).toHaveLength(8);
+    expect(swatches[0]).toHaveAccessibleName('OpenCreator');
+    expect(swatches[0]).toHaveStyle({ '--settings-accent-swatch': '#f4d914' });
+    expect(within(accentControl).getByRole('radio', { name: '中性灰' }))
       .toHaveAttribute('aria-checked', 'true');
     const customAccent = within(accentControl).getByRole('radio', { name: '自定义' });
     expect(customAccent).toHaveTextContent('自定义');
@@ -380,6 +383,13 @@ describe('OpenCreatorSettingsView', () => {
 
     fireEvent.click(within(accentControl).getByRole('radio', { name: '橙色' }));
     expect(onAccentColorChange).toHaveBeenCalledWith('orange');
+  });
+
+  it('selects the OpenCreator accent when no preference is supplied', () => {
+    render(<OpenCreatorSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
+
+    const accentControl = screen.getByRole('radiogroup', { name: '重点色' });
+    expect(within(accentControl).getAllByRole('radio')[0]).toHaveAttribute('aria-checked', 'true');
   });
 
   it('validates and applies a custom accent color without blocking draft input', () => {

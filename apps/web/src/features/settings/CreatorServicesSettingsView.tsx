@@ -121,8 +121,9 @@ export function CreatorServicesSettingsView(props: {
         ?? Promise.reject(new Error('Model provider configuration is unavailable'))
       ,props.modelService?.getCodexModels?.()
         ?? Promise.reject(new Error('Model catalog is unavailable'))
+      ,props.service.getLocalVideoConfig?.() ?? Promise.resolve(undefined)
     ])
-      .then(([configResult, capabilitiesResult, providerResult, modelsResult]) => {
+      .then(([configResult, capabilitiesResult, providerResult, modelsResult, localVideoResult]) => {
         if (!active) return;
         if (configResult.status === 'rejected' || capabilitiesResult.status === 'rejected') {
           setConfig(undefined);
@@ -141,14 +142,19 @@ export function CreatorServicesSettingsView(props: {
         }
         pageIssues.resolveOperation('settings.creator-services.load');
         const response = configResult.value;
+        const localVideo = localVideoResult.status === 'fulfilled' ? localVideoResult.value : undefined;
+        const displayedConfig = localVideo ? { ...response.config, video: localVideo.config.video } : response.config;
         setRuntimeModelIds(modelsResult.status === 'fulfilled'
           ? modelsResult.value.models.map(model => model.model)
           : []);
-        setConfig(response.config);
+        setConfig(displayedConfig);
         setSavedImageProvider(response.config.image.provider);
         setTextModelMode(response.config.llm.source);
         setCapabilities(capabilitiesResult.value);
-        setConfiguredCredentials(new Set(response.configuredCredentials));
+        setConfiguredCredentials(new Set([
+          ...response.configuredCredentials.filter(field => !field.startsWith('video.')),
+          ...(localVideo?.configuredCredentials ?? response.configuredCredentials).filter(field => field.startsWith('video.'))
+        ]));
         setClearCredentials(new Set());
         setSavedTranscriptionSelection(transcriptionSelection(response.config));
         const useLegacyTextModel = response.config.llm.source === 'custom';
@@ -299,14 +305,20 @@ export function CreatorServicesSettingsView(props: {
         }
       }
       const credentialsToClear = [...clearCredentials];
-      const response = credentialsToClear.length === 0
-        ? await props.service.saveConfig(nextConfig)
-        : await props.service.saveConfig(nextConfig, credentialsToClear);
-      setConfig(response.config);
-      setSavedImageProvider(response.config.image.provider);
-      setConfiguredCredentials(new Set(response.configuredCredentials));
+      const response = activeSection === 'video' && props.service.saveLocalVideoConfig
+        ? await props.service.saveLocalVideoConfig(nextConfig.video, credentialsToClear.filter(field => field.startsWith('video.')))
+        : credentialsToClear.length === 0
+          ? await props.service.saveConfig(nextConfig)
+          : await props.service.saveConfig(nextConfig, credentialsToClear);
+      const savedConfig = activeSection === 'video' && props.service.saveLocalVideoConfig
+        ? { ...nextConfig, video: response.config.video } : response.config;
+      setConfig(savedConfig);
+      setSavedImageProvider(savedConfig.image.provider);
+      setConfiguredCredentials(current => new Set(activeSection === 'video' && props.service?.saveLocalVideoConfig
+        ? [...[...current].filter(field => !field.startsWith('video.')), ...response.configuredCredentials.filter(field => field.startsWith('video.'))]
+        : response.configuredCredentials));
       setClearCredentials(new Set());
-      setSavedTranscriptionSelection(transcriptionSelection(response.config));
+      setSavedTranscriptionSelection(transcriptionSelection(savedConfig));
       pageIssues.resolveOperation('settings.creator-services.save');
       setNotice(l('配置已安全保存', 'Settings saved securely'));
       const pending = readTranslationContinuation();

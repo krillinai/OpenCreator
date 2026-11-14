@@ -1179,6 +1179,7 @@ export const videoGenerationPanelAdapter: CreatorPanelAdapter = {
   },
   readStageProgress(stage, localize) {
     const progress = readStandardProgress(stage);
+    if (stage.status === 'failed') return { ...progress, percent: null };
     const active = stage.status === 'queued' || stage.status === 'running';
     const retry = readFiniteNumber(stage.progress.refreshRetry);
     let message: string | null = null;

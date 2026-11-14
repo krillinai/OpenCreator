@@ -4,6 +4,12 @@ import {
   imageModelOptions,
   imageSizeAspectRatio,
   type CreatorServicesConfig,
+  type CreatorServicesCredentialField,
+  gatewayModelIdMatches,
+  gatewayModelReady,
+  type GatewayAccountState,
+  type GatewayImageCatalog,
+  type GatewayModel,
   imagePromptRequiresReference,
   readCreatorResultSnapshots,
   safePublicErrorMessage,
@@ -22,6 +28,7 @@ import {
   ImagePlus,
   Images,
   LoaderCircle,
+  RefreshCw,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -38,6 +45,7 @@ import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
 import { publicErrorReason } from '../issues/issue-catalog.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
+import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import {
   captureCreatorClientFailure,
   createCreatorArtifactObjectUrl,
@@ -65,6 +73,7 @@ const qualities: Array<{ value: ImageGenerationQuality; zh: string; en: string }
   { value: 'high', zh: '高清', en: 'High' }
 ];
 
+const localImageModelId = '__local_image__';
 const providers: Array<{ value: ImageGenerationProvider; zh: string; en: string }> = [
   { value: 'codex-native', zh: '本机 Codex 生图', en: 'Local Codex image generation' },
   { value: 'openai', zh: 'GPT Image', en: 'GPT Image' },
@@ -86,11 +95,13 @@ export default function ImageGenerationWorkspace(props: {
   forceComposer?: boolean;
   onGenerated?(): void;
   creatorServicesService?: CreatorServicesSettingsService | null;
+  gatewayAccountService?: GatewayAccountSettingsService | null;
+  onGatewayStateChange?(state: GatewayAccountState): void;
 }) {
   const l = useLocalizedCopy();
   const requireGenerationAccess = useGenerationAccess();
   const session = useOptionalCreatorSession();
-  const official = useOfficialServices('image');
+  const official = useOfficialServices('image', true, undefined, models => models[0]);
   const [prompt, setPrompt] = useState(() => readString(session?.state.prompt));
   const [provider, setProvider] = useState<ImageGenerationProvider>(() => readProvider(session?.state.provider));
   const [size, setSize] = useState<ImageGenerationSize>(() => readSize(session?.state.size));
@@ -101,18 +112,59 @@ export default function ImageGenerationWorkspace(props: {
   const [officialQuality, setOfficialQuality] = useState(() => readString(session?.state.officialQuality));
   const [modelQuality, setModelQuality] = useState(() => readString(session?.state.modelQuality));
   const [imageConfig, setImageConfig] = useState<CreatorServicesConfig['image'] | null>(null);
+  const [configuredCredentials, setConfiguredCredentials] = useState<CreatorServicesCredentialField[]>([]);
   const [codexImageReady, setCodexImageReady] = useState<boolean>();
-  const configuredModel = provider === 'codex-native' ? '' : (imageConfig ?? defaultImageConfig)[provider].model;
+  const [publicCatalog, setPublicCatalog] = useState<GatewayImageCatalog | undefined>(() => props.gatewayAccountService?.getCachedImageCatalog?.());
+  const [catalogState, setCatalogState] = useState<'loading' | 'ready' | 'error'>(() => props.gatewayAccountService?.getCachedImageCatalog?.() ? 'ready' : 'loading');
+  const catalogRequest = useRef(0);
+  const catalogWork = useRef<{ service: GatewayAccountSettingsService; promise: Promise<GatewayImageCatalog> }>();
+  const [pendingModelId, setPendingModelId] = useState<string>();
+  const pendingValidation = useRef<string>();
+  const localProvider = imageConfig?.provider ?? provider;
+  const localConfigured = imageConfig !== null && (localProvider === 'codex-native' ? codexImageReady === true
+    : localProvider === 'kling' ? configuredCredentials.includes('image.kling.accessKey') && configuredCredentials.includes('image.kling.secretKey') && !!imageConfig.kling.model
+      : configuredCredentials.includes(`image.${localProvider}.apiKey` as CreatorServicesCredentialField) && !!imageConfig[localProvider].model);
+  const localModel: GatewayModel | undefined = imageConfig ? {
+    id: localImageModelId, name: l('本地生图服务', 'Local image service'), modality: 'image', capabilities: [],
+    vendor: l('本地', 'Local'), status: localConfigured ? 'ready' : 'temporarily_unavailable'
+  } : undefined;
+  const publicModels = publicCatalog?.models ?? [];
+  const catalogModels = official.official ? official.models : [...(localModel ? [localModel] : []), ...publicModels];
+  const loginRequiredModelIds = new Set(official.official ? [] : publicModels.map(model => model.id));
+  const selectedCatalogId = official.official ? official.selected ?? official.model?.id ?? '' : pendingModelId ?? (localConfigured ? localImageModelId : '');
+  function loadPublicCatalog(force = false) {
+    const request = ++catalogRequest.current;
+    const service = props.gatewayAccountService;
+    if (!service?.getImageCatalog) { setCatalogState('error'); return; }
+    const cached = service.getCachedImageCatalog?.();
+    if (cached) { setPublicCatalog(cached); setCatalogState('ready'); }
+    else setCatalogState('loading');
+    const promise = !force && catalogWork.current?.service === service
+      ? catalogWork.current.promise : service.getImageCatalog({ refresh: force });
+    catalogWork.current = { service, promise };
+    void promise.then(catalog => {
+      if (request === catalogRequest.current) { setPublicCatalog(catalog); setCatalogState('ready'); }
+    }).catch(() => {
+      if (request === catalogRequest.current) setCatalogState(cached ? 'ready' : 'error');
+    }).finally(() => {
+      if (catalogWork.current?.promise === promise) catalogWork.current = undefined;
+    });
+  }
+  useEffect(() => {
+    if (!official.official) loadPublicCatalog();
+    return () => { catalogRequest.current++; };
+  }, [props.gatewayAccountService, official.official]);
+  const configuredModel = localProvider === 'codex-native' ? '' : (imageConfig ?? defaultImageConfig)[localProvider].model;
   const imageOptions = useMemo(() => official.official
     ? official.model?.imageOptions ?? {}
-    : provider === 'codex-native' ? undefined : imageModelOptions(provider, configuredModel),
-  [official.official, official.model, provider, configuredModel]);
+    : localProvider === 'codex-native' ? undefined : imageModelOptions(localProvider, configuredModel),
+  [official.official, official.model, localProvider, configuredModel]);
   const activeQuality = official.official ? officialQuality : modelQuality;
   useEffect(() => {
     if (official.official) return;
     let active = true;
     void props.creatorServicesService?.getConfig().then(response => {
-      if (active) setImageConfig(response.config.image);
+      if (active) { setImageConfig(response.config.image); setConfiguredCredentials(response.configuredCredentials ?? []); }
     }).catch(() => undefined);
     return () => { active = false; };
   }, [props.creatorServicesService, official.official]);
@@ -128,7 +180,10 @@ export default function ImageGenerationWorkspace(props: {
     if (official.official) setOfficialQuality(nextQuality); else setModelQuality(nextQuality);
     if (nextCount !== count) setCount(nextCount);
     if (official.official && (nextRatio !== aspectRatio || nextResolution !== resolution || nextQuality !== activeQuality || nextCount !== count)) {
-      session?.updateDraft({ aspectRatio: nextRatio, resolution: nextResolution, officialQuality: nextQuality, candidateCount: nextCount });
+      session?.updateDraft(
+        { aspectRatio: nextRatio, resolution: nextResolution, officialQuality: nextQuality, candidateCount: nextCount },
+        { persist: session.job.id.startsWith('pending:') ? false : undefined, userEdited: false }
+      );
     }
   }, [imageOptions, official.taskRunning, official.official, aspectRatio, resolution, activeQuality, count, size, quality]);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
@@ -142,7 +197,7 @@ export default function ImageGenerationWorkspace(props: {
   const characterCount = useMemo(() => [...prompt.trim()].length, [prompt]);
   const selectedSize = imageOptions ? { value: resolution, zh: aspectRatio || l('默认', 'Default'), en: aspectRatio || l('默认', 'Default'), ratio: aspectRatio || l('默认', 'Default') } : sizes.find(item => item.value === size) ?? sizes[0]!;
   const selectedQuality = imageOptions ? { zh: imageQualityLabel(activeQuality, l) || l('默认', 'Default'), en: imageQualityLabel(activeQuality, l) || l('默认', 'Default') } : qualities.find(item => item.value === quality) ?? qualities[1]!;
-  const selectedProvider = official.official ? { zh: '官方服务', en: 'Official service' } : providers.find(item => item.value === provider) ?? providers[0]!;
+  const selectedProvider = official.official ? { zh: '官方服务', en: 'Official service' } : { zh: '本地生图服务', en: 'Local image service' };
   const resultVersions = useMemo(
     () => createImageResultVersions(session?.job.artifacts ?? [], session?.state.resultSnapshots),
     [session?.job.artifacts, session?.state.resultSnapshots]
@@ -173,6 +228,11 @@ export default function ImageGenerationWorkspace(props: {
     ? { zh: imageQualityLabel(savedModelQuality, l) || l('默认', 'Default'), en: imageQualityLabel(savedModelQuality, l) || l('默认', 'Default') }
     : qualities.find(item => item.value === readQuality(resultSettings?.quality)) ?? qualities[1]!;
   const outputBatchSize = official.model?.catalogSchema === 2 ? official.model.imageOptions?.imagesPerRequest ?? 1 : 1;
+  const showsImageFormat = !imageOptions || Boolean(imageOptions.aspectRatios?.length);
+  const showsImageResolution = !imageOptions || Boolean(imageOptions.resolutions?.length);
+  const showsImageQuality = !imageOptions || Boolean(imageOptions.qualities?.length);
+  const currentImageSummary = [l(selectedProvider.zh, selectedProvider.en),
+    ...(showsImageFormat ? [selectedSize.ratio] : []), String(count * outputBatchSize)].join(' · ');
   const supportsReferenceImage = (session === null || session.job.id.startsWith('pending:') || session.job.templateVersion >= 2)
     && (!official.official || official.model?.catalogSchema !== 2 || (official.model.capabilities.includes('edit') && (official.model.imageOptions?.maxReferences ?? 0) > 0));
   const activeReferenceArtifact = findArtifact(
@@ -217,7 +277,7 @@ export default function ImageGenerationWorkspace(props: {
 
   useEffect(() => {
     setCodexImageReady(undefined);
-    if (official.official || !shouldLoadDefaultProvider || imageConfig?.provider !== 'codex-native') return;
+    if (official.official || imageConfig?.provider !== 'codex-native') return;
     const service = props.creatorServicesService;
     if (!service?.getCodexImageStatus) {
       setCodexImageReady(false);
@@ -230,16 +290,13 @@ export default function ImageGenerationWorkspace(props: {
       if (active) setCodexImageReady(false);
     });
     return () => { active = false; };
-  }, [imageConfig?.provider, official.official, props.creatorServicesService, shouldLoadDefaultProvider]);
+  }, [imageConfig?.provider, official.official, props.creatorServicesService]);
 
   useEffect(() => {
     if (official.official) return;
     if (session === null || !shouldLoadDefaultProvider) return;
     if (!imageConfig) return;
-    if (imageConfig.provider === 'codex-native' && codexImageReady === undefined) return;
-    const nextProvider = imageConfig.provider === 'codex-native' && !codexImageReady
-      ? 'openai'
-      : imageConfig.provider;
+    const nextProvider = imageConfig.provider;
     const nextCount = nextProvider === 'codex-native' ? 1 : count;
     setProvider(nextProvider);
     setCount(nextCount);
@@ -247,7 +304,33 @@ export default function ImageGenerationWorkspace(props: {
       { providerSource: 'default' },
       { persist: false }
     );
-  }, [codexImageReady, count, imageConfig, session, shouldLoadDefaultProvider, official.official]);
+  }, [count, imageConfig, session, shouldLoadDefaultProvider, official.official]);
+
+  useEffect(() => {
+    if (!pendingModelId || official.authState !== 'signed_in' || official.activationState !== 'ready'
+      || pendingValidation.current === pendingModelId || !props.gatewayAccountService) return;
+    pendingValidation.current = pendingModelId;
+    let active = true;
+    void props.gatewayAccountService.getState({ refreshModels: true }).then(state => {
+      if (!active) return;
+      props.onGatewayStateChange?.(state);
+      const ready = state.models.filter(model => model.modality === 'image' && gatewayModelReady(model));
+      const requested = ready.find(model => gatewayModelIdMatches(model.id, pendingModelId));
+      const recommended = ready.find(model => gatewayModelIdMatches(model.id, state.recommendedModels?.image))
+        ?? ready.find(model => model.recommended);
+      const chosen = requested ?? recommended ?? ready[0];
+      if (chosen) session?.updateDraft({ officialModels: { image: chosen.id } });
+      if (!requested) setNotice(chosen
+        ? recommended
+          ? l('所选模型当前账户不可用，已切换为推荐图片模型。', 'That model is unavailable for this account. A recommended image model is selected.')
+          : l('所选模型当前账户不可用，已切换为可用图片模型。', 'That model is unavailable for this account. An available image model is selected.')
+        : l('当前账户暂无可用的图片模型。', 'No image model is available for this account.'));
+      setPendingModelId(undefined);
+    }).catch(() => {
+      if (active) { setPendingModelId(undefined); setNotice(l('账户模型目录刷新失败，请重新选择模型。', 'Could not refresh your account models. Select a model again.')); }
+    });
+    return () => { active = false; };
+  }, [pendingModelId, official.authState, official.activationState, props.gatewayAccountService, props.onGatewayStateChange, session?.job.id]);
 
   useEffect(() => {
     const { session, l } = previewContext.current;
@@ -381,6 +464,20 @@ export default function ImageGenerationWorkspace(props: {
     setError('');
   }
 
+  function selectCatalogModel(id: string) {
+    if (id === localImageModelId) {
+      setPendingModelId(undefined);
+      pendingValidation.current = undefined;
+      if (imageConfig && localConfigured) updateProvider(imageConfig.provider);
+      return;
+    }
+    if (official.official) { official.selectModel(id); return; }
+    if (!publicModels.some(model => gatewayModelIdMatches(model.id, id) && gatewayModelReady(model))) return;
+    setPendingModelId(id);
+    pendingValidation.current = undefined;
+    requireGenerationAccess();
+  }
+
   function updateSize(value: ImageGenerationSize) {
     setSize(value);
     const nextRatio = imageSizeAspectRatio(value);
@@ -398,7 +495,7 @@ export default function ImageGenerationWorkspace(props: {
   }
 
   function updateCount(value: number) {
-    if (!official.official && provider === 'codex-native' && value !== 1) return;
+    if (!official.official && localProvider === 'codex-native' && value !== 1) return;
     setCount(value);
     session?.updateDraft({ candidateCount: value });
     setError('');
@@ -423,7 +520,7 @@ export default function ImageGenerationWorkspace(props: {
 
   async function generate() {
     if (busy) return;
-    if (!requireGenerationAccess()) return;
+    if (!requireGenerationAccess(!official.official && !pendingModelId)) return;
     if (official.official && !official.ready) { setError(l('官方图片服务暂不可用，请在账户页面检查连接状态', 'Official image service is unavailable. Check the connection in your account.')); return; }
     if (session === null) {
       setError(l(
@@ -436,6 +533,10 @@ export default function ImageGenerationWorkspace(props: {
       setError(l('请先描述需要生成的画面', 'Describe the image you want to create'));
       return;
     }
+    if (!official.official && !localConfigured) {
+      setError(l('请先在设置中配置可用的本地生图服务。', 'Configure a ready local image service in Settings first.'));
+      return;
+    }
     if (missingReference) {
       setError(referenceValidationMessage);
       return;
@@ -445,7 +546,7 @@ export default function ImageGenerationWorkspace(props: {
     setSubmitting(true);
     session.updateDraft({
       prompt: prompt.trim(),
-      provider: official.official ? 'openai' : provider,
+      provider: official.official ? 'openai' : localProvider,
       size,
       quality,
       candidateCount: count,
@@ -521,19 +622,6 @@ export default function ImageGenerationWorkspace(props: {
       updateSize('1024x1024');
       return l('画幅已改为方形 1:1。', 'Format changed to square 1:1.');
     }
-    const normalized = command.toLowerCase();
-    const providerMatch = providers.find(item => (
-      normalized.includes(item.value)
-      || command.includes(item.zh)
-      || normalized.includes(item.en.toLowerCase())
-    ));
-    if (providerMatch) {
-      updateProvider(providerMatch.value);
-      return l(
-        `图像服务已改为${providerMatch.zh}。`,
-        `Image provider changed to ${providerMatch.en}.`
-      );
-    }
     if (command.trim().length > 8) {
       updatePrompt(command.trim());
       return l('画面描述已同步，可以继续设置生成参数。', 'The image description is synchronized. Continue with generation settings.');
@@ -590,7 +678,7 @@ export default function ImageGenerationWorkspace(props: {
     id: 'count',
     label: l('生成数量', 'Number of images'),
     value: String(count),
-    options: (!official.official && provider === 'codex-native' ? [1] : [1, 2, 4]
+    options: (!official.official && localProvider === 'codex-native' ? [1] : [1, 2, 4]
       .filter(value => value <= (official.official ? official.model?.imageOptions?.maxImages ?? 4 : 4)))
       .map(value => ({
         value: String(value),
@@ -598,11 +686,13 @@ export default function ImageGenerationWorkspace(props: {
       })),
     onChange: value => updateCount(Number(value))
   });
+  const availableImageSettingSections = imageSettingSections.filter(section => section.options.length > 0);
+  const hasImageSetting = (id: string) => availableImageSettingSections.some(section => section.id === id);
   const imageSettingsSummary = {
-    aspectRatio: selectedSize.ratio,
+    aspectRatio: hasImageSetting('aspect-ratio') ? selectedSize.ratio : '',
     count: String(count * outputBatchSize),
-    resolution: imageOptions ? resolution || l('默认', 'Default') : size,
-    quality: l(selectedQuality.zh, selectedQuality.en)
+    resolution: hasImageSetting('resolution') ? imageOptions ? resolution : size : '',
+    quality: hasImageSetting('quality') ? l(selectedQuality.zh, selectedQuality.en) : ''
   };
   const promptField = <div className="creator-tool-field image-generation-prompt-field">
     <span id="image-prompt-label" className="image-generation-visually-hidden">{l('提示词', 'Prompt')}</span>
@@ -628,14 +718,15 @@ export default function ImageGenerationWorkspace(props: {
         ? l('正在生成图片', 'Generating images')
         : selectedResult
           ? l(`V${selectedResult.value} · ${selectedResult.artifacts.length} 张图片`, `V${selectedResult.value} · ${selectedResult.artifacts.length} images`, `V${selectedResult.value} · ${selectedResult.artifacts.length} bilder`)
-          : `${l(selectedProvider.zh, selectedProvider.en)} · ${selectedSize.ratio} · ${count * outputBatchSize}`}
+          : currentImageSummary}
       taskSummary={<CreatorTaskSummary
         sourceIcon={ImageIcon}
         sourceLabel={l('画面描述', 'Prompt')}
         sourceValue={(selectedResult ? readString(resultSettings?.prompt) : prompt.trim()) || l('待添加', 'Not added', 'Inte tillagt')}
         compactSummary={selectedResult
           ? `${l(resultProvider.zh, resultProvider.en)} · ${resultSizeOption.ratio} · V${selectedResult.value}`
-          : `${l(selectedProvider.zh, selectedProvider.en)} · ${selectedSize.ratio} · ${l(`${count * outputBatchSize} 张`, `${count * outputBatchSize} images`, `${count * outputBatchSize} bilder`)}`}
+          : [l(selectedProvider.zh, selectedProvider.en), ...(showsImageFormat ? [selectedSize.ratio] : []),
+            l(`${count * outputBatchSize} 张`, `${count * outputBatchSize} images`, `${count * outputBatchSize} bilder`)].join(' · ')}
         items={selectedResult ? [
           { label: l('图像服务', 'Provider'), value: l(resultProvider.zh, resultProvider.en) },
           { label: l('画幅', 'Format'), value: resultSettings?.aspectRatio ? resultSizeOption.ratio : `${l(resultSizeOption.zh, resultSizeOption.en)} · ${resultSizeOption.ratio}` },
@@ -645,15 +736,17 @@ export default function ImageGenerationWorkspace(props: {
         ] : [
           ...(currentReferenceName ? [{ label: l('参考图', 'Reference image'), value: currentReferenceName }] : []),
           { label: l('图像服务', 'Provider'), value: l(selectedProvider.zh, selectedProvider.en) },
-          { label: l('画幅', 'Format'), value: imageOptions ? selectedSize.ratio : `${l(selectedSize.zh, selectedSize.en)} · ${selectedSize.ratio}` },
-          { label: l('分辨率', 'Resolution'), value: imageOptions ? resolution || l('默认', 'Default') : size },
-          { label: l('质量', 'Quality'), value: l(selectedQuality.zh, selectedQuality.en) },
+          ...(showsImageFormat ? [{ label: l('画幅', 'Format'), value: imageOptions ? selectedSize.ratio : `${l(selectedSize.zh, selectedSize.en)} · ${selectedSize.ratio}` }] : []),
+          ...(showsImageResolution ? [{ label: l('分辨率', 'Resolution'), value: imageOptions ? resolution : size }] : []),
+          ...(showsImageQuality ? [{ label: l('质量', 'Quality'), value: l(selectedQuality.zh, selectedQuality.en) }] : []),
           { label: l('生成数量', 'Images'), value: String(count) }
         ]}
       />}
-      initialMessage={l('描述你想生成的画面，我会帮你整理画幅、质量和输出数量。', 'Describe the image you want, then set its format, quality, and output count.')}
+      initialMessage={showsImageFormat && showsImageQuality
+        ? l('描述你想生成的画面，我会帮你整理画幅、质量和输出数量。', 'Describe the image you want, then set its format, quality, and output count.')
+        : l('请描述画面主体、环境、风格、光线和构图。', 'Describe the subject, setting, style, lighting, and composition.')}
       currentIssue={visibleError || undefined}
-      suggestions={[l('填入示例提示词', 'Use a sample prompt'), l('生成横向图片', 'Create a landscape image')]}
+      suggestions={[l('填入示例提示词', 'Use a sample prompt'), ...(showsImageFormat ? [l('生成横向图片', 'Create a landscape image')] : [])]}
       placeholder={props.promptHint ?? l('描述需要生成的图片', 'Describe the image to generate')}
       onBack={props.onBack}
       onCommand={handleCommand}
@@ -688,11 +781,11 @@ export default function ImageGenerationWorkspace(props: {
                     <span className="image-generation-reference-thumbnail">
                       {referencePreview ? <img src={referencePreview} alt={l('图像生成参考图', 'Image generation reference')} /> : <ImagePlus size={24} strokeWidth={1.5} />}
                     </span>
-                    <span className="image-generation-reference-copy">
-                      <span><strong>{currentReferenceName ?? l('参考图', 'Reference', 'Referens')}</strong>
-                        {!currentReferenceName ? <small>{l('选填', 'Optional')}</small> : null}</span>
-                      <small>{currentReferenceName ? l('更换参考图', 'Replace reference') : l('JPG、PNG、WebP，最大 20 MB', 'JPG, PNG, WebP, up to 20 MB', 'JPG, PNG, WebP, högst 20 MB')}</small>
-                    </span>
+                    {!currentReferenceName ? <span className="image-generation-reference-copy">
+                      <span><strong>{l('参考图', 'Reference', 'Referens')}</strong>
+                        <small>{l('选填', 'Optional')}</small></span>
+                      <small>{l('JPG、PNG、WebP，最大 20 MB', 'JPG, PNG, WebP, up to 20 MB', 'JPG, PNG, WebP, högst 20 MB')}</small>
+                    </span> : null}
                     <span className="image-generation-reference-count">{currentReferenceName ? 1 : 0}/1</span>
                   </label>
                   {currentReferenceName ? <button className="image-generation-reference-remove" type="button" onClick={clearReference}
@@ -714,28 +807,30 @@ export default function ImageGenerationWorkspace(props: {
             </div>
             <div className="image-generation-action-bar">
               <div className="image-generation-model-row">
-                {official.official ? <OfficialModelField label={l('图片模型', 'Image model')} service={official} disabled={busy} /> : (
+                {official.official ? <OfficialModelField label={l('图片模型', 'Image model')} service={official} disabled={busy} layout="grouped" /> : (
                   <label className="creator-tool-field image-generation-provider-picker">
                     <OfficialModelSelect
                       label={l('模型', 'Model')}
-                      value={provider}
+                      value={selectedCatalogId}
                       disabled={busy}
-                      layout="catalog"
-                      onChange={value => updateProvider(readProvider(value))}
-                      models={providers.map(item => ({
-                        id: item.value,
-                        name: l(item.zh, item.en),
-                        modality: 'image',
-                        capabilities: []
-                      }))}
+                      layout="grouped"
+                      loginRequiredModelIds={loginRequiredModelIds}
+                      onChange={selectCatalogModel}
+                      models={catalogModels}
                     />
                   </label>
                 )}
+                {!official.official && catalogState !== 'ready' ? <div className="image-generation-catalog-status" role="status">
+                  {catalogState === 'loading' ? l('正在加载官方图片模型…', 'Loading official image models…') : <>
+                    <span>{l('官方图片模型目录加载失败', 'Official image models could not load')}</span>
+                    <button type="button" onClick={() => loadPublicCatalog(true)} aria-label={l('重试加载图片模型', 'Retry loading image models')}><RefreshCw size={14} />{l('重试', 'Retry')}</button>
+                  </>}
+                </div> : null}
               </div>
               <ImageGenerationSettings
                 label={l('图片设置', 'Image settings', 'Bildinställningar')}
                 summary={imageSettingsSummary}
-                sections={imageSettingSections.filter(section => section.options.length > 0)}
+                sections={availableImageSettingSections}
                 disabled={busy || official.taskRunning || (official.official && !official.ready)}
                 hideHeader={props.embedded}
               />
@@ -813,11 +908,12 @@ export default function ImageGenerationWorkspace(props: {
         {!props.embedded ? (
           <ImageGenerationDiscovery
             official={official}
-            provider={provider}
-            providers={providers}
-            imageConfig={imageConfig}
+            models={catalogModels}
+            localModelId={localImageModelId}
+            selectedId={selectedCatalogId}
+            catalogState={catalogState}
             busy={busy}
-            onProviderChange={updateProvider}
+            onModelSelect={selectCatalogModel}
             onTemplate={applyTemplate}
           />
         ) : null}

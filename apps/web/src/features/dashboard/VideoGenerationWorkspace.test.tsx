@@ -5,6 +5,7 @@ import type {
   CreatorArtifact,
   CreatorJob,
   CreatorJson,
+  CreatorServicesConfig,
   CreatorServicesConfigResponse,
   CreatorStageRun,
   GatewayAccountState
@@ -13,22 +14,255 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { LanguageSwitchControls } from '../../test/LanguageSwitchControls.js';
+import DashboardGenerationAccess from './DashboardGenerationAccess.js';
 import VideoGenerationWorkspace from './VideoGenerationWorkspace.js';
 import { CreatorSessionProvider, useCreatorSession } from './creator-session-store.js';
 import { OfficialServicesContext } from './official-services.js';
 
 describe('VideoGenerationWorkspace', () => {
-  it.each([0, 1, 2])('opens legacy step %s as a single editable form with the summary in the agent panel', step => {
+  it.each([true, false])('opens a new video task with the last manually chosen official model (account ready at mount: %s)', async readyAtMount => {
+    const gatewayState: GatewayAccountState = {
+      source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account', email: 'user@example.com', verified: true }, bindingVersion: 'account:1',
+      selectedModels: { video: 'bytedance/seedance-2.5' },
+      taskModels: { 'video-generation': { video: 'vendor/alternate' } },
+      models: [
+        { id: 'bytedance/seedance-2.5', name: 'Seedance 2.5', modality: 'video', capabilities: ['generate'], sizes: ['1280x720'], durations: [5] },
+        { id: 'vendor/alternate', name: 'Alternate Video', modality: 'video', capabilities: ['generate'], sizes: ['1280x720'], durations: [7] }
+      ], activationError: null
+    };
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk' } }), {
+      gatewayState: readyAtMount ? gatewayState : undefined
+    });
+    if (!readyAtMount) view.rerenderWorkspace({ gatewayState });
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Alternate Video'));
+  });
+
+  it('keeps the local video choice and settings after sign-in', async () => {
+    const gatewayState: GatewayAccountState = {
+      source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account', email: 'user@example.com', verified: true },
+      bindingVersion: 'account:1', taskModels: { 'video-generation': { video: 'vendor/video' } }, models: [
+        { id: 'vendor/video', name: 'Official Video', vendor: 'Vendor', modality: 'video', capabilities: ['generate'], sizes: ['1080p@16:9'], durations: [7] },
+        { id: 'seedance-2.5官方版', name: 'Seedance 2.5', modality: 'video', capabilities: ['generate'], sizes: ['720p@16:9'], durations: [5] }
+      ],
+      activationError: null
+    };
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk', videoServiceSource: 'manual' } }), {
+      gatewayState,
+      creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] }) }
+    });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    expect(screen.getByRole('option', { name: 'Official Video' })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('combobox', { name: '模型' }), { key: 'Escape' });
+    openVideoSettings();
+    expect(screen.getByRole('radiogroup', { name: '画幅' })).toHaveTextContent('16:9');
+    expect(screen.getByRole('spinbutton', { name: '视频时长' })).toHaveValue(5);
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ provider: 'seedance', model: 'doubao-seedance-2-5-260628' });
+  });
+
+  it('keeps the same settings fields when switching between local and official models', async () => {
+    const gatewayState: GatewayAccountState = {
+      source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account', email: 'user@example.com', verified: true },
+      bindingVersion: 'account:1', selectedModels: { video: 'vendor/video' },
+      models: [{ id: 'vendor/video', name: 'Official Video', vendor: 'Vendor', modality: 'video', capabilities: ['generate'], sizes: ['1080p@16:9'], durations: [7] }],
+      activationError: null
+    };
+    renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk' } }), { gatewayState });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
+    openVideoSettings();
+    expect(screen.getByRole('slider', { name: '视频时长' })).toHaveAttribute('max', '1');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Official Video' }));
+    openVideoSettings();
+    expect(screen.getByRole('spinbutton', { name: '视频时长' })).toHaveValue(7);
+    expect(within(screen.getByRole('radiogroup', { name: '画幅' })).getAllByRole('radio').map(item => item.getAttribute('data-value'))).toEqual(['16:9']);
+    expect(within(screen.getByRole('radiogroup', { name: '清晰度' })).getAllByRole('radio').map(item => item.getAttribute('data-value'))).toEqual(['1080p@16:9']);
+    expect(screen.getByLabelText('上传视频参考图')).toBeDisabled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    fireEvent.click(screen.getByRole('option', { name: '本地视频服务' }));
+    openVideoSettings();
+    expect(screen.getByRole('slider', { name: '视频时长' })).toHaveAttribute('max', '1');
+    expect(screen.getByLabelText('上传视频参考图')).toBeEnabled();
+  });
+
+  it('uses a configured local video model while signed out and lists only public gateway models', async () => {
+    const config: CreatorServicesConfig = createVideoConfig();
+    config.video.provider = 'veo';
+    const gatewayState: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const getVideoCatalog = vi.fn(async () => ({ models: [
+      { id: 'bytedance/motion', name: 'Gateway Motion', vendor: 'ByteDance', modality: 'video' as const, capabilities: [], durations: [7], sizes: ['1080p@16:9'] },
+      { id: 'google/film', name: 'Gateway Film', vendor: 'Google', modality: 'video' as const, capabilities: [], durations: [8] }
+    ] }));
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk' } }), {
+      creatorServicesService: { getConfig: async () => ({ config, configuredCredentials: ['video.veo.apiKey'] }) },
+      gatewayState, gatewayAccountService: { getVideoCatalog }, accessGate: true
+    });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    expect(screen.getByRole('group', { name: 'ByteDance' })).toHaveTextContent('Gateway Motion');
+    expect(screen.getByRole('group', { name: 'Google' })).toHaveTextContent('Gateway Film');
+    expect(screen.queryByRole('option', { name: 'Seedance 2.5' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Gateway Motion' })).toHaveTextContent('Gateway Motion');
+    expect(screen.getByRole('option', { name: 'Gateway Motion' })).not.toHaveTextContent(/登录后使用|1080p|时长|积分/);
+    fireEvent.keyDown(screen.getByRole('combobox', { name: '模型' }), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
+    expect(mergedSettingsPatch(view.applyAction.mock.calls))
+      .toMatchObject({ provider: 'veo', model: config.video.veo.model });
+    expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Gateway Motion' }));
+    expect(await screen.findByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('A city at dusk');
+  });
+
+  it('links an unconfigured local video option to video service settings', async () => {
+    const previousHash = window.location.hash;
+    const getVideoCatalog = vi.fn(async () => ({ models: [
+      { id: 'vendor/film', name: 'Gateway Film', vendor: 'Vendor', modality: 'video' as const, capabilities: [] }
+    ] }));
+    try {
+      renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk' } }), {
+        creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: [] }) },
+        gatewayAccountService: { getVideoCatalog }
+      });
+      await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('选择模型'));
+      fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+      const local = await screen.findByRole('option', { name: '本地视频服务' });
+      expect(local).toBeEnabled();
+      fireEvent.click(local);
+      expect(window.location.hash).toBe('#/settings?tab=ai-services&section=video');
+      expect(getVideoCatalog).toHaveBeenCalledOnce();
+    } finally {
+      window.location.hash = previousHash;
+    }
+  });
+
+  it('keeps gateway video vendors and puts the entire Others group last', async () => {
+    renderWorkspace(creatorJob({}), {
+      creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] }) },
+      gatewayAccountService: { getVideoCatalog: async () => ({ models: [
+        { id: 'custom/unknown', name: 'Unknown Film', vendor: 'Others', modality: 'video' as const, capabilities: [], durations: [5], sizes: ['720p@16:9'] },
+        { id: 'google/veo', name: 'Veo', vendor: 'Google', modality: 'video' as const, capabilities: [], durations: [8] },
+        { id: 'zeta/film', name: 'Zeta Film', vendor: 'Zeta', modality: 'video' as const, capabilities: [] },
+        { id: 'bytedance/seedance', name: 'Seedance', vendor: 'ByteDance', modality: 'video' as const, capabilities: [] },
+        { id: 'SD2.0', name: 'SD 2.0', vendor: 'Others', modality: 'video' as const, capabilities: [], recommended: true,
+          durations: [5], sizes: ['1080p@16:9'], resolutions: ['1080p'],
+          price: { version: 'v1', videoUnitsPerSecond: { '1080p': 1_000_000 }, estimates: { clip: { creditUnits: '5000000', seconds: 5, resolution: '1080p' } } } }
+      ] }) }
+    });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    const list = screen.getByRole('listbox', { name: '模型' });
+    await waitFor(() => expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label')))
+      .toEqual(['本地', 'ByteDance', 'Google', 'Zeta', 'Others']));
+    const sd = within(list).getByRole('option', { name: 'SD 2.0' });
+    expect(within(screen.getByRole('group', { name: 'Others' })).getByRole('option', { name: 'SD 2.0' })).toBe(sd);
+    expect(sd.querySelector('[data-brand="generic"] svg')).not.toBeNull();
+    expect(sd).toHaveTextContent('约 5 积分 / 5 秒 · 1080p');
+    expect(sd).not.toHaveTextContent(/推荐|登录后使用|时长/);
+    expect(within(screen.getByRole('group', { name: 'ByteDance' })).getByRole('option', { name: 'Seedance' })
+      .querySelector('[data-brand="bytedance"] img')).toHaveAttribute('src', '/model-brands/bytedance-color.svg');
+    expect(within(list).getByRole('option', { name: 'Unknown Film' })).not.toHaveTextContent(/时长|720p/);
+  });
+
+  it.each([
+    { language: 'zh-CN' as const, failure: '官方视频模型目录加载失败', local: '本地视频服务', model: '模型', retry: '重试加载视频模型' },
+    { language: 'en-US' as const, failure: 'Official video models could not load', local: 'Local video service', model: 'Model', retry: 'Retry loading video models' },
+    { language: 'sv-SE' as const, failure: 'Kunde inte läsa in officiella videomodeller', local: 'Lokal videotjänst', model: 'Modell', retry: 'Försök läsa in videomodeller igen' }
+  ])('keeps local video generation available when the public catalog fails and retries it in $language', async ({ language, failure, local, model, retry }) => {
+    const getVideoCatalog = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ models: [
+      { id: 'vendor/video', name: 'Recovered Video', vendor: 'Vendor', modality: 'video', capabilities: [] }
+    ] });
+    renderWorkspace(creatorJob({ state: { prompt: 'A city' } }), {
+      creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] }) },
+      gatewayAccountService: { getVideoCatalog }, language
+    });
+    expect(await screen.findByText(failure)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: model })).toHaveValue(local);
+    fireEvent.click(screen.getByRole('button', { name: retry }));
+    fireEvent.click(screen.getByRole('combobox', { name: model }));
+    expect(await screen.findByRole('option', { name: 'Recovered Video' })).toBeInTheDocument();
+    expect(getVideoCatalog).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { available: true, selected: 'Requested Video', notice: false },
+    { available: false, selected: 'Recommended Video', notice: true }
+  ])('validates a pending public video model after sign-in (available: $available)', async ({ available, selected, notice }) => {
+    const requested = { id: 'vendor/requested', name: 'Requested Video', vendor: 'Vendor', modality: 'video' as const, capabilities: [], durations: [5], sizes: ['1280x720'] };
+    const recommended = { id: 'vendor/recommended', name: 'Recommended Video', vendor: 'Vendor', modality: 'video' as const, capabilities: [], durations: [8], sizes: ['720x1280'], recommended: true };
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const signedIn: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', models: available ? [requested, recommended] : [recommended], recommendedModels: { video: recommended.id }, selectedModels: { video: recommended.id }, activationError: null };
+    const getState = vi.fn(async () => signedIn);
+    const gatewayAccountService = { getVideoCatalog: vi.fn(async () => ({ models: [requested, recommended] })), getState };
+    const onGatewayStateChange = vi.fn();
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'Keep this video prompt' } }), {
+      creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] }) },
+      gatewayState: signedOut, gatewayAccountService, onGatewayStateChange, accessGate: true
+    });
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Requested Video' }));
+    expect(await screen.findByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('Keep this video prompt');
+    view.rerenderWorkspace({ gatewayState: signedIn });
+    await waitFor(() => available
+      ? expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue(selected)
+      : expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue(selected));
+    expect(getState).toHaveBeenCalledWith({ refreshModels: true });
+    expect(onGatewayStateChange).toHaveBeenCalledWith(signedIn);
+    if (notice) expect(screen.getByText(/所选模型当前账户不可用/)).toBeInTheDocument();
+    expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+    expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('Keep this video prompt');
+  });
+  it('selects a ready local provider when the configured default has no credentials', async () => {
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A coastline' } }), {
+      creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.veo.apiKey'] }) }
+    });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
+    expect(mergedSettingsPatch(view.applyAction.mock.calls))
+      .toMatchObject({ provider: 'veo', model: 'veo-3.1-generate-preview' });
+  });
+  it('keeps the ready local provider when switching back from a gateway model', async () => {
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A coastline' } }), {
+      creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.veo.apiKey'] }) },
+      gatewayAccountService: { getVideoCatalog: async () => ({ models: [{ id: 'vendor/video', name: 'Gateway Video', vendor: 'Vendor', modality: 'video', capabilities: [] }] }) },
+      gatewayState: signedOut, accessGate: true
+    });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Gateway Video' }));
+    fireEvent.click(screen.getByRole('button', { name: '关闭登录窗口' }));
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    fireEvent.click(screen.getByRole('option', { name: '本地视频服务' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ provider: 'veo', model: 'veo-3.1-generate-preview' });
+  });
+  it.each([0, 1, 2])('opens legacy step %s as a single editable form with the summary in the agent panel', async step => {
+    const config: CreatorServicesConfig = createVideoConfig();
+    config.video.provider = 'veo';
     renderWorkspace(creatorJob({ state: {
       prompt: 'A coastal tracking shot', provider: 'veo', model: 'veo-3.1-generate-preview',
       size: '720x1280', duration: 8, currentStep: step, furthestStep: step
-    } }));
+    } }), { creatorServicesService: { getConfig: async () => ({ config, configuredCredentials: ['video.veo.apiKey'] }) } });
     const form = screen.getByRole('form', { name: '视频生成' });
     expect(within(form).getByRole('textbox', { name: '提示词' })).toHaveValue('A coastal tracking shot');
-    expect(within(form).getByRole('combobox', { name: '模型' })).toHaveValue('Veo 3.1');
+    await waitFor(() => expect(within(form).getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
     openVideoSettings();
     expect(screen.getByRole('radio', { name: '9:16' })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByRole('radio', { name: '8 秒' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('spinbutton', { name: '视频时长' })).toHaveValue(8);
     expect(within(form).getByRole('button', { name: '开始生成' })).toBeEnabled();
     const agent = screen.getByRole('complementary', { name: 'OpenCreator' });
     expect(within(agent).getByRole('complementary', { name: '任务摘要' })).toHaveTextContent('Veo 3.1 · 9:16 · 8s');
@@ -38,22 +272,24 @@ describe('VideoGenerationWorkspace', () => {
   });
 
   it('validates and submits the edited prompt and settings directly from one form', async () => {
-    const view = renderWorkspace(creatorJob({}));
+    const config: CreatorServicesConfig = createVideoConfig();
+    config.video.provider = 'veo';
+    const view = renderWorkspace(creatorJob({}), { creatorServicesService: { getConfig: async () => ({ config, configuredCredentials: ['video.veo.apiKey'] }) } });
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     expect(screen.getByRole('alert')).toHaveTextContent('请先描述需要生成的视频');
     expect(view.applyAction).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: '  The city at dusk  ' } });
-    await selectVideoModel('Veo', 'Veo 3.1');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
     openVideoSettings();
-    fireEvent.click(screen.getByRole('radio', { name: '8 秒' }));
+    fireEvent.change(screen.getByRole('slider', { name: '视频时长' }), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
 
     await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith('creator_video_workspace', expect.objectContaining({
       action: 'run-stage', input: { stageId: 'generate' }
     })));
     const settings = view.applyAction.mock.calls.filter(([, request]) => request.action === 'update-settings');
-    expect(settings.at(-1)?.[1].input.patch).toMatchObject({ prompt: 'The city at dusk', provider: 'veo', duration: 8 });
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ prompt: 'The city at dusk', provider: 'veo', duration: 8 });
     for (const [, request] of settings) {
       expect(request.input.patch).not.toHaveProperty('currentStep');
       expect(request.input.patch).not.toHaveProperty('furthestStep');
@@ -65,7 +301,9 @@ describe('VideoGenerationWorkspace', () => {
     const upload = screen.getByLabelText('上传视频参考图');
     const image = new File(['image'], 'reference.png', { type: 'image/png' });
     changeControl(upload, { target: { files: [image] } });
-    expect(await screen.findByRole('img', { name: '视频参考图预览' })).toBeVisible();
+    const preview = await screen.findByRole('img', { name: '视频参考图预览' });
+    expect(preview).toBeVisible();
+    expect(within(preview.closest('.video-generation-reference') as HTMLElement).queryByText('reference.png')).not.toBeInTheDocument();
     openVideoSettings();
     expect(screen.getByRole('radio', { name: '16:9' })).toBeDisabled();
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -76,6 +314,75 @@ describe('VideoGenerationWorkspace', () => {
     changeControl(upload, { target: { files: [image] } });
     expect(await screen.findByRole('img', { name: '视频参考图预览' })).toBeVisible();
     expect(upload).toHaveValue('');
+  });
+
+  it('keeps the single image input when signing in to an official video model', async () => {
+    const model = {
+      id: 'vendor/video', modality: 'video' as const, capabilities: ['image_to_video'],
+      sizes: ['1280x720'], durations: [5],
+      videoOptions: { profile: 'sd', maxImages: 4, maxVideos: 2, maxAudios: 1,
+        firstLastFrames: true, framesExclusive: true, generateAudio: false }
+    };
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const signedIn: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1',
+      selectedModels: { video: model.id }, models: [model], activationError: null };
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city' } }), { gatewayState: signedOut });
+    const upload = screen.getByLabelText('上传视频参考图');
+    changeControl(upload, { target: { files: [new File(['image'], 'reference.png', { type: 'image/png' })] } });
+    expect(screen.getByText('1/1')).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: '视频参考图预览' })).toBeVisible();
+
+    await act(async () => { view.rerenderWorkspace({ gatewayState: signedIn }); });
+    expect(screen.getByLabelText('上传视频参考图')).toBe(upload);
+    expect(screen.getByText('1/1')).toBeInTheDocument();
+    expect(screen.queryByLabelText('上传参考图片')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('上传参考视频')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('上传参考音频')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '参考模式' })).not.toBeInTheDocument();
+  });
+
+  it('submits only one saved image from an older multi-reference draft', async () => {
+    const image = { role: 'image', fileName: 'first.png', assetId: `ocasset_${'a'.repeat(48)}` };
+    const extraImage = { role: 'image', fileName: 'second.png', assetId: `ocasset_${'b'.repeat(48)}` };
+    const video = { role: 'video', fileName: 'clip.mp4', assetId: `ocasset_${'c'.repeat(48)}` };
+    const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1',
+      selectedModels: { video: 'vendor/video' }, activationError: null,
+      models: [{ id: 'vendor/video', modality: 'video', capabilities: ['image_to_video'], sizes: ['1280x720'], durations: [5],
+        videoOptions: { profile: 'sd', maxImages: 4, maxVideos: 2, maxAudios: 1,
+          firstLastFrames: true, framesExclusive: true, generateAudio: false } }] };
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city', size: '1280x720', duration: 5, videoServiceSource: 'gateway',
+      videoReferences: [image, extraImage, video] } }), { gatewayState });
+    expect(screen.getByText('1/1')).toBeInTheDocument();
+    expect(screen.queryByText('clip.mp4')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ videoReferences: [image] });
+  });
+
+  it('uploads the selected image after sign-in before starting generation', async () => {
+    const initialJob = creatorJob({ state: { prompt: 'A city', size: '1280x720', duration: 5 } });
+    const model = { id: 'vendor/video', modality: 'video' as const, capabilities: ['image_to_video'],
+      sizes: ['1280x720'], durations: [5], videoOptions: { profile: 'sd', maxImages: 1, maxVideos: 1,
+        maxAudios: 0, firstLastFrames: false, framesExclusive: false, generateAudio: false } };
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const signedIn: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1',
+      selectedModels: { video: model.id }, models: [model], activationError: null };
+    const uploadReferenceImage = vi.fn(async (_jobId: string, input: { file: File }) => ({
+      job: { ...initialJob, revision: 3, state: { ...initialJob.state, referenceImageArtifactId: 'image_1' } },
+      receipt: {}
+    }));
+    const view = renderWorkspace(initialJob, { gatewayState: signedOut, uploadReferenceImage });
+    const image = new File(['image'], 'reference.png', { type: 'image/png' });
+    changeControl(screen.getByLabelText('上传视频参考图'), { target: { files: [image] } });
+    await act(async () => { view.rerenderWorkspace({ gatewayState: signedIn }); });
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+
+    await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
+    expect(uploadReferenceImage).toHaveBeenCalledWith(initialJob.id, expect.objectContaining({ file: image }));
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ videoReferences: [] });
   });
 
   it.each([
@@ -107,28 +414,103 @@ describe('VideoGenerationWorkspace', () => {
 
   it('shows model-native video sizes and durations beyond the custom provider presets', () => {
     const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', models: [{ id: 'vendor/video', modality: 'video', capabilities: [], resolutions: ['1080p', '720p'], aspectRatios: ['16:9', '9:16'], durations: [3, 12] }], activationError: null };
-    renderWorkspace(creatorJob({ state: { prompt: 'city', currentStep: 1, furthestStep: 1 } }), { gatewayState });
+    renderWorkspace(creatorJob({ state: { prompt: 'city', videoServiceSource: 'gateway', currentStep: 1, furthestStep: 1 } }), { gatewayState });
     openVideoSettings();
-    expect(within(screen.getByRole('radiogroup', { name: '画幅' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['1080p@16:9', '1080p@9:16', '720p@16:9', '720p@9:16']);
-    expect(within(screen.getByRole('radiogroup', { name: '视频时长' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['3', '12']);
+    expect(within(screen.getByRole('radiogroup', { name: '画幅' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['16:9', '9:16']);
+    expect(within(screen.getByRole('radiogroup', { name: '清晰度' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['1080p@16:9', '720p@16:9']);
+    expect(screen.getByRole('slider', { name: '视频时长' })).toHaveAttribute('max', '1');
   });
-  it('shows only the official video model and supported parameters while signed in', async () => {
+  it('defaults a new official video to Seedance 2.5 and omits the inline credit quote', async () => {
+    const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', selectedModels: { video: 'SD2.0' },
+      models: [
+        { id: 'SD2.0', name: 'SD 2.0', modality: 'video', capabilities: [], sizes: ['480p@16:9'], durations: [5], price: { version: 'v1', videoUnitsPerSecond: { '480p': 59_800_000 } } },
+        { id: 'seedance-2.5官方版', name: 'Seedance 2.5', modality: 'video', capabilities: [], sizes: ['720p@16:9'], durations: [5] }
+      ], activationError: null };
+    renderWorkspace(creatorJob({ state: { prompt: 'A city' } }), {
+      gatewayState,
+      creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] }) }
+    });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Seedance 2.5'));
+    expect(screen.queryByText(/本次消耗|This generation costs/)).not.toBeInTheDocument();
+  });
+  it('separates format and resolution while preserving and submitting the selected combination', async () => {
+    const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', selectedModels: { video: 'vendor/video' },
+      models: [{ id: 'vendor/video', modality: 'video', capabilities: [], resolutions: ['1080p', '720p'], aspectRatios: ['16:9', '9:16'], durations: [5] }], activationError: null };
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city', videoServiceSource: 'gateway', size: '720p@16:9' } }), { gatewayState });
+    openVideoSettings();
+    expect(within(screen.getByRole('radiogroup', { name: '画幅' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['16:9', '9:16']);
+    expect(within(screen.getByRole('radiogroup', { name: '清晰度' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['1080p@16:9', '720p@16:9']);
+    fireEvent.click(screen.getByRole('radio', { name: '1080p' }));
+    expect(screen.getByRole('radio', { name: '1080p' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('radio', { name: '9:16' }));
+    expect(screen.getByRole('radio', { name: '1080p' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ size: '1080p@9:16' });
+  });
+  it('uses a slider for a long list of supported video durations', () => {
+    const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', selectedModels: { video: 'vendor/video' },
+      models: [{ id: 'vendor/video', modality: 'video', capabilities: [], sizes: ['720p@16:9'], durations: Array.from({ length: 20 }, (_, index) => index + 4) }], activationError: null };
+    renderWorkspace(creatorJob({ state: { prompt: 'A city', videoServiceSource: 'gateway', size: '720p@16:9', duration: 5 } }), { gatewayState });
+    openVideoSettings();
+    expect(screen.getByRole('slider', { name: '视频时长' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('slider', { name: '视频时长' }), { target: { value: '11' } });
+    expect(screen.getByRole('spinbutton', { name: '视频时长' })).toHaveValue(15);
+    expect(screen.getByRole('button', { name: '视频设置' })).toHaveTextContent('15 秒');
+  });
+  it('shows the official model parameters alongside the local choice while signed in', async () => {
     const gatewayState: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1', selectedModels: { video: 'bytedance/seedance-1-5-pro' }, models: [{ id: 'bytedance/seedance-1-5-pro', modality: 'video', capabilities: ['image_to_video'], sizes: ['1280x720', '720x1280'], durations: [4, 5] }], activationError: null };
-    const getConfig = vi.fn();
-    renderWorkspace(creatorJob({ state: { prompt: 'city skyline', provider: 'veo', model: 'veo-3.1-generate-preview', size: '1024x1024', duration: 10, currentStep: 1, furthestStep: 1 } }), { gatewayState, creatorServicesService: { getConfig } });
-    expect(screen.getByLabelText('视频模型')).toHaveTextContent('seedance-1-5-pro');
-    expect(screen.queryByRole('combobox', { name: '模型' })).not.toBeInTheDocument();
+    const getConfig = vi.fn(async (): Promise<CreatorServicesConfigResponse> => ({ config: createVideoConfig(), configuredCredentials: ['video.veo.apiKey'] }));
+    renderWorkspace(creatorJob({ state: { prompt: 'city skyline', videoServiceSource: 'gateway', provider: 'veo', model: 'veo-3.1-generate-preview', size: '1024x1024', duration: 10, currentStep: 1, furthestStep: 1 } }), { gatewayState, creatorServicesService: { getConfig } });
+    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('seedance-1-5-pro');
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    expect(await screen.findByRole('option', { name: '本地视频服务' })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('combobox', { name: '模型' }), { key: 'Escape' });
     expect(screen.queryByRole('combobox', { name: '模型版本' })).not.toBeInTheDocument();
     openVideoSettings();
-    expect(within(screen.getByRole('radiogroup', { name: '视频时长' })).getAllByRole('radio').map(option => option.getAttribute('data-value'))).toEqual(['4', '5']);
+    expect(screen.getByRole('slider', { name: '视频时长' })).toHaveAttribute('max', '1');
     expect(screen.queryByRole('option', { name: /1024/ })).not.toBeInTheDocument();
-    expect(getConfig).not.toHaveBeenCalled();
+    expect(getConfig).toHaveBeenCalled();
+  });
+
+  it('keeps the signed-in video model menu compact', async () => {
+    const gatewayState: GatewayAccountState = {
+      source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1',
+      selectedModels: { video: 'SD2.0' }, activationError: null,
+      models: [
+        { id: 'SD2.0', name: 'SD 2.0', vendor: 'Others', modality: 'video', capabilities: [], recommended: true,
+          durations: [5], sizes: ['720p@16:9'], price: { version: 'v1', videoUnitsPerSecond: { '720p': 1_000_000 } } },
+        { id: 'custom/film', name: 'Custom Film', vendor: 'Zeta', modality: 'video', capabilities: [], durations: [8], sizes: ['1080p@9:16'] }
+      ]
+    };
+    renderWorkspace(creatorJob({ state: { prompt: 'A city', videoServiceSource: 'gateway' } }), { gatewayState });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('SD 2.0'));
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    const list = screen.getByRole('listbox', { name: '模型' });
+    await waitFor(() => expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['本地', 'Zeta', 'Others']));
+    expect(within(list).getByRole('option', { name: 'SD 2.0' })).toHaveTextContent('约 5 积分 / 5 秒 · 720p');
+    expect(within(list).getByRole('option', { name: 'SD 2.0' })).not.toHaveTextContent(/推荐|时长/);
+    expect(within(list).getByRole('option', { name: 'Custom Film' })).not.toHaveTextContent(/时长|1080p/);
+  });
+
+  it('shows a cached public video catalog immediately while it refreshes', () => {
+    const catalog = { models: [{ id: 'vendor/cached-video', name: 'Cached Video', vendor: 'Vendor', modality: 'video' as const, capabilities: [] }] };
+    const getVideoCatalog = vi.fn(() => new Promise<typeof catalog>(() => undefined));
+    renderWorkspace(creatorJob({}), { gatewayAccountService: { getCachedVideoCatalog: () => catalog, getVideoCatalog } });
+    expect(screen.queryByText('正在加载官方视频模型…')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    expect(screen.getByRole('option', { name: 'Cached Video' })).toBeInTheDocument();
+    expect(getVideoCatalog).toHaveBeenCalledOnce();
   });
 
   it('blocks official generation when account activation is unavailable', () => {
-    const view = renderWorkspace(creatorJob({ state: { prompt: 'city skyline', currentStep: 2, furthestStep: 2 } }), { gatewayState: null });
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'city skyline', videoServiceSource: 'gateway', currentStep: 2, furthestStep: 2 } }), { gatewayState: null });
     expect(screen.getByRole('button', { name: '开始生成' })).toBeEnabled();
-    expect(screen.queryByRole('combobox', { name: '模型' })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '模型' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     expect(screen.getByRole('alert')).toHaveTextContent('官方视频服务暂不可用');
     expect(view.applyAction).not.toHaveBeenCalled();
@@ -158,6 +540,7 @@ describe('VideoGenerationWorkspace', () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
       expect(document.querySelector('.creator-collaboration-stage[data-status="running"]')).toBeNull();
       expect(document.querySelector('.creator-collaboration-stage[data-status="failed"]')).not.toBeNull();
+      expect(document.querySelector('.creator-collaboration-stage[data-status="failed"]')).not.toHaveTextContent('8%');
       const panel = screen.getByRole('complementary', { name: 'OpenCreator' });
       expect(panel).toHaveTextContent('InputImageSensitiveContentDetected.PrivacyInformation');
       expect(panel).toHaveTextContent('Input image may contain real person');
@@ -721,13 +1104,14 @@ describe('VideoGenerationWorkspace', () => {
     ));
     renderWorkspace(job, { openArtifact });
 
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
     openVideoSettings();
     expect(screen.getByRole('radio', { name: '16:9' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '视频设置' })).toHaveTextContent('原图');
     await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(job.id, reference.id));
   });
 
-  it('uses distinct English labels for video format and output format', () => {
+  it('uses distinct English labels for video format and output format', async () => {
     const job = creatorJob({
       state: {
         prompt: 'A cinematic city reveal',
@@ -743,12 +1127,13 @@ describe('VideoGenerationWorkspace', () => {
 
     renderWorkspace(job, { language: 'en-US' });
 
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' })).toHaveValue('Local video service'));
     openVideoSettings('Video settings');
     expect(screen.getByRole('radiogroup', { name: 'Format' })).toBeInTheDocument();
     expect(within(screen.getByRole('complementary', { name: 'Task summary' })).getByText('Output format')).toBeInTheDocument();
   });
 
-  it('preserves user selections when service defaults arrive late', async () => {
+  it('preserves an edited prompt when service defaults arrive late', async () => {
     let resolveConfig!: (value: CreatorServicesConfigResponse) => void;
     const pendingConfig = new Promise<CreatorServicesConfigResponse>(resolve => { resolveConfig = resolve; });
     renderWorkspace(creatorJob({ state: {
@@ -756,22 +1141,21 @@ describe('VideoGenerationWorkspace', () => {
       duration: 5, currentStep: 1, furthestStep: 1
     } }), { creatorServicesService: { getConfig: () => pendingConfig } });
     const model = screen.getByRole('combobox', { name: '模型' });
-    await selectVideoModel('Veo', 'Veo 3.1');
-    openVideoSettings();
-    fireEvent.click(screen.getByRole('radio', { name: '8 秒' }));
-    await act(async () => { resolveConfig({ config: createVideoConfig(), configuredCredentials: [] }); });
-    expect(model).toHaveValue('Veo 3.1');
-    expect(screen.getByRole('radio', { name: '8 秒' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: 'Edited before config' } });
+    await act(async () => { resolveConfig({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] }); });
+    expect(model).toHaveValue('本地视频服务');
+    expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('Edited before config');
   });
 
-  it('defaults new video tasks to Seedance 2.5', async () => {
+  it('selects the configured local video service for new tasks', async () => {
     renderWorkspace(creatorJob({}), {
       creatorServicesService: {
-        getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: [] })
+        getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] })
       }
     });
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Seedance 2.5'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
+    expect(screen.getByRole('complementary', { name: '任务摘要' })).toHaveTextContent('Seedance 2.5');
   });
 
   it('migrates the legacy Seedance 1.0 Pro service default to Seedance 2.5', async () => {
@@ -779,14 +1163,15 @@ describe('VideoGenerationWorkspace', () => {
     config.video.seedance.model = 'doubao-seedance-1-0-pro-250528';
     renderWorkspace(creatorJob({}), {
       creatorServicesService: {
-        getConfig: async () => ({ config, configuredCredentials: [] })
+        getConfig: async () => ({ config, configuredCredentials: ['video.seedance.apiKey'] })
       }
     });
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Seedance 2.5'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
+    expect(screen.getByRole('complementary', { name: '任务摘要' })).toHaveTextContent('Seedance 2.5');
   });
 
-  it('uses the configured default model for a task and allows a task-level override', async () => {
+  it('uses the configured local model for a task without adding it to the gateway catalog', async () => {
     const job = creatorJob({
       state: {
         prompt: '雨夜中的未来城市',
@@ -811,39 +1196,48 @@ describe('VideoGenerationWorkspace', () => {
           }
         }
       },
-      configuredCredentials: []
+      configuredCredentials: ['video.seedance.apiKey']
     }));
 
     renderWorkspace(job, {
       creatorServicesService: { getConfig } as never
     });
 
-    const model = await screen.findByRole('combobox', { name: '模型' });
-    await waitFor(() => expect(model).toHaveValue('Seedance 2.0'));
-    await selectVideoModel('Seedance', 'Seedance 2.5');
-    expect(model).toHaveValue('Seedance 2.5');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
+    expect(screen.getByRole('complementary', { name: '任务摘要' })).toHaveTextContent('Seedance 2.0');
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
+    expect(screen.queryByRole('option', { name: 'Seedance 2.5' })).not.toBeInTheDocument();
   });
 });
-
-async function selectVideoModel(provider: string, name: string) {
-  fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
-  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${provider}`) }));
-  fireEvent.click(await screen.findByRole('option', { name }));
-}
 
 function openVideoSettings(label = '视频设置') {
   fireEvent.click(screen.getByRole('button', { name: label }));
   return screen.getByRole('dialog', { name: label });
 }
 
+const defaultVideoServices = {
+  getConfig: async () => ({
+    config: createVideoConfig(),
+    configuredCredentials: ['video.seedance.apiKey', 'video.veo.apiKey', 'video.kling.accessKey', 'video.kling.secretKey']
+  })
+};
+
+function mergedSettingsPatch(calls: Array<[string, { action: string; input: { patch?: Record<string, CreatorJson> } }]>): Record<string, CreatorJson> {
+  return Object.assign({}, ...calls.filter(([, request]) => request.action === 'update-settings').map(([, request]) => request.input.patch ?? {}));
+}
+
 function renderWorkspace(
   initialJob: CreatorJob,
   overrides: {
     openArtifact?: (jobId: string, artifactId: string) => Promise<Response>;
+    uploadReferenceImage?: (jobId: string, input: { file: File; expectedRevision: number }) => Promise<unknown>;
     creatorServicesService?: { getConfig(): Promise<CreatorServicesConfigResponse> };
     language?: 'zh-CN' | 'en-US' | 'sv-SE';
     children?: ReactNode;
     gatewayState?: GatewayAccountState | null;
+    gatewayAccountService?: unknown;
+    onGatewayStateChange?: (state: GatewayAccountState) => void;
+    accessGate?: boolean;
   } = {}
 ) {
   const applyAction = vi.fn(async (_id: string, request: { action: string; input: { version?: CreatorJson; patch?: Record<string, CreatorJson> } }) => ({
@@ -858,16 +1252,24 @@ function renderWorkspace(
         service={{
           applyAction,
           openArtifact: options.openArtifact ?? vi.fn(),
+          uploadReferenceImage: options.uploadReferenceImage,
           runAgentTurn: vi.fn()
         } as never}
       >
-        <OfficialServicesContext.Provider value={options.gatewayState}>
+        {options.accessGate ? <DashboardGenerationAccess gatewayState={options.gatewayState} gatewayAccountService={options.gatewayAccountService as never} onGatewayStateChange={options.onGatewayStateChange}>
+          <OfficialServicesContext.Provider value={options.gatewayState}>
+            <VideoGenerationWorkspace creatorServicesService={(options.creatorServicesService ?? defaultVideoServices) as never} gatewayAccountService={options.gatewayAccountService as never} onGatewayStateChange={options.onGatewayStateChange} onBack={vi.fn()} />
+            {options.children}
+          </OfficialServicesContext.Provider>
+        </DashboardGenerationAccess> : <OfficialServicesContext.Provider value={options.gatewayState}>
         <VideoGenerationWorkspace
-          creatorServicesService={options.creatorServicesService as never}
+          creatorServicesService={(options.creatorServicesService ?? defaultVideoServices) as never}
+          gatewayAccountService={options.gatewayAccountService as never}
+          onGatewayStateChange={options.onGatewayStateChange}
           onBack={vi.fn()}
         />
         {options.children}
-        </OfficialServicesContext.Provider>
+        </OfficialServicesContext.Provider>}
       </CreatorSessionProvider>
     </LanguageProvider>
   );

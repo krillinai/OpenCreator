@@ -89,6 +89,7 @@
 .official-model-option > .model-brand-icon > img { width: 19px; height: 19px; }
 .official-model-option:disabled { opacity: var(--state-disabled-opacity); cursor: default; }
 .official-model-option[aria-selected='true'] > svg { flex-shrink: 0; color: var(--accent-strong); }
+.official-model-configure-icon { flex-shrink: 0; color: var(--muted); }
 .official-model-option-text { flex: 1; display: grid; gap: 2px; min-width: 0; }
 .official-model-option-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; min-width: 0; }
 .official-model-option-name { font-size: 13px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
@@ -99,6 +100,29 @@
 .official-model-option-id { color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .official-model-check-space { flex-shrink: 0; width: 16px; }
 .official-model-empty { padding: 24px 12px; color: var(--muted); text-align: center; line-height: 1.5; }
+
+.official-model-menu--grouped .official-model-options { padding: 6px; }
+.official-model-company + .official-model-company { margin-top: 8px; }
+.official-model-company-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 2px 9px;
+  color: var(--text);
+  font-size: 12px;
+}
+.official-model-company-heading > .model-brand-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: transparent;
+}
+.official-model-company-heading > .model-brand-icon > img { width: 17px; height: 17px; }
+.official-model-company-heading strong { font-weight: 650; }
+.official-model-company .official-model-option { padding-inline-start: 12px; }
+.official-model-menu--compact .official-model-option { min-height: 40px; padding-block: 5px; }
+.official-model-menu--compact .official-model-company-heading { min-height: 28px; }
 
 .official-model-catalog-body {
   min-height: 0;

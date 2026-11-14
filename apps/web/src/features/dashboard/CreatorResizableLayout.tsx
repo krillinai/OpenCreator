@@ -99,26 +99,22 @@ export default function CreatorResizableLayout(props: {
   const style = workspaceWidth === undefined
     ? undefined
     : ({ '--creator-workspace-pane-width': `${workspaceWidth}px` } as CSSProperties);
-
-  if (props.showAgentPanel === false) {
-    return <div className={`creator-resizable-layout${props.className ? ` ${props.className}` : ''}`} ref={layoutRef} style={style} data-agent-panel="hidden">
-      {props.workspace}
-    </div>;
-  }
+  const showAgentPanel = props.showAgentPanel !== false;
 
   return (
     <div
       className={`creator-resizable-layout${props.className ? ` ${props.className}` : ''}`}
       ref={layoutRef}
       style={style}
+      data-agent-panel={showAgentPanel ? undefined : 'hidden'}
       data-mobile-pane={mobilePane}
     >
-      <div className="creator-mobile-tabs" role="tablist" aria-label={l('创作视图', 'Creator views')}>
+      <div className="creator-mobile-tabs" role="tablist" aria-label={l('创作视图', 'Creator views')} hidden={!showAgentPanel}>
         <button type="button" role="tab" aria-selected={mobilePane === 'workspace'} onClick={() => setMobilePane('workspace')}>{l('创作', 'Workspace')}</button>
         <button type="button" role="tab" aria-selected={mobilePane === 'agent'} onClick={() => setMobilePane('agent')}>Agent</button>
       </div>
       {props.workspace}
-      <div
+      {showAgentPanel ? <div
         className="pane-resize-handle creator-pane-resize"
         role="separator"
         aria-label={l('调整操作区和对话区宽度', 'Resize workspace and conversation panels')}
@@ -133,8 +129,8 @@ export default function CreatorResizableLayout(props: {
         onDoubleClick={() => setWorkspaceWidth(undefined)}
         onMouseDown={handleMouseDown}
         onKeyDown={handleKeyDown}
-      />
-      {props.agentPanel}
+      /> : null}
+      {showAgentPanel ? props.agentPanel : null}
     </div>
   );
 }

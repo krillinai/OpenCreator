@@ -6,6 +6,8 @@
   "scripts": {
     "predev": "pnpm --filter @opencreator/desktop prepare:creator-runtime && pnpm --filter @opencreator/desktop prepare:codex-runtime && pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build && pnpm --filter @opencreator/writing-templates build",
     "dev": "vite --host 127.0.0.1",
+    "dev:test": "node ../../scripts/start-web-mode.mjs test",
+    "dev:production": "node ../../scripts/start-web-mode.mjs production",
     "prebuild": "pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build && pnpm --filter @opencreator/writing-templates build",
     "build": "tsc -p tsconfig.json && vite build",
     "pretypecheck": "pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build && pnpm --filter @opencreator/writing-templates build",

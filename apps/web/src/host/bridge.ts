@@ -35,6 +35,7 @@ export type HostBridge = {
   authorizationReturnUrl?: string;
   billingReturnUrl?: string;
   prepareExternalNavigation?(): ExternalNavigation;
+  subscribeAuthorizationReturn?(listener: () => void): () => void;
   subscribeBillingReturn?(listener: (orderId?: string) => void): () => void;
   readAppVersion?(): Promise<string>;
   readConnectionConfig(): Promise<ConnectionConfig | null>;

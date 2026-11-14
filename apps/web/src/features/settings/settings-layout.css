@@ -318,6 +318,10 @@
   background: color-mix(in srgb, var(--settings-accent-swatch) 13%, transparent);
 }
 
+.settings-accent-options > .settings-brand-accent-option {
+  color: #111113;
+}
+
 .settings-custom-accent-option {
   display: inline-flex;
   align-items: center;

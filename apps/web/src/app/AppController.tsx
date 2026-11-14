@@ -103,6 +103,7 @@ import type {
 } from '../features/settings/OpenCreatorSettingsView.js';
 import {
   confirmAgentSetup,
+  hasAgentSetupConfirmation,
   isAgentSetupConfirmed,
   type AgentSetupSnapshot
 } from '../features/settings/agent-setup-state.js';
@@ -366,6 +367,7 @@ export function AppController(props: AppControllerProps) {
   const [historyLoadedThreadId, setHistoryLoadedThreadId] = useState<string>();
   const [threadConfigUpdateError, setThreadConfigUpdateError] = useState<string>();
   const [agentSetup, setAgentSetup] = useState<'checking' | 'ready' | 'needed' | 'skipped'>('checking');
+  const [agentSetupCheckAttempt, setAgentSetupCheckAttempt] = useState(0);
   const [agentSetupRequested, setAgentSetupRequested] = useState(false);
   const [agentSetupSnapshot, setAgentSetupSnapshot] = useState<AgentSetupSnapshot>();
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
@@ -396,6 +398,7 @@ export function AppController(props: AppControllerProps) {
   const [homeSkillPromptHint, setHomeSkillPromptHint] = useState<string>();
   const [creatorSkillLaunch, setCreatorSkillLaunch] = useState<CreatorSkillLaunch>();
   const [activeGenerationMode, setActiveGenerationMode] = useState<DashboardGenerationMode>();
+  const projectsHistoryInitialTypeRef = useRef<'video' | undefined>();
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
   const [pendingRunStartsById, setPendingRunStartsById] = useState<PendingRunStartsById>({});
@@ -616,7 +619,8 @@ export function AppController(props: AppControllerProps) {
   const platformConnectionsService = useMemo(() => runtimeClient === null ? null : createPlatformConnectionsService(runtimeClient), [runtimeClient]);
   const [gatewayAccountState, setGatewayAccountState] = useState<GatewayAccountState>();
   const officialTextModels = useMemo(() => {
-    if (!gatewayAccountState || (gatewayAccountState.source === 'manual' && gatewayAccountState.authState === 'signed_out')) return undefined;
+    if (!gatewayAccountState || gatewayAccountState.authState === 'authorizing'
+      || (gatewayAccountState.source === 'manual' && gatewayAccountState.authState === 'signed_out')) return undefined;
     return { models: gatewayAccountState.models.filter(model => model.modality === 'text' && model.capabilities.includes('responses')).map((model, index) => ({
       id: model.id, model: model.id, displayName: model.id.split('/').pop()!, description: '',
       supportedReasoningEfforts: [], defaultReasoningEffort: null, inputModalities: ['text' as const],
@@ -630,6 +634,10 @@ export function AppController(props: AppControllerProps) {
     else if (previousGatewaySource.current === 'gateway') setAgentSetup('checking');
     previousGatewaySource.current = next.source;
   }, []);
+  useEffect(() => hostBridge.subscribeAuthorizationReturn?.(() => {
+    if (!gatewayAccountService) return;
+    void gatewayAccountService.getState({ checkAuthorization: true }).then(onGatewayStateChange).catch(() => undefined);
+  }), [hostBridge, gatewayAccountService, onGatewayStateChange]);
   useEffect(() => {
     if (connectionState.status !== 'connected' || !gatewayAccountService) return;
     let canceled = false;
@@ -1205,6 +1213,10 @@ export function AppController(props: AppControllerProps) {
   useEffect(() => {
     if (connectionState.status !== 'connected' || connectionService === null || agentSetup !== 'checking') return;
     let canceled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const retryCheck = () => {
+      retryTimer = setTimeout(() => setAgentSetupCheckAttempt(attempt => attempt + 1), 1_000);
+    };
     void Promise.all([
       connectionService.getCodexReadiness(), connectionService.getCodexProvider(), gatewayAccountService?.getState().catch(() => undefined)
     ]).then(([readiness, provider, gateway]) => {
@@ -1212,12 +1224,25 @@ export function AppController(props: AppControllerProps) {
       if (gateway?.source === 'gateway') { onGatewayStateChange(gateway); return; }
       const snapshot = { readiness, provider };
       setAgentSetupSnapshot(snapshot);
+      if (hasAgentSetupConfirmation() && (
+        readiness.state === 'blocked' || readiness.binary.status !== 'ready'
+        || readiness.protocol.status !== 'ready' || readiness.models.status !== 'ready'
+        || readiness.account.status === 'unavailable'
+      )) {
+        retryCheck();
+        return;
+      }
       setAgentSetup(isAgentSetupConfirmed(snapshot) ? 'ready' : 'needed');
     }).catch(() => {
-      if (!canceled) setAgentSetup('needed');
+      if (canceled) return;
+      if (hasAgentSetupConfirmation()) {
+        retryCheck();
+      } else {
+        setAgentSetup('needed');
+      }
     });
-    return () => { canceled = true; };
-  }, [agentSetup, connectionService, connectionState.status, gatewayAccountService, onGatewayStateChange]);
+    return () => { canceled = true; clearTimeout(retryTimer); };
+  }, [agentSetup, agentSetupCheckAttempt, connectionService, connectionState.status, gatewayAccountService, onGatewayStateChange]);
 
   useEffect(() => {
     let canceled = false;
@@ -2887,6 +2912,10 @@ export function AppController(props: AppControllerProps) {
 
   function openPrimaryView(activeView: ActiveView) {
     if ((activeView === 'account' || activeView === 'subscription') && props.route.view !== 'account' && props.route.view !== 'subscription') accountReturnRouteRef.current = props.route;
+    if (activeView === 'projects') {
+      projectsHistoryInitialTypeRef.current = props.route.view === 'workbench' && props.route.tool === 'video-generation'
+        ? 'video' : undefined;
+    }
     closeMobileSidebar();
     if (activeView === 'files') {
       followedFileWorkspaceThreadIdRef.current = undefined;
@@ -4465,7 +4494,10 @@ export function AppController(props: AppControllerProps) {
     </section>
   ) : conversationPage;
   const accountPageActive = state.activeView === 'account' || state.activeView === 'subscription';
-  const configurationPageActive = accountPageActive || (state.activeView === 'settings' && !agentSetupRequested);
+  const agentSetupGateDeferred = !agentSetupRequested && (
+    accountPageActive || state.activeView === 'settings' || state.activeView === 'dashboard'
+    || (agentSetup === 'checking' && hasAgentSetupConfirmation())
+  );
   const main = props.capabilitiesView !== undefined ? (
     <CapabilitiesPage {...props.capabilitiesView} />
   ) : state.activeView === 'projects' ? (
@@ -4473,6 +4505,7 @@ export function AppController(props: AppControllerProps) {
       <DashboardGenerationHistory
         projectId={state.currentProjectId ?? creatorJobs[0]?.projectId ?? projects[0]?.id ?? ''}
         service={creatorService}
+        initialType={projectsHistoryInitialTypeRef.current}
         onBackCreation={() => openPrimaryView('dashboard')}
         onOpenJob={openCreatorJob}
       />
@@ -4511,6 +4544,7 @@ export function AppController(props: AppControllerProps) {
       videoMetadataService={videoMetadataService}
       workspace={props.route.view === 'workbench' ? props.route.tool : undefined}
       jobId={props.route.view === 'workbench' ? props.route.jobId : undefined}
+      returnTo={props.route.view === 'workbench' && props.route.returnTo === 'projects' ? 'projects' : undefined}
       onJobCreated={rememberCreatorJob}
       onAskIssue={askAgentAboutIssue}
       onCreateProject={
@@ -4539,6 +4573,7 @@ export function AppController(props: AppControllerProps) {
           && props.route.view === 'workbench'
           && props.route.returnTo === 'projects'
         ) {
+          projectsHistoryInitialTypeRef.current = props.route.tool === 'video-generation' ? 'video' : undefined;
           dispatch({ type: 'set_active_view', activeView: 'projects' });
           navigateToRoute({ view: 'projects' }, options);
           return;
@@ -4785,7 +4820,7 @@ export function AppController(props: AppControllerProps) {
         }
         aria-live="polite"
       />
-      {agentSetup === 'needed' && !configurationPageActive ? null : <AppLayout
+      {agentSetup === 'needed' && !agentSetupGateDeferred ? null : <AppLayout
       sidebar={
         <OpenCreatorSidebar
           projects={projects}
@@ -4877,12 +4912,12 @@ export function AppController(props: AppControllerProps) {
       onOpenMobileSidebar={openMobileSidebar}
       onCloseMobileSidebar={dismissMobileSidebar}
       />}
-      {agentSetup === 'checking' && connectionState.status === 'connected' && !configurationPageActive ? (
+      {agentSetup === 'checking' && connectionState.status === 'connected' && !agentSetupGateDeferred ? (
         <main className="startup-agent-setup" role="status">
           {l('正在检查 Agent 配置…', 'Checking Agent configuration…')}
         </main>
       ) : null}
-      {agentSetup === 'needed' && connectionService !== null && !configurationPageActive ? (
+      {agentSetup === 'needed' && connectionService !== null && !agentSetupGateDeferred ? (
         <Suspense fallback={<main className="startup-agent-setup" role="status">{l('正在加载 Agent 配置…', 'Loading Agent setup…')}</main>}>
           <StartupAgentSetup
             service={connectionService}

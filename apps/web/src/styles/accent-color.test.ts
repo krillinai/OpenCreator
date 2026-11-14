@@ -20,12 +20,14 @@ describe('accent color preference', () => {
     document.documentElement.style.removeProperty('--custom-on-accent');
   });
 
-  it('defaults to red and ignores invalid stored values', () => {
-    expect(readAccentColorPreference()).toBe('red');
-    expect(defaultAccentColor).toBe('red');
+  it('defaults to the OpenCreator accent and ignores invalid stored values', () => {
+    expect(readAccentColorPreference()).toBe('brand');
+    expect(defaultAccentColor).toBe('brand');
+    applyAccentColor(readAccentColorPreference());
+    expect(document.documentElement).toHaveAttribute('data-accent', 'brand');
 
     window.localStorage.setItem(accentColorStorageKey, 'green');
-    expect(readAccentColorPreference()).toBe('red');
+    expect(readAccentColorPreference()).toBe('brand');
   });
 
   it('persists and applies a supported accent color', () => {

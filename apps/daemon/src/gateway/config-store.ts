@@ -17,7 +17,7 @@ export function createGatewayConfigStore(dataDir: string) {
     return result;
   }
   const credentials = bootstrapCredentialsSchema.partial().extend({ accessToken: z.string(), refreshToken: z.string(), expiresIn: z.number(), accessExpiresAt: z.string(), modelAccessError: modelAccessErrorSchema.optional() });
-  const configuration = z.object({ source: z.enum(['manual', 'gateway']), bindingVersion: z.string().nullable(), explicitlySelected: z.boolean().optional(), selectedModels: z.record(z.string()).optional(), modelPreferencesVersion: z.literal(1).optional(), manualModels: z.record(z.string()).optional(), region: z.enum(['auto', 'domestic', 'overseas']).optional() });
+  const configuration = z.object({ source: z.enum(['manual', 'gateway']), bindingVersion: z.string().nullable(), explicitlySelected: z.boolean().optional(), selectedModels: z.record(z.string()).optional(), modelPreferencesVersion: z.literal(1).optional(), manualModels: z.record(z.string()).optional(), taskModelsByAccount: z.record(z.record(z.record(z.string()))).optional(), region: z.enum(['auto', 'domestic', 'overseas']).optional() });
   return {
     readDeviceID(): Promise<string> {
       return deviceID ??= (async () => {

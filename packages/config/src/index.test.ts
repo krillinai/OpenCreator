@@ -71,12 +71,21 @@ describe('OpenCreator config', () => {
     tempDirs.push(root);
     const path = join(root, 'config.toml');
 
-    expect(resolveUiSettings(readOpenCreatorConfig(path))).toMatchObject({ accentColor: 'red', language: 'en-US' });
+    expect(resolveUiSettings(readOpenCreatorConfig(path))).toMatchObject({ accentColor: 'brand', language: 'en-US' });
 
     updateOpenCreatorUiSettings(path, { colorMode: 'light', language: 'sv-SE' });
 
     expect(resolveUiSettings(readOpenCreatorConfig(path)).colorMode).toBe('light');
     expect(resolveUiSettings(readOpenCreatorConfig(path)).language).toBe('sv-SE');
+  });
+
+  it('preserves an explicitly selected red accent after the default changes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'opencreator-config-'));
+    tempDirs.push(root);
+    const path = join(root, 'config.toml');
+
+    updateOpenCreatorUiSettings(path, { accentColor: 'red' });
+    expect(resolveUiSettings(readOpenCreatorConfig(path)).accentColor).toBe('red');
   });
 
   it('persists anonymous telemetry preferences and the install identifier', () => {

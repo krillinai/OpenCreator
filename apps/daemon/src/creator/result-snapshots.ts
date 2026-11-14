@@ -7,6 +7,7 @@ import type {
 import { readCreatorResultSnapshots } from '@opencreator/protocol';
 
 const snapshotStateExcludedKeys = new Set([
+  '__creatorUserEdited',
   'currentStage',
   'needsInput',
   'resultSnapshots',

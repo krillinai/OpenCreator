@@ -1677,6 +1677,7 @@ export async function buildServer(input: BuildServerInput) {
     async () => gatewayAccount.peekState().source === 'gateway'
       ? { authentication: 'api_key' as const, apiKeyConfigured: false, baseUrl: '', model: gatewayAccount.peekState().selectedModels?.text ?? '' }
       : localCodexTextModelDefaults.readStatus(),
+    storedCreatorServicesConfigStore,
     storedCreatorServicesConfigStore
   );
   await registerGatewayAccountRoutes(server, gatewayAccount);

@@ -12,7 +12,8 @@ function hasAudioTokenRates(model: GatewayModel) {
 
 function videoRates(model: GatewayModel) {
   const rates = model.price?.videoUnitsPerSecond;
-  const resolutions = model.resolutions?.filter(resolution => Number.isSafeInteger(rates?.[resolution]) && positive(rates?.[resolution])) ?? [];
+  const resolutions = (model.resolutions?.length ? model.resolutions : Object.keys(rates ?? {}))
+    .filter(resolution => Number.isSafeInteger(rates?.[resolution]) && positive(rates?.[resolution]));
   return resolutions.map(resolution => ({ resolution, credits: rates![resolution]! / million }));
 }
 
@@ -21,14 +22,36 @@ function videoRate(model: GatewayModel) {
   return rates.find(rate => rate.resolution === '720p') ?? rates[0];
 }
 
+function videoClipEstimate(model: GatewayModel) {
+  const clip = model.price?.estimates?.clip;
+  const units = Number(clip?.creditUnits);
+  if (clip && Number.isSafeInteger(units) && units > 0 && positive(clip.seconds) && clip.resolution) {
+    return { credits: units / million, seconds: clip.seconds, resolution: clip.resolution };
+  }
+  const rate = videoRate(model);
+  const durations = model.durations?.filter(positive).sort((a, b) => a - b) ?? [];
+  const seconds = durations.includes(5) ? 5 : durations[0];
+  return rate && seconds ? { credits: rate.credits * seconds, seconds, resolution: rate.resolution } : undefined;
+}
+
 function videoPriceDescription(model: GatewayModel, l: LocalizeCopy) {
   const rule = l('费用 = 每秒积分 × 视频秒数；清晰度不同，单价不同。显示单价取整，扣费保留内部精度。', 'Cost = credits per second × video duration; rates vary by resolution. Displayed rates are rounded; settlement retains internal precision.');
-  const rate = videoRate(model);
-  const durations = model.durations?.filter(value => Number.isFinite(value) && value > 0).sort((a, b) => a - b) ?? [];
-  const seconds = durations.includes(5) ? 5 : durations[0];
-  if (!rate || seconds === undefined) return rule;
-  const cost = formatGatewayCreditAmount(rate.credits * seconds);
-  return [rule, l(`例如生成 ${seconds} 秒 ${rate.resolution} 视频，约 ${cost} 积分。`, `For example, a ${seconds}-second ${rate.resolution} video costs about ${cost} credits.`)].join('\n');
+  const clip = videoClipEstimate(model);
+  if (!clip) return rule;
+  const cost = formatGatewayCreditAmount(clip.credits);
+  return [rule, l(`例如生成 ${clip.seconds} 秒 ${clip.resolution} 视频，约 ${cost} 积分。`, `For example, a ${clip.seconds}-second ${clip.resolution} video costs about ${cost} credits.`)].join('\n');
+}
+
+export function officialVideoModelListPrice(model: GatewayModel, l: LocalizeCopy): string {
+  const clip = videoClipEstimate(model);
+  if (clip) {
+    const credits = formatGatewayCreditAmount(clip.credits);
+    return l(`约 ${credits} 积分 / ${clip.seconds} 秒 · ${clip.resolution}`,
+      `About ${credits} credits / ${clip.seconds}s · ${clip.resolution}`,
+      `Cirka ${credits} krediter / ${clip.seconds} s · ${clip.resolution}`);
+  }
+  if (videoRate(model)) return officialModelPrice(model, l);
+  return l('价格暂不可用', 'Price unavailable', 'Pris saknas');
 }
 
 function modelEstimate(model: GatewayModel, l: LocalizeCopy) {

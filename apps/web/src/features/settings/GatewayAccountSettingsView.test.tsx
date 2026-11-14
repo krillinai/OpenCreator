@@ -7,7 +7,7 @@ import { GatewayAccountSettingsView } from './GatewayAccountSettingsView.js';
 import { GatewaySubscriptionSettingsView } from './GatewaySubscriptionSettingsView.js';
 import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import type { GatewayAccountState } from '@opencreator/protocol';
-afterEach(() => { cleanup(); sessionStorage.clear(); });
+afterEach(() => { cleanup(); sessionStorage.clear(); window.location.hash = '#/'; });
 const state: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1', models: [], activationError: null };
 function service(): GatewayAccountSettingsService {
   return { getState: vi.fn(async () => state), start: vi.fn(), cancel: vi.fn(), logout: vi.fn(), activate: vi.fn(), setSource: vi.fn(), selectModel: vi.fn(),
@@ -61,6 +61,15 @@ it('checks authorization on return and displays sign-in before model services ar
   await userEvent.setup().click(screen.getByLabelText('账号菜单'));
   expect(screen.getByRole('button', { name: '退出登录' })).toBeEnabled();
   expect(screen.queryByRole('button', { name: '重新连接' })).not.toBeInTheDocument();
+});
+it('checks authorization when a browser callback includes its originating tab', async () => {
+  window.location.hash = '#/account?login=complete&tabId=original-tab';
+  const value = service();
+  vi.mocked(value.getState).mockResolvedValue({ ...state, authState: 'authorizing', activationState: 'loading', account: null });
+  render(<LanguageProvider initialPreference="zh-CN"><GatewayAccountSettingsView variant="profile" service={value}/></LanguageProvider>);
+
+  expect(await screen.findByText('正在确认登录结果…')).toBeInTheDocument();
+  expect(value.getState).toHaveBeenCalledWith({ checkAuthorization: true });
 });
 it('describes an expired authorization as a sign-in problem with a retry entry', async () => {
   const value = service();

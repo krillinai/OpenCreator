@@ -13,12 +13,24 @@
 - During merges, rebases, cherry-picks, or reverts, inspect automatically generated commit messages to avoid reintroducing Chinese descriptions.
 - After committing, verify the complete message with `git log -1 --format=%B`. Before pushing, inspect the subjects and bodies of all commits to be pushed. Do not push if any contain Chinese descriptions.
 
+## Mandatory Localization Rules
+
+- Mandatory: Do not render hard-coded Chinese text anywhere in the OpenCreator product. Every user-facing string must use the project's existing localization mechanism and provide translations for the supported languages. Chinese text is allowed as a translation value or an argument to a localization function, but must never be displayed unconditionally.
+- Apply this rule especially to errors, warnings, progress and status messages, loading and empty states, notifications, confirmations, and fallback copy. User-visible messages originating in Web, Desktop, Daemon, or Runtime must be localized before display; do not expose raw Chinese exception or service messages as UI copy.
+- When adding or changing user-facing text, verify the affected behavior in the supported languages. Tests must assert the intended localized output rather than only the presence of a message.
+
+## Mandatory Root Cause and Regression Test Rules
+
+- Mandatory: Before changing production code to fix a defect, establish its actual root cause using logs, runtime state, request paths, or a reproducible case. Record the evidence that connects the cause to the reported behavior. Do not make speculative fixes.
+- Mandatory: Before implementing the fix, write or update a regression test case based on the expected product behavior and run it against the unfixed code. Confirm that it fails for the reported defect, not because of a broken fixture, unrelated failure, or an assertion that encodes the existing bug. If automated testing is genuinely infeasible, define and execute a reproducible manual test case before editing production code.
+- After the fix, rerun the same test case and the smallest relevant checks for adjacent behavior. A fix is not complete until the test passes for the right reason and the affected behavior is verified. Do not weaken assertions, change expected behavior to match a broken implementation, or claim success from a test that does not exercise the defect.
+
 ## Mandatory Rules for Execution Efficiency and Minimum Sufficient Validation
 
 ### General Principles
 
 - Mandatory: Match validation scope to the risk and actual impact of the change. Do not automatically escalate small, local, low-risk changes to full test suites, complete builds, service restarts, end-to-end tests, or Desktop packaging.
-- Mandatory: First locate and modify the smallest relevant area of code, then run the minimum set of checks that can establish the correctness of the change. Expand validation incrementally only when results reveal a broader impact.
+- Mandatory: For defect fixes, follow the root-cause and regression-test rules above. Then modify the smallest relevant area of code and run the minimum set of checks that can establish the correctness of the change. Expand validation incrementally only when results reveal a broader impact.
 - Mandatory: Do not expand the current task because the repository has unrelated historical failures, a dirty working tree, or problems in other modules. Record unrelated issues without investigating or fixing them as part of the current task.
 - When the user explicitly requests complete testing, builds, packaging, publishing, or cross-platform parity validation, follow that request rather than the default tiers below.
 
@@ -44,6 +56,9 @@
 
 ### Service Operations
 
+- 用户说“启动测试环境”或“连接测试环境”时，在仓库根目录或 `apps/web` 执行 `pnpm dev:test`；该模式连接 `https://test.open-creator.ai`，使用独立的 `~/.opencreator/development-test`。
+- 用户说“启动正式环境”或“连接正式环境”时，在仓库根目录或 `apps/web` 执行 `pnpm dev:production`；该模式连接 `https://open-creator.ai`，使用 `~/.opencreator/development`。
+- 切换模式前先停止当前 Web 开发服务（包括托管它的后台任务），再用目标模式重新启动；确认 `127.0.0.1:19861` 上运行的是目标模式。不要用未指定网关的 `pnpm web:dev` 代替上述命令。
 - Mandatory: The local OpenCreator Web development server must use `127.0.0.1:19861`. Do not switch to another port when `19861` is occupied. Confirm the listener is an older OpenCreator service, stop that service, and start the current working tree on `19861`.
 - When a running Vite development server can hot-reload frontend source changes, do not restart the Web service merely to apply page changes.
 - Stop or restart the relevant service only when server code, startup configuration, environment variables, or process dependencies change; hot reload fails; the service is not running; or the user explicitly requests it.

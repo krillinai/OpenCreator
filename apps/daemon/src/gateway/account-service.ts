@@ -1,7 +1,7 @@
 import { gatewayModelIdMatches } from '@opencreator/protocol';
 import { isDirectTransport, type SupplierRegion } from './supplier.js';
 import { createHash } from 'node:crypto';
-import type { GatewayAccountState, GatewayActivationStage, GatewayBalanceSnapshot, GatewayBalanceState, GatewayModel, GatewayModelOperation, GatewayModelProbeOptions, PublicErrorFacts, ServiceSource } from '@opencreator/protocol';
+import type { GatewayAccountState, GatewayActivationStage, GatewayBalanceSnapshot, GatewayBalanceState, GatewayModelCatalog, GatewayModel, GatewayModelOperation, GatewayModelProbeOptions, PublicErrorFacts, ServiceSource } from '@opencreator/protocol';
 import { z } from 'zod/v3';
 import { createGatewayConfigStore, type GatewayCredentials } from './config-store.js';
 import { accountSchema, bootstrapSchema, cachedModelUsePolicy, catalogSchema, GatewayError, type GatewayBootstrap, type GatewayClient, type GatewayDeviceGrant } from './client.js';
@@ -45,6 +45,7 @@ export function createGatewayAccountService(input: {
   let mutation = Promise.resolve();
   let selectedModels: Record<string, string> = {};
   let manualModels: Record<string, string> = {};
+  let taskModelsByAccount: Record<string, Record<string, Record<string, string>>> = {};
   let preferencesInitialized = false;
   let pendingGatewayCatalog: GatewayBootstrap | undefined;
   let region: SupplierRegion = 'auto';
@@ -65,7 +66,7 @@ export function createGatewayAccountService(input: {
   let maintenanceFailures = 0;
   let runtimeCloseWork: Promise<void> | undefined;
   let activationRetryAt = 0;
-  const saveConfiguration = () => store.writeConfiguration({ source: state.source, bindingVersion: state.bindingVersion, selectedModels, region,
+  const saveConfiguration = () => store.writeConfiguration({ source: state.source, bindingVersion: state.bindingVersion, selectedModels, taskModelsByAccount, region,
     ...(preferencesInitialized ? { modelPreferencesVersion: 1 as const, manualModels } : {}) });
   function resolveGatewayBootstrap(bootstrap: GatewayBootstrap): GatewayBootstrap {
     if (bootstrap.transport !== 'gateway') return bootstrap;
@@ -180,6 +181,9 @@ export function createGatewayAccountService(input: {
   const reportModelSuccess = (scope: ModelResultScope, id: string, modality: GatewayModel['modality'], operation: GatewayModelOperation) => recordModelResult(scope, id, modality, undefined, operation);
   function snapshotState(): GatewayAccountState {
     const snapshot = structuredClone(state);
+    if (state.authState === 'signed_in' && state.account?.id) {
+      snapshot.taskModels = structuredClone(taskModelsByAccount[state.account.id] ?? {});
+    }
     if (input.modelAccess && credentials && isDirectTransport(credentials.transport) && state.authState === 'signed_in' && credentials.account) {
       snapshot.modelAvailability = input.modelAccess.availability(bootstrapSchema.parse(credentials));
     }
@@ -228,6 +232,7 @@ export function createGatewayAccountService(input: {
     try {
       const config = await store.readConfiguration();
       selectedModels = config.selectedModels ?? {};
+      taskModelsByAccount = config.taskModelsByAccount ?? {};
       preferencesInitialized = config.modelPreferencesVersion === 1;
       manualModels = config.manualModels ?? {};
       region = config.region ?? 'auto'; state.supplierRegion = region;
@@ -416,7 +421,8 @@ export function createGatewayAccountService(input: {
       const pending = pendingGatewayCatalog;
       await serialize(async () => { if (credentials?.transport === 'gateway' && !closing && !accessPaused) await applyGatewayCatalog(pending); });
     }
-    if ((!force && Date.now() - catalogUpdatedAt < 30_000) || (credentials.transport !== 'gateway' && (input.hasActiveTasks() || input.hasPendingTasks?.()))) return;
+    if ((!force && Date.now() - catalogUpdatedAt < (credentials.transport === 'gateway' ? 60 * 60_000 : 30_000))
+      || (credentials.transport !== 'gateway' && (input.hasActiveTasks() || input.hasPendingTasks?.()))) return;
     catalogUpdatedAt = Date.now();
     const catalogGeneration = generation;
     catalogWork = (async () => {
@@ -759,6 +765,22 @@ export function createGatewayAccountService(input: {
       balance = value.balance; return { status: 'ready', value: balance };
     } catch (error) { return { status: 'unavailable', lastKnown: balance, code: error instanceof GatewayError ? error.code : 'gateway_unavailable' }; }
   }
+  async function readPublicCatalog(modality: 'image' | 'video' | 'text'): Promise<GatewayModelCatalog> {
+    const response = z.object({
+      ...catalogSchema.shape,
+      updatedAt: z.string().optional(),
+      refreshState: z.enum(['ready', 'stale', 'unavailable']).optional()
+    }).safeParse(await input.client.request('/api/v1/models/catalog', ''));
+    if (!response.success) throw new GatewayError('invalid_gateway_response');
+    return {
+      models: response.data.models.filter(model => model.modality === modality),
+      recommendedModelId: response.data.defaults?.[modality],
+      catalogVersion: response.data.catalogVersion,
+      updatedAt: response.data.updatedAt,
+      refreshState: response.data.refreshState
+    };
+  }
+
   return {
     initialize, startBackgroundRestore,
     peekState: snapshotState,
@@ -795,6 +817,9 @@ export function createGatewayAccountService(input: {
       else await work;
       return snapshotState();
     },
+    readPublicImageCatalog: () => readPublicCatalog('image'),
+    readPublicVideoCatalog: () => readPublicCatalog('video'),
+    readPublicTextCatalog: () => readPublicCatalog('text'),
     async setSource(source: ServiceSource) {
       await initialize(); await serialize(async () => {
         if (source === 'manual' && (credentials || state.authState !== 'signed_out')) throw new GatewayError('logout_required', 409);
@@ -833,6 +858,24 @@ export function createGatewayAccountService(input: {
         await store.writeCredentials(credentials); await saveConfiguration();
       });
       return snapshotState();
+    },
+    async rememberTaskModel(templateId: string, modality: GatewayModelPurpose, model: string) {
+      await initialize();
+      return serialize(async () => {
+        const accountId = assertSignedIn().account?.id;
+        if (!accountId || state.source !== 'gateway' || !state.models.some(candidate =>
+          gatewayModelSupports(candidate, modality) && gatewayModelReady(candidate)
+          && gatewayModelIdMatches(candidate.id, model))) throw new GatewayError('invalid_model', 400);
+        taskModelsByAccount = {
+          ...taskModelsByAccount,
+          [accountId]: {
+            ...taskModelsByAccount[accountId],
+            [templateId]: { ...taskModelsByAccount[accountId]?.[templateId], [modality]: model }
+          }
+        };
+        await saveConfiguration();
+        return snapshotState();
+      });
     },
     async close() {
       const restoring = startupRestoreWork !== undefined && !startupRestoreFinished;

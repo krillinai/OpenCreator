@@ -191,9 +191,20 @@ export function createCreatorStageRunner(input: {
       if (controller.signal.aborted) {
         throw new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled');
       }
+      const resumedVideo = job.templateId === 'video-generation' && typeof stageRun.progress.resumedFromStageRunId === 'string'
+        ? input.repository.getStageRun(stageRun.progress.resumedFromStageRunId) : undefined;
+      const videoSource = resumedVideo
+        ? resumedVideo.progress.videoServiceSource ?? input.repository.getServiceBinding(jobId).source
+        : job.state.videoServiceSource;
+      const videoModel = resumedVideo?.progress.videoModelId ?? resumedVideo?.progress.upstreamModel ?? (videoSource === 'gateway'
+        && job.state.officialModels && typeof job.state.officialModels === 'object' && !Array.isArray(job.state.officialModels)
+          ? job.state.officialModels.video : job.state.model);
       updateStageRun({ id: stageRun.id, status: 'running',
         ...(job.templateId === 'video-download' && stageId === 'download'
-          ? { progress: { downloadWorkdirStageRunId: workdirStageId } } : {}) });
+          ? { progress: { downloadWorkdirStageRunId: workdirStageId } }
+          : job.templateId === 'video-generation' && (videoSource === 'manual' || videoSource === 'gateway')
+            ? { progress: { videoServiceSource: videoSource, ...(typeof videoModel === 'string' ? { videoModelId: videoModel } : {}) } }
+            : {}) });
       const startedJob = requireJob(input.repository, jobId);
       updateJob(input.repository, startedJob, stage.jobCompletionPolicy === 'preserve' ? startedJob.status : 'running',
         isBackgroundSourceDownload(stageRun) ? {} : { currentStage: stageId }, input.onJobChanged);

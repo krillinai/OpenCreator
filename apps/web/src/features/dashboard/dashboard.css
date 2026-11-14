@@ -2656,6 +2656,10 @@
   display: none;
 }
 
+.creator-mobile-tabs[hidden] {
+  display: none;
+}
+
 @media (max-width: 760px) {
   .creator-resizable-layout {
     min-width: 0;
@@ -3854,9 +3858,9 @@
 
 .image-generation-result-grid img {
   width: 100%;
-  aspect-ratio: 1;
+  height: auto;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   background: var(--surface-2);
 }
 
@@ -3865,16 +3869,8 @@
   aspect-ratio: 1;
 }
 
-.image-generation-result-grid[data-ratio="3:2"] img {
-  aspect-ratio: 3 / 2;
-}
-
 .image-generation-result-grid[data-ratio="3:2"] article > .video-result-player-status {
   aspect-ratio: 3 / 2;
-}
-
-.image-generation-result-grid[data-ratio="2:3"] img {
-  aspect-ratio: 2 / 3;
 }
 
 .image-generation-result-grid[data-ratio="2:3"] article > .video-result-player-status {

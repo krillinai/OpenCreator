@@ -485,7 +485,7 @@ Abonelik planları OpenCreator içinde seçilir. Satın alma Stripe Checkout'u, 
 | Değişken | Varsayılan | Amaç |
 | --- | --- | --- |
 | `OPENCREATOR_DATA_DIR` | `.runtime` | OpenCreator veritabanı, Runs, ekler ve yönetilen çalışma alanları |
-| `OPENCREATOR_GATEWAY_ORIGIN` | `https://www.open-creator.ai` | Hesap oturumu, abonelikler, krediler ve resmî model servisleri için Gateway; yerel Gateway kullanmak için değiştirilebilir |
+| `OPENCREATOR_GATEWAY_ORIGIN` | `https://open-creator.ai` | Hesap oturumu, abonelikler, krediler ve resmî model servisleri için Gateway; yerel Gateway kullanmak için değiştirilebilir |
 | `OPENCREATOR_CODEX_BIN` | `codex` | Codex CLI çalıştırılabilir dosyasının yolu |
 | `CODEX_HOME` | `~/.codex` | Codex oturumları, yapılandırma, Skills, MCP ve Profiles için doğruluk kaynağı |
 | `OPENCREATOR_DEFAULT_CWD` | Geçerli çalışma dizini | Varsayılan daemon çalışma dizini |

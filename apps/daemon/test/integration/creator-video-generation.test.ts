@@ -169,6 +169,7 @@ describe('creator video generation', () => {
       creationKey: 'video-generation-flow',
       state: {
         prompt: 'A cinematic coastal road',
+        videoServiceSource: 'manual',
         provider: 'seedance',
         model: 'doubao-seedance-2-0-260128',
         size: '1280x720',
@@ -204,6 +205,7 @@ describe('creator video generation', () => {
     expect(started.statusCode).toBe(200);
 
     const completed = await waitForCompletedJob(initial.id);
+    expect(completed.stages.at(-1)?.progress).toMatchObject({ videoServiceSource: 'manual', videoModelId: 'doubao-seedance-2-0-260128' });
     expect(completed).toMatchObject({
       status: 'completed',
       state: {

@@ -186,6 +186,51 @@ describe('App', () => {
     }
   );
 
+  it.each(['browser', 'desktop'] as const)(
+    'opens Dashboard from video settings in the %s host without requiring Agent setup',
+    async hostKind => {
+      window.localStorage.clear();
+      window.localStorage.setItem('opencreator.preferences.language', 'zh-CN');
+      window.history.replaceState(null, '', '#/settings?tab=ai-services&section=video');
+      const user = userEvent.setup();
+      const hostBridge = createHostBridge();
+      hostBridge.kind = hostKind;
+      hostBridge.readConnectionConfig = async () => ({
+        baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token'
+      });
+      const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const projectResponse = handleDefaultProjectApiRequest(url, init);
+        if (projectResponse !== undefined) return projectResponse;
+        if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+        if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+        if (url.endsWith('/gateway/account')) return jsonResponse({
+          source: 'manual', authState: 'signed_out', activationState: 'inactive',
+          account: null, bindingVersion: null, models: [], activationError: null
+        });
+        if (url.endsWith('/codex/readiness')) return jsonResponse({
+          state: 'degraded',
+          account: { status: 'not_authenticated', accountStatus: 'signed_out' },
+          binary: { status: 'ready' }, protocol: { status: 'ready' },
+          models: { status: 'ready' }, diagnostics: []
+        });
+        if (url.endsWith('/codex/provider')) return jsonResponse({
+          baseUrl: '', model: '', apiKeyConfigured: false, authentication: 'none'
+        });
+        if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+        throw new Error(`Unexpected request ${url}`);
+      };
+
+      render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
+      await waitFor(() => expect(document.querySelector('.settings-page')).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: '工作台' }));
+
+      await waitFor(() => expect(window.location.hash).toBe('#/dashboard'));
+      await waitFor(() => expect(document.querySelector('.creator-tools-page')).toBeInTheDocument());
+      expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument();
+    }
+  );
+
   it.each([['ready', 'browser'], ['blocked', 'browser'], ['loading', 'browser'], ['blocked', 'desktop']] as const)('enters the application after gateway sign-in with %s activation in %s and never asks for provider credentials', async (activationState, hostKind) => {
     window.localStorage.clear();
     window.localStorage.setItem('opencreator.preferences.language', 'zh-CN');
@@ -560,6 +605,92 @@ describe('App', () => {
     return { hostBridge, runtimeFetch, subscribeRunEvents: async () => undefined };
   }
 
+  it('keeps the image creation draft and route after an authorization return', async () => {
+    window.location.hash = '#/workbench?tool=image-generation';
+    const props = runtimeAppProps();
+    let onAuthorizationReturn: (() => void) | undefined;
+    props.hostBridge.subscribeAuthorizationReturn = listener => {
+      onAuthorizationReturn = listener;
+      return () => { onAuthorizationReturn = undefined; };
+    };
+    const signedOut: GatewayAccountState = {
+      source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null,
+      bindingVersion: null, models: [], activationError: null
+    };
+    const signedIn: GatewayAccountState = {
+      ...signedOut, source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'creator-1', email: 'creator@example.test', verified: true }
+    };
+    const authorizationChecks = vi.fn();
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/gateway/account')) return jsonResponse(signedOut);
+      if (url.endsWith('/gateway/auth/check')) {
+        authorizationChecks();
+        return jsonResponse(signedIn);
+      }
+      if (url.endsWith('/gateway/models/catalog')) return jsonResponse({ models: [], recommendedModelId: null });
+      return props.runtimeFetch(input, init);
+    };
+    render(<App {...props} runtimeFetch={runtimeFetch} />);
+
+    const prompt = await screen.findByRole('textbox', { name: '提示词' });
+    fireEvent.change(prompt, { target: { value: 'A sunlit studio portrait' } });
+    await act(async () => onAuthorizationReturn?.());
+
+    await waitFor(() => expect(authorizationChecks).toHaveBeenCalled());
+    expect(window.location.hash).toBe('#/workbench?tool=image-generation');
+    expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('A sunlit studio portrait');
+    expect(screen.queryByRole('main', { name: '个人中心' })).not.toBeInTheDocument();
+  });
+
+  it('keeps generation history open when Agent readiness briefly fails after setup was confirmed', async () => {
+    window.location.hash = '#/projects';
+    const props = runtimeAppProps();
+    let readinessCalls = 0;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/codex/readiness')) {
+        readinessCalls += 1;
+        if (readinessCalls === 1) {
+          return jsonResponse({ error: { code: 'TEMPORARY_ERROR', message: 'temporary' } }, { status: 503 });
+        }
+      }
+      return props.runtimeFetch(input, init);
+    };
+
+    render(<App projectNavigationMode="library" {...props} runtimeFetch={runtimeFetch} />);
+
+    await waitFor(() => expect(readinessCalls).toBe(2), { timeout: 4_000 });
+    expect(await screen.findByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument();
+  });
+
+  it('keeps generation history open while confirmed Agent readiness is temporarily unavailable', async () => {
+    window.location.hash = '#/projects';
+    const props = runtimeAppProps();
+    let readinessCalls = 0;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/codex/readiness')) {
+        readinessCalls += 1;
+        if (readinessCalls === 1) {
+          return jsonResponse({
+            state: 'degraded', codexHome: '/tmp/codex',
+            account: { status: 'ready', accountStatus: 'signed_in' },
+            binary: { status: 'ready' }, protocol: { status: 'ready' },
+            models: { status: 'unavailable' }, diagnostics: []
+          });
+        }
+      }
+      return props.runtimeFetch(input, init);
+    };
+
+    render(<App projectNavigationMode="library" {...props} runtimeFetch={runtimeFetch} />);
+
+    await waitFor(() => expect(readinessCalls).toBe(2), { timeout: 4_000 });
+    expect(await screen.findByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument();
+  });
+
   it('restores generation history directly from the projects URL', async () => {
     window.location.hash = '#/projects';
     render(<App projectNavigationMode="library" {...runtimeAppProps()} />);
@@ -581,7 +712,18 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('returns to Generation History after opening a creator project from the project list', async () => {
+  it('opens Video history from a video generation workbench', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/workbench?tool=video-generation';
+    render(<App {...runtimeAppProps()} />);
+
+    expect(await screen.findByRole('form', { name: '视频生成' }, { timeout: 5_000 })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '生成历史' }));
+    expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('returns to Generation History after opening a translated subtitle project from the project list', async () => {
     const user = userEvent.setup();
     const projectId = 'project_creator_return';
     const createdAt = '2026-09-02T08:00:00.000Z';
@@ -592,41 +734,44 @@ describe('App', () => {
     testCreatorJobs = [{
       id: 'creator_job_return',
       projectId,
-      templateId: 'cover',
+      templateId: 'video-translation',
       templateVersion: 2,
-      status: 'draft',
+      status: 'completed',
       revision: 0,
       presetOrigin: null,
       state: {
-        prompt: '返回项目列表测试封面',
-        sourceType: 'prompt',
-        sourceUrl: '',
-        ratio: '16:9',
-        candidateCount: 2,
-        quality: 'medium',
-        referenceImageArtifactId: null,
+        title: '返回项目列表测试字幕',
+        sourceType: 'url',
+        sourceUrl: 'https://www.youtube.com/watch?v=return',
+        sourceLanguage: 'en',
+        targetLanguage: 'zh_cn',
+        composeVideo: false,
+        dubbing: false,
+        bilingual: true,
+        subtitlePosition: 'top',
+        videoFormat: 'horizontal',
         currentStep: 1,
         furthestStep: 1,
-        workspacePhase: 'configure',
-        resultVersion: null,
-        resultTab: 'options',
+        workspacePhase: 'result',
+        resultVersion: 1,
+        resultTab: 'subtitles',
         draftBaseVersion: null,
         currentStage: null
       },
       agentThreadId: null,
       stages: [],
       artifacts: [{
-        id: 'cover_result',
+        id: 'subtitle_result',
         jobId: 'creator_job_return',
-        kind: 'cover_image',
+        kind: 'target_subtitle',
         version: 1,
         status: 'completed',
-        path: '/tmp/cover.png',
+        path: '/tmp/translated.srt',
         scopeKey: null,
         inputFingerprint: null,
         sha256: null,
         sourceArtifactIds: [],
-        metadata: { fileName: 'cover.png' },
+        metadata: { fileName: 'translated.srt', resultVersion: 1, cues: [{ id: 1, start: '00:00:00,000', end: '00:00:01,000', text: 'Translated' }] },
         createdAt
       }],
       providerRequests: [],
@@ -662,13 +807,13 @@ describe('App', () => {
       />
     );
 
-    await user.click(await screen.findByRole('link', { name: '打开 返回项目列表测试封面' }));
+    await user.click(await screen.findByRole('link', { name: '打开 返回项目列表测试字幕' }));
     await waitFor(() => expect(window.location.hash).toBe(
-      '#/workbench?tool=cover-generator&jobId=creator_job_return&returnTo=projects'
+      '#/workbench?tool=video-translation&jobId=creator_job_return&returnTo=projects'
     ));
-    const workspace = await screen.findByRole('region', { name: '封面生成 操作区' });
+    const workspace = await screen.findByRole('region', { name: '视频翻译项目产出' });
 
-    await user.click(within(workspace).getAllByRole('button', { name: '返回' })[0]!);
+    await user.click(within(workspace).getByRole('button', { name: '返回' }));
 
     expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(window.location.hash).toBe('#/projects'));

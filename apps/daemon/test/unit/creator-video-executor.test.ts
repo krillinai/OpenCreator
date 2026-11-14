@@ -26,6 +26,21 @@ afterEach(async () => {
 });
 
 describe('creator video executor', () => {
+  it('submits a resumed video with its pinned model after the draft model changes', async () => {
+    const stage = stageInput({ videoServiceSource: 'manual', model: 'new-local-model' }, []);
+    stage.stageRun.progress = { videoServiceSource: 'gateway', videoModelId: 'original-official-model' };
+    const service = videoService({
+      create: vi.fn(async () => { throw new Error('request captured'); })
+    });
+
+    await expect(createVideoExecutor({ service, probeVideo: vi.fn() }).run(stage))
+      .rejects.toMatchObject({ code: 'creator_video_generation_failed' });
+    expect(service.create).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'original-official-model' }),
+      expect.any(Object)
+    );
+  });
+
   it('submits a fresh video after the previous saved attempt was definitively rejected', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'creator-video-retry-rejected-'));
     const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));

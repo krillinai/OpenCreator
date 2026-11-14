@@ -2,12 +2,13 @@ import { changeControl } from '../../test/select-option.js';
 import { StrictMode } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDefaultCreatorServicesConfig, type CreatorArtifact, type CreatorJob, type CreatorJson, type CreatorTtsProvider, type GatewayAccountState } from '@opencreator/protocol';
+import { createDefaultCreatorServicesConfig, type CodexProviderConfig, type CreatorArtifact, type CreatorJob, type CreatorJson, type CreatorTtsProvider, type GatewayAccountState } from '@opencreator/protocol';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { CreatorSessionProvider, useCreatorSession } from './creator-session-store.js';
 import { readTranslationContinuation, saveTranslationContinuation } from './video-translation-continuation.js';
 import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
 import { OfficialServicesContext } from './official-services.js';
+import DashboardGenerationAccess from './DashboardGenerationAccess.js';
 
 afterEach(() => { vi.useRealTimers(); sessionStorage.clear(); });
 
@@ -26,7 +27,8 @@ function initialJob(state: Record<string, CreatorJson> = {}, artifacts = [subtit
     description: 'Translated subtitles', artifactRefs: { target_subtitle: [artifacts[0]!.id] }, changedArtifactIds: [artifacts[0]!.id], staleArtifactIds: [], state: { ...value.state } }];
   return value;
 }
-function mount(initial = initialJob(), beforeAction?: (action: string) => Promise<void>, services = configuredSpeech(), gateway?: GatewayAccountState | null) {
+function mount(initial = initialJob(), beforeAction?: (action: string) => Promise<void>, services = configuredSpeech(), gateway?: GatewayAccountState | null,
+  catalogService?: { getTextCatalog(): Promise<unknown>; getCachedTextCatalog?(): unknown; getState?(options?: { refreshModels?: boolean }): Promise<GatewayAccountState>; cancel?(): Promise<GatewayAccountState> }, accessGate = false) {
   let current = initial;
   const applyAction = vi.fn(async (_id: string, request: { action: string; input: Record<string, CreatorJson> }) => {
     await beforeAction?.(request.action);
@@ -40,13 +42,15 @@ function mount(initial = initialJob(), beforeAction?: (action: string) => Promis
     return { job: current };
   });
   const onBack = vi.fn();
+  const onGatewayStateChange = vi.fn();
   let push!: (job: CreatorJob) => void;
   function Remote() { push = useCreatorSession().applyRemoteSnapshot; return null; }
+  const content = () => <><Remote /><VideoTranslationWorkspace embedded={accessGate} onBack={onBack} creatorServicesService={services as never} gatewayAccountService={catalogService as never} /></>;
   const workspace = (account: GatewayAccountState | null | undefined) => <StrictMode><LanguageProvider initialPreference="zh-CN"><OfficialServicesContext.Provider value={account}><CreatorSessionProvider initialJob={initial} service={{ applyAction, runAgentTurn: vi.fn() } as never}>
-    <Remote /><VideoTranslationWorkspace onBack={onBack} creatorServicesService={services as never} />
+    {accessGate ? <DashboardGenerationAccess gatewayState={account} gatewayAccountService={catalogService as never} onGatewayStateChange={onGatewayStateChange}>{content()}</DashboardGenerationAccess> : content()}
   </CreatorSessionProvider></OfficialServicesContext.Provider></LanguageProvider></StrictMode>;
   const view = render(workspace(gateway));
-  return { unmount: view.unmount, applyAction, onBack, current: () => current, updateGateway: (value: GatewayAccountState) => view.rerender(workspace(value)), push: (value: CreatorJob) => { current = value; push(value); } };
+  return { unmount: view.unmount, applyAction, onBack, onGatewayStateChange, current: () => current, updateGateway: (value: GatewayAccountState) => view.rerender(workspace(value)), push: (value: CreatorJob) => { current = value; push(value); } };
 }
 function stageCalls(applyAction: ReturnType<typeof mount>['applyAction']) {
   return applyAction.mock.calls.map(([, request]) => request).filter(request => request.action === 'run-stage');
@@ -56,6 +60,7 @@ function configuredSpeech() {
   const config = createDefaultCreatorServicesConfig(); config.tts.openai.apiKey = 'configured';
   config.tts.openai.defaultVoiceId = 'alloy';
   return { getConfig: vi.fn(async () => ({ config, configuredCredentials: ['tts.openai.apiKey'] })),
+    getCodexModelStatus: vi.fn(async (): Promise<CodexProviderConfig> => ({ authentication: 'chatgpt', apiKeyConfigured: false, baseUrl: '', model: '' })),
     getCapabilities: vi.fn(async () => ({ transcription: { providers: [] } })),
     getTtsVoices: vi.fn(async (provider: CreatorTtsProvider, _model?: string) => ({ voices: (provider === 'aliyun'
       ? [{ id: 'Cherry', name: '芊悦' }, { id: 'Serena', name: '苏瑶' }]
@@ -63,6 +68,137 @@ function configuredSpeech() {
 }
 
 describe('video translation two-step flow', () => {
+  it('keeps local and public models visible after returning from unfinished sign-in and cancels authorization on close', async () => {
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const authorizing: GatewayAccountState = { ...signedOut, source: 'gateway', authState: 'authorizing', activationState: 'loading' };
+    const publicModel = { id: 'vendor/text', name: 'Text One', vendor: 'Vendor', modality: 'text' as const, capabilities: ['chat', 'responses'] };
+    const catalogService = { getTextCatalog: vi.fn(async () => ({ models: [publicModel] })), cancel: vi.fn(async () => signedOut) };
+    const session = mount(initialJob({}, []), undefined, configuredSpeech(), signedOut, catalogService, true);
+    const selector = await screen.findByRole('combobox', { name: '翻译模型' });
+    await waitFor(() => expect(selector).toHaveValue('本机 Codex'));
+    fireEvent.click(selector);
+    fireEvent.click(await screen.findByRole('option', { name: 'Text One' }));
+    session.updateGateway(authorizing);
+    expect(screen.getByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
+    await waitFor(() => expect(selector).toHaveValue('Text One'));
+    fireEvent.click(screen.getByRole('button', { name: '关闭登录窗口' }));
+    await waitFor(() => expect(catalogService.cancel).toHaveBeenCalledTimes(1));
+    expect(session.onGatewayStateChange).toHaveBeenCalledWith(signedOut);
+    expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
+    fireEvent.click(selector);
+    const list = screen.getByRole('listbox', { name: '翻译模型' });
+    expect(within(list).getByRole('option', { name: '本机 Codex' })).toBeInTheDocument();
+    expect(within(list).getByRole('option', { name: 'Text One' })).toBeInTheDocument();
+    expect(stageCalls(session.applyAction)).toHaveLength(0);
+    fireEvent.click(within(list).getByRole('option', { name: '本机 Codex' }));
+    session.updateGateway(signedOut);
+    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+    await waitFor(() => expect(stageCalls(session.applyAction)).toHaveLength(1));
+    expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
+  });
+
+  it('groups local and public translation models, then validates a sign-in selection without starting a task', async () => {
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const requested = { id: 'vendor/text', name: 'Text One', vendor: 'Vendor', modality: 'text' as const, capabilities: ['chat', 'responses'], price: { version: 'v1', inputPerMillion: 1, outputPerMillion: 2 } };
+    const available: GatewayAccountState = { ...signedOut, source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account', email: 'test@example.test', verified: true }, bindingVersion: '1', models: [requested] };
+    const catalogService = { getTextCatalog: vi.fn(async () => ({ models: [requested] })), getState: vi.fn(async () => available) };
+    const session = mount(initialJob({}, []), undefined, configuredSpeech(), signedOut, catalogService, true);
+    const model = await screen.findByRole('combobox', { name: '翻译模型' });
+    await waitFor(() => expect(model).toHaveValue('本机 Codex'));
+    fireEvent.click(model);
+    const list = screen.getByRole('listbox', { name: '翻译模型' });
+    expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['本地模型', 'Vendor']);
+    expect(within(list).getByRole('option', { name: 'Text One' })).toHaveTextContent('积分');
+    fireEvent.click(within(list).getByRole('option', { name: 'Text One' }));
+    expect(screen.getByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
+    expect(stageCalls(session.applyAction)).toHaveLength(0);
+    session.updateGateway(available);
+    await waitFor(() => expect(catalogService.getState).toHaveBeenCalledWith({ refreshModels: true }));
+    await waitFor(() => expect(session.current().state.officialModels).toEqual({ text: requested.id }));
+    expect(stageCalls(session.applyAction)).toHaveLength(0);
+  });
+
+  it('starts a local video translation without requiring gateway sign-in', async () => {
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const session = mount(initialJob({}, []), undefined, configuredSpeech(), signedOut, { getTextCatalog: async () => ({ models: [] }) }, true);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '翻译模型' })).toHaveValue('本机 Codex'));
+    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+    await waitFor(() => expect(stageCalls(session.applyAction)).toHaveLength(1));
+    expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
+  });
+
+  it('offers model settings when the selected local Codex runtime is unavailable', async () => {
+    const services = configuredSpeech();
+    services.getCodexModelStatus.mockResolvedValue({ authentication: 'none', apiKeyConfigured: false, baseUrl: '', model: '' });
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    mount(initialJob({}, []), undefined, services, signedOut, { getTextCatalog: async () => ({ models: [] }) }, true);
+    await waitFor(() => expect(services.getCodexModelStatus).toHaveBeenCalled());
+    const model = screen.getByRole('combobox', { name: '翻译模型' });
+    expect(model).toHaveValue('选择模型');
+    fireEvent.click(model);
+    fireEvent.click(screen.getByRole('option', { name: '本机 Codex' }));
+    expect(await screen.findByRole('dialog', { name: '翻译模型设置' })).toBeInTheDocument();
+  });
+
+  it('refreshes local model availability after closing model settings', async () => {
+    const services = configuredSpeech();
+    services.getCodexModelStatus.mockResolvedValue({ authentication: 'none', apiKeyConfigured: false, baseUrl: '', model: '' });
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    mount(initialJob({}, []), undefined, services, signedOut, { getTextCatalog: async () => ({ models: [] }) }, true);
+    const model = screen.getByRole('combobox', { name: '翻译模型' });
+    await waitFor(() => expect(model).toHaveValue('选择模型'));
+    fireEvent.click(model);
+    fireEvent.click(screen.getByRole('option', { name: '本机 Codex' }));
+    const dialog = await screen.findByRole('dialog', { name: '翻译模型设置' });
+    services.getCodexModelStatus.mockResolvedValue({ authentication: 'chatgpt', apiKeyConfigured: false, baseUrl: '', model: '' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '关闭模型设置' }));
+    await waitFor(() => expect(model).toHaveValue('本机 Codex'));
+  });
+
+  it('keeps the local option and retries a failed public text catalog', async () => {
+    const model = { id: 'vendor/text', name: 'Text One', vendor: 'Vendor', modality: 'text' as const, capabilities: ['chat', 'responses'] };
+    const getTextCatalog = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ models: [model] });
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    mount(initialJob({}, []), undefined, configuredSpeech(), signedOut, { getTextCatalog }, true);
+    expect(await screen.findByText('模型列表加载失败，请重试。')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: '翻译模型' }));
+    expect(screen.getByRole('option', { name: '本机 Codex' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    await waitFor(() => expect(getTextCatalog).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('combobox', { name: '翻译模型' }));
+    expect(screen.getByRole('option', { name: 'Text One' })).toBeInTheDocument();
+  });
+
+  it('switches to the account recommendation when a requested public model is unavailable', async () => {
+    const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
+    const requested = { id: 'vendor/requested', name: 'Requested', vendor: 'Vendor', modality: 'text' as const, capabilities: ['chat', 'responses'] };
+    const replacement = { id: 'vendor/recommended', name: 'Recommended', vendor: 'Vendor', modality: 'text' as const, capabilities: ['chat', 'responses'], recommended: true };
+    const alternative = { id: 'vendor/alternative', name: 'Alternative', vendor: 'Vendor', modality: 'text' as const, capabilities: ['chat', 'responses'] };
+    const signedIn: GatewayAccountState = { ...signedOut, source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account', email: 'test@example.test', verified: true }, bindingVersion: '1', models: [replacement, alternative], recommendedModels: { text: replacement.id } };
+    const catalogService = { getTextCatalog: vi.fn(async () => ({ models: [requested] })), getState: vi.fn(async () => signedIn) };
+    const session = mount(initialJob({}, []), undefined, configuredSpeech(), signedOut, catalogService, true);
+    fireEvent.click(await screen.findByRole('combobox', { name: '翻译模型' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Requested' }));
+    session.updateGateway(signedIn);
+    await waitFor(() => expect(session.current().state.officialModels).toEqual({ text: replacement.id }));
+    expect(screen.getByRole('status', { name: '翻译模型' })).toHaveTextContent('所选模型当前账户不可用，已切换为可用的翻译模型。');
+    expect(stageCalls(session.applyAction)).toHaveLength(0);
+    fireEvent.click(screen.getByRole('combobox', { name: '翻译模型' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Alternative' }));
+    await waitFor(() => expect(session.current().state.officialModels).toEqual({ text: alternative.id }));
+    expect(screen.queryByRole('status', { name: '翻译模型' })).not.toBeInTheDocument();
+  });
+
+  it('disables official model selection until the signed-in account is ready', async () => {
+    const activating: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'loading',
+      account: { id: 'account', email: 'test@example.test', verified: true }, bindingVersion: null, activationError: null,
+      models: [{ id: 'vendor/text', modality: 'text', capabilities: ['chat', 'responses'] }] };
+    mount(initialJob({}, []), undefined, configuredSpeech(), activating, undefined, true);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '翻译模型' })).toBeDisabled());
+  });
+
   it.each(['text', 'transcription'] as const)('requires confirmation before regenerating a result with a different %s model', async modality => {
     const gateway: GatewayAccountState = {
       source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
@@ -521,6 +657,20 @@ describe('video translation two-step flow', () => {
     expect(screen.queryByRole('button', { name: '深度编辑' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '保存字幕' })).not.toBeInTheDocument();
     expect(stageCalls(session.applyAction)).toHaveLength(0);
+  });
+
+  it('opens the shared Agent panel from the immersive subtitle editor', async () => {
+    await act(async () => { mount(); });
+    const assistant = screen.getByRole('button', { name: 'AI 助手' });
+    const editor = screen.getByRole('textbox', { name: '横屏字幕 1' });
+    expect(document.querySelector('.creator-collaboration-panel')).not.toBeInTheDocument();
+    fireEvent.click(assistant);
+    expect(screen.getByRole('button', { name: 'AI 助手' })).toBe(assistant);
+    expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toBe(editor);
+    expect(assistant).toHaveAttribute('aria-pressed', 'true');
+    expect(document.querySelector('.creator-collaboration-panel')).toBeInTheDocument();
+    fireEvent.click(assistant);
+    expect(document.querySelector('.creator-collaboration-panel')).not.toBeInTheDocument();
   });
 
   it('enters the work area when subtitles arrive and leaves preview preparation optional', async () => {

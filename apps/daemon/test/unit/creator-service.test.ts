@@ -9,6 +9,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCreatorStageRunner } from '../../src/creator/stage-runner.js';
 import { createCreatorRepository } from '../../src/creator/repository.js';
+import { appendCreatorResultSnapshot } from '../../src/creator/result-snapshots.js';
 import {
   CreatorServiceError,
   createCreatorService
@@ -570,6 +571,7 @@ describe('creator service', () => {
       expectedRevision: 0,
       input: {
         patch: {
+          __creatorUserEdited: true,
           currentStep: 1,
           furthestStep: 1,
           workspacePhase: 'configure'
@@ -581,6 +583,7 @@ describe('creator service', () => {
 
     expect(uiOnly.job.revision).toBe(1);
     expect(uiOnly.job.state.currentStep).toBe(1);
+    expect(uiOnly.job.state.__creatorUserEdited).toBe(true);
     expect(uiOnly.job.activities.map(activity => activity.action)).toEqual(['create-job']);
 
     const mixed = service.applyAction(job.id, {
@@ -602,6 +605,22 @@ describe('creator service', () => {
       action: 'update-settings:draft',
       details: { objectId: 'prompt' }
     });
+    db.close();
+  });
+
+  it('keeps the draft edit marker out of result snapshots', () => {
+    const { db, service } = setup();
+    const job = service.createJob({
+      projectId: 'project_1', templateId: 'cover',
+      state: { prompt: 'Portrait', __creatorUserEdited: true }
+    });
+    const state = appendCreatorResultSnapshot({
+      job, version: 1, changedArtifacts: [], action: 'run-stage', description: 'Generated cover'
+    });
+
+    expect(state.resultSnapshots).toMatchObject([{ state: { prompt: 'Portrait' } }]);
+    expect((state.resultSnapshots as Array<{ state: Record<string, unknown> }>)[0]?.state)
+      .not.toHaveProperty('__creatorUserEdited');
     db.close();
   });
 

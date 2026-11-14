@@ -672,6 +672,7 @@ function SettingsAccentColorRow(props: {
     label: string;
     swatch: string;
   }> = [
+    { value: 'brand', label: 'OpenCreator', swatch: '#f4d914' },
     { value: 'neutral', label: t('settings.accent.neutral'), swatch: '#85858b' },
     { value: 'blue', label: t('settings.accent.blue'), swatch: '#3b82f6' },
     { value: 'cyan', label: t('settings.accent.cyan'), swatch: '#06b6d4' },
@@ -706,6 +707,7 @@ function SettingsAccentColorRow(props: {
               return (
                 <button
                   key={option.value}
+                  className={option.value === 'brand' ? 'settings-brand-accent-option' : undefined}
                   type="button"
                   role="radio"
                   aria-checked={selected}

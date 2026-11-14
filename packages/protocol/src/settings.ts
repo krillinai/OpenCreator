@@ -1,4 +1,5 @@
 export const openCreatorAccentColors = [
+  'brand',
   'neutral',
   'blue',
   'cyan',

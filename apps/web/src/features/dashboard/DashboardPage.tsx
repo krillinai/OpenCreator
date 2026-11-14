@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { CreatorJob, CreatorJson, GatewayAccountState, OpenCreatorIssue } from '@opencreator/protocol';
-import { OfficialServicesContext } from './official-services.js';
+import { OfficialModelMemoryContext, OfficialServicesContext } from './official-services.js';
 import DashboardGenerationAccess from './DashboardGenerationAccess.js';
 import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
@@ -246,6 +246,7 @@ export default function DashboardPage(props: {
   videoMetadataService?: VideoMetadataService;
   workspace?: CreatorWorkspace;
   jobId?: string;
+  returnTo?: 'projects';
   projectId?: string;
   creatorService?: CreatorWebService | null;
   runtimeDependencies?: RuntimeDependenciesController;
@@ -278,10 +279,11 @@ export default function DashboardPage(props: {
     props.workspace && props.jobId ? { [props.workspace]: props.jobId } : {}
   );
   const [activeJobId, setActiveJobId] = useState(props.jobId);
-  const [generationResultActive, setGenerationResultActive] = useState(false);
+  const [generationResultActive, setGenerationResultActive] = useState(props.workspace === 'image-generation' && props.jobId !== undefined);
   const [generationHistoryActive, setGenerationHistoryActive] = useState(false);
   const [generationSessionActive, setGenerationSessionActive] = useState(false);
   const generationSessionReturnRef = useRef<{ workspace: CreatorWorkspace; jobId?: string }>();
+  const historyJobRef = useRef<CreatorJob>();
   const generationHistoryOriginRef = useRef<{
     workspace: CreatorWorkspace;
     jobId?: string;
@@ -329,7 +331,7 @@ export default function DashboardPage(props: {
       return;
     }
     internalWorkspaceNavigationRef.current = undefined;
-    setGenerationResultActive(false);
+    setGenerationResultActive(props.workspace === 'image-generation' && props.jobId !== undefined);
     setGenerationHistoryActive(false);
     setGenerationSessionActive(false);
     if (props.skillLaunch?.workspace !== undefined) {
@@ -344,17 +346,22 @@ export default function DashboardPage(props: {
 
   useEffect(() => {
     setActiveJobId(props.jobId);
-    if (props.workspace === undefined) return;
+    if (props.workspace === undefined) {
+      generationJobIdsRef.current = {};
+      return;
+    }
     if (props.jobId === undefined) delete generationJobIdsRef.current[props.workspace];
     else generationJobIdsRef.current[props.workspace] = props.jobId;
   }, [props.jobId, props.workspace]);
 
   const resetCreationSession = (workspace: CreatorWorkspace | null) => {
+    historyJobRef.current = undefined;
     setActiveJobId(undefined);
     if (workspace) delete generationJobIdsRef.current[workspace];
   };
 
   const closeWorkspace = () => {
+    historyJobRef.current = undefined;
     const sessionReturn = generationSessionReturnRef.current;
     if (sessionReturn) {
       generationSessionReturnRef.current = undefined;
@@ -393,7 +400,8 @@ export default function DashboardPage(props: {
     }
   };
 
-  const openWorkspace = (workspace: CreatorWorkspace, jobId?: string, generated = false) => {
+  const openWorkspace = (workspace: CreatorWorkspace, jobId?: string, generated = false, historyJob?: CreatorJob) => {
+    historyJobRef.current = historyJob;
     setWorkspaceOrigin('dashboard');
     setActivePromptHint(undefined);
     setActiveJobId(jobId);
@@ -404,9 +412,9 @@ export default function DashboardPage(props: {
     props.onWorkspaceNavigate?.(workspace, jobId);
   };
 
-  const openJobEditor = (workspace: CreatorWorkspace, jobId: string) => {
+  const openJobEditor = (workspace: CreatorWorkspace, job: CreatorJob) => {
     if (activeWorkspace) generationSessionReturnRef.current = { workspace: activeWorkspace, jobId: activeJobId };
-    openWorkspace(workspace, jobId, true);
+    openWorkspace(workspace, job.id, true, job);
     setGenerationSessionActive(false);
   };
 
@@ -459,6 +467,7 @@ export default function DashboardPage(props: {
         templateId={creatorTemplateForWorkspace(workspace)}
         templateVersion={creatorTemplateVersionForWorkspace(workspace)}
         jobId={options ? options.jobId : activeJobId}
+        initialJob={historyJobRef.current}
         onJobCreated={job => options?.onJobCreated ? options.onJobCreated(job) : handleJobCreated(workspace, job)}
         onAskIssue={props.onAskIssue}
         onBack={closeWorkspace}
@@ -469,7 +478,12 @@ export default function DashboardPage(props: {
           onGatewayStateChange={props.onGatewayStateChange}
           openExternal={props.openExternal}
         >
-          <OfficialServicesContext.Provider value={props.gatewayState}>{content}</OfficialServicesContext.Provider>
+          <OfficialModelMemoryContext.Provider value={props.gatewayAccountService?.rememberTaskModel ? {
+            service: { getState: props.gatewayAccountService.getState, rememberTaskModel: props.gatewayAccountService.rememberTaskModel },
+            onStateChange: props.onGatewayStateChange
+          } : null}>
+            <OfficialServicesContext.Provider value={props.gatewayState}>{content}</OfficialServicesContext.Provider>
+          </OfficialModelMemoryContext.Provider>
         </DashboardGenerationAccess>
       </CreatorWorkspaceSession>
     );
@@ -491,6 +505,8 @@ export default function DashboardPage(props: {
         forceComposer={generationSessionActive}
         onGenerated={onGenerated}
         creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
         onBack={closeWorkspace}
       />
     ) : workspace === 'cover-generator' ? (
@@ -508,6 +524,8 @@ export default function DashboardPage(props: {
         forceComposer={generationSessionActive}
         onGenerated={onGenerated}
         creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
         onBack={closeWorkspace}
       />
     ) : workspace === 'video-translation' ? (
@@ -521,6 +539,9 @@ export default function DashboardPage(props: {
         runtimeDependencies={props.runtimeDependencies}
         videoMetadataService={props.videoMetadataService}
         creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
+        backToParentOnExit={props.returnTo === 'projects'}
         onBack={closeWorkspace}
       />
     ) : workspace === 'smart-dubbing' ? (
@@ -573,7 +594,7 @@ export default function DashboardPage(props: {
         onBack={closeWorkspace}
       />
     ), {
-      key: `${workspace}:${generationJobIdsRef.current[workspace] ?? 'new'}`,
+      key: `${workspace}:${activeJobId ?? 'new'}`,
       jobId: generationJobIdsRef.current[workspace],
       onJobCreated: job => {
         generationJobIdsRef.current[workspace] = job.id;
@@ -600,7 +621,7 @@ export default function DashboardPage(props: {
         internalWorkspaceNavigationRef.current = creationWorkspace !== null && creationWorkspace !== props.workspace ? creationWorkspace : undefined;
         props.onWorkspaceNavigate?.(creationWorkspace);
       }}
-      onOpenJob={job => openWorkspace(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job.id, true)}
+      onOpenJob={job => openWorkspace(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job.id, true, job)}
     />;
   }
 
@@ -628,8 +649,9 @@ export default function DashboardPage(props: {
       history={{
         projectId: props.projectId,
         service: props.creatorService,
+        initialType: activeWorkspace === 'image-generation' ? 'image' : activeWorkspace === 'video-download' || activeWorkspace === 'video-generation' ? 'video' : undefined,
         onBackCreation: closeWorkspace,
-        onOpenJob: job => openJobEditor(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job.id)
+        onOpenJob: job => openJobEditor(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job)
       }}
       composer={{
         showExtendedModes: true,
@@ -666,7 +688,9 @@ export default function DashboardPage(props: {
         promptHint={activePromptHint}
         videoMetadataService={props.videoMetadataService}
         creatorServicesService={props.creatorServicesService}
-        backToParentOnExit={generationSessionReturnRef.current !== undefined || (generationHistoryActive && generationResultActive)}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
+        backToParentOnExit={props.returnTo === 'projects' || generationSessionReturnRef.current !== undefined || (generationHistoryActive && generationResultActive)}
         onBack={closeWorkspace}
       />
     ));
@@ -736,6 +760,8 @@ export default function DashboardPage(props: {
       <ImageGenerationWorkspace
         promptHint={activePromptHint}
         creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
         onBack={closeWorkspace}
       />
     ));
@@ -746,6 +772,8 @@ export default function DashboardPage(props: {
       <VideoGenerationWorkspace
         promptHint={activePromptHint}
         creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
         onBack={closeWorkspace}
       />
     ));
@@ -921,15 +949,21 @@ function CreatorWorkspaceSession(props: {
   templateId: string;
   templateVersion: number;
   jobId?: string;
+  initialJob?: CreatorJob;
   children: ReactNode;
   onJobCreated(job: CreatorJob): void;
   onAskIssue?(issue: OpenCreatorIssue, question: string): void;
   onBack(): void;
 }) {
   const l = useLocalizedCopy();
+  const historyJob = props.initialJob !== undefined
+    && props.initialJob.id === props.jobId
+    && props.initialJob.projectId === props.projectId
+    && props.initialJob.templateId === props.templateId
+      ? props.initialJob : undefined;
   const [job, setJob] = useState<CreatorJob | undefined>(() => props.jobId === undefined
     ? createPendingCreatorJob(props.projectId, props.templateId, props.templateVersion)
-    : undefined);
+    : historyJob);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [restoreConnection, setRestoreConnection] = useState<CreatorConnectionState>({ status: 'connecting', attempt: 0 });
   const pageIssues = usePageIssueState('creator-launch');
@@ -1063,6 +1097,11 @@ function CreatorWorkspaceSession(props: {
 
     if (props.jobId !== createdJobIdRef.current) createdJobIdRef.current = undefined;
     if (jobRef.current?.id === props.jobId) return;
+    if (historyJob !== undefined) {
+      pageIssues.resolveOperation('creator-launch.restore-job');
+      setJob(historyJob);
+      return;
+    }
     const jobId = props.jobId;
     setJob(current => current?.id === props.jobId ? current : undefined);
     const subscription = createCreatorSnapshotSubscription<CreatorJob>({
@@ -1099,6 +1138,7 @@ function CreatorWorkspaceSession(props: {
     };
   }, [
     l,
+    historyJob,
     loadAttempt,
     pageIssues.captureOperationFailure,
     pageIssues.resolveOperation,

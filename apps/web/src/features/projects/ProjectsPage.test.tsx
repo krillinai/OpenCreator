@@ -581,6 +581,28 @@ describe('ProjectsPage', () => {
     expect(within(screen.getByRole('list', { name: '项目列表' })).getAllByRole('listitem')).toHaveLength(1);
   });
 
+  it('hides an untouched video draft with automatically selected official models', () => {
+    const automatic = creatorJob({
+      id: 'job_automatic_video',
+      templateId: 'video-generation',
+      state: {
+        prompt: '', provider: 'seedance', size: '1280x720', duration: 5,
+        referenceImageArtifactId: null, currentStage: null,
+        officialModels: { speech: 'grok-tts', video: 'grok-imagine-video-1.5', transcription: 'whisper-1' }
+      },
+      updatedAt: '2026-11-13T00:00:00.000Z'
+    });
+    const selected = creatorJob({
+      id: 'job_selected_video',
+      templateId: 'video-generation',
+      state: { ...automatic.state, __creatorUserEdited: true },
+      updatedAt: '2026-11-13T00:01:00.000Z'
+    });
+
+    expect(isMeaningfulCreatorJob(automatic)).toBe(false);
+    expect(isMeaningfulCreatorJob(selected)).toBe(true);
+  });
+
   it('filters real Creator jobs by category and search text', () => {
     render(<ProjectsPage jobs={jobs} workspaces={workspaces} onOpenJob={vi.fn()} />);
 

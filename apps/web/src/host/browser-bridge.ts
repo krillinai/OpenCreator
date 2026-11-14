@@ -6,6 +6,15 @@ import type { HostBridge, HostBridgeResult, HostNotification } from './bridge.js
 const CONNECTION_KEY = 'opencreator.web.connection.v1';
 const DEV_RUNTIME_CONFIG_PATH = '/.opencreator/runtime-config';
 let billingTabId: string | undefined;
+let authorizationTabId: string | undefined;
+function getAuthorizationTabId() {
+  if (!authorizationTabId) {
+    try { authorizationTabId = sessionStorage.getItem('opencreator:authorization-tab') ?? undefined; } catch { /* Tab memory is sufficient for the current return. */ }
+    authorizationTabId ||= crypto.randomUUID();
+    try { sessionStorage.setItem('opencreator:authorization-tab', authorizationTabId); } catch { /* Optional reload recovery. */ }
+  }
+  return authorizationTabId;
+}
 function getBillingTabId() {
   if (!billingTabId) {
     try { billingTabId = sessionStorage.getItem('opencreator:billing-tab') ?? undefined; } catch { /* Tab memory is sufficient for the current return. */ }
@@ -17,8 +26,29 @@ function getBillingTabId() {
 
 export const browserBridge: HostBridge = {
   kind: 'browser',
-  get authorizationReturnUrl() { return new URL('/#/account?login=complete', window.location.href).href; },
+  get authorizationReturnUrl() { return new URL('/#/account?login=complete&tabId=' + getAuthorizationTabId(), window.location.href).href; },
   get billingReturnUrl() { return new URL('/#/account?billing=return&tabId=' + getBillingTabId(), window.location.href).href; },
+  subscribeAuthorizationReturn(listener) {
+    if (typeof BroadcastChannel === 'undefined') return () => {};
+    const channel = new BroadcastChannel('opencreator.authorization-return.v1');
+    const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
+    const returnTabId = params.get('tabId');
+    const returning = window.location.hash.startsWith('#/account?') && params.get('login') === 'complete' && !!returnTabId;
+    const tabId = getAuthorizationTabId();
+    const nonce = crypto.randomUUID();
+    channel.onmessage = event => {
+      const value = event.data;
+      if (returning) {
+        if (value?.type === 'ack' && value.nonce === nonce) window.close();
+      } else if (value?.type === 'return' && value.tabId === tabId && typeof value.nonce === 'string') {
+        listener();
+        channel.postMessage({ type: 'ack', nonce: value.nonce });
+        window.focus();
+      }
+    };
+    if (returning) channel.postMessage({ type: 'return', tabId: returnTabId, nonce });
+    return () => channel.close();
+  },
   prepareExternalNavigation() {
     const tab = window.open('about:blank', '_blank');
     if (!tab) throw new Error('Browser blocked the new tab');

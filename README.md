@@ -347,6 +347,15 @@ pnpm web:dev
 
 Open `http://127.0.0.1:19861/`. The development server starts the local daemon on demand and injects a temporary Runtime token through a same-origin proxy, so no connection token needs to be copied manually.
 
+To connect the Web development server to a specific OpenCreator Gateway, run either command from the repository root or `apps/web`:
+
+```bash
+pnpm dev:test        # https://test.open-creator.ai
+pnpm dev:production  # https://open-creator.ai
+```
+
+Stop the current development server before switching modes, then start the other command. The modes use separate local OpenCreator homes, so their account sessions stay separate.
+
 On first launch, the Runtime prepares a default project and checks local Codex settings. Confirm an existing ChatGPT sign-in or API key to use local Codex, or select a provider and enter its model, endpoint, and API key. The composer is ready after setup. To work on the daemon only:
 
 ```bash
@@ -513,7 +522,7 @@ Most users do not need environment variables. Use these when you need isolated d
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | `OPENCREATOR_DATA_DIR` | `.runtime` | OpenCreator database, Runs, attachments, and managed workspaces |
-| `OPENCREATOR_GATEWAY_ORIGIN` | `https://www.open-creator.ai` | Gateway for account sign-in, subscriptions, credits, and official model services; override for a local Gateway |
+| `OPENCREATOR_GATEWAY_ORIGIN` | `https://open-creator.ai` | Gateway for account sign-in, subscriptions, credits, and official model services; override for a local Gateway |
 | `OPENCREATOR_CODEX_BIN` | `codex` | Path to the Codex CLI executable |
 | `CODEX_HOME` | `~/.codex` | Source of truth for Codex sessions, configuration, Skills, MCP, and Profiles |
 | `OPENCREATOR_DEFAULT_CWD` | Current working directory | Default daemon working directory |
@@ -558,6 +567,8 @@ See the [user guide and troubleshooting reference](./docs/opencreator-user-guide
 | Command | Purpose |
 | --- | --- |
 | `pnpm web:dev` | Start Web and launch the local daemon on demand |
+| `pnpm dev:test` | Start Web with the test Gateway and an isolated local home |
+| `pnpm dev:production` | Start Web with the production Gateway |
 | `pnpm daemon:dev` | Start the daemon only |
 | `pnpm desktop:dev` | Build dependencies and start Electron in development mode |
 | `pnpm test` | Run workspace unit and integration tests |
