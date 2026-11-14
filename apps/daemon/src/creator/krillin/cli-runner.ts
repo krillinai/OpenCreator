@@ -101,10 +101,14 @@ export class KrillinCliError extends Error {
     const status = sessionRequired || signatureRequired ? /http error\s+(\d{3})\b/i.exec(message) : null;
     const outputRejected = /\bstatus code:\s*400\b/i.test(message)
       && /Requested output exceeds the gateway limit of \d+ tokens/.test(message);
+    const captionTimeout = code === 'platform_caption_access_failed'
+      && /(?:downloadYouTubeSubtitle|yt-dlp subtitle metadata)/i.test(message)
+      && /(?:timed out|etimedout)/i.test(message)
+      && !/cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message);
     this.publicFacts = sanitizePublicErrorFacts({
-      kind: outputRejected ? 'http-rejected' : signatureRequired ? 'unsupported' : sessionRequired ? 'unauthorized' : /^prepare_(?:media|audio_fallback)_failed$/.test(code)
+      kind: captionTimeout ? 'timeout' : outputRejected ? 'http-rejected' : signatureRequired ? 'unsupported' : sessionRequired ? 'unauthorized' : /^prepare_(?:media|audio_fallback)_failed$/.test(code)
         && /bilibili risk control (?:rejected the media request|blocked media extraction)/i.test(message)
-        ? 'http-rejected' : publicErrorKindForCode(code) ?? 'unknown', provider: 'krillinai',
+        ? 'http-rejected' : publicErrorKindForCode(code) ?? 'unknown', provider: captionTimeout ? 'yt-dlp' : 'krillinai',
       upstreamCode: diagnostic?.upstream_code ?? (outputRejected ? 'output_too_large' : code), upstreamMessage: message,
       ...(diagnostic?.request_id === undefined ? {} : { requestId: diagnostic.request_id }),
       ...(diagnostic?.http_status !== undefined ? { httpStatus: diagnostic.http_status }

@@ -47,6 +47,7 @@ import type { GatewayAccountSettingsService } from '../../services/gateway-accou
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import { CreatorTaskProgressBar, CreatorTaskProgressNotice, useCreatorTaskProgress } from './CreatorCollaborationPanel.js';
 import { creatorStageProgressPercent } from './creator-panel-adapters.js';
+import { isYtDlpCaptionTimeout } from '../issues/issue-catalog.js';
 import { clearTranslationContinuation, readTranslationContinuation, saveTranslationContinuation, ttsServiceConfigured, type TranslationEditorContext } from './video-translation-continuation.js';
 import VideoTranslationAgentPanel from './VideoTranslationAgentPanel.js';
 import CreatorResizableLayout from './CreatorResizableLayout.js';
@@ -2544,6 +2545,8 @@ export default function VideoTranslationWorkspace(props: {
   ], [bilingual, composeVideo, dubbing, initialTranslation, l, outputLabel, sourceLanguage, subtitlePosition, subtitleStyleLabel, targetLanguage, voiceCode, voiceName]);
   const targetLanguageLabel = languageLabel(targetLanguages, targetLanguage);
   const selectedResult = props.forceComposer ? undefined : resultVersions.find(version => version.value === resultVersion);
+  const failedWithoutResult = creatorSession?.job.status === 'failed'
+    && taskProgress?.status === 'failed' && selectedResult === undefined;
   const selectedSubtitleOnly = (selectedResult?.source.sourceType ?? sourceType) === 'subtitle';
   const selectedResultState = readCreatorResultSnapshots(creatorSession?.state.resultSnapshots)
     .find(snapshot => snapshot.version === selectedResult?.value)?.state;
@@ -4176,7 +4179,7 @@ export default function VideoTranslationWorkspace(props: {
     </div>
   );
 
-  if (props.embedded && !selectedResult) {
+  if (props.embedded && !selectedResult && !failedWithoutResult) {
     const hasVideoSource = videoFile !== null || videoFileName !== null
       || (sourceType === 'file' && registeredSourceArtifact !== undefined);
     const hasSubtitleSource = importedSourceSubtitle !== undefined;
@@ -4371,7 +4374,7 @@ export default function VideoTranslationWorkspace(props: {
       <div className="video-translation-page-inner video-translation-wizard">
         <CreatorResizableLayout
           className="video-translation-collab-layout"
-          showAgentPanel={workspacePhase !== 'result' || (subtitleImmersive && subtitleAssistantOpen)}
+          showAgentPanel={workspacePhase !== 'result' || (subtitleImmersive && subtitleAssistantOpen) || failedWithoutResult}
           agentPanelRequest={taskDetailsRequest}
           workspace={<div
             className="video-translation-wizard-main"
@@ -5034,6 +5037,11 @@ function stageResumeDescription(
 }
 
 function stageErrorMessage(code: string | null, message: string | null, l: LocalizeCopy): string {
+  if (isYtDlpCaptionTimeout(code, message)) return l(
+    '视频平台连接超时，字幕读取未完成。请检查网络或代理设置后重试。',
+    'The video platform connection timed out, so captions could not be read. Check the network or proxy settings and retry.',
+    'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
+  );
   const configurationCode = normalizeStageConfigurationError(code, message);
   if (configurationCode !== null) return creatorErrorMessage({ code: configurationCode }, l);
   if (code === 'dependency_not_packaged') {

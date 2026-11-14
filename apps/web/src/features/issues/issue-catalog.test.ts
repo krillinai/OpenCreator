@@ -77,6 +77,48 @@ describe('localized issue copy', () => {
     expect(text.message).not.toContain('WARNING:');
   });
 
+  it.each([
+    { kind: 'unknown' as const, provider: 'krillinai' },
+    { kind: 'timeout' as const, provider: 'yt-dlp' }
+  ])('explains a caption connection timeout and how to retry it with $kind facts', facts => {
+    const next = { ...issue, code: 'platform_caption_access_failed', stageId: 'subtitle',
+      publicFacts: { ...facts, upstreamMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 60] Operation timed out' } };
+    const text = issueConversationText(next, 'zh-CN');
+    expect(text.message).toContain('视频平台连接超时，字幕读取未完成');
+    expect(text.message).not.toMatch(/downloadYouTubeSubtitle|错误码/);
+    expect(text.nextStep).toContain('网络或代理');
+    expect(text.nextStep).toContain('重试字幕');
+    expect(text.nextStep).not.toMatch(/更新 yt-dlp|重新连接 YouTube/);
+  });
+
+  it('keeps the expired-cookie recovery when earlier yt-dlp attempts timed out', () => {
+    const next = { ...issue, code: 'platform_caption_access_failed', stageId: 'subtitle', publicFacts: {
+      kind: 'unknown' as const, provider: 'krillinai',
+      upstreamMessage: 'downloadYouTubeSubtitle: yt-dlp timed out earlier. The provided YouTube account cookies are no longer valid.'
+    } };
+    const text = issueConversationText(next, 'zh-CN');
+    expect(text.message).toContain('YouTube 登录态已失效');
+    expect(text.nextStep).toContain('重新连接 YouTube');
+  });
+
+  it.each([
+    { language: 'en-US' as const, caption: 'connection timed out, so captions could not be read', preview: 'source video preview could not be prepared', retry: 'Check the network or proxy settings' },
+    { language: 'sv-SE' as const, caption: 'undertexterna kunde inte läsas', preview: 'förhandsvisningen av originalvideon kunde inte förberedas', retry: 'Kontrollera nätverket eller proxyinställningarna' }
+  ])('localizes caption and preview timeout recovery in $language', ({ language, caption, preview, retry }) => {
+    const captionIssue = { ...issue, code: 'platform_caption_access_failed', stageId: 'subtitle', publicFacts: {
+      kind: 'timeout' as const, provider: 'yt-dlp'
+    } };
+    const previewIssue = { ...issue, code: 'network_unavailable', stageId: 'preview-source-video', publicFacts: {
+      kind: 'timeout' as const, provider: 'yt-dlp'
+    } };
+    expect(issueConversationText(captionIssue, language).message).toContain(caption);
+    expect(issueConversationText(previewIssue, language).message).toContain(preview);
+    expect(issueConversationText(captionIssue, language).nextStep).toContain(retry);
+    expect(issueConversationText(previewIssue, language).nextStep).toContain(retry);
+    expect(issueConversationText(captionIssue, language).message).not.toMatch(/\p{Script=Han}/u);
+    expect(issueConversationText(previewIssue, language).message).not.toMatch(/\p{Script=Han}/u);
+  });
+
   it('keeps model permission guidance for a model provider authorization error', () => {
     expect(issueConversationText({ ...issue, publicFacts: {
       kind: 'unauthorized', provider: 'openai', httpStatus: 403

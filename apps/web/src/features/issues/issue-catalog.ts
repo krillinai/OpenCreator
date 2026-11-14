@@ -10,6 +10,34 @@ export type IssuePresentation = {
   statusLabel: string;
 };
 
+export function isYtDlpCaptionTimeout(code: string | null | undefined, message: string | null | undefined,
+  facts?: Pick<PublicErrorFacts, 'kind' | 'provider'>): boolean {
+  return code === 'platform_caption_access_failed'
+    && !/cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message ?? '') && (
+    facts?.kind === 'timeout' && facts.provider === 'yt-dlp'
+    || /(?:downloadYouTubeSubtitle|yt-dlp subtitle metadata)/i.test(message ?? '')
+      && /(?:timed out|etimedout)/i.test(message ?? '')
+  );
+}
+
+export function isYtDlpPreviewTimeout(code: string | null | undefined, message: string | null | undefined,
+  facts?: Pick<PublicErrorFacts, 'kind' | 'provider'>): boolean {
+  return code === 'network_unavailable' && (
+    facts?.kind === 'timeout' && facts.provider === 'yt-dlp'
+    || /yt-dlp[^\n]*timed out/i.test(message ?? '')
+  );
+}
+
+function isCaptionTimeoutIssue(issue: OpenCreatorIssue): boolean {
+  return issue.stageId === 'subtitle' && isYtDlpCaptionTimeout(issue.code,
+    issue.publicFacts?.upstreamMessage ?? issue.technicalDetail, issue.publicFacts);
+}
+
+function isPreviewTimeoutIssue(issue: OpenCreatorIssue): boolean {
+  return issue.stageId === 'preview-source-video' && isYtDlpPreviewTimeout(issue.code,
+    issue.publicFacts?.upstreamMessage ?? issue.technicalDetail, issue.publicFacts);
+}
+
 const catalog: Record<string, { zh: string; en: string }> = {
   'issue.configuration': { zh: '配置不完整', en: 'Configuration required' },
   'issue.input': { zh: '输入无法处理', en: 'Input could not be processed' },
@@ -44,6 +72,16 @@ export function presentIssue(
 
 function issueDescription(issue: OpenCreatorIssue, language: AppLanguage): string {
   const localize = createLocalizedCopy(language);
+  if (isCaptionTimeoutIssue(issue)) return localize(
+    '视频平台连接超时，字幕读取未完成。',
+    'The video platform connection timed out, so captions could not be read.',
+    'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas.'
+  );
+  if (isPreviewTimeoutIssue(issue)) return localize(
+    '视频平台连接超时，原视频预览未完成。',
+    'The video platform connection timed out, so the source video preview could not be prepared.',
+    'Anslutningen till videoplattformen tog för lång tid, så förhandsvisningen av originalvideon kunde inte förberedas.'
+  );
   if (isYouTubeCaptionSessionIssue(issue)) return localize(
     'YouTube 登录态已失效，无法读取平台字幕。错误码：platform_caption_access_failed。',
     'The YouTube session expired, so platform captions could not be read. Error code: platform_caption_access_failed.'
@@ -219,6 +257,12 @@ export function issueConversationText(
     : isYouTubeCaptionSessionIssue(issue)
     ? localize('请在设置的“平台连接”中重新连接 YouTube，再重试字幕翻译；更换代理节点不会更新登录态。',
       'Reconnect YouTube in Settings > Platform connections, then retry subtitle translation. Changing proxy nodes does not refresh the session.')
+    : isCaptionTimeoutIssue(issue)
+    ? localize('请检查网络或代理设置，再重试字幕读取。', 'Check the network or proxy settings, then retry reading captions.',
+      'Kontrollera nätverket eller proxyinställningarna och försök sedan läsa undertexterna igen.')
+    : isPreviewTimeoutIssue(issue)
+    ? localize('请检查网络或代理设置，再重试原视频预览。', 'Check the network or proxy settings, then retry the source video preview.',
+      'Kontrollera nätverket eller proxyinställningarna och försök sedan förbereda förhandsvisningen igen.')
     : issue.code === 'platform_request_signature_required'
     ? localize('请使用本地视频文件继续；当前平台要求下载器尚不支持的请求签名，重新连接 Cookie 或修改模型权限无法解决。', 'Use a local video file to continue. The platform requires a request signature that the downloader does not yet support; reconnecting cookies or changing model permissions will not resolve it.', 'Använd en lokal videofil för att fortsätta. Plattformen kräver en begäranssignatur som nedladdaren ännu inte stöder. Att ansluta kakor igen eller ändra modellbehörigheter löser inte problemet.')
     : issue.code === 'platform_session_required'

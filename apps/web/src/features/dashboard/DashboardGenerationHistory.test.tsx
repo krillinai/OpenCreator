@@ -175,6 +175,31 @@ describe('DashboardGenerationHistory', () => {
     expect(onOpenJob).toHaveBeenCalledWith(failedJob);
   });
 
+  it('summarizes simultaneous video translation connection failures without raw yt-dlp output', async () => {
+    const failedJob = job('job_translation_timeout', 'video-translation', []);
+    failedJob.status = 'failed';
+    failedJob.state.sourceUrl = 'https://www.youtube.com/watch?v=timeout';
+    const stage = {
+      id: 'subtitle_failed', jobId: failedJob.id, stageId: 'subtitle', executor: 'krillinai', status: 'failed' as const,
+      dispatchStatus: 'finished' as const, claimOwner: null, claimExpiresAt: null, attempt: 1,
+      idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: { phase: 'failed', percent: 1 },
+      errorCode: 'platform_caption_access_failed',
+      errorMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 60] Operation timed out',
+      startedAt: '2026-11-14T01:00:00.000Z', finishedAt: '2026-11-14T01:01:00.000Z'
+    };
+    failedJob.stages = [stage, { ...stage, id: 'preview_failed', stageId: 'preview-source-video', executor: 'download',
+      errorCode: 'network_unavailable', errorMessage: 'yt-dlp connection to the video platform timed out.' }];
+    render(<LanguageProvider initialPreference="zh-CN"><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [failedJob] })), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    const card = await screen.findByRole('link', { name: '生成失败 youtube.com' });
+    expect(card).toHaveTextContent('视频平台连接超时，字幕读取和原视频预览未完成');
+    expect(card).not.toHaveTextContent(/yt-dlp|network_unavailable|Operation timed out/);
+  });
+
   it('shows failure instead of stale submission progress for a rejected video', async () => {
     const failedJob = job('job_rejected_video', 'video-generation', []);
     failedJob.status = 'failed';

@@ -6,6 +6,7 @@ import type {
 } from '@opencreator/protocol';
 import type { LocalizeCopy } from '../../i18n/localized-copy.js';
 import { localComponentPreparationMessage } from '../settings/local-component-copy.js';
+import { isYtDlpCaptionTimeout, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
 
 export type CreatorPanelLocalize = LocalizeCopy;
 
@@ -90,6 +91,16 @@ export const videoTranslationPanelAdapter: CreatorPanelAdapter = {
   id: 'video-translation',
   taskProgress: videoTranslationTaskProgress,
   failedProgressText(stage, l) {
+    if (stage.stageId === 'subtitle' && isYtDlpCaptionTimeout(stage.errorCode, stage.errorMessage)) return l(
+      '视频平台连接超时，字幕读取未完成。请检查网络或代理设置后重试。',
+      'The video platform connection timed out, so captions could not be read. Check the network or proxy settings and retry.',
+      'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
+    );
+    if (stage.stageId === 'preview-source-video' && isYtDlpPreviewTimeout(stage.errorCode, stage.errorMessage)) return l(
+      '视频平台连接超时，原视频预览未完成。请检查网络或代理设置后重试。',
+      'The video platform connection timed out, so source video preview could not be prepared. Check the network or proxy settings and retry.',
+      'Anslutningen till videoplattformen tog för lång tid, så förhandsvisningen kunde inte förberedas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
+    );
     if (stage.stageId === 'subtitle' && stage.errorCode === 'platform_caption_access_failed'
       && /cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(stage.errorMessage ?? '')) {
       return l('YouTube 登录态已失效，请在平台连接中重新连接，然后重试字幕翻译',

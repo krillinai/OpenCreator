@@ -18,6 +18,25 @@ import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
 import { LanguageSwitchControls } from '../../test/LanguageSwitchControls.js';
 
 describe('VideoTranslationWorkspace task controls', () => {
+  it('opens a failed embedded translation without outputs at its recovery controls', async () => {
+    const failed = job({ status: 'failed', revision: 1, state: {
+      currentStep: 0, furthestStep: 0, workspacePhase: 'result'
+    }, stages: [{ ...stage({ id: 'subtitle_timeout', status: 'failed', dispatchStatus: 'finished',
+      progress: { phase: 'failed', percent: 1, workflow: true } }),
+      errorCode: 'platform_caption_access_failed',
+      errorMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 60] Operation timed out'
+    }] });
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={failed}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+
+    expect(await screen.findByRole('region', { name: '视频翻译操作区' })).toBeVisible();
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '重试当前阶段' })).toBeEnabled();
+    expect(screen.getByRole('region', { name: '视频翻译操作区' })).toHaveTextContent('视频平台连接超时，字幕读取未完成');
+  });
+
   it('keeps embedded video, subtitle and URL sources mutually exclusive and clears them before choosing another', async () => {
     let current = job({ status: 'draft', revision: 0, stages: [], state: { sourceUrl: '' } });
     const applyAction = vi.fn(async (_id: string, request: { action: string; input: Record<string, CreatorJson> }) => {

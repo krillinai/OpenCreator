@@ -300,6 +300,40 @@ describe('CreatorCollaborationPanel', () => {
     expect(applyAction).not.toHaveBeenCalled();
   });
 
+  it('offers proxy settings and the existing stage retry for a timed-out translation subtitle', () => {
+    const job = videoGenerationJob();
+    job.templateId = 'video-translation';
+    job.status = 'failed';
+    job.state = { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=demo' };
+    const failedStage = { ...job.stages[0]!, id: 'subtitle_timeout', stageId: 'subtitle', status: 'failed' as const,
+      errorCode: 'platform_caption_access_failed',
+      errorMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 60] Operation timed out',
+      progress: { phase: 'failed', percent: 1, workflow: true }, finishedAt: job.updatedAt };
+    job.stages = [failedStage];
+    const previousHash = window.location.hash;
+    window.location.hash = `#/workbench?tool=video-translation&jobId=${job.id}&returnTo=projects`;
+    const issue = { ...normalizePageIssue('runtime', 'creator.retry-stage', new Error(failedStage.errorMessage),
+      failedStage.errorMessage), source: 'stage' as const, code: failedStage.errorCode,
+      stageId: 'subtitle', stageRunId: failedStage.id, status: 'open' as const,
+      publicFacts: { kind: 'unknown' as const, provider: 'krillinai', upstreamMessage: failedStage.errorMessage },
+      repairActions: [{ kind: 'retry-operation' as const, operationId: 'creator.retry-stage', requiresConfirmation: false, risk: 'normal' as const }] };
+    render(<LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={job} externalIssues={[issue]}
+        service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+        <CreatorCollaborationPanel adapter={videoTranslationPanelAdapter} stepLabel="翻译字幕" contextSummary="English → 简体中文" />
+        <TaskProgressBarHarness />
+      </CreatorSessionProvider>
+    </LanguageProvider>);
+
+    expect(screen.getByRole('log', { name: '协作时间线' })).toHaveTextContent('视频平台连接超时，字幕读取未完成');
+    const settings = screen.getByRole('link', { name: '检查代理设置' });
+    expect(settings.getAttribute('href')).toContain('#/settings?from=video-translation&returnPath=');
+    expect(new URLSearchParams(settings.getAttribute('href')?.split('?')[1]).get('returnPath'))
+      .toBe(`#/workbench?tool=video-translation&jobId=${job.id}&returnTo=projects`);
+    expect(screen.getByRole('button', { name: '重试字幕翻译' })).toBeEnabled();
+    window.location.hash = previousHash;
+  });
+
   it('places a supplied summary above the timeline and preserves current issues', () => {
     const panel = (currentIssue?: string) => <LanguageProvider initialPreference="zh-CN">
       <CreatorSessionProvider initialJob={videoGenerationJob()} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>

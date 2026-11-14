@@ -7,6 +7,7 @@ import type { CreatorWebService } from '../../services/creator-service.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { isMeaningfulCreatorJob, ProjectCoverImage, projectCover, youtubeThumbnailUrls } from '../projects/ProjectsPage.js';
+import { isYtDlpCaptionTimeout, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
 import { generationHistoryTypeForWorkspace, type GenerationHistoryType } from './generation-history-type.js';
 import { creatorWorkspaceForTemplate } from './creator-workspace.js';
 import './DashboardGenerationHistory.css';
@@ -211,12 +212,13 @@ export default function DashboardGenerationHistory(props: {
                 const openable = failed || pending || (job.templateId === 'video-download'
                   && (stage.status === 'queued' || stage.status === 'running'));
                 const percent = typeof stage.progress.percent === 'number' ? Math.round(stage.progress.percent) : 0;
+                const translationTimeout = failed ? videoTranslationTimeoutMessage(job, stage, l) : undefined;
                 const message = pending
                   ? job.templateId === 'video-download'
                     ? l('请选择下载格式并继续创作', 'Choose a download format to continue')
                     : l('继续配置这个创作项目', 'Continue configuring this project')
                   : failed
-                    ? stage.errorMessage ?? (typeof stage.progress.message === 'string' ? stage.progress.message : stage.stageId)
+                    ? translationTimeout ?? stage.errorMessage ?? (typeof stage.progress.message === 'string' ? stage.progress.message : stage.stageId)
                     : typeof stage.progress.message === 'string' ? stage.progress.message : stage.stageId;
                 const title = resultTitle(job, l);
                 const statusLabel = failed ? l('生成失败', 'Generation failed') : pending ? l('待配置', 'Pending setup') : l('正在生成', 'Generating');
@@ -459,6 +461,32 @@ function processStageForJob(job: CreatorJob): CreatorJob['stages'][number] | und
     claimOwner: null, claimExpiresAt: null, attempt: 0, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
     progress: { phase: 'pending', percent: 0 }, errorCode: null, errorMessage: null, startedAt: null, finishedAt: null
   };
+}
+
+function videoTranslationTimeoutMessage(job: CreatorJob, selected: CreatorJob['stages'][number], l: LocalizeCopy): string | undefined {
+  if (job.templateId !== 'video-translation' || !['subtitle', 'preview-source-video'].includes(selected.stageId)) return undefined;
+  const subtitle = [...job.stages].reverse().find(stage => stage.stageId === 'subtitle');
+  const preview = [...job.stages].reverse().find(stage => stage.stageId === 'preview-source-video');
+  const captionsTimedOut = subtitle?.status === 'failed'
+    && isYtDlpCaptionTimeout(subtitle.errorCode, subtitle.errorMessage);
+  const previewTimedOut = preview?.status === 'failed'
+    && isYtDlpPreviewTimeout(preview.errorCode, preview.errorMessage);
+  if (captionsTimedOut && previewTimedOut) return l(
+    '视频平台连接超时，字幕读取和原视频预览未完成',
+    'The video platform connection timed out; captions and source video preview could not be prepared.',
+    'Anslutningen till videoplattformen tog för lång tid; undertexter och förhandsvisning kunde inte förberedas.'
+  );
+  if (captionsTimedOut && selected.stageId === 'subtitle') return l(
+    '视频平台连接超时，字幕读取未完成',
+    'The video platform connection timed out; captions could not be read.',
+    'Anslutningen till videoplattformen tog för lång tid; undertexterna kunde inte läsas.'
+  );
+  if (previewTimedOut && selected.stageId === 'preview-source-video') return l(
+    '视频平台连接超时，原视频预览未完成',
+    'The video platform connection timed out; source video preview could not be prepared.',
+    'Anslutningen till videoplattformen tog för lång tid; förhandsvisningen kunde inte förberedas.'
+  );
+  return undefined;
 }
 
 function downloadableArtifact(job: CreatorJob): CreatorArtifact | undefined {

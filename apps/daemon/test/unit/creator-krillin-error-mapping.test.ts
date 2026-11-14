@@ -3,6 +3,17 @@ import { normalizeKrillinFailure } from '../../src/creator/krillin/adapter.js';
 import { KrillinCliError } from '../../src/creator/krillin/cli-runner.js';
 
 describe('KrillinAI error mapping', () => {
+  it('identifies a yt-dlp caption timeout without changing other caption failures', () => {
+    const timeout = new KrillinCliError('platform_caption_access_failed',
+      'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: ERROR: [youtube] Unable to download API page: [Errno 60] Operation timed out');
+    expect(timeout.publicFacts).toMatchObject({ kind: 'timeout', provider: 'yt-dlp',
+      upstreamCode: 'platform_caption_access_failed' });
+    expect(new KrillinCliError('platform_caption_access_failed',
+      'The provided YouTube account cookies are no longer valid.').publicFacts.kind).toBe('unknown');
+    expect(new KrillinCliError('platform_caption_access_failed',
+      'downloadYouTubeSubtitle: yt-dlp timed out on a previous attempt. The provided YouTube account cookies are no longer valid.'
+    ).publicFacts.kind).toBe('unknown');
+  });
   it('preserves structured HTTP diagnostics without exposing raw response text to telemetry', () => {
     const requestId = `ocreq_${'b'.repeat(48)}`;
     const error = new KrillinCliError('audio_transcription_api_failed', 'private upstream body', 'retryable', true,
