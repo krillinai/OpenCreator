@@ -288,8 +288,9 @@ it('lists the recommended model once and can search its original ID', async () =
   expect(screen.getAllByRole('option')).toHaveLength(2);
   const option = screen.getByRole('option', { name: 'GPT Image Flare' });
   expect(option).toHaveAttribute('aria-selected', 'true');
-  expect(option.querySelector('.official-model-option-text')).toHaveTextContent(/^GPT Image Flare$/);
-  expect(option.title).toBe('GPT Image Flare');
+  expect(option.querySelector('.official-model-option-name')).toHaveTextContent(/^GPT Image Flare$/);
+  expect(option.querySelector('.official-model-option-price')).toHaveTextContent('约 64 积分/张');
+  expect(option.title).toContain('按服务器提供的图片规格估算');
   await user.type(input, recommended.id);
   expect(screen.getAllByRole('option')).toHaveLength(1);
   await user.keyboard('{Enter}');
@@ -368,14 +369,29 @@ it('groups image models by company and shows the xAI icon after filtering', asyn
   expect(within(list).getAllByRole('option')).toHaveLength(2);
 });
 
-it('shows only the icon and name for image models with generation parameters', async () => {
+it.each([
+  { language: 'zh-CN' as const, price: '约 21 积分/张', quality: '按 low 质量档位估算' },
+  { language: 'en-US' as const, price: 'About 21 credits / image', quality: 'Estimated for the low quality setting' },
+  { language: 'sv-SE' as const, price: 'Cirka 21 krediter/bild', quality: 'Beräknat för kvalitetsnivån low' }
+])('shows the gateway image estimate per image in $language without generation parameters', async ({ language, price, quality }) => {
   const model: GatewayModel = { id: 'gpt-image-2', name: 'gpt-image-2', modality: 'image', capabilities: ['generate'],
     imageOptions: { aspectRatios: ['1:1', '16:9'], resolutions: ['1K', '2K'], qualities: ['low', 'high'], maxImages: 1, maxReferences: 0 },
-    price: { version: 'v1', perRequest: 21 } };
-  render(<OfficialModelSelect label="图片模型" models={[model]} value={model.id} onChange={vi.fn()} />);
+    price: { version: 'v1', perRequest: 21.428571, estimates: { image: { creditUnits: '21428571', images: 1, quality: 'low' } } } };
+  render(<LanguageProvider initialPreference={language}><OfficialModelSelect label="图片模型" models={[model]} value={model.id} onChange={vi.fn()} /></LanguageProvider>);
   await userEvent.setup().click(screen.getByRole('combobox', { name: '图片模型' }));
   const option = screen.getByRole('option', { name: 'gpt-image-2' });
   expect(option.querySelector('[data-brand="openai"]')).not.toBeNull();
-  expect(option.querySelector('.official-model-option-text')).toHaveTextContent(/^gpt-image-2$/);
-  expect(option.title).toBe('gpt-image-2');
+  expect(option.querySelector('.official-model-option-price')).toHaveTextContent(price);
+  expect(option).toHaveAttribute('aria-describedby', option.querySelector('.official-model-option-price')?.id);
+  expect(option.querySelector('.official-model-option-text')).not.toHaveTextContent(/16:9|1K|high/);
+  expect(option.title).toContain(quality);
+});
+
+it('leaves unpriced local image models without a price', async () => {
+  const model: GatewayModel = { id: '__local_image__', name: 'Local image service', modality: 'image', capabilities: [] };
+  render(<OfficialModelSelect label="图片模型" models={[model]} value={model.id} onChange={vi.fn()} />);
+  await userEvent.setup().click(screen.getByRole('combobox', { name: '图片模型' }));
+  const option = screen.getByRole('option', { name: 'Local image service' });
+  expect(option.querySelector('.official-model-option-price')).toBeNull();
+  expect(option.title).toBe('Local image service');
 });

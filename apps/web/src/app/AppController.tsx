@@ -2913,7 +2913,7 @@ export function AppController(props: AppControllerProps) {
   function openPrimaryView(activeView: ActiveView) {
     if ((activeView === 'account' || activeView === 'subscription') && props.route.view !== 'account' && props.route.view !== 'subscription') accountReturnRouteRef.current = props.route;
     if (activeView === 'projects') {
-      projectsHistoryInitialTypeRef.current = props.route.view === 'workbench' && props.route.tool === 'video-generation'
+      projectsHistoryInitialTypeRef.current = props.route.view === 'workbench' && (props.route.tool === 'video-generation' || props.route.tool === 'video-translation')
         ? 'video' : undefined;
     }
     closeMobileSidebar();
@@ -4573,7 +4573,7 @@ export function AppController(props: AppControllerProps) {
           && props.route.view === 'workbench'
           && props.route.returnTo === 'projects'
         ) {
-          projectsHistoryInitialTypeRef.current = props.route.tool === 'video-generation' ? 'video' : undefined;
+          projectsHistoryInitialTypeRef.current = props.route.tool === 'video-generation' || props.route.tool === 'video-translation' ? 'video' : undefined;
           dispatch({ type: 'set_active_view', activeView: 'projects' });
           navigateToRoute({ view: 'projects' }, options);
           return;

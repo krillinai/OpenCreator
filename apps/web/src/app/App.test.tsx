@@ -701,7 +701,7 @@ describe('App', () => {
     expect(screen.queryByLabelText('Projects and conversations')).not.toBeInTheDocument();
   });
 
-  it('defaults to All when opening generation history from the navigation tab', async () => {
+  it('opens Video history from the video translation workbench navigation', async () => {
     const user = userEvent.setup();
     window.location.hash = '#/workbench?tool=video-translation';
     render(<App {...runtimeAppProps()} />);
@@ -709,7 +709,8 @@ describe('App', () => {
     expect(await screen.findByRole('form', { name: '视频翻译' }, { timeout: 5_000 })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '生成历史' }));
     expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('opens Video history from a video generation workbench', async () => {
@@ -817,6 +818,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(window.location.hash).toBe('#/projects'));
+    expect(screen.getByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('opens connectors inside the plugin center and returns to the default Skills tab', async () => {

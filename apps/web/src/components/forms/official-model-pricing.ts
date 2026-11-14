@@ -64,19 +64,20 @@ function modelEstimate(model: GatewayModel, l: LocalizeCopy) {
     const images = model.modality === 'image' ? quote.images ?? 1 : 1;
     const credits = units / million / images;
     const characters = quote.usage?.base;
-    const unit = model.modality === 'image' ? l('积分/张', 'credits / image')
+    const unit = model.modality === 'image' ? l('积分/张', 'credits / image', 'krediter/bild')
       : context === 'minute' ? l('积分/分钟', 'credits / minute')
         : characters ? l(`积分/${characters}字符`, `credits / ${characters} characters`) : l('积分/次', 'credits / call');
     const description = model.modality === 'image'
       ? images > 1 ? l(`每次返回 ${images} 张图片，按完整批次扣积分。`, `${images} images per request, billed per complete batch.`)
-        : l('按服务器提供的图片规格估算，实际按用量结算。', 'Estimate uses server image settings; billed by actual usage.')
+        : quote.quality ? l(`按 ${quote.quality} 质量档位估算，实际积分以所选档位为准。`, `Estimated for the ${quote.quality} quality setting; actual credits depend on the selected setting.`, `Beräknat för kvalitetsnivån ${quote.quality}; faktisk kostnad beror på vald nivå.`)
+          : l('按服务器提供的图片规格估算，实际按用量结算。', 'Estimate uses server image settings; billed by actual usage.')
       : context === 'minute' ? l('按实际音频秒数结算，不足一分钟按比例扣积分。', 'Billed proportionally by actual audio seconds.')
         : characters ? l(`按 ${characters} 个输入字符估算，实际按模型费率结算。`, `Estimate for ${characters} input characters, billed at the model tariff.`)
           : l(`按输入 ${quote.usage?.input ?? 0}、输出 ${quote.usage?.output ?? 0} token 估算，实际按用量结算。`, `Estimate for ${quote.usage?.input ?? 0} input and ${quote.usage?.output ?? 0} output tokens; billed by actual usage.`);
     return { credits, unit, description };
   }
   // Unit conversion of an explicit tariff does not introduce workload assumptions.
-  if (model.modality === 'image' && positive(p.perRequest)) return { credits: p.perRequest / (model.imageOptions?.imagesPerRequest ?? 1), unit: l('积分/张', 'credits / image'), description: l('按每次请求返回的图片数量计价。', 'Priced using the images returned per request.') };
+  if (model.modality === 'image' && positive(p.perRequest)) return { credits: p.perRequest / (model.imageOptions?.imagesPerRequest ?? 1), unit: l('积分/张', 'credits / image', 'krediter/bild'), description: l('按每次请求返回的图片数量计价。', 'Priced using the images returned per request.', 'Priset beräknas utifrån antalet bilder per begäran.') };
   if (model.modality === 'transcription' && positive(p.perMinute)) return { credits: p.perMinute, unit: l('积分/分钟', 'credits / minute'), description: l('按实际音频秒数结算，不足一分钟按比例扣积分。', 'Actual audio seconds are billed proportionally, including partial minutes.') };
   if (model.modality === 'speech' && p.inputPerMillion === undefined && p.outputPerMillion === undefined && positive(p.perMillionCharacters) && !positive(p.perMinute)) return { credits: p.perMillionCharacters / 1000, unit: l('积分/千字符', 'credits / 1,000 characters'), description: l('按实际输入字符数结算。', 'Billed by actual input character count.') };
   return undefined;
@@ -95,7 +96,7 @@ export function officialModelPrice(model: GatewayModel, l: LocalizeCopy): string
   }
   if (hasAudioTokenRates(model)) return officialModelTariff(model, l);
   const estimate = modelEstimate(model, l);
-  return estimate ? l(`约 ${formatGatewayCreditAmount(estimate.credits)} ${estimate.unit}`, `About ${formatGatewayCreditAmount(estimate.credits)} ${estimate.unit}`) : l('暂无法估算', 'Estimate unavailable');
+  return estimate ? l(`约 ${formatGatewayCreditAmount(estimate.credits)} ${estimate.unit}`, `About ${formatGatewayCreditAmount(estimate.credits)} ${estimate.unit}`, model.modality === 'image' ? `Cirka ${formatGatewayCreditAmount(estimate.credits)} ${estimate.unit}` : undefined) : l('暂无法估算', 'Estimate unavailable');
 }
 
 export function officialModelPriceDescription(model: GatewayModel, l: LocalizeCopy): string {

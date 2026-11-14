@@ -192,10 +192,10 @@ export default function OfficialModelSelect(props: {
     const compactVideoPrice = props.compactOptions && choice.model.modality === 'video' && choice.model.id !== '__local_video__'
       ? officialVideoModelListPrice(choice.model, l) : undefined;
     return <button key={choice.model.id} id={optionId(index)} type="button" role="option" tabIndex={-1}
-        aria-label={choice.label} aria-describedby={compactVideoPrice ? `${optionId(index)}-price` : undefined} aria-selected={choice.value === selectionValue}
+        aria-label={choice.label} aria-describedby={compactVideoPrice || image && choice.model.price ? `${optionId(index)}-price` : undefined} aria-selected={choice.value === selectionValue}
         disabled={disabled} aria-disabled={disabled}
         className={`official-model-option${index === currentIndex ? ' is-active' : ''}`}
-        title={configurable ? props.configureModel?.title : image ? choice.label : props.compactOptions
+        title={configurable ? props.configureModel?.title : image || props.compactOptions
           ? [choice.label, choice.model.price ? officialModelPriceDescription(choice.model, l) : ''].filter(Boolean).join('\n')
           : [choice.label, officialModelPriceDescription(choice.model, l)].filter(Boolean).join('\n')} onMouseDown={event => event.preventDefault()}
         onPointerMove={event => { if (event.pointerType === 'mouse') setActiveIndex(index); }}
@@ -208,7 +208,7 @@ export default function OfficialModelSelect(props: {
         </span>
           {!image && !props.compactOptions && !/openrouter/i.test(choice.model.id) && (choice.model.modality === 'video' || choice.value !== gatewayRecommendedModelId) && modelDetail(choice.model, l) ? <span className="official-model-option-id">{modelDetail(choice.model, l)}</span> : null}
           {compactVideoPrice ? <span id={`${optionId(index)}-price`} className="official-model-option-price is-video">{compactVideoPrice}</span>
-            : !image && !props.compactOptions && choice.model.price ? <span className={`official-model-option-price${choice.model.modality === 'video' ? ' is-video' : ''}`}>{officialModelPrice(choice.model,l)}</span> : null}
+            : (!props.compactOptions || image) && choice.model.price ? <span id={image ? `${optionId(index)}-price` : undefined} className={`official-model-option-price${choice.model.modality === 'video' ? ' is-video' : ''}`}>{officialModelPrice(choice.model,l)}</span> : null}
         </span>
         {configurable ? <Settings2 size={16} aria-hidden="true" className="official-model-configure-icon" />
           : choice.value === selectionValue ? <Check size={16} aria-hidden="true" /> : <span className="official-model-check-space" />}
