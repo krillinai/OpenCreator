@@ -1,7 +1,7 @@
 import { gatewayModelIdMatches, gatewayModelReady, type GatewayModel } from '@opencreator/protocol';
 import { ArrowUpRight, Check } from 'lucide-react';
 import ModelBrandIcon from '../../components/brand/ModelBrandIcon.js';
-import { modelVendor, officialModelLabel } from '../../components/forms/OfficialModelSelect.js';
+import { compareGatewayModelsByName, officialModelLabel } from '../../components/forms/OfficialModelSelect.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { useOfficialServices } from './official-services.js';
 import './ImageGenerationDiscovery.css';
@@ -75,16 +75,8 @@ export default function ImageGenerationDiscovery(props: {
 }) {
   const l = useLocalizedCopy();
   const local = props.models.find(model => model.id === props.localModelId);
-  const officialModels = props.models.filter(model => model.id !== props.localModelId)
-    .sort((left, right) => Number(right.recommended) - Number(left.recommended));
-  const displayedModels = [...(local ? [local] : []), ...officialModels];
-  const companies: Array<{ name: string; model: GatewayModel; models: GatewayModel[] }> = [];
-  for (const model of displayedModels) {
-    const name = modelVendor(model) ?? l('其他', 'Other', 'Övriga');
-    const company = companies.find(entry => entry.name === name);
-    if (company) company.models.push(model);
-    else companies.push({ name, model, models: [model] });
-  }
+  const officialModels = props.models.filter(model => model.id !== props.localModelId);
+  const displayedModels = [...(local ? [local] : []), ...officialModels].sort(compareGatewayModelsByName);
 
   return (
     <div className="image-generation-discovery">
@@ -94,27 +86,24 @@ export default function ImageGenerationDiscovery(props: {
             <h2 id="image-popular-models-title">{l('图片模型', 'Image models')}</h2>
           </div>
         </header>
-        <div className="image-generation-model-groups">
-          {companies.map(company => <div className="image-generation-model-group" role="group" aria-label={company.name} key={company.name}>
-            <h3><ModelBrandIcon model={company.model} />{company.name}</h3>
-            <div className="image-generation-model-cards">
-              {company.models.map(model => {
-                const name = officialModelLabel(model, l('自动选择', 'Automatic'));
-                const selected = gatewayModelIdMatches(props.selectedId, model.id);
-                return (
-                  <ModelCard
-                    key={model.id}
-                    name={name}
-                    iconModel={model}
-                    selected={selected}
-                    disabled={props.busy || !gatewayModelReady(model) || (props.official.official && !props.official.canChooseModel)}
-                    onClick={() => props.onModelSelect(model.id)}
-                    label={l(`选择模型 ${name}`, `Use model ${name}`)}
-                  />
-                );
-              })}
-            </div>
-          </div>)}
+        <div className="image-generation-model-list">
+          <div className="image-generation-model-cards">
+            {displayedModels.map(model => {
+              const name = officialModelLabel(model, l('自动选择', 'Automatic'));
+              const selected = gatewayModelIdMatches(props.selectedId, model.id);
+              return (
+                <ModelCard
+                  key={model.id}
+                  name={name}
+                  iconModel={model}
+                  selected={selected}
+                  disabled={props.busy || !gatewayModelReady(model) || (props.official.official && !props.official.canChooseModel)}
+                  onClick={() => props.onModelSelect(model.id)}
+                  label={l(`选择模型 ${name}`, `Use model ${name}`)}
+                />
+              );
+            })}
+          </div>
           {!props.official.official && props.catalogState === 'loading' ? <p role="status">{l('正在加载图片模型…', 'Loading image models…')}</p> : null}
           {!props.official.official && props.catalogState === 'error' ? <p role="status">{l('图片模型目录加载失败', 'Image model catalog is unavailable')}</p> : null}
           {!props.official.official && props.catalogState === 'ready' && officialModels.length === 0 ? <p role="status">{l('暂无官方图片模型', 'No official image models available')}</p> : null}

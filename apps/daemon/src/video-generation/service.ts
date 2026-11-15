@@ -257,7 +257,6 @@ export function createVideoGenerationService(input: {
         const logicalId = gateway.logicalId ?? options.logicalId ?? id;
         options.onGatewayBinding?.({accountId:gateway.accountId,bindingVersion:gateway.bindingVersion,logicalId});
         const params: Record<string, unknown> = { model: gateway.models.video, prompt: request.prompt.trim(), duration: request.duration, size: request.size,
-          ...(request.priceVersion || model.price ? { priceVersion: request.priceVersion ?? model.price!.version } : {}),
           ...(request.generateAudio === undefined ? {} : { generate_audio: request.generateAudio }) };
         const images = [...(request.referenceImage ? [referenceImageDataUrl(request.referenceImage)] : []), ...(request.references ?? []).filter(ref => ref.role === 'image').map(ref => ref.assetId)];
         if (images.length) params.images = images;

@@ -600,8 +600,10 @@ export function createCreatorStageRunner(input: {
     const currentPhase = current?.progress.phase;
     const incomingPhase = incoming.phase;
     const phaseChanged = incomingPhase !== undefined && incomingPhase !== currentPhase;
+    const unknownVideoProviderProgress = current?.executor === 'video' && incomingPercent === null
+      && (incomingPhase === 'queued' || incomingPhase === 'generating');
     if (typeof currentPercent === 'number' && Number.isFinite(currentPercent)
-      && (incomingPercent === null
+      && ((incomingPercent === null && !unknownVideoProviderProgress)
         || (phaseChanged
           && typeof incomingPercent === 'number' && Number.isFinite(incomingPercent)
           && incomingPercent < currentPercent))) {

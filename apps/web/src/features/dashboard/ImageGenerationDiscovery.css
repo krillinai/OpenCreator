@@ -33,27 +33,7 @@
   line-height: 1.5;
 }
 
-.image-generation-model-groups { display: grid; gap: 16px; }
-
-.image-generation-model-group h3 {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 8px;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.4;
-}
-
-.image-generation-model-group h3 > .model-brand-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  background: transparent;
-}
-
-.image-generation-model-group h3 > .model-brand-icon > img { width: 18px; height: 18px; }
+.image-generation-model-list { display: grid; gap: 16px; }
 
 .image-generation-model-cards {
   display: grid;

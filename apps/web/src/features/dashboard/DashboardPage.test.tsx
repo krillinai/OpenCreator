@@ -1069,7 +1069,9 @@ describe('DashboardPage', () => {
 
     await waitFor(() => expect(createJob).toHaveBeenCalledOnce());
     const { job } = await creatorService.getJob('creator_test_job_1');
-    expect(job.state).toMatchObject({ officialModels: { video: 'video-second' }, __creatorUserEdited: true });
+    expect(job.state).toMatchObject({
+      officialModels: { video: 'video-second' }, __creatorUserEdited: true, __creatorUserSelected: true
+    });
     expect(isMeaningfulCreatorJob(job)).toBe(true);
   });
 
@@ -1096,6 +1098,7 @@ describe('DashboardPage', () => {
       onSelectPrompt={vi.fn()}
       workspace={workspace}
       jobId={job.id}
+      returnTo={workspace === 'video-generation' ? 'projects' : undefined}
       creatorService={creatorService}
     />);
 
@@ -1107,6 +1110,52 @@ describe('DashboardPage', () => {
     if (workspace === 'image-generation') {
       expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('来自模版的提示词');
     }
+  });
+
+  it('reopens a failed video generation job in its standalone workspace', async () => {
+    const baseService = createInMemoryCreatorService();
+    const { job } = await baseService.createJob({ projectId: 'project_1', templateId: 'video-generation', state: {
+      prompt: 'A city at sunrise'
+    } });
+    const failed: CreatorJob = { ...job, status: 'failed', stages: [{
+      id: 'stage_generate', jobId: job.id, stageId: 'generate', executor: 'generate', status: 'failed',
+      dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null, attempt: 1,
+      idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: {},
+      errorCode: 'video_upstream_error', errorMessage: 'Request failed',
+      startedAt: job.createdAt, finishedAt: job.createdAt
+    }] };
+    const service = withHistoryJobs(baseService, [failed]);
+    render(<DashboardPage onSelectPrompt={vi.fn()} workspace="video-generation" jobId={job.id} returnTo="projects" creatorService={service} />);
+
+    expect(await screen.findByRole('form', { name: '视频生成' })).toBeVisible();
+    await waitFor(() => expect(document.querySelector('.video-generation-workspace-page')).toBeInTheDocument());
+    expect(document.querySelector('.dashboard-unified-workspace-page')).not.toBeInTheDocument();
+  });
+
+  it('returns to the video list after submitting a regeneration from a failed history job', async () => {
+    const baseService = createInMemoryCreatorService();
+    const { job } = await baseService.createJob({ projectId: 'project_1', templateId: 'video-generation', state: {
+      prompt: 'A city at sunrise', videoServiceSource: 'manual'
+    } });
+    const failed: CreatorJob = { ...job, status: 'failed', stages: [{
+      id: 'stage_generate', jobId: job.id, stageId: 'generate', executor: 'video', status: 'failed',
+      dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null, attempt: 1,
+      idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: {},
+      errorCode: 'creator_video_generation_failed', errorMessage: 'Generation failed',
+      startedAt: job.createdAt, finishedAt: job.createdAt
+    }] };
+    const service = withHistoryJobs(baseService, [failed]);
+    const applyAction = vi.spyOn(service, 'applyAction');
+    const onWorkspaceNavigate = vi.fn();
+    render(<DashboardPage onSelectPrompt={vi.fn()} workspace="video-generation" jobId={job.id}
+      returnTo="projects" creatorService={service} creatorServicesService={configuredVideoService('seedance')}
+      onWorkspaceNavigate={onWorkspaceNavigate} />);
+
+    const regenerate = await screen.findByRole('button', { name: '重新生成' });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /^模型$/ })).toHaveValue('本地视频服务'));
+    fireEvent.click(regenerate);
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith(job.id, expect.objectContaining({ action: 'run-stage' })));
+    await waitFor(() => expect(onWorkspaceNavigate).toHaveBeenCalledWith(null));
   });
 
   it('keeps dubbing and composition enabled when starting from Voiceover', async () => {

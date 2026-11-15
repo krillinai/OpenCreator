@@ -267,7 +267,8 @@ export default function TranscriptionWorkspace(props: {
     setError('');
     session?.updateDraft({
       transcriptionProvider: choice.provider,
-      transcriptionModel: choice.model
+      transcriptionModel: choice.model,
+      __creatorUserSelected: true
     });
     if (config !== undefined && props.creatorServicesService?.saveConfig !== undefined) {
       const nextConfig = withTranscriptionModel(config, choice.provider, choice.model);

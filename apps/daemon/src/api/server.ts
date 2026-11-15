@@ -91,7 +91,7 @@ import { createStickmanRemotionExecutor } from '../creator/stickman/remotion-exe
 import { createRemotionComponentManager } from '../creator/stickman/remotion-component.js';
 import { createStickmanMediaValidationExecutor } from '../creator/stickman/media-validation-executor.js';
 import { createStickmanDeliveryExecutor } from '../creator/stickman/delivery-executor.js';
-import { CreatorProviderRequestLedger } from '../creator/provider-requests.js';
+import { CreatorProviderRequestLedger, hasPendingPaidCreatorRequests } from '../creator/provider-requests.js';
 import { createCreatorProjectCoverService } from '../creator/project-cover.js';
 import { createVideoGenerationService } from '../video-generation/service.js';
 import { createImageGenerationService } from '../image-generation/service.js';
@@ -566,7 +566,7 @@ export async function buildServer(input: BuildServerInput) {
     hasActiveTasks: () => [appServerRuntimeManager, creatorAppServerRuntimeManager, stickmanContentRuntimeManager]
       .some(manager => manager?.listScopes().some(scope => scope.active || scope.pending > 0))
       || creatorRepository.listJobs().some(job => job.status === 'running' || job.stages.some(stage => stage.status === 'queued')) || gatewayCreatorSource?.isBusy() === true,
-    hasPendingTasks: () => creatorRepository.listJobs().some(job => job.providerRequests.some(request => request.billingSideEffect && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(request.status))),
+    hasPendingTasks: () => hasPendingPaidCreatorRequests(creatorRepository.listJobs()),
     async closeRuntime() {
       await gatewayCreatorSource?.revoke();
       officialBindings?.beginLogout();

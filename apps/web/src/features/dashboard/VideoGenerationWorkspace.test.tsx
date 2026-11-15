@@ -20,6 +20,28 @@ import { CreatorSessionProvider, useCreatorSession } from './creator-session-sto
 import { OfficialServicesContext } from './official-services.js';
 
 describe('VideoGenerationWorkspace', () => {
+  it.each([true, false])('defaults to the first listed ready video model when no local service is configured (account ready at mount: %s)', async readyAtMount => {
+    const gatewayState: GatewayAccountState = {
+      source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account', email: 'user@example.com', verified: true }, bindingVersion: 'account:1',
+      models: [
+        { id: 'veo-3.1', name: 'Veo 3.1', modality: 'video', capabilities: ['generate'], sizes: ['720p@16:9'], durations: [8] },
+        { id: 'gemini-omni-flash-1.1', name: 'Gemini Omni Flash 1.1', modality: 'video', capabilities: ['generate'], sizes: ['720p@16:9'], durations: [5] }
+      ], activationError: null
+    };
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk' } }), {
+      gatewayState: readyAtMount ? gatewayState : undefined,
+      creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: [] }) }
+    });
+    if (!readyAtMount) view.rerenderWorkspace({ gatewayState });
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Gemini Omni Flash 1.1'));
+    expect(screen.getByRole('button', { name: '视频设置' })).toBeEnabled();
+    await waitFor(() => expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({
+      videoServiceSource: 'gateway', officialModels: { video: 'gemini-omni-flash-1.1' }
+    }));
+  });
+
   it.each([true, false])('opens a new video task with the last manually chosen official model (account ready at mount: %s)', async readyAtMount => {
     const gatewayState: GatewayAccountState = {
       source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
@@ -60,7 +82,7 @@ describe('VideoGenerationWorkspace', () => {
     openVideoSettings();
     expect(screen.getByRole('radiogroup', { name: '画幅' })).toHaveTextContent('16:9');
     expect(screen.getByRole('spinbutton', { name: '视频时长' })).toHaveValue(5);
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
     expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ provider: 'seedance', model: 'doubao-seedance-2-5-260628' });
   });
@@ -107,13 +129,16 @@ describe('VideoGenerationWorkspace', () => {
     });
     await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
-    expect(screen.getByRole('group', { name: 'ByteDance' })).toHaveTextContent('Gateway Motion');
-    expect(screen.getByRole('group', { name: 'Google' })).toHaveTextContent('Gateway Film');
+    const list = screen.getByRole('listbox', { name: '模型' });
+    expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+    expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
+      '本地视频服务', 'Gateway Film', 'Gateway Motion'
+    ]);
     expect(screen.queryByRole('option', { name: 'Seedance 2.5' })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Gateway Motion' })).toHaveTextContent('Gateway Motion');
     expect(screen.getByRole('option', { name: 'Gateway Motion' })).not.toHaveTextContent(/登录后使用|1080p|时长|积分/);
     fireEvent.keyDown(screen.getByRole('combobox', { name: '模型' }), { key: 'Escape' });
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
     expect(mergedSettingsPatch(view.applyAction.mock.calls))
       .toMatchObject({ provider: 'veo', model: config.video.veo.model });
@@ -146,7 +171,7 @@ describe('VideoGenerationWorkspace', () => {
     }
   });
 
-  it('keeps gateway video vendors and puts the entire Others group last', async () => {
+  it('sorts gateway video models by name while keeping their icons and prices', async () => {
     renderWorkspace(creatorJob({}), {
       creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] }) },
       gatewayAccountService: { getVideoCatalog: async () => ({ models: [
@@ -162,14 +187,14 @@ describe('VideoGenerationWorkspace', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
     const list = screen.getByRole('listbox', { name: '模型' });
-    await waitFor(() => expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label')))
-      .toEqual(['本地', 'ByteDance', 'Google', 'Zeta', 'Others']));
+    await waitFor(() => expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label')))
+      .toEqual(['本地视频服务', 'SD 2.0', 'Seedance', 'Unknown Film', 'Veo', 'Zeta Film']));
+    expect(within(list).queryByRole('group')).not.toBeInTheDocument();
     const sd = within(list).getByRole('option', { name: 'SD 2.0' });
-    expect(within(screen.getByRole('group', { name: 'Others' })).getByRole('option', { name: 'SD 2.0' })).toBe(sd);
     expect(sd.querySelector('[data-brand="generic"] svg')).not.toBeNull();
-    expect(sd).toHaveTextContent('约 5 积分 / 5 秒 · 1080p');
+    expect(sd).toHaveTextContent('约 1 积分 / 1 秒 · 1080p');
     expect(sd).not.toHaveTextContent(/推荐|登录后使用|时长/);
-    expect(within(screen.getByRole('group', { name: 'ByteDance' })).getByRole('option', { name: 'Seedance' })
+    expect(within(list).getByRole('option', { name: 'Seedance' })
       .querySelector('[data-brand="bytedance"] img')).toHaveAttribute('src', '/model-brands/bytedance-color.svg');
     expect(within(list).getByRole('option', { name: 'Unknown Film' })).not.toHaveTextContent(/时长|720p/);
   });
@@ -228,7 +253,7 @@ describe('VideoGenerationWorkspace', () => {
       creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.veo.apiKey'] }) }
     });
     await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
     expect(mergedSettingsPatch(view.applyAction.mock.calls))
       .toMatchObject({ provider: 'veo', model: 'veo-3.1-generate-preview' });
@@ -246,7 +271,7 @@ describe('VideoGenerationWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '关闭登录窗口' }));
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
     fireEvent.click(screen.getByRole('option', { name: '本地视频服务' }));
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
     expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ provider: 'veo', model: 'veo-3.1-generate-preview' });
   });
@@ -263,7 +288,7 @@ describe('VideoGenerationWorkspace', () => {
     openVideoSettings();
     expect(screen.getByRole('radio', { name: '9:16' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByRole('spinbutton', { name: '视频时长' })).toHaveValue(8);
-    expect(within(form).getByRole('button', { name: '开始生成' })).toBeEnabled();
+    expect(within(form).getByRole('button', { name: '生成' })).toBeEnabled();
     const agent = screen.getByRole('complementary', { name: 'OpenCreator' });
     expect(within(agent).getByRole('complementary', { name: '任务摘要' })).toHaveTextContent('Veo 3.1 · 9:16 · 8s');
     expect(document.querySelector('.creator-workspace-main .creator-task-summary')).toBeNull();
@@ -275,7 +300,7 @@ describe('VideoGenerationWorkspace', () => {
     const config: CreatorServicesConfig = createVideoConfig();
     config.video.provider = 'veo';
     const view = renderWorkspace(creatorJob({}), { creatorServicesService: { getConfig: async () => ({ config, configuredCredentials: ['video.veo.apiKey'] }) } });
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     expect(screen.getByRole('alert')).toHaveTextContent('请先描述需要生成的视频');
     expect(view.applyAction).not.toHaveBeenCalled();
 
@@ -283,7 +308,7 @@ describe('VideoGenerationWorkspace', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地视频服务'));
     openVideoSettings();
     fireEvent.change(screen.getByRole('slider', { name: '视频时长' }), { target: { value: '2' } });
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
 
     await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith('creator_video_workspace', expect.objectContaining({
       action: 'run-stage', input: { stageId: 'generate' }
@@ -356,7 +381,7 @@ describe('VideoGenerationWorkspace', () => {
       videoReferences: [image, extraImage, video] } }), { gatewayState });
     expect(screen.getByText('1/1')).toBeInTheDocument();
     expect(screen.queryByText('clip.mp4')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
     expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ videoReferences: [image] });
   });
@@ -378,7 +403,7 @@ describe('VideoGenerationWorkspace', () => {
     const image = new File(['image'], 'reference.png', { type: 'image/png' });
     changeControl(screen.getByLabelText('上传视频参考图'), { target: { files: [image] } });
     await act(async () => { view.rerenderWorkspace({ gatewayState: signedIn }); });
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
 
     await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
     expect(uploadReferenceImage).toHaveBeenCalledWith(initialJob.id, expect.objectContaining({ file: image }));
@@ -399,7 +424,7 @@ describe('VideoGenerationWorkspace', () => {
   });
 
   it.each([
-    { language: 'zh-CN' as const, form: '视频生成', prompt: '提示词', model: '模型', generate: '开始生成', clear: '清空提示词', summary: '任务摘要' },
+    { language: 'zh-CN' as const, form: '视频生成', prompt: '提示词', model: '模型', generate: '生成', clear: '清空提示词', summary: '任务摘要' },
     { language: 'en-US' as const, form: 'Video Generation', prompt: 'Prompt', model: 'Model', generate: 'Generate', clear: 'Clear prompt', summary: 'Task summary' },
     { language: 'sv-SE' as const, form: 'Videogenerering', prompt: 'Prompt', model: 'Modell', generate: 'Generera', clear: 'Rensa prompt', summary: 'Uppgiftssammanfattning' }
   ])('localizes the single-page controls and summary in $language', copy => {
@@ -446,7 +471,7 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.getByRole('radio', { name: '1080p' })).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(screen.getByRole('radio', { name: '9:16' }));
     expect(screen.getByRole('radio', { name: '1080p' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
     expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ size: '1080p@9:16' });
   });
@@ -491,8 +516,10 @@ describe('VideoGenerationWorkspace', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('SD 2.0'));
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
     const list = screen.getByRole('listbox', { name: '模型' });
-    await waitFor(() => expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['本地', 'Zeta', 'Others']));
-    expect(within(list).getByRole('option', { name: 'SD 2.0' })).toHaveTextContent('约 5 积分 / 5 秒 · 720p');
+    await waitFor(() => expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label')))
+      .toEqual(['本地视频服务', 'Custom Film', 'SD 2.0']));
+    expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+    expect(within(list).getByRole('option', { name: 'SD 2.0' })).toHaveTextContent('约 1 积分 / 1 秒 · 720p');
     expect(within(list).getByRole('option', { name: 'SD 2.0' })).not.toHaveTextContent(/推荐|时长/);
     expect(within(list).getByRole('option', { name: 'Custom Film' })).not.toHaveTextContent(/时长|1080p/);
   });
@@ -509,9 +536,9 @@ describe('VideoGenerationWorkspace', () => {
 
   it('blocks official generation when account activation is unavailable', () => {
     const view = renderWorkspace(creatorJob({ state: { prompt: 'city skyline', videoServiceSource: 'gateway', currentStep: 2, furthestStep: 2 } }), { gatewayState: null });
-    expect(screen.getByRole('button', { name: '开始生成' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '生成' })).toBeEnabled();
     expect(screen.getByRole('combobox', { name: '模型' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     expect(screen.getByRole('alert')).toHaveTextContent('官方视频服务暂不可用');
     expect(view.applyAction).not.toHaveBeenCalled();
   });
@@ -973,7 +1000,7 @@ describe('VideoGenerationWorkspace', () => {
 
     expect(screen.getByRole('textbox', { name: '提示词' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: /项目 V/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '开始生成' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新生成' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent('视频生成未完成，请检查模型服务配置后重试');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('The provider rejected the prompt')).not.toBeInTheDocument();
@@ -1029,7 +1056,7 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('offers to continue an existing upstream task after a refresh failure', () => {
+  it('automatically continues an existing upstream task after a refresh failure', async () => {
     const job = creatorJob({
       status: 'failed',
       state: {
@@ -1068,10 +1095,269 @@ describe('VideoGenerationWorkspace', () => {
       }]
     });
 
+    const view = renderWorkspace(job);
+
+    expect(screen.queryByRole('button', { name: '取回原视频' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '重新生成' })).not.toBeInTheDocument();
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(job.id,
+      expect.objectContaining({ action: 'run-stage', input: {
+        stageId: 'generate', resumedFromStageRunId: job.stages[0]!.id
+      } })));
+  });
+
+  it.each([
+    ['zh-CN', '正在确认视频结果'],
+    ['en-US', 'Checking the video result'],
+    ['sv-SE', 'Kontrollerar videoresultatet']
+  ] as const)('localizes the automatic recovery status in %s', (language, label) => {
+    renderWorkspace(failedVideoRequestJob('waiting_remote'), { language });
+
+    expect(screen.getByText(label)).toHaveAttribute('role', 'status');
+    expect(screen.queryByRole('button', { name: /取回原视频|Retrieve video|Hämta videon/ })).not.toBeInTheDocument();
+  });
+
+  it('checks an unresolved video request instead of silently submitting another one', async () => {
+    const view = renderWorkspace(failedVideoRequestJob('unknown_remote_acceptance'));
+
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(
+      'creator_video_workspace',
+      expect.objectContaining({ action: 'resolve-provider-request', input: { ledgerId: 'video_request', decision: 'query' } })
+    ));
+    expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+    expect(screen.getByText('正在确认视频结果')).toHaveAttribute('role', 'status');
+  });
+
+  it('keeps recovery internal while the failed task is being checked', async () => {
+    const view = renderWorkspace(failedVideoRequestJob('waiting_remote'));
+    const form = screen.getByRole('form', { name: '视频生成' });
+
+    expect(within(form).queryByRole('button', { name: '重新生成' })).not.toBeInTheDocument();
+    expect(within(form).queryByRole('button', { name: '恢复视频' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '取回原视频' })).not.toBeInTheDocument();
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(
+      'creator_video_workspace',
+      expect.objectContaining({ action: 'resolve-provider-request', input: { ledgerId: 'video_request', decision: 'query' } })
+    ));
+    expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+  });
+
+  it('shows Generate for a new task and Regenerate after an attempted task', () => {
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk' } }));
+    expect(screen.getByRole('button', { name: '生成' })).toBeEnabled();
+
+    view.unmount();
+    renderWorkspace(failedVideoRequestJob('failed'));
+    expect(screen.getByRole('button', { name: '重新生成' })).toBeEnabled();
+  });
+
+  it('checks a pending video request automatically without exposing a recovery button', async () => {
+    const view = renderWorkspace(failedVideoRequestJob('waiting_remote'), { queryRequestStatus: 'succeeded' });
+
+    expect(screen.queryByRole('button', { name: '取回原视频' })).not.toBeInTheDocument();
+    expect(screen.queryByText('上次视频请求需要确认')).not.toBeInTheDocument();
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(
+      'creator_video_workspace',
+      expect.objectContaining({ action: 'resolve-provider-request', input: { ledgerId: 'video_request', decision: 'query' } })
+    ));
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(
+      'creator_video_workspace',
+      expect.objectContaining({ action: 'run-stage', input: {
+        stageId: 'generate', resumedFromStageRunId: 'running_video_stage'
+      } })
+    ));
+    expect(view.applyAction.mock.calls.filter(([, request]) => request.action === 'run-stage')).toHaveLength(1);
+  });
+
+  it('lets a confirmed failed request regenerate with one primary action', async () => {
+    const view = renderWorkspace(failedVideoRequestJob('failed'), { gatewayState: readyWanGatewayState() });
+
+    expect(screen.queryByRole('group', { name: '任务状态' })).not.toBeInTheDocument();
+    const regenerate = screen.getByRole('button', { name: '重新生成' });
+    expect(regenerate).toBeEnabled();
+    fireEvent.click(regenerate);
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(
+      'creator_video_workspace', expect.objectContaining({ action: 'run-stage', input: { stageId: 'generate' } })
+    ));
+  });
+
+  it('shows the failure workspace if restoring an already confirmed result is rejected', async () => {
+    const job = failedVideoRequestJob('succeeded');
+    job.stages[0]!.errorCode = 'creator_video_generation_failed';
+    const view = renderWorkspace(job, { runStageError: new Error('Recovery rejected') });
+
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(job.id,
+      expect.objectContaining({ action: 'run-stage', input: {
+        stageId: 'generate', resumedFromStageRunId: job.stages[0]!.id
+      } })));
+    await waitFor(() => expect(screen.getByRole('button', { name: '重新生成' })).toBeEnabled());
+    expect(screen.queryByText('正在确认视频结果')).not.toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent('视频生成未完成');
+  });
+
+  it.each([
+    ['zh-CN', '重新生成'],
+    ['en-US', 'Regenerate'],
+    ['sv-SE', 'Generera igen']
+  ] as const)('localizes the primary retry label in %s', (language, label) => {
+    renderWorkspace(failedVideoRequestJob('failed'), { language });
+
+    expect(screen.getByRole('button', { name: label })).toBeEnabled();
+  });
+
+  it('recovers a confirmed video result without submitting a new generation request', async () => {
+    const job = failedVideoRequestJob('waiting_remote');
+    job.stages[0]!.errorCode = 'creator_video_generation_failed';
+    const view = renderWorkspace(job, { queryRequestStatus: 'succeeded' });
+
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(job.id,
+      expect.objectContaining({ action: 'run-stage', input: {
+        stageId: 'generate', resumedFromStageRunId: job.stages[0]!.id
+      } })));
+    expect(view.applyAction.mock.calls.map(([, request]) => request.action)).toEqual(
+      expect.arrayContaining(['resolve-provider-request', 'run-stage'])
+    );
+  });
+
+  it('keeps the saved video recovery available after reopening a confirmed request', async () => {
+    const job = failedVideoRequestJob('succeeded');
+    job.stages[0]!.errorCode = 'creator_video_generation_failed';
+    const view = renderWorkspace(job);
+
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(job.id,
+      expect.objectContaining({ action: 'run-stage', input: {
+        stageId: 'generate', resumedFromStageRunId: job.stages[0]!.id
+      } })));
+    expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'resolve-provider-request')).toBe(false);
+  });
+
+  it('does not start generation when a confirmed request has no saved local result', async () => {
+    const job = failedVideoRequestJob('waiting_remote');
+    delete job.stages[0]!.progress.videoGenerationResultId;
+    const view = renderWorkspace(job, { queryRequestStatus: 'succeeded' });
+
+    await waitFor(() => expect(document.querySelector('.creator-tool-error'))
+      .toHaveTextContent('原视频已生成，但无法读取结果'));
+    expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+    expect(screen.getByRole('button', { name: '重新生成' })).toBeEnabled();
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent('原视频已生成，但无法读取结果');
+  });
+
+  it('explains an already confirmed video with no saved result after reopening', () => {
+    const job = failedVideoRequestJob('succeeded');
+    delete job.stages[0]!.progress.videoGenerationResultId;
     renderWorkspace(job);
 
-    expect(screen.getByRole('button', { name: '继续任务' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '开始生成' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新生成' })).toBeEnabled();
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent('原视频已生成，但无法读取结果');
+    expect(screen.queryByRole('button', { name: '取回原视频' })).not.toBeInTheDocument();
+  });
+
+  it('allows a fresh generation after an interrupted task with no pending request', () => {
+    const job = runningVideoJob();
+    job.stages[0]!.status = 'interrupted';
+    renderWorkspace(job);
+
+    expect(within(screen.getByRole('form', { name: '视频生成' })).getByRole('button', { name: '重新生成' })).toBeEnabled();
+    expect(screen.queryByRole('group', { name: '任务状态' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the running task controls while its provider request is in progress', () => {
+    const running = runningVideoJob();
+    running.providerRequests = failedVideoRequestJob('waiting_remote').providerRequests;
+    renderWorkspace(running);
+
+    expect(screen.queryByRole('button', { name: '取回原视频' })).not.toBeInTheDocument();
+  });
+
+  it('resubmits a confirmed legacy price rejection with the selected model in one click', async () => {
+    const rejected = failedVideoRequestJob('unknown_remote_acceptance');
+    const reference = videoArtifact(1);
+    reference.id = 'reference_image_1';
+    reference.kind = 'reference_image';
+    reference.metadata = { fileName: 'reference.png', mimeType: 'image/png', size: 1024 };
+    rejected.artifacts = [reference];
+    rejected.state.referenceImageArtifactId = reference.id;
+    rejected.issues = [{ ...normalizePageIssue('runtime', 'creator.retry-stage', new Error('price changed'), 'Video price changed'),
+      scope: { kind: 'creator-job', jobId: rejected.id }, source: 'provider',
+      stageRunId: rejected.stages[0]!.id, code: 'creator_provider_resolution_required',
+      publicFacts: { kind: 'http-rejected', httpStatus: 409, upstreamCode: 'video_price_changed' }
+    }];
+    const gatewayState = readyWanGatewayState();
+    const getState = vi.fn(async () => gatewayState);
+    const view = renderWorkspace(rejected, { gatewayState,
+      gatewayAccountService: { getState },
+      openArtifact: async () => new Response(new Blob(['reference'], { type: 'image/png' })) });
+
+    fireEvent.click(screen.getByRole('button', { name: '重新生成' }));
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(rejected.id,
+      expect.objectContaining({ action: 'resolve-provider-request',
+        input: { ledgerId: 'video_request', decision: 'cancel-scope' } })));
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(rejected.id,
+      expect.objectContaining({ action: 'run-stage', input: { stageId: 'generate' } })));
+    const actions = view.applyAction.mock.calls.map(([, request]) => request.action);
+    expect(actions.indexOf('resolve-provider-request')).toBeLessThan(actions.indexOf('run-stage'));
+    expect(actions.filter(action => action === 'run-stage')).toHaveLength(1);
+    expect(getState).not.toHaveBeenCalled();
+    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('Wan 3.0');
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ model: 'wan3.0-video' });
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).not.toHaveProperty('videoPriceVersion');
+    expect(screen.getByRole('button', { name: '移除参考图' })).toBeInTheDocument();
+  });
+
+  it.each(['zh-CN', 'en-US', 'sv-SE'] as const)('shows a safe, localized submission failure in %s', async language => {
+    const failure = Object.assign(new Error('Authorization: Bearer sk-private-value'), {
+      publicFacts: { kind: 'http-rejected', provider: 'opencreator-gateway-video', httpStatus: 402,
+        upstreamCode: 'credits_insufficient', upstreamMessage: 'Authorization: Bearer sk-private-value' }
+    });
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk' } }), {
+      language, gatewayState: readyWanGatewayState(), runStageError: failure
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: language === 'zh-CN' ? '生成' : language === 'sv-SE' ? 'Generera' : 'Generate' }));
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
+    await waitFor(() => expect(document.querySelector('.creator-tool-error')).toHaveTextContent(
+      language === 'zh-CN' ? '积分不足' : language === 'sv-SE' ? 'Krediterna räcker inte' : 'Insufficient credits'
+    ));
+    expect(document.querySelector('.creator-tool-error')).not.toHaveTextContent(/sk-private-value|Bearer|Authorization/);
+  });
+
+  it('queries a non-unknown request even when a price-change issue is present', async () => {
+    const rejected = failedVideoRequestJob('waiting_remote');
+    rejected.issues = [{ ...normalizePageIssue('runtime', 'creator.retry-stage', new Error('price changed'), 'Video price changed'),
+      scope: { kind: 'creator-job', jobId: rejected.id }, source: 'provider',
+      stageRunId: rejected.stages[0]!.id, code: 'creator_provider_resolution_required',
+      publicFacts: { kind: 'http-rejected', httpStatus: 409, upstreamCode: 'video_price_changed' }
+    }];
+    const view = renderWorkspace(rejected);
+
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(rejected.id,
+      expect.objectContaining({ action: 'resolve-provider-request',
+        input: { ledgerId: 'video_request', decision: 'query' } })));
+  });
+
+  it('does not resubmit a legacy price rejection when a remote request id exists', async () => {
+    const rejected = failedVideoRequestJob('unknown_remote_acceptance');
+    rejected.providerRequests[0]!.remoteTaskId = 'ocreq_existing';
+    rejected.issues = [{ ...normalizePageIssue('runtime', 'creator.retry-stage', new Error('price changed'), 'Video price changed'),
+      scope: { kind: 'creator-job', jobId: rejected.id }, source: 'provider', stageRunId: rejected.stages[0]!.id,
+      code: 'creator_provider_resolution_required',
+      publicFacts: { kind: 'http-rejected', httpStatus: 409, upstreamCode: 'video_price_changed' }
+    }];
+    const view = renderWorkspace(rejected);
+
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(rejected.id,
+      expect.objectContaining({ action: 'resolve-provider-request', input: { ledgerId: 'video_request', decision: 'query' } })));
+    expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+  });
+
+  it('allows a new video generation with the selected model after the old request failed', async () => {
+    const view = renderWorkspace(failedVideoRequestJob('failed'), { gatewayState: readyWanGatewayState() });
+
+    fireEvent.click(screen.getByRole('button', { name: '重新生成' }));
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(
+      'creator_video_workspace',
+      expect.objectContaining({ action: 'run-stage', input: { stageId: 'generate' } })
+    ));
   });
 
   it('shows that Seedance reference-image generation follows the image ratio', async () => {
@@ -1238,12 +1524,20 @@ function renderWorkspace(
     gatewayAccountService?: unknown;
     onGatewayStateChange?: (state: GatewayAccountState) => void;
     accessGate?: boolean;
+    runStageError?: Error;
+    queryRequestStatus?: CreatorJob['providerRequests'][number]['status'];
   } = {}
 ) {
-  const applyAction = vi.fn(async (_id: string, request: { action: string; input: { version?: CreatorJson; patch?: Record<string, CreatorJson> } }) => ({
-    job: { ...initialJob, revision: initialJob.revision + 1, state: { ...initialJob.state, ...(request.action === 'select-result-version' ? { resultVersion: request.input.version } : request.input.patch) } },
+  const applyAction = vi.fn(async (_id: string, request: { action: string; input: { version?: CreatorJson; patch?: Record<string, CreatorJson>; decision?: string; ledgerId?: string } }) => {
+    if (request.action === 'run-stage' && overrides.runStageError) throw overrides.runStageError;
+    return ({
+    job: { ...initialJob, revision: initialJob.revision + 1, state: { ...initialJob.state, ...(request.action === 'select-result-version' ? { resultVersion: request.input.version } : request.input.patch) },
+      providerRequests: request.action === 'resolve-provider-request' && (request.input.decision === 'cancel-scope' || (request.input.decision === 'query' && overrides.queryRequestStatus))
+        ? initialJob.providerRequests.map(item => item.id === request.input.ledgerId ? { ...item, status: request.input.decision === 'cancel-scope' ? 'canceled' as const : overrides.queryRequestStatus! } : item)
+        : initialJob.providerRequests },
     receipt: {}
-  }));
+    });
+  });
   const workspace = (options: typeof overrides) => (
     <LanguageProvider initialPreference={options.language ?? 'zh-CN'}>
       <CreatorSessionProvider
@@ -1328,6 +1622,37 @@ function runningVideoJob(options: {
       errorCode: null, errorMessage: null,
       startedAt: options.status === 'queued' ? null : new Date().toISOString(), finishedAt: null
     }]
+  };
+}
+
+function failedVideoRequestJob(status: CreatorJob['providerRequests'][number]['status']): CreatorJob {
+  const running = runningVideoJob();
+  const stage = running.stages[0]!;
+  return {
+    ...running,
+    status: 'failed',
+    state: { ...running.state, prompt: 'A girl eats the moon', videoServiceSource: 'gateway',
+      officialModels: { video: 'wan3.0-video' }, size: '720p@16:9', duration: 5 },
+    stages: [{ ...stage, status: 'failed', errorCode: 'creator_video_upstream_error',
+      errorMessage: 'Video price has changed', progress: { phase: 'submitting',
+        videoGenerationResultId: 'old_video_result', videoModelId: 'gemini-omni-flash-1.1' } }],
+    providerRequests: [{
+      id: 'video_request', jobId: running.id, provider: 'opencreator-gateway-video', stageRunId: stage.id,
+      scopeKey: null, requestKey: 'old_request', requestHash: 'old_hash', remoteTaskId: null,
+      billingSideEffect: true, status, resultArtifactId: null, generation: 1,
+      resubmissionOf: null, createdAt: running.createdAt, updatedAt: running.updatedAt
+    }]
+  };
+}
+
+function readyWanGatewayState(): GatewayAccountState {
+  return {
+    source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
+    account: { id: 'account', email: 'user@example.com', verified: true }, bindingVersion: 'account:1',
+    models: [{ id: 'wan3.0-video', name: 'Wan 3.0', modality: 'video', capabilities: ['generate', 'image_to_video'],
+      sizes: ['720p@16:9'], durations: [5], price: { version: 'wan-price-v2' },
+      videoOptions: { profile: 'wan', maxImages: 10, maxVideos: 5, maxAudios: 5, firstLastFrames: true, framesExclusive: true, generateAudio: false } }],
+    activationError: null
   };
 }
 

@@ -1130,8 +1130,10 @@ function mergeMonotonicStageProgress(incoming: CreatorStageRun, current: Creator
   const incomingPercent = incoming.progress.percent;
   const currentPhasePercent = current.progress.phasePercent;
   const incomingPhasePercent = incoming.progress.phasePercent;
+  const unknownVideoProviderProgress = incoming.executor === 'video' && incomingPercent === null
+    && (incoming.progress.phase === 'queued' || incoming.progress.phase === 'generating');
   const keepPercent = typeof currentPercent === 'number' && Number.isFinite(currentPercent)
-    && (incomingPercent === null
+    && ((incomingPercent === null && !unknownVideoProviderProgress)
       || (typeof incomingPercent === 'number' && Number.isFinite(incomingPercent) && incomingPercent < currentPercent));
   const keepPhasePercent = current.progress.phase === 'normalizing_media'
     && incoming.progress.phase === 'normalizing_media'

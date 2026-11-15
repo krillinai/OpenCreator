@@ -215,7 +215,8 @@ export default function SmartDubbingWorkspace(props: {
       ttsProvider: choice.provider,
       ttsModel: choice.model,
       voiceCode: defaultVoiceId,
-      voiceName: defaultVoiceId
+      voiceName: defaultVoiceId,
+      __creatorUserSelected: true
     });
     if (config !== undefined && props.creatorServicesService?.saveConfig !== undefined) {
       const nextConfig = structuredClone(config);
@@ -491,7 +492,8 @@ export default function SmartDubbingWorkspace(props: {
                         setVoiceName(selectedVoice?.name ?? voiceId);
                         session?.updateDraft({
                           voiceCode: voiceId,
-                          voiceName: selectedVoice?.name ?? voiceId
+                          voiceName: selectedVoice?.name ?? voiceId,
+                          __creatorUserSelected: true
                         });
                         setError('');
                       }}
@@ -537,7 +539,8 @@ export default function SmartDubbingWorkspace(props: {
                         setVoiceName(selectedVoice?.name ?? voiceId);
                         session?.updateDraft({
                           voiceCode: voiceId,
-                          voiceName: selectedVoice?.name ?? voiceId
+                          voiceName: selectedVoice?.name ?? voiceId,
+                          __creatorUserSelected: true
                         });
                         setError('');
                       }}

@@ -16,9 +16,10 @@ import { createLocalizedCopy } from '../../i18n/localized-copy.js';
 import { CreatorSessionProvider, useCreatorSession } from './creator-session-store.js';
 import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
 import { LanguageSwitchControls } from '../../test/LanguageSwitchControls.js';
+import { normalizePageIssue } from '../issues/page-issue-state.js';
 
 describe('VideoTranslationWorkspace task controls', () => {
-  it('opens a failed embedded translation without outputs at its recovery controls', async () => {
+  it('opens a failed translation without outputs in a focused recovery view', async () => {
     const failed = job({ status: 'failed', revision: 1, state: {
       currentStep: 0, furthestStep: 0, workspacePhase: 'result'
     }, stages: [{ ...stage({ id: 'subtitle_timeout', status: 'failed', dispatchStatus: 'finished',
@@ -26,15 +27,76 @@ describe('VideoTranslationWorkspace task controls', () => {
       errorCode: 'platform_caption_access_failed',
       errorMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 60] Operation timed out'
     }] });
+    const onBack = vi.fn();
+    const applyAction = vi.fn(async () => ({ job: job({ status: 'running', revision: 2,
+      state: { ...failed.state }, stages: [
+        ...failed.stages,
+        stage({ id: 'subtitle_retry', status: 'running', dispatchStatus: 'claimed', progress: { phase: 'reading_captions', workflow: true } })
+      ] }) }));
+    const issue = { ...normalizePageIssue('runtime', 'creator.retry-stage', new Error('Caption timeout'), 'Caption timeout'),
+      source: 'stage' as const, stageId: 'subtitle', stageRunId: 'subtitle_timeout', status: 'open' as const };
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={failed} externalIssues={[issue]}
+      service={{ applyAction, runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded backToParentOnExit onBack={onBack} />
+    </CreatorSessionProvider></LanguageProvider>);
+
+    const workspace = await screen.findByRole('region', { name: '视频翻译操作区' });
+    expect(document.querySelector('.creator-resizable-layout')).toHaveAttribute('data-agent-panel', 'hidden');
+    expect(screen.queryByRole('complementary', { name: 'OpenCreator' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('log', { name: '协作时间线' })).not.toBeInTheDocument();
+    expect(within(workspace).getByRole('heading', { name: '字幕读取失败' })).toBeVisible();
+    expect(within(workspace).getByText('视频平台连接超时，字幕读取未完成。')).toBeVisible();
+    const settings = within(workspace).getByRole('link', { name: '检查网络代理' });
+    expect(settings.getAttribute('href')).toContain('tab=general');
+    expect(new URLSearchParams(settings.getAttribute('href')?.split('?')[1]).get('returnPath'))
+      .toBe('#/workbench?tool=video-translation&jobId=job_control&returnTo=projects');
+    expect(within(workspace).queryByRole('region', { name: '视频翻译项目产出' })).not.toBeInTheDocument();
+    expect(within(workspace).queryByText('项目 V1')).not.toBeInTheDocument();
+    expect(within(workspace).queryByRole('button', { name: '调整任务设置' })).not.toBeInTheDocument();
+
+    expect(within(workspace).queryByRole('button', { name: '查看任务诊断' })).not.toBeInTheDocument();
+
+    fireEvent.click(within(workspace).getByRole('button', { name: '重试当前阶段' }));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({
+      action: 'run-stage', input: expect.objectContaining({ stageId: 'subtitle', resumedFromStageRunId: 'subtitle_timeout' })
+    })));
+    await waitFor(() => expect(onBack).toHaveBeenCalledOnce());
+  });
+
+  it.each([
+    ['platform_session_required', 'Website verification required', '平台连接需要处理', '检查平台连接', 'platform-connections'],
+    ['yt_dlp_update_recommended', 'Extractor outdated', '视频解析失败', '检查第三方组件', 'local-components'],
+    ['platform_request_signature_required', 'Douyin request signature is required', '视频解析失败', null, null]
+  ])('gives a specific recovery path for %s', async (code, message, title, action, tab) => {
+    const failed = job({ status: 'failed', revision: 1, state: { workspacePhase: 'result' }, stages: [{
+      ...stage({ id: 'failure', status: 'failed', dispatchStatus: 'finished', progress: { phase: 'failed', workflow: true } }),
+      errorCode: code, errorMessage: message
+    }] });
     render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={failed}
       service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
       <VideoTranslationWorkspace embedded onBack={vi.fn()} />
     </CreatorSessionProvider></LanguageProvider>);
+    const workspace = await screen.findByRole('region', { name: '视频翻译操作区' });
+    expect(within(workspace).getByRole('heading', { name: title })).toBeVisible();
+    if (action && tab) expect(within(workspace).getByRole('link', { name: action }).getAttribute('href')).toContain(`tab=${tab}`);
+    else expect(within(workspace).queryByRole('link')).not.toBeInTheDocument();
+  });
 
-    expect(await screen.findByRole('region', { name: '视频翻译操作区' })).toBeVisible();
-    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toBeVisible();
-    expect(screen.getByRole('button', { name: '重试当前阶段' })).toBeEnabled();
-    expect(screen.getByRole('region', { name: '视频翻译操作区' })).toHaveTextContent('视频平台连接超时，字幕读取未完成');
+  it.each([
+    ['en-US', 'Caption retrieval failed', 'The video platform connection timed out, so captions could not be read.', 'Check network proxy'],
+    ['sv-SE', 'Det gick inte att läsa undertexter', 'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas.', 'Kontrollera nätverksproxy']
+  ] as const)('localizes the failed translation view in %s', async (language, title, reason, action) => {
+    const failed = job({ status: 'failed', revision: 1, state: { workspacePhase: 'result' }, stages: [{
+      ...stage({ id: 'caption_timeout', status: 'failed', dispatchStatus: 'finished', progress: { phase: 'failed', workflow: true } }),
+      errorCode: 'platform_caption_access_failed', errorMessage: 'yt-dlp subtitle metadata: Operation timed out'
+    }] });
+    render(<LanguageProvider initialPreference={language}><CreatorSessionProvider initialJob={failed}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+    expect(await screen.findByRole('heading', { name: title })).toBeVisible();
+    expect(screen.getByText(reason)).toBeVisible();
+    expect(screen.getByRole('link', { name: action })).toBeVisible();
   });
 
   it('keeps embedded video, subtitle and URL sources mutually exclusive and clears them before choosing another', async () => {

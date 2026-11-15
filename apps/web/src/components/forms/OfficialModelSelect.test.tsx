@@ -80,7 +80,26 @@ it('omits sign-in badges from public text models while retaining selection', asy
   expect(change).toHaveBeenCalledExactlyOnceWith(publicModel.id);
 });
 
-it('leaves video models without a gateway vendor in Other without inventing a company or icon', async () => {
+it.each(['grouped', 'list', 'catalog'] as const)('lists model families together without provider headings in %s layout', async layout => {
+  const models: GatewayModel[] = [
+    { id: 'xai/grok-1.5', name: 'Grok Imagine Video 1.5', vendor: 'Others', modality: 'video', capabilities: [] },
+    { id: 'google/veo-3.1', name: 'Veo 3.1', vendor: 'Google', modality: 'video', capabilities: [] },
+    { id: '__local_video__', name: 'Local video service', vendor: 'Local', modality: 'video', capabilities: [] },
+    { id: 'xai/grok', name: 'Grok Imagine Video', vendor: 'xAI', modality: 'video', capabilities: [] },
+    { id: 'other/veo-fast', name: 'Veo 3.1 Fast', vendor: 'Others', modality: 'video', capabilities: [] }
+  ];
+  render(<OfficialModelSelect label="Video model" models={models} value="google/veo-3.1" layout={layout} onChange={vi.fn()} />);
+  await userEvent.setup().click(screen.getByRole('combobox'));
+  const list = screen.getByRole('listbox');
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+  expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
+    'Local video service', 'Grok Imagine Video', 'Grok Imagine Video 1.5', 'Veo 3.1', 'Veo 3.1 Fast'
+  ]);
+  expect(screen.queryByRole('navigation', { name: 'Model providers' })).not.toBeInTheDocument();
+  expect(within(list).getByRole('option', { name: 'Veo 3.1' })).toHaveAttribute('aria-selected', 'true');
+});
+
+it('keeps a generic icon for a video model without a gateway vendor', async () => {
   const models: GatewayModel[] = [
     { id: 'SD2.0', name: 'SD 2.0', modality: 'video', capabilities: [] },
     { id: 'bytedance/seedance', name: 'Seedance', vendor: 'ByteDance', modality: 'video', capabilities: [] }
@@ -88,12 +107,13 @@ it('leaves video models without a gateway vendor in Other without inventing a co
   render(<OfficialModelSelect label="视频模型" models={models} value={models[0]!.id} layout="grouped" compactOptions onChange={vi.fn()} />);
   await userEvent.setup().click(screen.getByRole('combobox'));
   const list = screen.getByRole('listbox');
-  expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['ByteDance', '其他']);
-  const sd = within(screen.getByRole('group', { name: '其他' })).getByRole('option', { name: 'SD 2.0' });
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+  expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual(['SD 2.0', 'Seedance']);
+  const sd = within(list).getByRole('option', { name: 'SD 2.0' });
   expect(sd.querySelector('[data-brand="generic"] svg')).not.toBeNull();
 });
 
-it('keeps uncategorized video models in the gateway Others group when both are present', async () => {
+it('sorts video models by name regardless of vendor metadata', async () => {
   const models: GatewayModel[] = [
     { id: 'SD2.0', name: 'SD 2.0', modality: 'video', capabilities: [] },
     { id: 'custom/film', name: 'Custom Film', vendor: 'Others', modality: 'video', capabilities: [] },
@@ -102,15 +122,15 @@ it('keeps uncategorized video models in the gateway Others group when both are p
   render(<OfficialModelSelect label="视频模型" models={models} value={models[0]!.id} layout="grouped" compactOptions onChange={vi.fn()} />);
   await userEvent.setup().click(screen.getByRole('combobox'));
   const list = screen.getByRole('listbox');
-  expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['ByteDance', 'Others']);
-  expect(within(screen.getByRole('group', { name: 'Others' })).getAllByRole('option').map(option => option.getAttribute('aria-label')))
-    .toEqual(['SD 2.0', 'Custom Film']);
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+  expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label')))
+    .toEqual(['Custom Film', 'SD 2.0', 'Seedance']);
 });
 
 it.each([
-  { language: 'zh-CN' as const, price: '约 150 积分 / 5 秒 · 720p', unavailable: '价格暂不可用' },
-  { language: 'en-US' as const, price: 'About 150 credits / 5s · 720p', unavailable: 'Price unavailable' },
-  { language: 'sv-SE' as const, price: 'Cirka 150 krediter / 5 s · 720p', unavailable: 'Pris saknas' }
+  { language: 'zh-CN' as const, price: '约 30 积分 / 1 秒 · 720p', unavailable: '价格暂不可用' },
+  { language: 'en-US' as const, price: 'About 30 credits / 1s · 720p', unavailable: 'Price unavailable' },
+  { language: 'sv-SE' as const, price: 'Cirka 30 krediter / 1 s · 720p', unavailable: 'Pris saknas' }
 ])('shows gateway video credit estimates in the compact list in $language', async ({ language, price, unavailable }) => {
   const models: GatewayModel[] = [
     { id: '__local_video__', name: 'Local video service', vendor: 'Local', modality: 'video', capabilities: [] },
@@ -338,17 +358,17 @@ it('never displays relay routing in names, groups, details or tooltips, includin
   expect(screen.getByRole('combobox')).toHaveValue('gpt-image-2');
 });
 
-it('keeps catalog brand navigation without a model count or billing heading', async () => {
+it('shows catalog models directly without provider navigation', async () => {
   const models: GatewayModel[] = [{ id: 'bytedance/seedance-2', name: 'Seedance 2.0', modality: 'video', capabilities: [], durations: [5, 10] }];
   render(<LanguageProvider initialPreference="en-US"><OfficialModelSelect label="视频模型" layout="catalog" models={models} value={models[0]!.id} onChange={vi.fn()} /></LanguageProvider>);
 
   await userEvent.setup().click(screen.getByRole('combobox', { name: '视频模型' }));
-  expect(document.querySelector('.official-model-menu-count')).not.toBeInTheDocument();
-  expect(screen.getByText('MODELS')).toBeVisible();
+  expect(screen.queryByRole('navigation', { name: 'Model providers' })).not.toBeInTheDocument();
+  expect(screen.queryByText('MODELS')).not.toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Seedance 2.0' })).toBeVisible();
 });
 
-it('groups image models by company and shows the xAI icon after filtering', async () => {
+it('sorts image models without company groups and keeps the xAI icon after filtering', async () => {
   const models: GatewayModel[] = [
     { id: '__local_image__', name: 'Local image service', vendor: 'Local', modality: 'image', capabilities: [] },
     { id: 'openai/image-2', name: 'Image 2', vendor: 'OpenAI', modality: 'image', capabilities: [] },
@@ -359,13 +379,14 @@ it('groups image models by company and shows the xAI icon after filtering', asyn
   const input = screen.getByRole('combobox', { name: 'Image model' });
   await userEvent.setup().click(input);
   const list = screen.getByRole('listbox', { name: 'Image model' });
-  expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['Local', 'OpenAI', 'xAI']);
-  expect(within(within(list).getByRole('group', { name: 'xAI' })).getAllByRole('option')).toHaveLength(2);
-  expect(within(list).getByRole('group', { name: 'xAI' }).querySelector('[data-brand="xai"] img')).toHaveAttribute('src', '/model-brands/xai.svg');
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+  expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
+    'Local image service', 'Grok Imagine', 'Grok Imagine 2', 'Image 2'
+  ]);
   expect(screen.getByRole('option', { name: 'Grok Imagine' }).querySelector('[data-brand="xai"] img')).toHaveAttribute('src', '/model-brands/xai.svg');
 
   await userEvent.setup().type(input, 'grok');
-  expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['xAI']);
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
   expect(within(list).getAllByRole('option')).toHaveLength(2);
 });
 

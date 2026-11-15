@@ -44,7 +44,7 @@ it('validates and submits the complete dubbing form directly without persisting 
   fireEvent.click(screen.getByRole('radio', { name: 'WAV' }));
   fireEvent.click(submit);
   await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith('tts-job', expect.objectContaining({ action: 'run-stage', input: { stageId: 'tts' } })));
-  expect(fixture.currentJob().state).toMatchObject({ text: 'A clear voice.', voiceCode: 'cedar', voiceName: 'Cedar', style: 'warm', speed: .9, format: 'wav' });
+  expect(fixture.currentJob().state).toMatchObject({ text: 'A clear voice.', voiceCode: 'cedar', voiceName: 'Cedar', style: 'warm', speed: .9, format: 'wav', __creatorUserSelected: true });
   for (const [, request] of fixture.applyAction.mock.calls) {
     if (request.action === 'update-settings') {
       expect(request.input.patch).not.toHaveProperty('currentStep');

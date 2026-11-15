@@ -14268,6 +14268,126 @@
   min-width: 0;
 }
 
+.video-translation-wizard-main[data-failed="true"] .video-translation-header p {
+  overflow-wrap: anywhere;
+}
+
+.video-translation-failure-view {
+  width: min(590px, 100%);
+  margin: clamp(28px, 8vh, 76px) auto 0;
+  padding: 0 10px 36px;
+  box-sizing: border-box;
+  color: var(--text);
+}
+
+.video-translation-failure-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.video-translation-failure-heading > svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--danger);
+}
+
+.video-translation-failure-heading span {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.video-translation-failure-heading h2 {
+  margin: 5px 0 0;
+  font-size: 21px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.video-translation-failure-reason {
+  margin: 14px 0 28px 36px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.video-translation-failure-next {
+  padding: 20px 0 0 36px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.video-translation-failure-next strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.video-translation-failure-next p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.video-translation-failure-background {
+  margin: 18px 0 0 36px;
+}
+
+.video-translation-failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 19px 0 0 36px;
+}
+
+.video-translation-failure-actions > :is(a, button) {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 620;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.video-translation-failure-secondary {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.video-translation-failure-secondary:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.video-translation-failure-actions > button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.video-translation-failure-error {
+  margin: 12px 0 0 36px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+@container video-translation-workspace (max-width: 520px) {
+  .video-translation-failure-view { padding-inline: 0; }
+  .video-translation-failure-reason,
+  .video-translation-failure-next,
+  .video-translation-failure-background,
+  .video-translation-failure-actions,
+  .video-translation-failure-error { margin-left: 0; }
+  .video-translation-failure-next { padding-left: 0; }
+  .video-translation-failure-actions > :is(a, button) { flex: 1 1 auto; }
+}
+
 .video-result-workspace {
   position: relative;
   min-height: 0;

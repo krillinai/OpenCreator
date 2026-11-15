@@ -5,6 +5,7 @@ import {
   gatewayVideoSizes,
   isPublicErrorFacts,
   readCreatorResultSnapshots,
+  sanitizePublicErrorFacts,
   type CreatorArtifact,
   type CreatorJson,
   type CreatorServicesConfig,
@@ -13,6 +14,7 @@ import {
   type GatewayAccountState,
   type GatewayModel,
   type GatewayVideoCatalog,
+  type PublicErrorFacts,
   type VideoGenerationDuration,
   type VideoGenerationProvider,
   type VideoGenerationSize
@@ -33,7 +35,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { publicErrorReason } from '../issues/issue-catalog.js';
-import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
+import OfficialModelSelect, { compareGatewayModelsByName } from '../../components/forms/OfficialModelSelect.js';
 import { useOfficialServices } from './official-services.js';
 import { readVideoReferences, videoReferenceIssue } from './OfficialVideoReferences.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
@@ -139,18 +141,25 @@ export default function VideoGenerationWorkspace(props: {
         ? 'gateway' : 'manual'
   ));
   const usingOfficial = selectedSource === 'gateway';
+  const localConfigured = videoConfig !== null && localVideoProviderReady(videoConfig, configuredCredentials, provider);
+  const defaultOfficialModel = official.ready ? official.model
+    : [...official.models].filter(gatewayModelReady).sort(compareGatewayModelsByName)[0];
   const shouldDefaultOfficial = session?.job.stages.length === 0 && session.job.artifacts.length === 0
-    && !session.state.videoServiceSource && !session.state.pendingVideoModelId && official.ready
-    && (official.hasRememberedModel || official.model?.id === preferredSeedanceVideoModel(official.models)?.id);
+    && !session.state.videoServiceSource && !session.state.pendingVideoModelId && official.selectable
+    && (official.hasRememberedModel || official.model?.id === preferredSeedanceVideoModel(official.models)?.id
+      || (videoConfig !== null && !localConfigured && defaultOfficialModel !== undefined));
   useEffect(() => {
     if (shouldDefaultOfficial && selectedSource === 'manual') {
       setSelectedSource('gateway');
-      session?.updateDraft({ videoServiceSource: 'gateway' }, {
+      session?.updateDraft({
+        videoServiceSource: 'gateway',
+        ...(!official.ready && defaultOfficialModel ? { officialModels: { video: defaultOfficialModel.id } } : {})
+      }, {
         persist: session.job.id.startsWith('pending:') ? false : undefined,
         userEdited: false
       });
     }
-  }, [shouldDefaultOfficial, selectedSource, session?.job.id]);
+  }, [shouldDefaultOfficial, selectedSource, defaultOfficialModel?.id, official.ready, session?.job.id]);
   const [model, setModel] = useState(() => readModel(session?.state.model, initialProvider));
   const [size, setSize] = useState<VideoGenerationSize>(() => readSize(session?.state.size, usingOfficial));
   const [duration, setDuration] = useState<VideoGenerationDuration>(() => (
@@ -164,9 +173,10 @@ export default function VideoGenerationWorkspace(props: {
   const [submitting, setSubmitting] = useState(false);
   const videoReferences = readVideoReferences(session?.state.videoReferences);
   const [taskControlPending, setTaskControlPending] = useState<'canceling' | 'resuming'>();
+  const [recoveryFailureStageId, setRecoveryFailureStageId] = useState<string>();
+  const recoveryInFlight = useRef(false);
   const characterCount = useMemo(() => [...prompt.trim()].length, [prompt]);
   const selectedProvider = usingOfficial ? { zh: '官方服务', en: 'Official service' } : { zh: '本地视频服务', en: 'Local video service' };
-  const localConfigured = videoConfig !== null && localVideoProviderReady(videoConfig, configuredCredentials, provider);
   const localModel: GatewayModel | undefined = videoConfig ? {
     id: localVideoModelId, name: l('本地视频服务', 'Local video service', 'Lokal videotjänst'),
     vendor: l('本地', 'Local', 'Lokal'), modality: 'video', capabilities: [],
@@ -223,11 +233,41 @@ export default function VideoGenerationWorkspace(props: {
   const latestStageIssue = session?.job.issues?.find(issue => (
     issue.stageRunId === latestStage?.id && issue.status !== 'resolved'
   ));
+  const pendingVideoRequest = session?.job.providerRequests.find(request => (
+    request.provider === 'opencreator-gateway-video'
+    && ['registered', 'submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(request.status)
+    && latestStage?.status !== 'queued' && latestStage?.status !== 'running'
+    && session.job.stages.some(stage => stage.id === request.stageRunId && stage.stageId === 'generate' && stage.scopeKey === null)
+  ));
+  const priceChangedRequest = latestStage !== undefined && pendingVideoRequest?.status === 'unknown_remote_acceptance'
+    && pendingVideoRequest.remoteTaskId === null
+    && pendingVideoRequest.stageRunId === latestStage.id
+    && session?.job.issues?.some(issue => issue.stageRunId === latestStage.id
+      && issue.publicFacts?.kind === 'http-rejected' && issue.publicFacts.httpStatus === 409
+      && issue.publicFacts.upstreamCode === 'video_price_changed');
+  const previousRequestClosed = session?.job.providerRequests.some(request => (
+    request.stageRunId === latestStage?.id && request.provider === 'opencreator-gateway-video'
+    && (request.status === 'failed' || request.status === 'canceled')
+  ));
+  const recoverableVideoStage = isRecoverableVideoStage(latestStage)
+    || (latestStage?.status === 'failed'
+      && latestStage.errorCode === 'creator_video_generation_failed'
+      && typeof latestStage.progress.videoGenerationResultId === 'string'
+      && session?.job.providerRequests.some(request => request.provider === 'opencreator-gateway-video'
+        && request.status === 'succeeded'
+        && session.job.stages.some(stage => stage.id === request.stageRunId
+          && stage.progress.videoGenerationResultId === latestStage.progress.videoGenerationResultId)) === true);
   const generating = latestStage?.status === 'queued' || latestStage?.status === 'running';
   const busy = generating || submitting;
-  const resumable = latestStage?.status === 'canceled'
-    || latestStage?.status === 'interrupted'
-    || isRecoverableVideoStage(latestStage);
+  const needsRecovery = !priceChangedRequest && recoveryFailureStageId !== latestStage?.id
+    && (pendingVideoRequest !== undefined || (recoverableVideoStage && !previousRequestClosed
+      && typeof latestStage?.progress.resumedFromStageRunId !== 'string'));
+  const paidResultUnavailable = latestStage?.status === 'failed' && !recoverableVideoStage
+    && session?.job.providerRequests.some(request => request.provider === 'opencreator-gateway-video'
+      && request.status === 'succeeded' && request.stageRunId === latestStage.id) === true;
+  const generationLabel = selectedResult || latestStage
+    ? l('重新生成', 'Regenerate', 'Generera igen')
+    : l('生成', 'Generate', 'Generera');
   const runtimeError = latestStage?.status === 'failed'
     ? formatVideoError(
         { code: latestStage.errorCode, message: latestStage.errorMessage, publicFacts: latestStageIssue?.publicFacts },
@@ -242,7 +282,11 @@ export default function VideoGenerationWorkspace(props: {
     '视频预览加载失败，可以稍后重试或直接下载',
     'The video preview failed to load. Retry later or download the file.'
   ) : '';
-  const visibleError = error || runtimeError || previewError;
+  const visibleError = error || (needsRecovery ? '' : paidResultUnavailable
+    ? l('原视频已生成，但无法读取结果；可以重新生成',
+      'The original video was generated, but its result is unavailable. You can regenerate.',
+      'Originalvideon skapades, men resultatet kan inte läsas. Du kan generera igen.')
+    : runtimeError) || previewError;
   useEffect(() => {
     if (latestStage?.status === 'failed' || latestStage?.status === 'interrupted') setNotice('');
   }, [latestStage?.id, latestStage?.status]);
@@ -350,7 +394,7 @@ export default function VideoGenerationWorkspace(props: {
       const chosen = requested ?? recommended ?? ready[0];
       if (chosen) {
         setSelectedSource('gateway');
-        session?.updateDraft({ videoServiceSource: 'gateway', pendingVideoModelId: null, officialModels: { video: chosen.id } });
+        session?.updateDraft({ videoServiceSource: 'gateway', pendingVideoModelId: null, officialModels: { video: chosen.id }, __creatorUserSelected: true });
       }
       if (!requested) setNotice(chosen
         ? recommended
@@ -480,7 +524,7 @@ export default function VideoGenerationWorkspace(props: {
       setPendingModelId(undefined);
       pendingValidation.current = undefined;
       setSelectedSource('manual');
-      session?.updateDraft({ videoServiceSource: 'manual', pendingVideoModelId: null }, { semantic: true });
+      session?.updateDraft({ videoServiceSource: 'manual', pendingVideoModelId: null, __creatorUserSelected: true }, { semantic: true });
       return;
     }
     if (official.official) {
@@ -492,7 +536,7 @@ export default function VideoGenerationWorkspace(props: {
     if (!publicModels.some(item => gatewayModelIdMatches(item.id, id) && gatewayModelReady(item))) return;
     setPendingModelId(id);
     pendingValidation.current = undefined;
-    session?.updateDraft({ pendingVideoModelId: id }, { semantic: true });
+    session?.updateDraft({ pendingVideoModelId: id, __creatorUserSelected: true }, { semantic: true });
     requireGenerationAccess();
   }
 
@@ -534,8 +578,8 @@ export default function VideoGenerationWorkspace(props: {
     setNotice(l('参考图已移除', 'Reference image removed'));
   }
 
-  async function generate() {
-    if (busy || resumable) return;
+  async function generate(recoverLegacyPriceRejection = false) {
+    if (busy || (needsRecovery && !recoverLegacyPriceRejection)) return;
     if (!requireGenerationAccess(!usingOfficial && !pendingModelId)) return;
     if (usingOfficial && official.ready && (!availableSizes.length || !durations.length)) {
       setError(l('当前模型缺少画幅或时长配置，请更换模型', 'The selected model has no available format or duration. Select another model.'));
@@ -575,18 +619,18 @@ export default function VideoGenerationWorkspace(props: {
     setError('');
     setNotice('');
     setSubmitting(true);
-    session.updateDraft({
-      prompt: prompt.trim(),
-      videoServiceSource: selectedSource,
-      provider: usingOfficial ? 'seedance' : provider,
-      model: activeModel,
-      size,
-      duration,
-      videoReferences: usingOfficial ? selectedVideoReferences : [],
-      ...(usingOfficial ? { videoPriceVersion: official.model?.price?.version ?? null, generateAudio: official.model?.videoOptions?.generateAudio ? session.state.generateAudio ?? true : null } : {}),
-      ...(usingOfficial ? official.draftPatch : {})
-    }, { semantic: true });
     try {
+      session.updateDraft({
+        prompt: prompt.trim(),
+        videoServiceSource: selectedSource,
+        provider: usingOfficial ? 'seedance' : provider,
+        model: activeModel,
+        size,
+        duration,
+        videoReferences: usingOfficial ? selectedVideoReferences : [],
+        ...(usingOfficial ? { generateAudio: official.model?.videoOptions?.generateAudio ? session.state.generateAudio ?? true : null } : {}),
+        ...(usingOfficial ? official.draftPatch : {})
+      }, { semantic: true });
       await session.flush();
       if (
         referenceImageFile !== undefined
@@ -595,6 +639,13 @@ export default function VideoGenerationWorkspace(props: {
         setNotice(l('正在上传参考图...', 'Uploading the reference image...'));
         await session.uploadReferenceImage(referenceImageFile);
         setReferenceImageFile(undefined);
+      }
+      if (recoverLegacyPriceRejection && pendingVideoRequest) {
+        await session.applyAction({
+          actor: 'user',
+          action: 'resolve-provider-request',
+          input: { ledgerId: pendingVideoRequest.id, decision: 'cancel-scope' }
+        });
       }
       const next = await session.applyAction({
         actor: 'user',
@@ -607,7 +658,9 @@ export default function VideoGenerationWorkspace(props: {
         'Video generation started. You can leave this page and return to the saved result later.'
       ));
       if (submittedStage?.status !== 'failed' && submittedStage?.status !== 'interrupted') props.onGenerated?.();
-    } catch {} finally {
+    } catch (caught) {
+      setError(formatVideoError(caught, l, selectedModelLabel, provider));
+    } finally {
       setSubmitting(false);
     }
   }
@@ -649,30 +702,76 @@ export default function VideoGenerationWorkspace(props: {
     try {
       await session.cancelJob();
       setNotice(l('已停止跟踪当前视频生成任务', 'Stopped tracking the current video generation task'));
-    } catch {} finally {
+    } catch {
+      setError(l('无法停止当前任务，请稍后重试', 'Could not stop the task. Try again later.', 'Det gick inte att stoppa uppgiften. Försök igen senare.'));
+    } finally {
       setTaskControlPending(undefined);
     }
   }
 
   async function resumeTask() {
-    if (session === null || !resumable || taskControlPending !== undefined) return;
+    if (session === null || !needsRecovery || taskControlPending !== undefined) return;
     setTaskControlPending('resuming');
     setError('');
+    let restoringResult = false;
     try {
-      if (isRecoverableVideoStage(latestStage)) {
+      if (pendingVideoRequest) {
+        const updated = await session.applyAction({
+          actor: 'user',
+          action: 'resolve-provider-request',
+          input: { ledgerId: pendingVideoRequest.id, decision: 'query' }
+        });
+        const status = updated.providerRequests.find(request => request.id === pendingVideoRequest.id)?.status;
+        if (status === 'failed') return;
+        if (status !== 'succeeded') {
+          return;
+        }
+        const originalStage = updated.stages.find(stage => stage.id === pendingVideoRequest.stageRunId);
+        if (typeof originalStage?.progress.videoGenerationResultId !== 'string'
+          || originalStage.progress.videoGenerationResultId.length === 0) {
+          setError(l('原视频已生成，但无法读取结果；可以重新生成',
+            'The original video was generated, but its result is unavailable. You can regenerate.',
+            'Originalvideon skapades, men resultatet kan inte läsas. Du kan generera igen.'));
+          return;
+        }
+        restoringResult = true;
         await session.applyAction({
           actor: 'user',
           action: 'run-stage',
-          input: { stageId: 'generate' }
+          input: { stageId: 'generate', resumedFromStageRunId: originalStage.id }
         });
-      } else {
-        await session.resumeJob();
+      } else if (recoverableVideoStage && latestStage) {
+        restoringResult = true;
+        await session.applyAction({
+          actor: 'user',
+          action: 'run-stage',
+          input: { stageId: 'generate', resumedFromStageRunId: latestStage.id }
+        });
       }
-      setNotice(l('正在继续查询原视频生成任务', 'Resuming the existing video generation task'));
-    } catch {} finally {
+    } catch (caught) {
+      if (restoringResult) setRecoveryFailureStageId(latestStage?.id);
+      setError(formatVideoError(caught, l, selectedModelLabel, provider));
+    } finally {
       setTaskControlPending(undefined);
     }
   }
+
+  useEffect(() => {
+    if (!needsRecovery || session === null) return;
+    let active = true;
+    const recover = () => {
+      if (!active || recoveryInFlight.current) return;
+      recoveryInFlight.current = true;
+      void resumeTask().finally(() => { recoveryInFlight.current = false; });
+    };
+    recover();
+    const timer = pendingVideoRequest ? window.setInterval(recover, 15_000) : undefined;
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [session?.job.id, pendingVideoRequest?.id, pendingVideoRequest?.status,
+    latestStage?.id, latestStage?.status, needsRecovery]);
 
   function selectVersion(version: number) {
     setNotice(l(`正在查看 V${version}`, `Viewing V${version}`, `Visar V${version}`));
@@ -791,7 +890,6 @@ export default function VideoGenerationWorkspace(props: {
       contentClassName="media-generation-workspace-content"
       currentIssue={visibleError || undefined}
       onCancelTask={generating ? () => void cancelTask() : undefined}
-      onResumeTask={resumable ? () => void resumeTask() : undefined}
       taskControlPending={taskControlPending}
       embedded={props.embedded && !selectedResult}
     >
@@ -810,7 +908,7 @@ export default function VideoGenerationWorkspace(props: {
         </section> : null}
         <form className="video-generation-composer" aria-label={l('视频生成', 'Video Generation')} onSubmit={event => {
           event.preventDefault();
-          void generate();
+          void generate(priceChangedRequest);
         }}>
           <fieldset className="video-generation-fields" disabled={busy}>
             <div className="video-generation-editor">
@@ -915,21 +1013,19 @@ export default function VideoGenerationWorkspace(props: {
                 hideHeader={props.embedded}
               />
               <div className="video-generation-submit-row">
-                {resumable ? (
-                  <button className="creator-tool-primary" type="button" onClick={() => void resumeTask()} disabled={taskControlPending !== undefined}>
-                    {taskControlPending === 'resuming' ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}
-                    {l('继续任务', 'Resume task')}
-                  </button>
-                ) : (
-                  <button className="creator-tool-primary" type="submit" disabled={busy}>
-                    {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : selectedResult ? <RotateCcw size={16} /> : <Sparkles size={16} />}
-                    {busy ? l('正在生成', 'Generating') : selectedResult ? l('重新生成', 'Regenerate') : l('开始生成', 'Generate')}
-                  </button>
-                )}
+                {!needsRecovery ? <button className="creator-tool-primary" type="submit" disabled={busy || taskControlPending !== undefined}>
+                  {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : selectedResult || latestStage ? <RotateCcw size={16} /> : <Sparkles size={16} />}
+                  {generationLabel}
+                </button> : null}
               </div>
             </div>
           </fieldset>
         </form>
+
+        {needsRecovery ? <p className="video-generation-recovery" role="status">
+          <LoaderCircle className="smart-dubbing-spinner" size={16} />
+          {l('正在确认视频结果', 'Checking the video result', 'Kontrollerar videoresultatet')}
+        </p> : null}
 
         {!props.embedded && (selectedResult || generating) ? (
           <section className="video-generation-output" aria-labelledby="video-output-title">
@@ -1326,9 +1422,32 @@ function formatVideoError(
       `${selected} is not enabled for this account. Switch models or enable it in ${consoleName}.`
     );
   }
-  if (typeof error === 'object' && error !== null && 'publicFacts' in error && isPublicErrorFacts(error.publicFacts)
-    && error.publicFacts.kind !== 'unknown') {
-    return publicErrorReason(error.publicFacts, l);
+  const suppliedFacts = typeof error === 'object' && error !== null && 'publicFacts' in error
+    && typeof error.publicFacts === 'object' && error.publicFacts !== null
+    ? sanitizePublicErrorFacts(error.publicFacts as PublicErrorFacts) : undefined;
+  if (suppliedFacts && isPublicErrorFacts(suppliedFacts) && suppliedFacts.kind !== 'unknown') {
+    if (suppliedFacts.provider === 'opencreator-gateway-video') {
+      if (suppliedFacts.upstreamCode === 'video_price_changed') return l(
+        '视频生成未完成，请重试', 'Video generation did not complete. Try again.', 'Videogenereringen slutfördes inte. Försök igen.'
+      );
+      if (suppliedFacts.upstreamCode === 'credits_insufficient') return l(
+        '积分不足，请充值后重试', 'Insufficient credits. Add credits and try again.', 'Krediterna räcker inte. Fyll på och försök igen.'
+      );
+      if (suppliedFacts.kind === 'rate-limited') return l(
+        '请求过于频繁，请稍后重试', 'Too many requests. Try again later.', 'För många förfrågningar. Försök igen senare.'
+      );
+      if (suppliedFacts.kind === 'unauthorized') return l(
+        '官方服务连接已失效，请重新登录', 'The official service connection expired. Sign in again.', 'Anslutningen till den officiella tjänsten har gått ut. Logga in igen.'
+      );
+      if (suppliedFacts.kind === 'timeout') return l(
+        '请求超时，请稍后重试', 'The request timed out. Try again later.', 'Förfrågan tog för lång tid. Försök igen senare.'
+      );
+      if (suppliedFacts.httpStatus === 400 || suppliedFacts.httpStatus === 422) return l(
+        '当前模型不支持这些参数，请调整设置后重试', 'This model does not support these settings. Adjust them and try again.', 'Modellen stöder inte dessa inställningar. Ändra dem och försök igen.'
+      );
+      return l('官方视频服务暂不可用，请稍后重试', 'The official video service is unavailable. Try again later.', 'Den officiella videotjänsten är inte tillgänglig. Försök igen senare.');
+    }
+    return publicErrorReason(suppliedFacts, l);
   }
   if (code === 'creator_video_upstream_error' || code === 'VIDEO_GENERATION_UPSTREAM_ERROR') {
     return l(

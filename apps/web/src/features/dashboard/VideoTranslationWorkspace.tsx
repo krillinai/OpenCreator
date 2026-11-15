@@ -19,6 +19,7 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  CircleAlert,
   Captions,
   FileVideo,
   History,
@@ -1853,7 +1854,7 @@ export default function VideoTranslationWorkspace(props: {
       const recommended = ready.find(model => gatewayModelIdMatches(model.id, state.recommendedModels?.text))
         ?? ready.find(model => model.recommended) ?? gatewayTranslationFlashModel(ready);
       const chosen = requested ?? recommended ?? ready[0];
-      if (chosen) creatorSession?.updateDraft({ officialModels: { text: chosen.id } });
+      if (chosen) creatorSession?.updateDraft({ officialModels: { text: chosen.id }, __creatorUserSelected: true });
       if (!requested) setTextModelNotice(chosen
         ? l('所选模型当前账户不可用，已切换为可用的翻译模型。', 'The selected model is unavailable for this account. Another model is selected.')
         : l('暂无可用模型', 'No models available'));
@@ -1875,6 +1876,7 @@ export default function VideoTranslationWorkspace(props: {
     if (officialText.official) { officialText.selectModel(id); setTextModelNotice(''); return; }
     if (!publicTextModels.some(model => gatewayModelIdMatches(model.id, id) && gatewayModelReady(model))) return;
     setPendingTextModelId(id);
+    creatorSession?.updateDraft({ __creatorUserSelected: true }, { semantic: true });
     pendingTextValidation.current = undefined;
     requireGenerationAccess();
   }
@@ -1966,7 +1968,6 @@ export default function VideoTranslationWorkspace(props: {
   const [subtitleSaveError, setSubtitleSaveError] = useState('');
   const subtitleSaveWorkRef = useRef<Promise<boolean>>();
   const [subtitleAssistantOpen, setSubtitleAssistantOpen] = useState(false);
-  const [taskDetailsRequest, setTaskDetailsRequest] = useState<{ key: number; stageRunId?: string }>();
   const [draftBaseVersion, setDraftBaseVersion] = useState<number>();
   const [resultProposal, setResultProposal] = useState<ResultProposal>();
   const [resultNoticeState, setResultNoticeState] = useState({ message: '' });
@@ -2547,6 +2548,23 @@ export default function VideoTranslationWorkspace(props: {
   const selectedResult = props.forceComposer ? undefined : resultVersions.find(version => version.value === resultVersion);
   const failedWithoutResult = creatorSession?.job.status === 'failed'
     && taskProgress?.status === 'failed' && selectedResult === undefined;
+  const backgroundPreviewStage = failedWithoutResult ? [...(creatorSession?.job.stages ?? [])].reverse().find(stage =>
+    stage.stageId === 'preview-source-video' && (stage.status === 'queued' || stage.status === 'running')) : undefined;
+  const failureRecovery = failedWithoutResult ? translationFailureRecovery(
+    stageFailure?.errorCode ?? taskProgress?.stage?.errorCode ?? null,
+    stageFailure?.errorMessage ?? taskProgress?.stage?.errorMessage ?? null,
+    l
+  ) : undefined;
+  const failureSettingsHref = failureRecovery?.settingsTab === undefined ? undefined
+    : `#/settings?${new URLSearchParams({
+      tab: failureRecovery.settingsTab,
+      ...(failureRecovery.settingsSection ? { section: failureRecovery.settingsSection } : {}),
+      from: 'video-translation',
+      returnPath: `#/workbench?${new URLSearchParams({
+        tool: 'video-translation', jobId: creatorSession?.job.id ?? '',
+        ...(props.backToParentOnExit ? { returnTo: 'projects' } : {})
+      })}`
+    })}`;
   const selectedSubtitleOnly = (selectedResult?.source.sourceType ?? sourceType) === 'subtitle';
   const selectedResultState = readCreatorResultSnapshots(creatorSession?.state.resultSnapshots)
     .find(snapshot => snapshot.version === selectedResult?.value)?.state;
@@ -4374,12 +4392,13 @@ export default function VideoTranslationWorkspace(props: {
       <div className="video-translation-page-inner video-translation-wizard">
         <CreatorResizableLayout
           className="video-translation-collab-layout"
-          showAgentPanel={workspacePhase !== 'result' || (subtitleImmersive && subtitleAssistantOpen) || failedWithoutResult}
-          agentPanelRequest={taskDetailsRequest}
+          showAgentPanel={!failedWithoutResult && (workspacePhase !== 'result' || (subtitleImmersive && subtitleAssistantOpen))}
+          autoRevealIssues={!failedWithoutResult}
           workspace={<div
             className="video-translation-wizard-main"
             data-step={currentStep}
-            data-phase={workspacePhase}
+            data-phase={failedWithoutResult ? 'result' : workspacePhase}
+            data-failed={failedWithoutResult || undefined}
             role="region"
             aria-label={l('视频翻译操作区', 'Video translation workspace')}
           >
@@ -4391,13 +4410,13 @@ export default function VideoTranslationWorkspace(props: {
             <Languages size={20} strokeWidth={1.8} />
           </span>
           <div className="video-translation-header-copy">
-            <h1>{(workspacePhase === 'result' ? selectedSubtitleOnly : subtitleOnly) ? l('字幕翻译', 'Subtitle Translation') : l('视频翻译', 'Video Translation')}</h1>
-            <p>{workspacePhase === 'result' ? selectedSourceName : subtitleOnly ? sourceName : l('创建字幕、配音与多画幅成片', 'Create subtitles, dubbing, and videos in multiple formats')}</p>
+            <h1>{(workspacePhase === 'result' || failedWithoutResult ? selectedSubtitleOnly : subtitleOnly) ? l('字幕翻译', 'Subtitle Translation') : l('视频翻译', 'Video Translation')}</h1>
+            <p>{workspacePhase === 'result' || failedWithoutResult ? selectedSourceName : subtitleOnly ? sourceName : l('创建字幕、配音与多画幅成片', 'Create subtitles, dubbing, and videos in multiple formats')}</p>
           </div>
-          {workspacePhase === 'result' ? <button type="button" className="video-translation-result-settings" onClick={adjustSettingsFromResult}>{l('调整任务设置', 'Adjust settings')}</button> : null}
+          {workspacePhase === 'result' && selectedResult !== undefined ? <button type="button" className="video-translation-result-settings" onClick={adjustSettingsFromResult}>{l('调整任务设置', 'Adjust settings')}</button> : null}
         </header>
 
-        {workspacePhase === 'configure' ? (
+        {workspacePhase === 'configure' && !failedWithoutResult ? (
           <div className="video-translation-configure-top">
             {!subtitleOnly ? <LocalTranscriptionNotice controller={props.runtimeDependencies}
               importedSubtitle={typeof creatorSession?.state.importedSourceSubtitleId === 'string' || typeof creatorSession?.state.importedTargetSubtitleId === 'string'}
@@ -4440,7 +4459,35 @@ export default function VideoTranslationWorkspace(props: {
         ) : null}
 
         <div className="video-translation-wizard-body" key={`${workspacePhase}-${currentStep}`}>
-          {workspacePhase === 'result' ? (
+          {failedWithoutResult && failureRecovery ? (
+            <section className="video-translation-failure-view" aria-labelledby="video-translation-failure-title">
+              <div className="video-translation-failure-heading">
+                <CircleAlert size={22} strokeWidth={1.8} aria-hidden="true" />
+                <div>
+                  <span>{l('翻译任务中断', 'Translation interrupted')}</span>
+                  <h2 id="video-translation-failure-title">{failureRecovery.title}</h2>
+                </div>
+              </div>
+              <p className="video-translation-failure-reason">{failureRecovery.reason}</p>
+              <div className="video-translation-failure-next">
+                <strong>{l('建议操作', 'Next step')}</strong>
+                <p>{failureRecovery.nextStep}</p>
+              </div>
+              {backgroundPreviewStage ? <div className="video-translation-failure-background">
+                <CreatorTaskProgressNotice stage={backgroundPreviewStage} />
+              </div> : null}
+              <div className="video-translation-failure-actions">
+                {failureSettingsHref ? <a className="creator-tool-primary" href={failureSettingsHref}>{failureRecovery.settingsLabel}<ArrowRight size={15} aria-hidden="true" /></a> : null}
+                <button type="button" className={failureSettingsHref ? 'video-translation-failure-secondary' : 'creator-tool-primary'}
+                  disabled={taskProgress?.retryPending || taskProgress?.retryBlocked}
+                  onClick={() => { if (taskProgress) void taskProgress.retry().then(started => { if (started) props.onBack(); }); }}>
+                  <RefreshCw size={15} aria-hidden="true" />
+                  {taskProgress?.retryPending ? l('正在重试…', 'Retrying…') : l('重试当前阶段', 'Retry stage')}
+                </button>
+              </div>
+              {taskProgress?.controlError ? <p className="video-translation-failure-error" role="alert">{taskProgress.controlError}</p> : null}
+            </section>
+          ) : workspacePhase === 'result' ? (
             <VideoTranslationResultWorkspace
               workbench
               onBack={() => void leaveWorkspace(props.backToParentOnExit || selectedSubtitleOnly ? 'project' : 'outputs')}
@@ -4666,7 +4713,7 @@ export default function VideoTranslationWorkspace(props: {
 
         </div>
 
-        {workspacePhase === 'configure' ? (
+        {workspacePhase === 'configure' && !failedWithoutResult ? (
         <div className="video-translation-actions-stack">
         {activeStage === undefined && resumableStage === undefined ? (
         <footer className="video-translation-wizard-actions">
@@ -4715,7 +4762,7 @@ export default function VideoTranslationWorkspace(props: {
         ) : null}
           </div>}
           agentPanel={<VideoTranslationAgentPanel
-            stepLabel={workspacePhase === 'result' ? l('项目结果', 'Project results') : localizeStep(steps[Math.min(currentStep, 1) as WizardStep], l)}
+            stepLabel={workspacePhase === 'result' || failedWithoutResult ? l('项目结果', 'Project results') : localizeStep(steps[Math.min(currentStep, 1) as WizardStep], l)}
             contextSummary={agentContextSummary}
             taskSummary={<CreatorTaskSummary
               sourceIcon={subtitleOnly ? Captions : FileVideo}
@@ -4733,17 +4780,17 @@ export default function VideoTranslationWorkspace(props: {
                 kind: 'action' as const,
                 onAction: () => { window.location.hash = creatorServicesSettingsHref(sessionError?.code, needsInput?.code, stageConfigurationCode); }
               }] : []),
-              {
+              ...(!failedWithoutResult && (workspacePhase !== 'result' || selectedResult !== undefined) ? [{
                 id: 'open-settings',
                 label: workspacePhase === 'result'
                   ? l('调整任务设置', 'Adjust settings')
                   : l('打开翻译设置', 'Open translation settings'),
-                kind: 'action',
+                kind: 'action' as const,
                 onAction: () => workspacePhase === 'result'
                   ? adjustSettingsFromResult()
                   : openWizardStep(1)
-              },
-              ...(workspacePhase === 'configure' || activeStage !== undefined || resumableStage !== undefined ? [{
+              }] : []),
+              ...(!failedWithoutResult && (workspacePhase === 'configure' || activeStage !== undefined || resumableStage !== undefined) ? [{
                 id: 'run-translation',
                 label: activeStage !== undefined
                   ? activeStage.progress.cancelRequested === true
@@ -5048,6 +5095,54 @@ function stageErrorMessage(code: string | null, message: string | null, l: Local
     return l('当前安装包缺少所选语音识别能力，请更换服务或重新安装完整运行时。', 'The selected transcription runtime is not packaged. Choose another service or reinstall the full runtime.');
   }
   return l('翻译阶段执行失败，请在 Agent 区域查看诊断和服务配置。', 'The translation stage failed. Review the diagnosis in the Agent panel and service configuration.');
+}
+
+function translationFailureRecovery(code: string | null, message: string | null, l: LocalizeCopy): {
+  title: string;
+  reason: string;
+  nextStep: string;
+  settingsTab?: 'general' | 'platform-connections' | 'local-components' | 'ai-services';
+  settingsSection?: 'text' | 'transcription' | 'tts';
+  settingsLabel?: string;
+} {
+  if (isYtDlpCaptionTimeout(code, message)) return {
+    title: l('字幕读取失败', 'Caption retrieval failed', 'Det gick inte att läsa undertexter'),
+    reason: l('视频平台连接超时，字幕读取未完成。', 'The video platform connection timed out, so captions could not be read.', 'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas.'),
+    nextStep: l('检查网络代理和视频链接是否可访问，然后重试当前阶段。', 'Check the network proxy and video link, then retry this stage.', 'Kontrollera nätverksproxyn och videolänken och försök sedan igen med steget.'),
+    settingsTab: 'general', settingsLabel: l('检查网络代理', 'Check network proxy', 'Kontrollera nätverksproxy')
+  };
+  if (code === 'platform_session_required' || code === 'platform_caption_access_failed'
+    && /cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message ?? '')) return {
+    title: l('平台连接需要处理', 'Platform connection needs attention', 'Plattformsanslutningen behöver åtgärdas'),
+    reason: l('视频平台未接受当前浏览器会话，或要求完成网页验证。', 'The video platform rejected the browser session or requires website verification.', 'Videoplattformen avvisade webbläsarsessionen eller kräver webbverifiering.'),
+    nextStep: l('检查视频平台的网页验证与平台连接，然后返回此任务重试。', 'Check website verification and the platform connection, then return and retry.', 'Kontrollera webbverifieringen och plattformsanslutningen, återgå sedan och försök igen.'),
+    settingsTab: 'platform-connections', settingsLabel: l('检查平台连接', 'Check platform connections', 'Kontrollera plattformsanslutningar')
+  };
+  if (code === 'yt_dlp_update_recommended') return {
+    title: l('视频解析失败', 'Video extraction failed', 'Videoextraheringen misslyckades'),
+    reason: l('当前下载器可能不支持此平台的最新解析方式。', 'The downloader may not support the platform\'s current extraction method.', 'Nedladdaren kanske inte stöder plattformens nuvarande extraheringsmetod.'),
+    nextStep: l('检查第三方组件中的 yt-dlp 更新，然后返回此任务重试。', 'Check for a yt-dlp update in Third-party components, then return and retry.', 'Sök efter en uppdatering av yt-dlp under Tredjepartskomponenter. Återgå sedan och försök igen.'),
+    settingsTab: 'local-components', settingsLabel: l('检查第三方组件', 'Check third-party components', 'Kontrollera tredjepartskomponenter')
+  };
+  if (code === 'platform_request_signature_required') return {
+    title: l('视频解析失败', 'Video extraction failed', 'Videoextraheringen misslyckades'),
+    reason: l('当前下载器尚不支持此平台的请求签名校验。', 'The downloader does not yet support this platform\'s request signature check.', 'Nedladdaren stöder ännu inte plattformens kontroll av begäranssignaturer.'),
+    nextStep: l('请改用本地视频文件创建翻译任务。', 'Create a translation task from a local video file instead.', 'Skapa en översättningsuppgift från en lokal videofil i stället.')
+  };
+  if (needsCreatorServicesConfiguration(code)) return {
+    title: l('服务配置不完整', 'Service configuration required', 'Tjänstkonfiguration krävs'),
+    reason: l('当前翻译阶段缺少可用的 AI 服务配置。', 'The current translation stage needs an available AI service.', 'Det aktuella översättningssteget behöver en tillgänglig AI-tjänst.'),
+    nextStep: l('检查 AI 服务设置，然后返回此任务重试。', 'Check AI service settings, then return to this task and retry.', 'Kontrollera AI-tjänstens inställningar, återgå sedan till uppgiften och försök igen.'),
+    settingsTab: 'ai-services',
+    settingsSection: code === 'creator_tts_config_missing' ? 'tts'
+      : ['creator_transcription_config_missing', 'creator_transcription_language_unsupported', 'creator_transcription_timestamps_unavailable'].includes(code ?? '') ? 'transcription' : 'text',
+    settingsLabel: l('检查 AI 服务', 'Check AI services', 'Kontrollera AI-tjänster')
+  };
+  return {
+    title: l('翻译任务失败', 'Translation failed', 'Översättningen misslyckades'),
+    reason: l('当前阶段未完成，尚无可用结果。', 'The current stage did not finish, and no result is available yet.', 'Det aktuella steget slutfördes inte och inget resultat finns ännu.'),
+    nextStep: l('检查输入和相关设置，然后重试当前阶段。', 'Check the input and related settings, then retry this stage.', 'Kontrollera inmatningen och relevanta inställningar och försök sedan igen med steget.')
+  };
 }
 
 function normalizeStageConfigurationError(code: string | null | undefined, message: string | null | undefined): string | null {

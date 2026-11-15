@@ -468,6 +468,16 @@
   font-weight: 650;
 }
 
+.video-generation-recovery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .video-generation-composer :disabled {
   cursor: not-allowed;
 }

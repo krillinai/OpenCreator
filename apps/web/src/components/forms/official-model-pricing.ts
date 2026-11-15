@@ -43,15 +43,14 @@ function videoPriceDescription(model: GatewayModel, l: LocalizeCopy) {
 }
 
 export function officialVideoModelListPrice(model: GatewayModel, l: LocalizeCopy): string {
-  const clip = videoClipEstimate(model);
-  if (clip) {
-    const credits = formatGatewayCreditAmount(clip.credits);
-    return l(`约 ${credits} 积分 / ${clip.seconds} 秒 · ${clip.resolution}`,
-      `About ${credits} credits / ${clip.seconds}s · ${clip.resolution}`,
-      `Cirka ${credits} krediter / ${clip.seconds} s · ${clip.resolution}`);
-  }
-  if (videoRate(model)) return officialModelPrice(model, l);
-  return l('价格暂不可用', 'Price unavailable', 'Pris saknas');
+  const rates = videoRates(model);
+  const rate = rates.find(item => item.resolution === model.price?.estimates?.clip?.resolution)
+    ?? rates.find(item => item.resolution === '720p') ?? rates[0];
+  if (!rate) return l('价格暂不可用', 'Price unavailable', 'Pris saknas');
+  const credits = formatGatewayCreditAmount(rate.credits);
+  return l(`约 ${credits} 积分 / 1 秒 · ${rate.resolution}`,
+    `About ${credits} credits / 1s · ${rate.resolution}`,
+    `Cirka ${credits} krediter / 1 s · ${rate.resolution}`);
 }
 
 function modelEstimate(model: GatewayModel, l: LocalizeCopy) {

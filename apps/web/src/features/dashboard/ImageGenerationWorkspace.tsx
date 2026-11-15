@@ -319,7 +319,7 @@ export default function ImageGenerationWorkspace(props: {
       const recommended = ready.find(model => gatewayModelIdMatches(model.id, state.recommendedModels?.image))
         ?? ready.find(model => model.recommended);
       const chosen = requested ?? recommended ?? ready[0];
-      if (chosen) session?.updateDraft({ officialModels: { image: chosen.id } });
+      if (chosen) session?.updateDraft({ officialModels: { image: chosen.id }, __creatorUserSelected: true });
       if (!requested) setNotice(chosen
         ? recommended
           ? l('所选模型当前账户不可用，已切换为推荐图片模型。', 'That model is unavailable for this account. A recommended image model is selected.')
@@ -474,6 +474,7 @@ export default function ImageGenerationWorkspace(props: {
     if (official.official) { official.selectModel(id); return; }
     if (!publicModels.some(model => gatewayModelIdMatches(model.id, id) && gatewayModelReady(model))) return;
     setPendingModelId(id);
+    session?.updateDraft({ __creatorUserSelected: true }, { semantic: true });
     pendingValidation.current = undefined;
     requireGenerationAccess();
   }

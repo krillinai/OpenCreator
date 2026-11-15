@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search, Settings2, X } from 'lucide-react';
 import Fuse from 'fuse.js';
@@ -14,6 +14,15 @@ export function officialModelLabel(model: GatewayModel, automatic: string): stri
   if (/openrouter/i.test(model.id)) return automatic;
   return gatewayModelDisplayName(model, automatic);
 }
+const modelNameCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
+export function compareGatewayModelsByName(left: GatewayModel, right: GatewayModel): number {
+  const localOrder = Number(right.id.startsWith('__local_')) - Number(left.id.startsWith('__local_'));
+  const name = (model: GatewayModel) => gatewayModelDisplayName(model, 'Automatic')
+    .normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  return localOrder || modelNameCollator.compare(name(left), name(right)) || modelNameCollator.compare(left.id, right.id);
+}
+
 export default function OfficialModelSelect(props: {
   label: string; describedBy?: string; models: GatewayModel[]; value: string;
   recommendedModel?: GatewayModel; followsRecommendation?: boolean;
@@ -30,7 +39,6 @@ export default function OfficialModelSelect(props: {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
-  const [activeBrand, setActiveBrand] = useState<string>();
   const [position, setPosition] = useState<{ left: number; top: number; width: number; maxHeight: number; above: boolean }>();
   const automatic = l('自动选择', 'Automatic');
   const catalog = props.layout === 'catalog';
@@ -42,60 +50,26 @@ export default function OfficialModelSelect(props: {
       const recommended = model.id === props.recommendedModel?.id;
       const name = officialModelLabel(model, automatic);
       const label = recommended && model.modality !== 'image' ? l(`系统推荐 · ${name}`, `Recommended · ${name}`) : name;
-      return { model, value: recommended ? gatewayRecommendedModelId : model.id, label, brand: modelVendor(model), nameSearch: normalizeSearch(label), idSearch: normalizeSearch(gatewayModelDisplayName({ id: model.id }, "")) };
-    });
+      return { model, value: recommended ? gatewayRecommendedModelId : model.id, label, nameSearch: normalizeSearch(label), idSearch: normalizeSearch(gatewayModelDisplayName({ id: model.id }, "")) };
+    }).sort((left, right) => compareGatewayModelsByName(left.model, right.model));
   }, [props.models, props.recommendedModel, automatic, l]);
-  const otherGroupName = choices.find(choice => choice.model.modality === 'video' && /^others$/i.test(choice.brand ?? ''))?.brand
-    ?? l('其他', 'Other', 'Övriga');
   const search = useMemo(() => new Fuse(choices, {
     keys: [{ name: 'nameSearch', weight: 0.7 }, { name: 'idSearch', weight: 0.3 }],
     threshold: 0.3, ignoreLocation: true,
   }), [choices]);
   const filtered = useMemo(() => {
-    if (!query.trim()) {
-      return [...choices].sort((a,b)=>Number(b.value===selectionValue)-Number(a.value===selectionValue)
-        || Number(b.value===gatewayRecommendedModelId || !!b.model.recommended)-Number(a.value===gatewayRecommendedModelId || !!a.model.recommended)
-        || (a.brand??'').localeCompare(b.brand??''));
-    }
+    if (!query.trim()) return choices;
     const terms = query.trim().split(/\s+/).map(normalizeSearch).filter(Boolean);
     if (terms.length === 0) return [];
     const results = search.search({
       $and: terms.map(term => ({ $or: ['nameSearch', 'idSearch'].map(key => ({ [key]: term })) })),
     }).map(result => result.item);
     const exact = new Set(choices.filter(choice => terms.every(term => choice.nameSearch.includes(term) || choice.idSearch.includes(term))));
-    return exact.size ? results.filter(choice => exact.has(choice)) : results;
-  }, [choices, search, query, selectionValue]);
+    return (exact.size ? results.filter(choice => exact.has(choice)) : results)
+      .sort((left, right) => compareGatewayModelsByName(left.model, right.model));
+  }, [choices, search, query]);
   const selected = choices.find(choice => choice.value === selectionValue);
-  const brands = useMemo(() => {
-    const result: Array<{ name: string; model: GatewayModel; count: number }> = [];
-    for (const choice of choices) {
-      const name = choice.brand ?? otherGroupName;
-      const existing = result.find(brand => brand.name === name);
-      if (existing) existing.count += 1;
-      else result.push({ name, model: choice.model, count: 1 });
-    }
-    const priority = (brand: typeof result[number]) => brand.model.id === '__local_image__' || brand.model.id === '__local_video__'
-      ? 0 : brand.name === 'ByteDance' ? 1 : brand.name === otherGroupName || /^others$/i.test(brand.name) ? 3 : 2;
-    return props.compactOptions
-      ? result.sort((left, right) => priority(left) - priority(right) || left.name.localeCompare(right.name))
-      : result;
-  }, [choices, otherGroupName, props.compactOptions]);
-  const visible = useMemo(() => {
-    if (grouped) return brands.flatMap(brand => filtered.filter(choice => (choice.brand ?? otherGroupName) === brand.name));
-    return catalog && !query.trim() && activeBrand !== undefined
-      ? filtered.filter(choice => (choice.brand ?? otherGroupName) === activeBrand)
-      : filtered;
-  }, [activeBrand, brands, catalog, filtered, grouped, otherGroupName, query]);
-  const visibleGroups = useMemo(() => {
-    const groups: Array<{ name: string; model: GatewayModel; choices: Array<{ choice: typeof choices[number]; index: number }> }> = [];
-    visible.forEach((choice, index) => {
-      const name = choice.brand ?? otherGroupName;
-      const group = groups.find(candidate => candidate.name === name);
-      if (group) group.choices.push({ choice, index });
-      else groups.push({ name, model: choice.model, choices: [{ choice, index }] });
-    });
-    return groups;
-  }, [visible, otherGroupName]);
+  const visible = filtered;
   const selectedLabel = selected?.label ?? (gatewayModelDisplayName({ id: props.value }, '') || (props.models.length === 0 ? l('暂不可用', 'Unavailable') : l('选择模型', 'Select model')));
   const expanded = open && !props.disabled;
   const currentIndex = Math.min(activeIndex, visible.length - 1);
@@ -104,7 +78,7 @@ export default function OfficialModelSelect(props: {
   function close() { setOpen(false); setQuery(''); setActiveIndex(0); }
   function show() {
     if (props.disabled || open) return;
-    setQuery(''); setActiveIndex(0); setActiveBrand(selected?.brand ?? brands[0]?.name); setOpen(true);
+    setQuery(''); setActiveIndex(Math.max(0, choices.findIndex(choice => choice.value === selectionValue))); setOpen(true);
   }
   function select(value: string) {
     if (props.configureModel?.id === value && !props.models.some(model => model.id === value && gatewayModelReady(model))) {
@@ -143,7 +117,7 @@ export default function OfficialModelSelect(props: {
       const below = viewportBottom - rect.bottom - 14;
       const above = rect.top - viewportTop - 14;
       const opensAbove = (catalog && above > 80) || (below < 300 && above > below);
-      const width = Math.min(Math.max(rect.width, catalog ? 600 : props.compactOptions ? 320 : grouped ? 420 : 340), viewportWidth - 16);
+      const width = Math.min(Math.max(rect.width, catalog || grouped ? 420 : props.compactOptions ? 320 : 340), viewportWidth - 16);
       const menuLeft = getComputedStyle(rootRef.current!).direction === 'rtl' ? rect.right - width : rect.left;
       const next = {
         width, left: Math.max(viewportLeft + 8, Math.min(menuLeft, viewportLeft + viewportWidth - width - 8)),
@@ -168,7 +142,7 @@ export default function OfficialModelSelect(props: {
 
   useEffect(() => {
     if (expanded && currentIndex >= 0) document.getElementById(optionId(currentIndex))?.scrollIntoView?.({ block: 'nearest' });
-  }, [expanded, currentIndex, query, activeBrand]);
+  }, [expanded, currentIndex, query]);
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.nativeEvent.isComposing) return;
@@ -215,13 +189,7 @@ export default function OfficialModelSelect(props: {
     </button>;
   };
   const options = <div id={`${id}-listbox`} className="official-model-options" role="listbox" aria-label={props.label}>
-    {grouped ? visibleGroups.map(group => <div className="official-model-company" role="group" aria-label={group.name} key={group.name}>
-      <div className="official-model-company-heading"><ModelBrandIcon model={group.model} /><strong>{group.name}</strong></div>
-      {group.choices.map(({ choice, index }) => renderOption(choice, index))}
-    </div>) : visible.map((choice, index) => <Fragment key={choice.model.id}>
-      {!catalog && choice.value !== gatewayRecommendedModelId && choice.brand && (choice.brand !== visible[index-1]?.brand || visible[index-1]?.value === gatewayRecommendedModelId) ? <div className="official-model-menu-group" role="presentation">{choice.brand}</div> : null}
-      {renderOption(choice, index)}
-    </Fragment>)}
+    {visible.map((choice, index) => renderOption(choice, index))}
     {visible.length === 0 ? <div className="official-model-empty" role="status">{l('未找到匹配模型', 'No matching models')}</div> : null}
   </div>;
 
@@ -255,18 +223,7 @@ export default function OfficialModelSelect(props: {
       left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight,
       transform: position.above ? 'translateY(-100%)' : undefined,
     }}>
-      {catalog ? <div className="official-model-catalog-body">
-        <nav className="official-model-catalog-brands" aria-label={l('模型服务商', 'Model providers', 'Modellleverantörer')}>
-          <span className="official-model-catalog-title">{l('模型', 'MODELS', 'MODELLER')}</span>
-          {brands.map(brand => <button type="button" key={brand.name} aria-pressed={!query.trim() && activeBrand === brand.name}
-            onMouseDown={event => event.preventDefault()}
-            onClick={() => { setQuery(''); setActiveBrand(brand.name); setActiveIndex(0); }}>
-            <ModelBrandIcon model={brand.model} />
-            <span><strong>{brand.name}</strong><small>{l(`${brand.count} 个模型`, `${brand.count} ${brand.count === 1 ? 'model' : 'models'}`, `${brand.count} modeller`)}</small></span>
-          </button>)}
-        </nav>
-        {options}
-      </div> : options}
+      {options}
     </div>, document.body) : null}
   </span>;
 }

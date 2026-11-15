@@ -131,6 +131,13 @@
   transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
 }
 
+:is(.creator-tool-embedded, .video-generation-workspace-page) .video-generation-submit-row .creator-tool-primary:disabled {
+  background: var(--conversation-bg);
+  color: var(--muted);
+  opacity: 1;
+  box-shadow: none;
+}
+
 :is(.creator-tool-embedded, .image-generation-workspace-page, .video-generation-workspace-page) :is(.image-generation-submit-row, .video-generation-submit-row) .creator-tool-primary:hover:enabled {
   transform: translateY(-1px);
   filter: brightness(1.04);

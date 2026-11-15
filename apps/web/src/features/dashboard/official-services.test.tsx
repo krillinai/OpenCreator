@@ -44,7 +44,9 @@ it.each(['text', 'image', 'video', 'speech', 'transcription'] as const)('saves a
   fireEvent.click(screen.getByRole('option', { name: 'second' }));
   await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' })).toHaveValue('second'));
   expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
-  expect(fixture.updateDraft).toHaveBeenCalledWith({ officialModels: { [modality]: 'vendor/second' } }, undefined);
+  expect(fixture.updateDraft).toHaveBeenCalledWith({
+    officialModels: { [modality]: 'vendor/second' }, __creatorUserSelected: true
+  }, undefined);
 });
 
 it('does not change an existing choice during initial model display', () => {
@@ -148,6 +150,7 @@ it('syncs an automatic model to an existing task without recording a user choice
     { officialModels: { speech: 'speech-model' } },
     { persist: undefined, userEdited: false }
   ));
+  expect(fixture.updateDraft.mock.calls.every(([patch]) => !('__creatorUserSelected' in patch))).toBe(true);
 });
 
 it('keeps a removed task choice visible and lets the user replace it without silently changing the draft', async () => {

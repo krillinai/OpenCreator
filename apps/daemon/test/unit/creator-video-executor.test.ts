@@ -60,6 +60,37 @@ describe('creator video executor', () => {
       expect(service.get).not.toHaveBeenCalled();
     } finally { db.close(); }
   });
+  it.each([false, true])('does not replay a canceled price rejection through a later failed recovery stage (explicit resume: %s)', async explicitResume => {
+    tempDir = await mkdtemp(join(tmpdir(), 'creator-video-legacy-price-retry-'));
+    const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
+    try {
+      const repository = createCreatorRepository(db);
+      const job = repository.createJob({ projectId: 'project', templateId: 'video-generation', templateVersion: 1,
+        status: 'running', state: stageInput({}, []).job.state });
+      const rejected = repository.createStageRun({ jobId: job.id, stageId: 'generate', executor: 'video', status: 'failed',
+        progress: { videoGenerationResultId: 'legacy-price-result' } });
+      repository.updateStageRun({ id: rejected.id, status: 'failed', errorCode: 'creator_video_upstream_error' });
+      const receipt = new CreatorProviderRequestLedger(repository).registerBeforeSubmit({ jobId: job.id, stageRunId: rejected.id,
+        provider: 'opencreator-gateway-video', requestKey: rejected.id, request: {} });
+      const ledger = new CreatorProviderRequestLedger(repository);
+      ledger.markSubmitting(receipt.id);
+      ledger.markUnknownRemoteAcceptance(receipt.id);
+      ledger.cancelScope(receipt.id);
+      const replayed = repository.createStageRun({ jobId: job.id, stageId: 'generate', executor: 'video', status: 'failed',
+        progress: { videoGenerationResultId: 'legacy-price-result', resumedUpstreamTask: true } });
+      repository.updateStageRun({ id: replayed.id, status: 'failed', errorCode: 'creator_video_upstream_error' });
+      const current = repository.createStageRun({ jobId: job.id, stageId: 'generate', executor: 'video', status: 'running',
+        ...(explicitResume ? { progress: { resumedFromStageRunId: replayed.id } } : {}) });
+      const service = videoService({});
+      const stage = stageInput({}, []); stage.job = repository.getJob(job.id)!; stage.stageRun = current;
+
+      await createVideoExecutor({ ledger, service, sleep: async () => undefined, probeVideo: async () => ({ duration: 5, width: 1280, height: 720,
+        hasVideo: true, hasAudio: false }) }).run(stage);
+
+      expect(service.create).toHaveBeenCalledOnce();
+      expect(service.get).not.toHaveBeenCalled();
+    } finally { db.close(); }
+  });
   it.each([400, 402, 422, 429])('finalizes a rejected video submission instead of blocking it as unknown (%s)', async status => {
     tempDir = await mkdtemp(join(tmpdir(), 'creator-video-rejection-'));
     const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
@@ -77,6 +108,45 @@ describe('creator video executor', () => {
       await expect(executor.run(stage)).rejects.toMatchObject({ code: 'creator_video_upstream_error' });
       expect(repository.getJob(job.id)!.providerRequests).toMatchObject([{ status: 'failed' }]);
       expect(ledger.unresolvedForStage({ jobId: job.id, stageId: 'generate' })).toEqual([]);
+    } finally { db.close(); }
+  });
+  it('finalizes only the legacy price-version 409 as a rejected submission', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'creator-video-price-rejection-'));
+    const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
+    try {
+      const repository = createCreatorRepository(db);
+      const job = repository.createJob({ projectId: 'project', templateId: 'video-generation', templateVersion: 1, status: 'running', state: {} });
+      const stageRun = repository.createStageRun({ jobId: job.id, stageId: 'generate', executor: 'video', status: 'running' });
+      const stage = stageInput({}, []); stage.job.id = job.id; stage.stageRun.id = stageRun.id;
+      const ledger = new CreatorProviderRequestLedger(repository);
+      const service = videoService({ create: vi.fn(async (_request, options) => {
+        options!.onGatewayBinding!({ accountId: 'a', bindingVersion: 'a:1', logicalId: stageRun.id });
+        throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'Price changed', 409,
+          { kind: 'http-rejected', httpStatus: 409, upstreamCode: 'video_price_changed' });
+      }) });
+      await expect(createVideoExecutor({ ledger, service, probeVideo: vi.fn() }).run(stage))
+        .rejects.toMatchObject({ code: 'creator_video_upstream_error' });
+      expect(repository.getJob(job.id)!.providerRequests[0]!.status).toBe('failed');
+      expect(ledger.unresolvedForStage({ jobId: job.id, stageId: 'generate' })).toEqual([]);
+    } finally { db.close(); }
+  });
+  it('keeps a different 409 unresolved when acceptance is uncertain', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'creator-video-conflict-'));
+    const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
+    try {
+      const repository = createCreatorRepository(db);
+      const job = repository.createJob({ projectId: 'project', templateId: 'video-generation', templateVersion: 1, status: 'running', state: {} });
+      const stageRun = repository.createStageRun({ jobId: job.id, stageId: 'generate', executor: 'video', status: 'running' });
+      const stage = stageInput({}, []); stage.job.id = job.id; stage.stageRun.id = stageRun.id;
+      const ledger = new CreatorProviderRequestLedger(repository);
+      const service = videoService({ create: vi.fn(async (_request, options) => {
+        options!.onGatewayBinding!({ accountId: 'a', bindingVersion: 'a:1', logicalId: stageRun.id });
+        throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'Request conflict', 409,
+          { kind: 'http-rejected', httpStatus: 409, upstreamCode: 'operation_conflict' });
+      }) });
+      await expect(createVideoExecutor({ ledger, service, probeVideo: vi.fn() }).run(stage))
+        .rejects.toMatchObject({ code: 'creator_video_upstream_error' });
+      expect(repository.getJob(job.id)!.providerRequests[0]!.status).toBe('unknown_remote_acceptance');
     } finally { db.close(); }
   });
   it('recovers exactly the original video ledger entry among multiple pending requests', async () => {

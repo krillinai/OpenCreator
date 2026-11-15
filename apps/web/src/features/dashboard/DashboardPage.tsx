@@ -354,6 +354,17 @@ export default function DashboardPage(props: {
     else generationJobIdsRef.current[props.workspace] = props.jobId;
   }, [props.jobId, props.workspace]);
 
+  useEffect(() => {
+    if (props.workspace !== 'video-generation' || props.returnTo !== 'projects' || !props.jobId || !props.creatorService) return;
+    const controller = new AbortController();
+    void props.creatorService.getJob(props.jobId, { signal: controller.signal }).then(({ job }) => {
+      if (controller.signal.aborted) return;
+      setGenerationResultActive(job.stages.some(stage => stage.stageId === 'generate'));
+      setGenerationSessionActive(false);
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [props.creatorService, props.jobId, props.returnTo, props.workspace]);
+
   const resetCreationSession = (workspace: CreatorWorkspace | null) => {
     historyJobRef.current = undefined;
     setActiveJobId(undefined);
@@ -771,6 +782,10 @@ export default function DashboardPage(props: {
     return renderCreatorWorkspace('video-generation', (
       <VideoGenerationWorkspace
         promptHint={activePromptHint}
+        onGenerated={() => {
+          if (props.returnTo === 'projects') props.onWorkspaceNavigate?.(null);
+          else openGenerationHistory();
+        }}
         creatorServicesService={props.creatorServicesService}
         gatewayAccountService={props.gatewayAccountService}
         onGatewayStateChange={props.onGatewayStateChange}

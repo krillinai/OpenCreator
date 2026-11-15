@@ -87,6 +87,22 @@ const genericAdapter: CreatorPanelAdapter = {
   readStageProgress: readStandardProgress
 };
 
+const imageGenerationPanelAdapter: CreatorPanelAdapter = {
+  ...genericAdapter,
+  id: 'image-generation',
+  phaseLabel: (phase, l) => phase === 'generating_candidates'
+    ? l('正在生成图片', 'Generating image', 'Skapar bild')
+    : genericPhaseLabel(phase, l),
+  readStageProgress(stage) {
+    const progress = readStandardProgress(stage);
+    if (stage.status === 'running' && progress.phase === 'generating_candidates'
+      && progress.percent === 10 && progress.completed === 0 && (progress.failed ?? 0) === 0) {
+      return { ...progress, percent: null, indeterminate: true };
+    }
+    return progress;
+  }
+};
+
 export const videoTranslationPanelAdapter: CreatorPanelAdapter = {
   id: 'video-translation',
   taskProgress: videoTranslationTaskProgress,
@@ -1248,6 +1264,7 @@ export const videoGenerationPanelAdapter: CreatorPanelAdapter = {
 };
 
 export function creatorPanelAdapterFor(templateId: string): CreatorPanelAdapter {
+  if (templateId === 'image-generation') return imageGenerationPanelAdapter;
   if (templateId === 'video-translation') return videoTranslationPanelAdapter;
   if (templateId === 'video-download') return videoDownloadPanelAdapter;
   if (templateId === 'auto-clip') return autoClipPanelAdapter;

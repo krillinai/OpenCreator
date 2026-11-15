@@ -1,4 +1,5 @@
 import type { CreatorArtifact, CreatorJob } from '@opencreator/protocol';
+import { writingTemplates } from '@opencreator/writing-templates';
 import {
   Captions,
   CirclePlay,
@@ -693,7 +694,8 @@ export function isMeaningfulCreatorJob(job: CreatorJob): boolean {
   ))) {
     return true;
   }
-  if (job.state.__creatorUserEdited === true) return true;
+  // Older automatic default updates also set __creatorUserEdited; explicit choices have separate provenance.
+  if (job.state.__creatorUserSelected === true) return true;
   if (job.state.__creatorUserEdited === false) return false;
   return hasMeaningfulDraftState(job.templateId, job.state);
 }
@@ -701,7 +703,11 @@ export function isMeaningfulCreatorJob(job: CreatorJob): boolean {
 function hasMeaningfulDraftState(templateId: string, state: CreatorJob['state']): boolean {
   const ignoredFields = templateId === 'video-translation' && state.dubbing !== true
     ? new Set(['ttsProvider', 'ttsModel', 'voiceCode', 'voiceName'])
-    : undefined;
+    : templateId === 'smart-dubbing'
+      ? new Set(['ttsProvider', 'ttsModel', 'voiceCode', 'voiceName'])
+      : templateId === 'transcription'
+        ? new Set(['transcriptionProvider', 'transcriptionModel'])
+        : undefined;
   if (templateId === 'video-translation') {
     const sourceLanguage = typeof state.sourceLanguage === 'string' ? state.sourceLanguage : 'en';
     const targetLanguage = typeof state.targetLanguage === 'string' ? state.targetLanguage : 'zh_cn';
@@ -713,7 +719,8 @@ function hasMeaningfulDraftState(templateId: string, state: CreatorJob['state'])
   }
   const defaults = creatorDraftDefaults(templateId);
   return Object.entries(state).some(([field, value]) => {
-    if (field === 'officialModels') return false;
+    if (field === 'officialModels' || field === '__creatorUserEdited' || field === '__creatorUserSelected'
+      || field === 'videoServiceSource') return false;
     if (ignoredFields?.has(field)) return false;
     const alternatives = defaults[field];
     if (alternatives !== undefined) {
@@ -724,6 +731,31 @@ function hasMeaningfulDraftState(templateId: string, state: CreatorJob['state'])
 }
 
 function creatorDraftDefaults(templateId: string): Record<string, unknown[]> {
+  if (templateId === 'transcription') {
+    return {
+      sourceType: ['file'], sourceUrl: [''], sourceArtifactId: [null],
+      sourceFileName: [null], sourceFileSize: [null], sourceFileLastModified: [null],
+      sourceLanguage: ['zh_cn'], targetLanguage: ['zh_cn'], preferPlatformCaptions: [false],
+      currentStep: [0], furthestStep: [0]
+    };
+  }
+  if (templateId === 'smart-dubbing') {
+    return { text: [''], style: ['natural'], speed: [1], format: ['mp3'] };
+  }
+  if (templateId === 'wechat-article') {
+    return {
+      sourceLinks: [[]], sourceDocumentArtifactIds: [[]], writingPrompt: [''],
+      topicCount: [5], topics: [[]], selectedTopicId: [''], outline: [''],
+      presetId: [''],
+      templatePrompt: ['', ...writingTemplates.flatMap(template => [
+        template.instructions,
+        ...Object.values(template.localizations).map(localization => localization.instructions)
+      ])],
+      layoutStyleId: ['minimal'], articleMarkdown: [''],
+      autoGenerateImages: [true], articleImageCount: [5], articleImageStyleId: ['editorial'],
+      currentStep: [0], furthestStep: [0], workspacePhase: ['compose'], resultTab: ['outputs']
+    };
+  }
   if (templateId === 'cover') {
     return {
       prompt: [

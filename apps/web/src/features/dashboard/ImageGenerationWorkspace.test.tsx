@@ -370,18 +370,18 @@ describe('ImageGenerationWorkspace', () => {
     fireEvent.click(model);
     const list = screen.getByRole('listbox', { name: copy.model });
     expect(within(list).getAllByRole('option')).toHaveLength(3);
-    expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual([
-      copy.language === 'zh-CN' ? '本地' : 'Local', 'OpenAI', 'ByteDance'
+    expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+    expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
+      copy.language === 'zh-CN' ? '本地生图服务' : 'Local image service', 'Image 2', 'Seedream'
     ]);
-    expect(within(list).getByRole('group', { name: 'OpenAI' }).querySelector('[data-brand="openai"] img')).not.toBeNull();
+    expect(within(list).getByRole('option', { name: 'Image 2' }).querySelector('[data-brand="openai"] img')).not.toBeNull();
     const imageCard = screen.getByRole('button', { name: copy.language === 'zh-CN' ? '选择模型 Image 2' : 'Use model Image 2' });
     expect(imageCard).not.toHaveTextContent('1:1');
     expect(imageCard).not.toHaveTextContent('1K');
-    const byteDanceOptions = within(within(list).getByRole('group', { name: 'ByteDance' })).getAllByRole('option');
-    expect(byteDanceOptions).toHaveLength(1);
-    expect(byteDanceOptions[0]).toHaveAccessibleName('Seedream');
+    const seedream = within(list).getByRole('option', { name: 'Seedream' });
+    expect(seedream.querySelector('[data-brand="bytedance"] img')).not.toBeNull();
     expect(list).not.toHaveTextContent(copy.login);
-    fireEvent.click(byteDanceOptions[0]!);
+    fireEvent.click(seedream);
     expect(model).toHaveValue('Seedream');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     expect(fixture.ensureJob).not.toHaveBeenCalled();
@@ -392,15 +392,15 @@ describe('ImageGenerationWorkspace', () => {
     const fixture = createFixture();
     renderWorkspace(fixture, fixture.currentJob(), undefined, undefined, 'zh-CN', false, { getImageCatalog: async () => ({ models: [
       { id: 'grok-imagine-image', name: 'Grok Imagine', vendor: 'xAI', modality: 'image', capabilities: [] },
-      { id: 'grok-imagine-image-2.0', name: 'Grok Imagine 2', vendor: 'xAI', modality: 'image', capabilities: [] }
+      { id: 'grok-imagine-image-2.0', name: 'Grok Imagine 2', vendor: 'Others', modality: 'image', capabilities: [] }
     ] }) });
     const popular = screen.getByRole('region', { name: '图片模型' });
     await screen.findByRole('button', { name: '选择模型 Grok Imagine 2' });
     expect(within(popular).getAllByRole('button')).toHaveLength(3);
-    expect(within(popular).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['本地', 'xAI']);
-    const xaiModels = within(within(popular).getByRole('group', { name: 'xAI' })).getAllByRole('button');
-    expect(xaiModels).toHaveLength(2);
-    expect(within(popular).getByRole('group', { name: 'xAI' }).querySelector('[data-brand="xai"] img')).toHaveAttribute('src', '/model-brands/xai.svg');
+    expect(within(popular).queryByRole('group')).not.toBeInTheDocument();
+    expect(within(popular).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
+      '选择模型 本地生图服务', '选择模型 Grok Imagine', '选择模型 Grok Imagine 2'
+    ]);
     expect(screen.getAllByRole('button', { name: /^使用模版 / })).toHaveLength(6);
 
     expect(screen.getByRole('button', { name: '选择模型 本地生图服务' })).toHaveAttribute('aria-pressed', 'true');

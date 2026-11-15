@@ -44,7 +44,7 @@ describe('DashboardGenerationHistory', () => {
     expect(screen.queryByText('还没有生成记录')).not.toBeInTheDocument();
   });
 
-  it('filters all outputs by media type and downloads an artifact', async () => {
+  it('filters image and video jobs by task type and downloads an artifact', async () => {
     const openArtifact = vi.fn(async () => new Response(new Blob(['image'], { type: 'image/png' })));
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     const onBackCreation = vi.fn();
@@ -105,6 +105,34 @@ describe('DashboardGenerationHistory', () => {
     expect(document.querySelector('.dashboard-generation-running-card')).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['zh-CN', '正在生成', '正在生成图片'],
+    ['en-US', 'Generating', 'Generating image'],
+    ['sv-SE', 'Genererar', 'Skapar bild']
+  ] as const)('does not show the image submission milestone as generation progress in %s', async (language, status, message) => {
+    const image = job('job_image_waiting', 'image-generation', []);
+    image.status = 'running';
+    image.state = { prompt: 'Moon' };
+    image.stages = [{
+      id: 'stage_image_waiting', jobId: image.id, stageId: 'generate', executor: 'image', status: 'running',
+      dispatchStatus: 'claimed', claimOwner: null, claimExpiresAt: null, attempt: 1,
+      idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { phase: 'generating_candidates', percent: 10, completed: 0, failed: 0, total: 1 },
+      errorCode: null, errorMessage: null, startedAt: '2026-11-15T11:02:13.456Z', finishedAt: null
+    }];
+
+    render(<LanguageProvider initialPreference={language}><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [image] })), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    const card = await screen.findByRole('status', { name: `${status} Moon` });
+    expect(card).toHaveTextContent(message);
+    expect(card).not.toHaveTextContent('10%');
+  });
+
   it('shows a newly completed video before an older pending project', async () => {
     const completed = job('job_completed_video', 'video-generation', [
       artifact('job_completed_video', 'artifact_completed_video', 'generated_video', 'today.mp4', '2026-11-11T06:19:25.489Z')
@@ -125,6 +153,95 @@ describe('DashboardGenerationHistory', () => {
     expect(screen.getByRole('link', { name: 'Pending setup Older draft' })).toBeInTheDocument();
     const dates = [...document.querySelectorAll('.dashboard-generation-history-date > h2')].map(item => item.textContent);
     expect(dates).toEqual(['November 11, 2026', 'November 10, 2026']);
+  });
+
+  it('excludes a persisted empty video draft with an old edit flag from generation history', async () => {
+    const empty = job('job_empty_video_with_old_flag', 'video-generation', []);
+    empty.status = 'draft';
+    empty.state = {
+      prompt: '', provider: 'seedance', size: '1280x720', duration: 5,
+      referenceImageArtifactId: null, currentStage: null,
+      videoServiceSource: 'gateway', officialModels: { video: 'veo-3.1' },
+      __creatorUserEdited: true
+    };
+    const completed = job('job_completed_video', 'video-generation', [
+      artifact('job_completed_video', 'artifact_completed_video', 'generated_video', 'completed.mp4', '2026-11-15T01:00:00.000Z')
+    ]);
+
+    render(<LanguageProvider initialPreference="en-US"><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [empty, completed] })), openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))) }}
+      initialType="video"
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    expect(await screen.findByText(/completed\.mp4/)).toBeInTheDocument();
+    expect(document.querySelectorAll('.dashboard-generation-result-card')).toHaveLength(1);
+  });
+
+  it('does not show an old failure beside the output of a completed translation', async () => {
+    const completed = job('job_retried_translation', 'video-translation', [
+      artifact('job_retried_translation', 'artifact_source', 'source_video', 'source.mp4', '2026-11-14T10:00:00.000Z')
+    ]);
+    completed.state.sourceUrl = 'https://www.youtube.com/watch?v=example';
+    const failedStage = {
+      id: 'subtitle_failed', jobId: completed.id, stageId: 'subtitle', executor: 'krillinai',
+      status: 'failed' as const, dispatchStatus: 'finished' as const,
+      claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null,
+      scopeKey: null, inputFingerprint: null, progress: { phase: 'failed' },
+      errorCode: 'platform_caption_access_failed', errorMessage: 'Connection timed out',
+      startedAt: '2026-11-14T09:00:00.000Z', finishedAt: '2026-11-14T09:01:00.000Z'
+    };
+    completed.stages = [failedStage, {
+      ...failedStage, id: 'subtitle_retry', status: 'succeeded', attempt: 2,
+      errorCode: null, errorMessage: null, progress: { phase: 'completed' },
+      startedAt: '2026-11-14T09:02:00.000Z', finishedAt: '2026-11-14T09:03:00.000Z'
+    }];
+    const onOpenJob = vi.fn();
+    render(<LanguageProvider initialPreference="en-US"><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [completed] })), openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))) }}
+      initialType="video"
+      onBackCreation={vi.fn()}
+      onOpenJob={onOpenJob}
+    /></LanguageProvider>);
+
+    const output = await screen.findByRole('link', { name: 'Open youtube.com' });
+    expect(output).toHaveTextContent('source.mp4');
+    expect(screen.queryByRole('link', { name: 'Generation failed youtube.com' })).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.dashboard-generation-result-card')).toHaveLength(1);
+    fireEvent.click(output);
+    expect(onOpenJob).toHaveBeenCalledOnce();
+    expect(onOpenJob).toHaveBeenCalledWith(completed);
+  });
+
+  it('shows one task card when a translation fails after its source video is saved', async () => {
+    const translation = job('job_translation_with_source', 'video-translation', [
+      artifact('job_translation_with_source', 'artifact_source', 'source_video', 'source.mp4', '2026-11-15T11:14:42.000Z')
+    ]);
+    translation.status = 'needs_input';
+    translation.state.sourceUrl = 'https://www.youtube.com/watch?v=example';
+    translation.stages = [{
+      id: 'subtitle_failed', jobId: translation.id, stageId: 'subtitle', executor: 'krillinai',
+      status: 'failed', dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null,
+      attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { phase: 'failed' }, errorCode: 'translation_failed', errorMessage: 'Translation failed',
+      startedAt: '2026-11-15T11:14:43.000Z', finishedAt: '2026-11-15T11:15:00.000Z'
+    }];
+    const onOpenJob = vi.fn();
+    render(<LanguageProvider initialPreference="en-US"><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [translation] })), openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))) }}
+      initialType="video"
+      onBackCreation={vi.fn()}
+      onOpenJob={onOpenJob}
+    /></LanguageProvider>);
+
+    const card = await screen.findByRole('link', { name: 'Generation failed youtube.com' });
+    expect(document.querySelectorAll('.dashboard-generation-result-card')).toHaveLength(1);
+    fireEvent.click(card);
+    expect(onOpenJob).toHaveBeenCalledWith(translation);
   });
 
   it('uses an uploaded reference image as a pending video generation cover', async () => {
@@ -348,7 +465,7 @@ describe('DashboardGenerationHistory', () => {
     click.mockRestore();
   });
 
-  it('filters documents and subtitles as text and includes an audio filter', async () => {
+  it('filters text and audio jobs by task type', async () => {
     const jobs = [
       job('job_script', 'short-video-script', [artifact('job_script', 'artifact_script', 'short_video_script', 'script.md', '2026-11-07T10:00:00.000Z')]),
       job('job_subtitle', 'transcription', [artifact('job_subtitle', 'artifact_subtitle', 'target_subtitle', 'subtitle.srt', '2026-11-07T09:00:00.000Z')]),
@@ -369,6 +486,29 @@ describe('DashboardGenerationHistory', () => {
     expect(screen.queryByText(/script\.md/)).not.toBeInTheDocument();
     expect(screen.queryByText(/subtitle\.srt/)).not.toBeInTheDocument();
     expect(screen.getByText(/voice\.mp3/)).toBeInTheDocument();
+  });
+
+  it('classifies every video translation artifact under video by its job type', async () => {
+    const translation = job('job_translation', 'video-translation', [
+      artifact('job_translation', 'artifact_source', 'source_video', 'source.mp4', '2026-11-07T10:00:00.000Z'),
+      artifact('job_translation', 'artifact_origin', 'source_subtitle', 'origin_language_srt.srt', '2026-11-07T10:01:00.000Z'),
+      artifact('job_translation', 'artifact_target', 'target_subtitle', 'target_language_srt.srt', '2026-11-07T10:02:00.000Z'),
+      artifact('job_translation', 'artifact_bilingual', 'bilingual_subtitle', 'bilingual_srt.srt', '2026-11-07T10:03:00.000Z')
+    ]);
+    render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [translation] })), openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))) }}
+      initialType="video"
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    />);
+
+    expect(await screen.findByText(/source\.mp4/)).toBeInTheDocument();
+    expect(screen.getByText(/origin_language_srt\.srt/)).toBeInTheDocument();
+    expect(screen.getByText(/target_language_srt\.srt/)).toBeInTheDocument();
+    expect(screen.getByText(/bilingual_srt\.srt/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'text' }));
+    expect(screen.queryByText(/source\.mp4|origin_language_srt\.srt|target_language_srt\.srt|bilingual_srt\.srt/)).not.toBeInTheDocument();
   });
 
   it('shows the source video cover for a subtitle result while keeping the result openable', async () => {

@@ -10,6 +10,7 @@ import { isMeaningfulCreatorJob, ProjectCoverImage, projectCover, youtubeThumbna
 import { isYtDlpCaptionTimeout, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
 import { generationHistoryTypeForWorkspace, type GenerationHistoryType } from './generation-history-type.js';
 import { creatorWorkspaceForTemplate } from './creator-workspace.js';
+import { creatorPanelAdapterFor } from './creator-panel-adapters.js';
 import './DashboardGenerationHistory.css';
 
 export type { GenerationHistoryType } from './generation-history-type.js';
@@ -90,12 +91,11 @@ export default function DashboardGenerationHistory(props: {
   }, [type, visibleCount, props.onViewChange]);
 
   const outputs = useMemo(() => jobs
-    .flatMap(job => job.artifacts
+    .flatMap(job => job.templateId === 'video-translation' && processStageForJob(job) !== undefined ? [] : job.artifacts
       .filter(artifact => artifact.path !== null && artifact.status !== 'stale' && outputKinds.has(artifact.kind))
       .map(artifact => ({ artifact, job, name: artifactName(artifact, l), title: resultTitle(job, l), type: workflowLabel(job.templateId, l), kind: artifactKind(artifact.kind) })))
-    .filter(output => type === 'all' || (type === 'text'
-      ? output.kind === 'subtitle' || output.kind === 'document'
-      : output.kind === type))
+    .filter(output => type === 'all'
+      || generationHistoryTypeForWorkspace(creatorWorkspaceForTemplate(output.job.templateId)) === type)
     .sort((left, right) => right.artifact.createdAt.localeCompare(left.artifact.createdAt)),
   [jobs, l, type]);
   const processJobs = jobs.filter(job => (
@@ -211,7 +211,9 @@ export default function DashboardGenerationHistory(props: {
                 const pending = !failed && (job.status === 'draft' || job.status === 'needs_input');
                 const openable = failed || pending || (job.templateId === 'video-download'
                   && (stage.status === 'queued' || stage.status === 'running'));
-                const percent = typeof stage.progress.percent === 'number' ? Math.round(stage.progress.percent) : 0;
+                const percent = job.templateId === 'image-generation'
+                  ? creatorPanelAdapterFor(job.templateId).readStageProgress(stage, l).percent
+                  : typeof stage.progress.percent === 'number' ? Math.round(stage.progress.percent) : 0;
                 const translationTimeout = failed ? videoTranslationTimeoutMessage(job, stage, l) : undefined;
                 const message = pending
                   ? job.templateId === 'video-download'
@@ -219,7 +221,9 @@ export default function DashboardGenerationHistory(props: {
                     : l('继续配置这个创作项目', 'Continue configuring this project')
                   : failed
                     ? translationTimeout ?? stage.errorMessage ?? (typeof stage.progress.message === 'string' ? stage.progress.message : stage.stageId)
-                    : typeof stage.progress.message === 'string' ? stage.progress.message : stage.stageId;
+                    : typeof stage.progress.message === 'string' ? stage.progress.message
+                      : job.templateId === 'image-generation' && stage.progress.phase === 'generating_candidates'
+                        ? l('正在生成图片', 'Generating image', 'Skapar bild') : stage.stageId;
                 const title = resultTitle(job, l);
                 const statusLabel = failed ? l('生成失败', 'Generation failed') : pending ? l('待配置', 'Pending setup') : l('正在生成', 'Generating');
                 const downloadable = downloadableArtifact(job);
@@ -245,7 +249,7 @@ export default function DashboardGenerationHistory(props: {
                       ? <VideoGenerationHistoryCover job={job} service={props.service} />
                       : <ProjectCoverImage job={job} youtubeCovers={projectPreviewUrls(job)} fallback={projectCover(job.templateId)} service={props.service.openProjectCover ? props.service as Pick<CreatorWebService, 'openProjectCover'> : undefined} />}
                     <span className="dashboard-generation-job-status">{failed ? <CircleAlert size={20} /> : pending ? <PackageOpen size={20} /> : <LoaderCircle size={20} className="smart-dubbing-spinner" />}</span>
-                    <span className="dashboard-generation-running-percent">{failed || pending ? statusLabel : `${percent}%`}</span>
+                    <span className="dashboard-generation-running-percent">{failed || pending || percent === null ? statusLabel : `${percent}%`}</span>
                     {downloadable ? <button type="button" className="dashboard-generation-result-download" disabled={downloadingId !== undefined} aria-busy={downloadingId === downloadable.id} aria-label={`${l('下载', 'Download')} ${artifactName(downloadable, l)}`} title={l('下载', 'Download')} onClick={event => { event.stopPropagation(); void downloadJob(job); }}>
                       {downloadingId === downloadable.id ? <LoaderCircle size={16} className="smart-dubbing-spinner" /> : <Download size={16} />}
                     </button> : null}
@@ -454,6 +458,7 @@ function isPreviewableOutput(output: HistoryOutput): boolean {
 
 function processStageForJob(job: CreatorJob): CreatorJob['stages'][number] | undefined {
   const activeStage = job.stages.filter(stage => stage.status === 'queued' || stage.status === 'running' || stage.status === 'failed').at(-1);
+  if (job.status === 'completed' && activeStage?.status === 'failed') return undefined;
   if (activeStage) return activeStage;
   if (job.status !== 'draft' && job.status !== 'needs_input') return undefined;
   return job.stages.at(-1) ?? {

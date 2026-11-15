@@ -42,7 +42,9 @@ async function fixture(invalidReceipt = false) {
     if (options?.method === 'POST') {
       submissions++;
       identities.push(new Headers(options.headers).get('Idempotency-Key')!);
-      expect(JSON.parse(String(options.body))).toMatchObject({ model: model.id, duration: 4, size: '720p@16:9', priceVersion: 'v1', images: [asset], generate_audio: true });
+      const payload = JSON.parse(String(options.body));
+      expect(payload).toMatchObject({ model: model.id, duration: 4, size: '720p@16:9', images: [asset], generate_audio: true });
+      expect(payload).not.toHaveProperty('priceVersion');
       return receipt({ requestId: invalidReceipt ? `ocreq_${'b'.repeat(48)}` : requestId, state: 'submitting', phase: 'pending', status: 'queued' }, 202);
     }
     if (String(url).endsWith('/result')) return new Response(new Uint8Array(video), { headers: { 'Content-Type': 'video/mp4' } });
@@ -93,7 +95,7 @@ it('rejects a mismatched receipt and resumes persisted video parameters with the
   try {
     let localId = '';
     await expect(f.source.runForJob(f.job.id, 'stage', () => f.generation().create({ provider: 'seedance', model: 'grok-video-3', prompt: 'A square', duration: 4,
-      size: '720p@16:9', priceVersion: 'v1', generateAudio: true, references: [{ role: 'image', assetId: asset, fileName: 'reference.png' }] },
+      size: '720p@16:9', generateAudio: true, references: [{ role: 'image', assetId: asset, fileName: 'reference.png' }] },
       { logicalId: 'logical-original', onPending: id => { localId = id; } }))).rejects.toThrow('Invalid official video receipt');
     expect(localId).toBeTruthy();
     await expect(f.source.runForJob(f.job.id, 'stage', () => f.generation().refresh(localId))).rejects.toThrow('Invalid official video receipt');

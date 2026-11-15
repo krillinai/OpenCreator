@@ -651,7 +651,7 @@ export function useCreatorTaskProgress(options: {
     : progress?.message ?? l('任务正在后台执行，可继续查看字幕', 'The task runs in the background. You can continue reviewing subtitles.');
 
   async function retry() {
-    if (!session || !stage || status !== 'failed' || retryingRef.current || session.job.stages.some(run => run.status === 'queued' || run.status === 'running')) return;
+    if (!session || !stage || status !== 'failed' || retryingRef.current || session.job.stages.some(run => run.status === 'queued' || run.status === 'running')) return false;
     retryingRef.current = true;
     setRetryState({ id: stage.id, pending: true });
     session.clearError();
@@ -667,9 +667,11 @@ export function useCreatorTaskProgress(options: {
           .filter(field => stage.progress[field] !== undefined).map(field => [field, stage.progress[field]!]))
       }, ...(issue === undefined ? {} : { repairIssueId: issue.id }) });
       setRetryState(undefined);
+      return true;
     } catch (error) {
       setRetryState({ id: stage.id, error: creatorSystemIssueText((error as { code?: string })?.code ?? null, l)
         ?? l('重试未能启动，请查看详情后再试', 'Could not start the retry. View details and try again.') });
+      return false;
     } finally { retryingRef.current = false; }
   }
   return { workflow, stage, status, active, starting, canceling, retryBlocked, progress, percent, title, summary,

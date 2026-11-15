@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CreatorJob } from '@opencreator/protocol';
+import { writingTemplates } from '@opencreator/writing-templates';
 import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import ProjectsPage, { isMeaningfulCreatorJob, youtubeThumbnailUrls } from './ProjectsPage.js';
@@ -566,8 +567,14 @@ describe('ProjectsPage', () => {
     expect(isMeaningfulCreatorJob(failedDraft)).toBe(true);
     expect(isMeaningfulCreatorJob(legacyTranslationDraft)).toBe(false);
     expect(isMeaningfulCreatorJob(emptyTranslationDraft)).toBe(false);
+    expect(isMeaningfulCreatorJob({ ...emptyTranslationDraft,
+      state: { ...emptyTranslationDraft.state, __creatorUserEdited: true }
+    })).toBe(false);
     expect(isMeaningfulCreatorJob(editedTranslationDraft)).toBe(true);
     expect(isMeaningfulCreatorJob(emptyImageDraft)).toBe(false);
+    expect(isMeaningfulCreatorJob({ ...emptyImageDraft,
+      state: { ...emptyImageDraft.state, __creatorUserEdited: true }
+    })).toBe(false);
     expect(isMeaningfulCreatorJob(editedImageDraft)).toBe(true);
 
     render(
@@ -595,12 +602,62 @@ describe('ProjectsPage', () => {
     const selected = creatorJob({
       id: 'job_selected_video',
       templateId: 'video-generation',
-      state: { ...automatic.state, __creatorUserEdited: true },
+      state: { ...automatic.state, __creatorUserEdited: true, __creatorUserSelected: true },
       updatedAt: '2026-11-13T00:01:00.000Z'
     });
 
     expect(isMeaningfulCreatorJob(automatic)).toBe(false);
     expect(isMeaningfulCreatorJob(selected)).toBe(true);
+  });
+
+  it('hides a persisted empty video draft even when an old edit flag was set during default model selection', () => {
+    const empty = creatorJob({
+      id: 'job_empty_video_with_old_flag',
+      templateId: 'video-generation',
+      state: {
+        prompt: '', provider: 'seedance', size: '1280x720', duration: 5,
+        referenceImageArtifactId: null, currentStage: null,
+        videoServiceSource: 'gateway', officialModels: { video: 'veo-3.1' },
+        __creatorUserEdited: true
+      },
+      updatedAt: '2026-11-15T00:00:00.000Z'
+    });
+
+    expect(isMeaningfulCreatorJob(empty)).toBe(false);
+    render(<ProjectsPage jobs={[empty]} workspaces={workspaces} onOpenJob={vi.fn()} />);
+    expect(within(screen.getByRole('region', { name: '项目列表' })).queryAllByRole('listitem')).toHaveLength(0);
+  });
+
+  it.each([
+    ['transcription', {
+      sourceType: 'file', sourceUrl: '', sourceLanguage: 'zh_cn',
+      transcriptionProvider: 'openai', transcriptionModel: 'whisper-1',
+      currentStep: 0, furthestStep: 0
+    }],
+    ['smart-dubbing', {
+      text: '', ttsProvider: 'openai', ttsModel: 'gpt-4o-mini-tts',
+      voiceCode: 'marin', voiceName: 'Marin', style: 'natural', speed: 1, format: 'mp3'
+    }],
+    ['wechat-article', {
+      sourceLinks: [], sourceDocumentArtifactIds: [], writingPrompt: '',
+      topicCount: 5, currentStep: 0, furthestStep: 0,
+      templatePrompt: writingTemplates[0]!.instructions, layoutStyleId: 'minimal'
+    }]
+  ] satisfies Array<[string, CreatorJob['state']]>)('hides an old empty %s draft with an incorrect edit flag', (templateId, state) => {
+    const empty = creatorJob({
+      id: `job_empty_${templateId}`, templateId,
+      state: { ...state, __creatorUserEdited: true },
+      updatedAt: '2026-11-15T00:00:00.000Z'
+    });
+    expect(isMeaningfulCreatorJob(empty)).toBe(false);
+    expect(isMeaningfulCreatorJob({ ...empty,
+      state: { ...empty.state, __creatorUserSelected: true }
+    })).toBe(true);
+    if (templateId === 'wechat-article') {
+      expect(isMeaningfulCreatorJob({ ...empty,
+        state: { ...empty.state, templatePrompt: 'Write a custom article about design systems' }
+      })).toBe(true);
+    }
   });
 
   it('filters real Creator jobs by category and search text', () => {

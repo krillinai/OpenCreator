@@ -97,7 +97,7 @@ describe('video translation two-step flow', () => {
     expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
   });
 
-  it('groups local and public translation models, then validates a sign-in selection without starting a task', async () => {
+  it('lists local and public translation models, then validates a sign-in selection without starting a task', async () => {
     const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
     const requested = { id: 'vendor/text', name: 'Text One', vendor: 'Vendor', modality: 'text' as const, capabilities: ['chat', 'responses'], price: { version: 'v1', inputPerMillion: 1, outputPerMillion: 2 } };
     const available: GatewayAccountState = { ...signedOut, source: 'gateway', authState: 'signed_in', activationState: 'ready',
@@ -108,7 +108,8 @@ describe('video translation two-step flow', () => {
     await waitFor(() => expect(model).toHaveValue('本机 Codex'));
     fireEvent.click(model);
     const list = screen.getByRole('listbox', { name: '翻译模型' });
-    expect(within(list).getAllByRole('group').map(group => group.getAttribute('aria-label'))).toEqual(['本地模型', 'Vendor']);
+    expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+    expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual(['本机 Codex', 'Text One']);
     expect(within(list).getByRole('option', { name: 'Text One' })).toHaveTextContent('积分');
     fireEvent.click(within(list).getByRole('option', { name: 'Text One' }));
     expect(screen.getByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
@@ -334,7 +335,7 @@ describe('video translation two-step flow', () => {
     expect(stageCalls(session.applyAction)).toHaveLength(0);
   });
 
-  it.each(['running', 'failed'] as const)('does not open an Agent details panel before subtitles exist when the task is %s', status => {
+  it.each(['running', 'failed'] as const)('shows the appropriate pre-result view when the task is %s', status => {
     const initial = initialJob({}, []);
     initial.status = status;
     initial.stages = [{ id: 'current_subtitle', jobId: initial.id, stageId: 'subtitle', executor: 'test', status, dispatchStatus: 'claimed',
@@ -345,8 +346,17 @@ describe('video translation two-step flow', () => {
       startedAt: initial.createdAt, finishedAt: status === 'failed' ? initial.updatedAt : null }];
     const session = mount(initial);
     expect(screen.queryByRole('button', { name: 'AI 助手' })).not.toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: '当前任务进度' })).queryByRole('button', { name: '查看详情' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('log', { name: '协作时间线' })).not.toBeInTheDocument();
+    if (status === 'failed') {
+      expect(screen.getByRole('heading', { name: '翻译任务失败' })).toBeVisible();
+      expect(screen.queryByRole('button', { name: '查看任务诊断' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: '视频翻译项目产出' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('navigation', { name: '翻译流程' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '开始翻译' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('log', { name: '协作时间线' })).not.toBeInTheDocument();
+    } else {
+      expect(within(screen.getByRole('region', { name: '当前任务进度' })).queryByRole('button', { name: '查看详情' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('log', { name: '协作时间线' })).not.toBeInTheDocument();
+    }
     expect(stageCalls(session.applyAction)).toHaveLength(0);
   });
 
@@ -369,15 +379,15 @@ describe('video translation two-step flow', () => {
     };
     initial.stages = [failedSubtitle, preview];
     const session = mount(initial);
-    const bar = screen.getByRole('region', { name: '当前任务进度' });
-    expect(bar).toHaveTextContent('翻译字幕失败');
-    expect(bar).not.toHaveTextContent('原视频预览准备');
-    expect(screen.getByRole('progressbar', { name: '原视频预览准备进度' })).toHaveAttribute('aria-valuenow', '7');
-    expect(within(bar).getByRole('button', { name: '重试当前阶段' })).toBeDisabled();
+    const failure = screen.getByRole('region', { name: '视频翻译操作区' });
+    expect(within(failure).getByRole('heading', { name: '翻译任务失败' })).toBeVisible();
+    expect(failure).not.toHaveTextContent('原视频预览准备失败');
+    expect(within(failure).getByRole('progressbar', { name: '原视频下载进度' })).toHaveAttribute('aria-valuenow', '7');
+    expect(within(failure).getByRole('button', { name: '重试当前阶段' })).toBeDisabled();
 
     await act(async () => session.push({ ...initial, revision: 2, stages: [failedSubtitle,
       { ...preview, status: 'failed', dispatchStatus: 'finished', finishedAt: initial.updatedAt }] }));
-    const retry = within(bar).getByRole('button', { name: '重试当前阶段' });
+    const retry = within(failure).getByRole('button', { name: '重试当前阶段' });
     expect(retry).toBeEnabled();
     fireEvent.click(retry);
     await waitFor(() => expect(stageCalls(session.applyAction)[0]?.input.stageId).toBe('subtitle'));

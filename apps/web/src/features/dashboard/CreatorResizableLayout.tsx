@@ -23,6 +23,7 @@ export default function CreatorResizableLayout(props: {
   agentPanel: ReactNode;
   agentPanelRequest?: { key: number; stageRunId?: string };
   showAgentPanel?: boolean;
+  autoRevealIssues?: boolean;
   className?: string;
 }) {
   const l = useLocalizedCopy();
@@ -34,8 +35,12 @@ export default function CreatorResizableLayout(props: {
   const latestIssueId = session?.issues.filter(issue => issue.status === 'open').at(-1)?.id;
 
   useEffect(() => {
-    if (latestIssueId !== undefined) setMobilePane('agent');
-  }, [latestIssueId]);
+    if (props.autoRevealIssues === false) setMobilePane('workspace');
+  }, [props.autoRevealIssues]);
+
+  useEffect(() => {
+    if (props.autoRevealIssues !== false && latestIssueId !== undefined) setMobilePane('agent');
+  }, [latestIssueId, props.autoRevealIssues]);
 
   useLayoutEffect(() => {
     if (props.agentPanelRequest !== undefined) setMobilePane('agent');

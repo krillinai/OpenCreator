@@ -111,7 +111,6 @@ export type CreateVideoGenerationRequest = {
   referenceImage?: VideoGenerationReferenceImage;
   references?: VideoGenerationReference[];
   generateAudio?: boolean;
-  priceVersion?: string;
 };
 
 export type VideoGenerationReference = {

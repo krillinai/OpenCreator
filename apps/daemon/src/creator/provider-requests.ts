@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type {
+  CreatorJob,
   CreatorJson,
   CreatorProviderRequest,
   CreatorProviderRequestStatus,
@@ -24,6 +25,19 @@ export type CreatorProviderCapabilities = {
     remoteTaskId: string | null;
   }): Promise<CreatorProviderLookupResult>;
 };
+
+export function hasPendingPaidCreatorRequests(jobs: readonly Pick<CreatorJob, 'providerRequests' | 'issues'>[]): boolean {
+  return jobs.some(job => job.providerRequests.some(request => request.billingSideEffect
+    && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(request.status)
+    && !(request.provider === 'opencreator-gateway-video'
+      && request.status === 'unknown_remote_acceptance' && request.remoteTaskId === null
+      && job.issues?.some(issue => issue.status !== 'resolved'
+        && issue.stageRunId === request.stageRunId
+        && issue.publicFacts?.kind === 'http-rejected'
+        && issue.publicFacts.provider === request.provider
+        && issue.publicFacts.httpStatus === 409
+        && issue.publicFacts.upstreamCode === 'video_price_changed'))));
+}
 
 export class CreatorProviderRequestError extends Error {
   constructor(readonly code: string, message: string) {

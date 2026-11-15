@@ -48,7 +48,7 @@ export function useOfficialServices(modality: GatewayModel['modality'], enabled 
   }, [official, ready, saved, model?.id, session?.job.id, taskRunning]);
   function selectModel(id: string) {
     if (!canChooseModel || taskRunning || !models.some(candidate => gatewayModelIdMatches(candidate.id, id) && gatewayModelReady(candidate))) return;
-    session?.updateDraft({ officialModels: { [modality]: id } });
+    session?.updateDraft({ officialModels: { [modality]: id }, __creatorUserSelected: true });
     if (memory && session?.job.templateId && state?.source === 'gateway') {
       memory.onStateChange?.({ ...state, taskModels: {
         ...state.taskModels,

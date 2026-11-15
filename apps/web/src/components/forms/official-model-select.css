@@ -64,8 +64,6 @@
   font-family: var(--font);
   font-size: 13px;
 }
-.official-model-menu-group { padding: 7px 10px 4px; color: var(--subtle); font-size: 10px; font-weight: 600; line-height: 14px; }
-.official-model-menu-group:not(:first-child) { margin-top: 2px; }
 .official-model-options { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 5px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .official-model-option {
   width: 100%;
@@ -102,120 +100,7 @@
 .official-model-empty { padding: 24px 12px; color: var(--muted); text-align: center; line-height: 1.5; }
 
 .official-model-menu--grouped .official-model-options { padding: 6px; }
-.official-model-company + .official-model-company { margin-top: 8px; }
-.official-model-company-heading {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 32px;
-  padding: 2px 9px;
-  color: var(--text);
-  font-size: 12px;
-}
-.official-model-company-heading > .model-brand-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  background: transparent;
-}
-.official-model-company-heading > .model-brand-icon > img { width: 17px; height: 17px; }
-.official-model-company-heading strong { font-weight: 650; }
-.official-model-company .official-model-option { padding-inline-start: 12px; }
 .official-model-menu--compact .official-model-option { min-height: 40px; padding-block: 5px; }
-.official-model-menu--compact .official-model-company-heading { min-height: 28px; }
-
-.official-model-catalog-body {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 156px minmax(0, 1fr);
-  overflow: hidden;
-}
-
-.official-model-catalog-brands {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px 6px;
-  border-inline-end: 1px solid var(--border-hairline);
-  background: color-mix(in srgb, var(--surface-2) 42%, transparent);
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.official-model-catalog-title {
-  display: block;
-  padding: 0 8px 8px;
-  color: var(--subtle);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-}
-
-.official-model-catalog-brands > button {
-  width: 100%;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-  padding: 7px 8px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-.official-model-catalog-brands > button:hover {
-  background: var(--state-hover-bg);
-}
-
-.official-model-catalog-brands > button[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
-  background: var(--accent-soft);
-}
-
-.official-model-catalog-brands > button:focus-visible {
-  outline: 2px solid var(--state-focus-ring);
-  outline-offset: 1px;
-}
-
-.official-model-catalog-brands .model-brand-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: var(--surface-2);
-}
-
-.official-model-catalog-brands .model-brand-icon > img {
-  width: 19px;
-  height: 19px;
-}
-
-.official-model-catalog-brands > button > span {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.official-model-catalog-brands strong {
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.official-model-catalog-brands small {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.official-model-catalog-body > .official-model-options {
-  padding: 7px;
-}
 
 .official-model-menu--catalog .official-model-option {
   min-height: 56px;
@@ -242,31 +127,6 @@
 .official-model-menu--catalog .official-model-option-name {
   font-size: 13px;
   font-weight: 600;
-}
-
-@media (max-width: 560px) {
-  .official-model-catalog-body {
-    grid-template-columns: 132px minmax(0, 1fr);
-  }
-
-  .official-model-catalog-brands {
-    padding-inline: 6px;
-  }
-
-  .official-model-catalog-brands > button {
-    grid-template-columns: 26px minmax(0, 1fr);
-    gap: 7px;
-    padding-inline: 7px;
-  }
-
-  .official-model-catalog-brands .model-brand-icon {
-    width: 26px;
-    height: 26px;
-  }
-
-  .official-model-catalog-brands small {
-    display: none;
-  }
 }
 
 @media (pointer: coarse) {

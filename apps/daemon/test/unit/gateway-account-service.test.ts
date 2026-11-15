@@ -1542,6 +1542,33 @@ it('keeps the device session when bootstrap fails and can activate without anoth
   await f.service.close();
 });
 
+it('activates the official Runtime with a text fallback when the gateway has no defaults', async () => {
+  const f = await setup();
+  const gateway: GatewayBootstrap = {
+    schemaVersion: 3, transport: 'gateway', supplier: 'chatanywhere', keyRotation: false,
+    account: { id: '1', email: '1@example.test', verified: true },
+    keyVersion: 'gateway-v1', bindingVersion: '1:gateway-v1', baseUrl: 'https://gateway.example/v1',
+    models: [
+      { id: 'gpt-6-luna', modality: 'text', capabilities: ['responses', 'chat'], status: 'ready' },
+      { id: 'deepseek-v4.1-flash', modality: 'text', capabilities: ['responses', 'chat'], status: 'ready' }
+    ], defaults: {}
+  };
+  f.client.bootstrap.mockResolvedValue(gateway);
+  vi.spyOn(f.client, 'request').mockImplementation(async path => path === '/api/v1/client/usage'
+    ? { keyVersion: gateway.keyVersion } : path === '/api/v1/me' ? { account: gateway.account }
+      : { models: gateway.models, defaults: {} });
+  try {
+    const grant = await f.service.startAuthorization();
+    await f.service.pollAuthorization(grant.attemptId);
+    expect(f.service.peekState()).toMatchObject({
+      authState: 'signed_in', activationState: 'ready', selectedModels: { text: 'deepseek-v4.1-flash' }
+    });
+    expect(f.activate).toHaveBeenCalledWith(expect.objectContaining({
+      defaults: expect.objectContaining({ text: 'deepseek-v4.1-flash' })
+    }));
+  } finally { await f.service.close(); }
+});
+
 it('concurrent reads wait for the same persisted account initialization', async () => {
   const f = await setup();
   const grant = await f.service.startAuthorization(); await f.service.pollAuthorization(grant.attemptId);
