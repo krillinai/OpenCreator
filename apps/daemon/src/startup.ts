@@ -56,7 +56,7 @@ export function resolveProductionServerEnvironment(
   | 'gatewayOrigin'
 > {
   return {
-    gatewayOrigin: env.OPENCREATOR_GATEWAY_ORIGIN?.trim() || 'https://open-creator.ai',
+    gatewayOrigin: env.OPENCREATOR_GATEWAY_ORIGIN?.trim() || 'https://www.open-creator.ai',
     ...optionalEnvironmentValue('appHome', env.OPENCREATOR_HOME),
     ...optionalEnvironmentValue('dataDir', env.OPENCREATOR_DATA_DIR),
     ...optionalEnvironmentValue('configFile', env.OPENCREATOR_CONFIG_FILE),

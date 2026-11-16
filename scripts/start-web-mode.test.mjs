@@ -16,7 +16,7 @@ test('Web startup modes pass the selected gateway origin to the existing dev com
   try {
     for (const [mode, origin, home] of [
       ['test', 'https://test.open-creator.ai', join(homedir(), '.opencreator', 'development-test')],
-      ['production', 'https://open-creator.ai', join(homedir(), '.opencreator', 'development')]
+      ['production', 'https://www.open-creator.ai', join(homedir(), '.opencreator', 'development')]
     ]) {
       const result = spawnSync(process.execPath, [launcher, mode], {
         cwd: root,

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const origins = {
   test: 'https://test.open-creator.ai',
-  production: 'https://open-creator.ai'
+  production: 'https://www.open-creator.ai'
 };
 const mode = process.argv[2];
 const origin = origins[mode];
