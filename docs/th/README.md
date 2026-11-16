@@ -557,7 +557,6 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 
 <table border="1" cellpadding="12"><tr>
 <td align="center" valign="middle" width="160" height="160"><img src="../images/contributors/wulien.svg" width="64" height="64" alt="wulien" /><br /><a href="https://github.com/wulien">wulien</a><br />โค้ดและแก้บั๊ก</td>
-<td align="center" valign="middle" width="160" height="160"><img src="../images/contributors/dle-kb.svg" width="64" height="64" alt="DLe-kb" /><br /><a href="https://github.com/DLe-kb">DLe-kb</a><br />เทมเพลตสร้างสรรค์</td>
 <td align="center" valign="middle" width="160" height="160"><img src="../images/contributors/xiaheyuan.svg" width="64" height="64" alt="xiaheyuan" /><br /><a href="https://github.com/xiaheyuan">xiaheyuan</a><br />ออกแบบและทรัพยากรภาพ</td>
 <td align="center" valign="middle" width="160" height="160"><img src="../images/contributors/krillinai.svg" width="64" height="64" alt="krillinai" /><br /><a href="https://github.com/krillinai">krillinai</a><br />Skills และเอกสาร</td>
 <td align="center" valign="middle" width="160" height="160"><img src="../images/contributors/hbxugang.svg" width="64" height="64" alt="hbxugang" /><br /><a href="https://github.com/hbxugang">hbxugang</a><br />การปรับใช้ระดับองค์กร</td>

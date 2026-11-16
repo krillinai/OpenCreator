@@ -612,7 +612,6 @@ Each crew member is responsible for their area, including its standards, contrib
 <table border="1" cellpadding="12">
   <tr>
     <td align="center" valign="middle" width="160" height="160"><img src="./docs/images/contributors/wulien.svg" width="64" height="64" alt="wulien avatar" /><br /><a href="https://github.com/wulien">wulien</a><br />Code &amp; Bug Fixes</td>
-    <td align="center" valign="middle" width="160" height="160"><img src="./docs/images/contributors/dle-kb.svg" width="64" height="64" alt="DLe-kb avatar" /><br /><a href="https://github.com/DLe-kb">DLe-kb</a><br />Creation templates</td>
     <td align="center" valign="middle" width="160" height="160"><img src="./docs/images/contributors/xiaheyuan.svg" width="64" height="64" alt="xiaheyuan avatar" /><br /><a href="https://github.com/xiaheyuan">xiaheyuan</a><br />Design &amp; assets</td>
     <td align="center" valign="middle" width="160" height="160"><img src="./docs/images/contributors/krillinai.svg" width="64" height="64" alt="krillinai avatar" /><br /><a href="https://github.com/krillinai">krillinai</a><br />Skills &amp; Docs</td>
     <td align="center" valign="middle" width="160" height="160"><img src="./docs/images/contributors/hbxugang.svg" width="64" height="64" alt="hbxugang avatar" /><br /><a href="https://github.com/hbxugang">hbxugang</a><br />Enterprise deployment</td>
