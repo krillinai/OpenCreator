@@ -19,7 +19,7 @@ const modelSchema = z.object({
   vendor: z.string().optional(), status: z.enum(['ready','temporarily_unavailable','retired']).optional(), statusReason: z.string().optional(), recommended: z.boolean().optional(),
   price: z.object({estimates:z.record(z.object({creditUnits:z.string().regex(/^\d+$/),usage:z.record(z.number().int().nonnegative()).optional(),resolution:z.string().optional(),quality:z.string().optional(),seconds:z.number().int().positive().optional(),images:z.number().int().positive().optional()})).optional(),version:z.string(),billing:z.literal('usage').optional(),inputPerMillion:z.number().optional(),cachedInputPerMillion:z.number().optional(),cacheWritePerMillion:z.number().optional(),imageInputPerMillion:z.number().optional(),outputPerMillion:z.number().optional(),perMinute:z.number().optional(),perMillionCharacters:z.number().optional(),perRequest:z.number().optional(),videoUnitsPerSecond:z.record(z.number().int().positive().max(1_000_000_000_000)).optional()}).optional(),
   videoOptions: z.object({ profile:z.string(), maxImages:z.number().int().min(0).max(30), maxVideos:z.number().int().min(0).max(10), maxAudios:z.number().int().min(0).max(10), firstLastFrames:z.boolean(), framesExclusive:z.boolean(), generateAudio:z.boolean(), referenceDuration:z.number().int().positive().optional() }).optional(),
-  sizes: z.array(z.string().regex(/^\d+x\d+$/)).optional(),
+  sizes: z.array(z.string().regex(/^(?:\d+x\d+|[1-9]\d?K)$/)).optional(),
   durations: z.array(z.number().int().positive()).optional(),
   resolutions: z.array(z.string().min(1)).optional(),
   aspectRatios: z.array(z.string().min(1)).optional(),

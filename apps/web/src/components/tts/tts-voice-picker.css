@@ -232,6 +232,28 @@
   color: var(--subtle);
 }
 
+.tts-voice-preview-status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tts-voice-preview-status button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
 .tts-voice-picker-custom input {
   width: 100%;
   min-width: 0;

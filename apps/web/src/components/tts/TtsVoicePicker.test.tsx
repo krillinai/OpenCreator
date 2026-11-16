@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
+import DashboardVideoTranslationSettings from '../../features/dashboard/DashboardVideoTranslationSettings.js';
 import { TtsVoicePicker } from './TtsVoicePicker.js';
 
 type TtsVoiceService = Pick<
@@ -262,8 +263,8 @@ describe('TtsVoicePicker', () => {
     expect(entry).toHaveTextContent('晨煦');
     expect(entry).toHaveTextContent('此语言暂无该音色样音');
     fireEvent.click(entry);
-    expect(screen.getAllByRole('radio')).toHaveLength(1);
-    expect(screen.queryByRole('button', { name: '试听 · 晨煦' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: '试听 · 晨煦' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '试听 · 芊悦' }));
     expect(tts.previewTtsVoice).toHaveBeenLastCalledWith(expect.objectContaining({ language: 'ja', voiceId: 'Cherry' }));
     expect(language).toHaveAttribute('data-value', 'ja');
@@ -291,12 +292,54 @@ describe('TtsVoicePicker', () => {
     expect(language).toHaveFocus();
     getTtsVoices.mockResolvedValue({ ...catalog, voices: catalog.voices.map(voice => ({ ...voice, previewLanguages: [] })) });
     view.rerender(<TtsVoicePicker {...props} model="no-samples" />);
-    await waitFor(() => expect(language).toBeDisabled());
+    await waitFor(() => expect(screen.getByText('此模型暂无试听样音')).toBeInTheDocument());
+    expect(screen.queryByRole('combobox', { name: '试听语言' })).not.toBeInTheDocument();
+    expect(screen.queryByText('免费试听，选好语言后再选择音色。')).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: '默认音色 芊悦' }));
     expect(screen.getAllByRole('radio')).toHaveLength(2);
     expect(screen.getByRole('button', { name: '试听 · 芊悦' })).toBeDisabled();
     expect(props.onChange).not.toHaveBeenCalled();
     expect(tts.previewTtsVoice).not.toHaveBeenCalled();
+  });
+
+  it.each(['zh-CN', 'en-US'] as const)('keeps voices selectable when sample discovery fails in %s', async language => {
+    const tts = createService();
+    const catalog = await tts.service.getTtsVoices('aliyun', 'qwen3-tts-flash');
+    const getTtsVoices = vi.fn(async () => ({ ...catalog, previewCatalogStatus: 'error' as const,
+      voices: catalog.voices.map(voice => ({ ...voice, previewLanguages: [] })) }));
+    render(<LanguageProvider initialPreference={language}><TtsVoicePicker id="voice" presentation="library" allowPreviewLanguage
+      provider="aliyun" model="qwen3-tts-flash" value="Cherry" service={{ ...tts.service, getTtsVoices }} onChange={vi.fn()} /></LanguageProvider>);
+    expect(await screen.findByText(language === 'zh-CN' ? '无法加载试听样音，请重试。' : 'Could not load voice samples. Retry.')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: language === 'zh-CN' ? '试听语言' : 'Preview language' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: language === 'zh-CN' ? '默认音色 芊悦' : 'Default voice 芊悦' }));
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: language === 'zh-CN' ? '试听 · 芊悦' : 'Preview · 芊悦' })).toBeDisabled();
+  });
+
+  it('keeps the embedded speech settings as one dialog while choosing a voice', async () => {
+    const tts = createService();
+    const onChange = vi.fn();
+    render(<DashboardVideoTranslationSettings label="语音设置" summary={['芊悦']} variant="speech">
+      <TtsVoicePicker id="embedded-voice" presentation="library-inline" allowPreviewLanguage
+        provider="aliyun" model="qwen3-tts-flash" value="Cherry" service={tts.service} onChange={onChange} />
+    </DashboardVideoTranslationSettings>);
+    const trigger = screen.getByRole('button', { name: '语音设置' });
+    fireEvent.click(trigger);
+    expect(await screen.findByRole('radio', { name: /晨煦/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByRole('dialog', { name: '语音设置' })).toHaveFocus();
+    fireEvent.click(screen.getByRole('combobox', { name: '试听语言' }));
+    const english = screen.getByRole('option', { name: /^英语/ });
+    fireEvent.pointerDown(english);
+    fireEvent.click(english);
+    expect(screen.getByRole('combobox', { name: '试听语言' })).toHaveAttribute('data-value', 'en');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('radio', { name: /晨煦/ }));
+    expect(onChange).toHaveBeenCalledWith('Ethan', expect.objectContaining({ id: 'Ethan' }));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    fireEvent.keyDown(screen.getByRole('dialog', { name: '语音设置' }), { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it('localizes voice details and opens the list above the field by default', async () => {
@@ -355,6 +398,28 @@ describe('TtsVoicePicker', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('无法加载音色列表');
     fireEvent.click(screen.getByRole('button', { name: '刷新音色列表' }));
     await waitFor(() => expect(tts.getTtsVoices).toHaveBeenCalledTimes(2));
+  });
+
+  it.each(['zh-CN', 'en-US'] as const)('does not report missing samples when loading the voice catalog fails in %s', async language => {
+    const tts = createService();
+    const catalog = await tts.service.getTtsVoices('aliyun', 'qwen3-tts-flash');
+    const getTtsVoices = vi.fn(async () => catalog);
+    getTtsVoices.mockRejectedValue(new Error('voice catalog unavailable'));
+    const zh = language === 'zh-CN';
+
+    render(<LanguageProvider initialPreference={language}><TtsVoicePicker id="voice" presentation="library-inline" allowPreviewLanguage
+      provider="aliyun" model="qwen3-tts-flash" value="Cherry" service={{ ...tts.service, getTtsVoices }} onChange={vi.fn()} /></LanguageProvider>);
+
+    expect(screen.queryByText(zh ? '此模型暂无试听样音' : 'No voice samples for this model')).not.toBeInTheDocument();
+    expect((await screen.findAllByRole('alert'))[0]).toHaveTextContent(zh ? '无法加载音色列表' : 'Could not load voices');
+    expect(screen.getByText(zh ? '无法加载音色列表，请重试。' : 'Could not load voices. Retry.')).toBeVisible();
+    expect(screen.queryByText(zh ? '此模型暂无试听样音' : 'No voice samples for this model')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    getTtsVoices.mockResolvedValue(catalog);
+    fireEvent.click(screen.getByRole('button', { name: zh ? '重试' : 'Retry' }));
+    expect(await screen.findByRole('combobox', { name: zh ? '试听语言' : 'Preview language' })).toHaveAttribute('data-value', zh ? 'zh' : 'en');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(getTtsVoices).toHaveBeenCalledTimes(2);
   });
 
   it('accepts a cloned Volcengine speaker ID', async () => {

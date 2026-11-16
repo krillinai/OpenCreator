@@ -919,6 +919,28 @@
   padding: 16px;
 }
 
+.dashboard-speech-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+  background: color-mix(in srgb, black 40%, transparent);
+}
+
+.dashboard-speech-settings-panel {
+  border-radius: 8px;
+}
+
+.dashboard-speech-settings-panel .dashboard-translation-settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .dashboard-speech-settings-panel .dashboard-translation-settings-sections { padding: 12px; }
+}
+
 .dashboard-translation-settings-sections .video-translation-field,
 .dashboard-translation-settings-sections .video-translation-model-setting {
   min-width: 0;

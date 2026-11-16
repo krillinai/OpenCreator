@@ -91,12 +91,17 @@ export default function DashboardGenerationHistory(props: {
   }, [type, visibleCount, props.onViewChange]);
 
   const outputs = useMemo(() => jobs
-    .flatMap(job => job.templateId === 'video-translation' && processStageForJob(job) !== undefined ? [] : job.artifacts
-      .filter(artifact => artifact.path !== null && artifact.status !== 'stale' && outputKinds.has(artifact.kind))
-      .map(artifact => ({ artifact, job, name: artifactName(artifact, l), title: resultTitle(job, l), type: workflowLabel(job.templateId, l), kind: artifactKind(artifact.kind) })))
+    .flatMap(job => {
+      const artifacts = job.artifacts.filter(artifact => artifact.path !== null
+        && artifact.status !== 'stale' && outputKinds.has(artifact.kind));
+      const visibleArtifacts = job.templateId === 'video-translation'
+        ? processStageForJob(job) !== undefined ? [] : [translationHistoryArtifact(artifacts)].filter((artifact): artifact is CreatorArtifact => artifact !== undefined)
+        : artifacts;
+      return visibleArtifacts.map(artifact => ({ artifact, job, name: artifactName(artifact, l), title: resultTitle(job, l), type: workflowLabel(job.templateId, l), kind: artifactKind(artifact.kind) }));
+    })
     .filter(output => type === 'all'
       || generationHistoryTypeForWorkspace(creatorWorkspaceForTemplate(output.job.templateId)) === type)
-    .sort((left, right) => right.artifact.createdAt.localeCompare(left.artifact.createdAt)),
+    .sort((left, right) => historyOutputTime(right).localeCompare(historyOutputTime(left))),
   [jobs, l, type]);
   const processJobs = jobs.filter(job => (
     (type === 'all' || generationHistoryTypeForWorkspace(creatorWorkspaceForTemplate(job.templateId)) === type)
@@ -109,7 +114,7 @@ export default function DashboardGenerationHistory(props: {
         kind: 'process' as const, job, createdAt: processStageForJob(job)?.startedAt ?? job.createdAt
       })),
       ...outputs.slice(0, visibleCount).map(output => ({
-        kind: 'output' as const, output, createdAt: output.artifact.createdAt
+        kind: 'output' as const, output, createdAt: historyOutputTime(output)
       }))
     ].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     const result: Array<{ date: string; items: HistoryEntry[] }> = [];
@@ -288,7 +293,7 @@ export default function DashboardGenerationHistory(props: {
                 <GenerationArtifactMedia output={output} service={props.service} />
                 <div className="dashboard-generation-result-copy">
                   <strong title={output.title}>{output.title}</strong>
-                  <small>{output.type} · {output.name} · V{output.artifact.version} · {formatDateTime(output.artifact.createdAt, language)}</small>
+                  <small>{output.type} · {output.name} · V{output.artifact.version} · {formatDateTime(historyOutputTime(output), language)}</small>
                 </div>
                 <button type="button" className="dashboard-generation-result-download" disabled={downloadingId !== undefined} aria-busy={downloadingId === output.artifact.id} onClick={() => void download(output)} aria-label={`${l('下载', 'Download')} ${output.name}`} title={l('下载', 'Download')}>
                   {downloadingId === output.artifact.id ? <LoaderCircle size={16} className="smart-dubbing-spinner" /> : <Download size={16} />}
@@ -496,6 +501,25 @@ function videoTranslationTimeoutMessage(job: CreatorJob, selected: CreatorJob['s
 
 function downloadableArtifact(job: CreatorJob): CreatorArtifact | undefined {
   return job.artifacts.filter(artifact => artifact.path !== null && artifact.status !== 'stale' && outputKinds.has(artifact.kind)).at(-1);
+}
+
+function translationHistoryArtifact(artifacts: CreatorArtifact[]): CreatorArtifact | undefined {
+  const priority = ['horizontal_video', 'vertical_video', 'bilingual_video', 'clean_video',
+    'target_subtitle', 'bilingual_subtitle', 'dubbed_audio'];
+  const results = artifacts.filter(artifact => priority.includes(artifact.kind));
+  const candidates = results.length > 0
+    ? results.filter(artifact => artifact.version === Math.max(...results.map(result => result.version)))
+    : artifacts;
+  return [...candidates].sort((left, right) => {
+    const leftPriority = priority.indexOf(left.kind);
+    const rightPriority = priority.indexOf(right.kind);
+    return (leftPriority < 0 ? priority.length : leftPriority) - (rightPriority < 0 ? priority.length : rightPriority)
+      || right.createdAt.localeCompare(left.createdAt);
+  })[0];
+}
+
+function historyOutputTime(output: HistoryOutput): string {
+  return output.job.templateId === 'video-translation' ? output.job.updatedAt : output.artifact.createdAt;
 }
 
 function projectPreviewUrls(job: CreatorJob): string[] {

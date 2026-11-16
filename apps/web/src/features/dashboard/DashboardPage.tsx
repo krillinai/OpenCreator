@@ -47,7 +47,7 @@ import XiaohongshuPostWorkspace from './XiaohongshuPostWorkspace.js';
 import WechatArticleWorkspace from './WechatArticleWorkspace.js';
 import StickmanVideoWorkspace from './StickmanVideoWorkspace.js';
 import VideoDownloadBatchWorkspace from './VideoDownloadBatchWorkspace.js';
-import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
+import VideoTranslationWorkspace, { resultVersionsFromArtifacts } from './VideoTranslationWorkspace.js';
 import VideoGenerationWorkspace from './VideoGenerationWorkspace.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
 import { ApiClientError } from '../../runtime/errors.js';
@@ -355,11 +355,16 @@ export default function DashboardPage(props: {
   }, [props.jobId, props.workspace]);
 
   useEffect(() => {
-    if (props.workspace !== 'video-generation' || props.returnTo !== 'projects' || !props.jobId || !props.creatorService) return;
+    if ((props.workspace !== 'video-generation' && props.workspace !== 'video-translation')
+      || props.returnTo !== 'projects' || !props.jobId || !props.creatorService) return;
     const controller = new AbortController();
     void props.creatorService.getJob(props.jobId, { signal: controller.signal }).then(({ job }) => {
       if (controller.signal.aborted) return;
-      setGenerationResultActive(job.stages.some(stage => stage.stageId === 'generate'));
+      setGenerationResultActive(props.workspace === 'video-generation'
+        ? job.stages.some(stage => stage.stageId === 'generate')
+        : (job.status === 'failed' || job.status === 'needs_input')
+          && job.stages.some(stage => stage.status === 'failed')
+          && resultVersionsFromArtifacts(job.artifacts, job.state).length === 0);
       setGenerationSessionActive(false);
     }).catch(() => undefined);
     return () => controller.abort();

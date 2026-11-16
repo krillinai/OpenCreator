@@ -25,6 +25,28 @@ it.each([false, true])('opens speech style and speed only when the selected offi
   expect(screen.queryByRole('slider') !== null).toBe(supported);
 });
 
+it('defaults an unselected official speech model to the first available option in the visible list', async () => {
+  const fixture = createFixture();
+  const state: GatewayAccountState = {
+    source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
+    account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: '1', activationError: null,
+    selectedModels: {}, models: [
+      { id: 'vendor/zulu', name: 'Zulu Voice', modality: 'speech', capabilities: [], voices: ['Zulu'] },
+      { id: 'vendor/alpha', name: 'Alpha Voice', modality: 'speech', capabilities: [], voices: ['Alpha'] }
+    ]
+  };
+  render(<LanguageProvider initialPreference="en-US"><CreatorSessionProvider initialJob={fixture.currentJob()} service={fixture}>
+    <OfficialServicesContext.Provider value={state}><SmartDubbingWorkspace onBack={vi.fn()} /></OfficialServicesContext.Provider>
+  </CreatorSessionProvider></LanguageProvider>);
+
+  const model = screen.getByRole('combobox', { name: 'Model' });
+  fireEvent.click(model);
+  expect(within(screen.getByRole('listbox', { name: 'Model' })).getAllByRole('option')[0]).toHaveAccessibleName('Alpha Voice');
+  fireEvent.keyDown(model, { key: 'Escape' });
+  expect(model).toHaveValue('Alpha Voice');
+  await waitFor(() => expect(fixture.currentJob().state.officialModels).toMatchObject({ speech: 'vendor/alpha' }));
+});
+
 it('validates and submits the complete dubbing form directly without persisting wizard steps', async () => {
   const fixture = createFixture({ voiceCode: '' });
   await renderWorkspace(fixture);

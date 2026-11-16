@@ -651,7 +651,8 @@ export function useCreatorTaskProgress(options: {
     : progress?.message ?? l('任务正在后台执行，可继续查看字幕', 'The task runs in the background. You can continue reviewing subtitles.');
 
   async function retry() {
-    if (!session || !stage || status !== 'failed' || retryingRef.current || session.job.stages.some(run => run.status === 'queued' || run.status === 'running')) return false;
+    if (!session || !stage || !(status === 'failed' || status === 'needs_input' && stage.status === 'failed')
+      || retryingRef.current || session.job.stages.some(run => run.status === 'queued' || run.status === 'running')) return false;
     retryingRef.current = true;
     setRetryState({ id: stage.id, pending: true });
     session.clearError();

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import AppSelect from '../../components/forms/Select.js';
+import { compareGatewayModelsByName } from '../../components/forms/OfficialModelSelect.js';
 import ModelBrandIcon from '../../components/brand/ModelBrandIcon.js';
 import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
@@ -73,7 +74,7 @@ export default function SmartDubbingWorkspace(props: {
   const l = useLocalizedCopy();
   const requireGenerationAccess = useGenerationAccess();
   const session = useOptionalCreatorSession();
-  const official = useOfficialServices('speech');
+  const official = useOfficialServices('speech', true, undefined, models => [...models].sort(compareGatewayModelsByName)[0]);
   const supportsStyle = !official.official || official.model?.capabilities.includes('speech_instructions') === true;
   const supportsSpeed = !official.official || official.model?.capabilities.includes('speech_speed') === true;
   const [submitting, setSubmitting] = useState(false);
@@ -474,11 +475,12 @@ export default function SmartDubbingWorkspace(props: {
                     format.toUpperCase()
                   ]}
                   disabled={busy}
+                  variant="speech"
                 >
                   <div className="smart-dubbing-voice-field">
                     <TtsVoicePicker
                       id="smart-dubbing-voice"
-                      presentation="library"
+                      presentation="library-inline"
                       allowPreviewLanguage={official.official}
                       catalogKey={official.official ? JSON.stringify([official.model?.voices, official.model?.voiceProfiles]) : undefined}
                       provider={provider}

@@ -347,12 +347,12 @@ describe('video translation two-step flow', () => {
     const session = mount(initial);
     expect(screen.queryByRole('button', { name: 'AI 助手' })).not.toBeInTheDocument();
     if (status === 'failed') {
-      expect(screen.getByRole('heading', { name: '翻译任务失败' })).toBeVisible();
+      expect(screen.getByText('翻译任务失败', { selector: '.creator-collaboration-context strong' })).toBeVisible();
       expect(screen.queryByRole('button', { name: '查看任务诊断' })).not.toBeInTheDocument();
       expect(screen.queryByRole('region', { name: '视频翻译项目产出' })).not.toBeInTheDocument();
       expect(screen.queryByRole('navigation', { name: '翻译流程' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: '开始翻译' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('log', { name: '协作时间线' })).not.toBeInTheDocument();
+      expect(screen.getByRole('log', { name: '协作时间线' })).toBeInTheDocument();
     } else {
       expect(within(screen.getByRole('region', { name: '当前任务进度' })).queryByRole('button', { name: '查看详情' })).not.toBeInTheDocument();
       expect(screen.queryByRole('log', { name: '协作时间线' })).not.toBeInTheDocument();
@@ -379,8 +379,8 @@ describe('video translation two-step flow', () => {
     };
     initial.stages = [failedSubtitle, preview];
     const session = mount(initial);
-    const failure = screen.getByRole('region', { name: '视频翻译操作区' });
-    expect(within(failure).getByRole('heading', { name: '翻译任务失败' })).toBeVisible();
+    const failure = screen.getByRole('region', { name: '视频翻译 操作区' });
+    expect(screen.getByText('翻译任务失败', { selector: '.creator-collaboration-context strong' })).toBeVisible();
     expect(failure).not.toHaveTextContent('原视频预览准备失败');
     expect(within(failure).getByRole('progressbar', { name: '原视频下载进度' })).toHaveAttribute('aria-valuenow', '7');
     expect(within(failure).getByRole('button', { name: '重试当前阶段' })).toBeDisabled();

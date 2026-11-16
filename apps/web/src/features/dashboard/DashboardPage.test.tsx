@@ -1098,7 +1098,7 @@ describe('DashboardPage', () => {
       onSelectPrompt={vi.fn()}
       workspace={workspace}
       jobId={job.id}
-      returnTo={workspace === 'video-generation' ? 'projects' : undefined}
+      returnTo={workspace === 'video-generation' || workspace === 'video-translation' ? 'projects' : undefined}
       creatorService={creatorService}
     />);
 
@@ -1130,6 +1130,27 @@ describe('DashboardPage', () => {
     expect(await screen.findByRole('form', { name: '视频生成' })).toBeVisible();
     await waitFor(() => expect(document.querySelector('.video-generation-workspace-page')).toBeInTheDocument());
     expect(document.querySelector('.dashboard-unified-workspace-page')).not.toBeInTheDocument();
+  });
+
+  it('reopens a failed video translation job without results in its standalone workspace', async () => {
+    const baseService = createInMemoryCreatorService();
+    const { job } = await baseService.createJob({ projectId: 'project_1', templateId: 'video-translation', state: {
+      sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=failed-translation'
+    } });
+    const failed: CreatorJob = { ...job, status: 'failed', stages: [{
+      id: 'stage_subtitle', jobId: job.id, stageId: 'subtitle', executor: 'krillinai', status: 'failed',
+      dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null, attempt: 1,
+      idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: {},
+      errorCode: 'platform_caption_access_failed', errorMessage: 'Subtitle request timed out',
+      startedAt: job.createdAt, finishedAt: job.createdAt
+    }] };
+    const service = withHistoryJobs(baseService, [failed]);
+    render(<DashboardPage onSelectPrompt={vi.fn()} workspace="video-translation" jobId={job.id}
+      returnTo="projects" creatorService={service} />);
+
+    await waitFor(() => expect(document.querySelector('.video-translation-failure-page')).toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector('.dashboard-unified-workspace-page')).not.toBeInTheDocument());
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toBeInTheDocument();
   });
 
   it('returns to the video list after submitting a regeneration from a failed history job', async () => {
@@ -2600,9 +2621,9 @@ describe('DashboardPage', () => {
       target: { value: '这是一段需要生成语音的测试文案。' }
     });
     fireEvent.click(screen.getByRole('button', { name: '语音设置' }));
-    expect(screen.getByRole('dialog', { name: '语音设置' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '配音音色 星语' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '配音音色 星语' }));
+    const settings = screen.getByRole('dialog', { name: '语音设置' });
+    expect(await within(settings).findByRole('radio', { name: /星语/ })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '配音音色' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '试听 · 星语' }));
     expect(await screen.findByRole('button', { name: '暂停 · 星语' })).toBeInTheDocument();
     expect(tts.previewTtsVoice).toHaveBeenCalledWith({
@@ -2614,8 +2635,8 @@ describe('DashboardPage', () => {
     expect(play).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: '暂停 · 星语' }));
     expect(pause).toHaveBeenCalled();
-    fireEvent.keyDown(screen.getByRole('dialog', { name: '配音音色' }), { key: 'Escape' });
     fireEvent.click(screen.getByRole('radio', { name: '温暖' }));
+    fireEvent.click(within(settings).getByRole('button', { name: '关闭' }));
 
     expect(screen.queryByLabelText('任务摘要')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
@@ -2662,9 +2683,9 @@ describe('DashboardPage', () => {
       target: { value: '这是一段需要配置服务后生成的配音文案。' }
     });
     fireEvent.click(screen.getByRole('button', { name: '语音设置' }));
-    expect(screen.getByRole('dialog', { name: '语音设置' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '配音音色 星语' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '配音音色 星语' }));
+    const settings = screen.getByRole('dialog', { name: '语音设置' });
+    expect(await within(settings).findByRole('radio', { name: /星语/ })).toBeInTheDocument();
+    fireEvent.click(within(settings).getByRole('button', { name: '关闭' }));
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
 
     expect(await screen.findAllByText('请先在设置的配音服务中配置当前服务商的 API Key'))

@@ -488,27 +488,63 @@ describe('DashboardGenerationHistory', () => {
     expect(screen.getByText(/voice\.mp3/)).toBeInTheDocument();
   });
 
-  it('classifies every video translation artifact under video by its job type', async () => {
+  it('shows one video translation task after retry while retaining its result download', async () => {
     const translation = job('job_translation', 'video-translation', [
-      artifact('job_translation', 'artifact_source', 'source_video', 'source.mp4', '2026-11-07T10:00:00.000Z'),
-      artifact('job_translation', 'artifact_origin', 'source_subtitle', 'origin_language_srt.srt', '2026-11-07T10:01:00.000Z'),
-      artifact('job_translation', 'artifact_target', 'target_subtitle', 'target_language_srt.srt', '2026-11-07T10:02:00.000Z'),
-      artifact('job_translation', 'artifact_bilingual', 'bilingual_subtitle', 'bilingual_srt.srt', '2026-11-07T10:03:00.000Z')
+      artifact('job_translation', 'artifact_old_source', 'source_video', 'source.mp4', '2026-11-15T10:00:00.000Z'),
+      { ...artifact('job_translation', 'artifact_new_source', 'source_video', 'source-new.mp4', '2026-11-16T10:00:00.000Z'), version: 2 },
+      artifact('job_translation', 'artifact_origin', 'source_subtitle', 'origin_language_srt.srt', '2026-11-16T10:01:00.000Z'),
+      artifact('job_translation', 'artifact_target', 'target_subtitle', 'target_language_srt.srt', '2026-11-16T10:02:00.000Z'),
+      artifact('job_translation', 'artifact_bilingual', 'bilingual_subtitle', 'bilingual_srt.srt', '2026-11-16T10:03:00.000Z')
     ]);
+    translation.state.sourceFileName = 'source.mp4';
+    translation.updatedAt = '2026-11-16T10:03:00.000Z';
+    const openArtifact = vi.fn(async () => new Response(new Blob(['subtitle'], { type: 'text/plain' })));
+    const onOpenJob = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     render(<DashboardGenerationHistory
       projectId="project_1"
-      service={{ listJobs: vi.fn(async () => ({ jobs: [translation] })), openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))) }}
+      service={{ listJobs: vi.fn(async () => ({ jobs: [translation] })), openArtifact, deleteJob: vi.fn() }}
       initialType="video"
       onBackCreation={vi.fn()}
-      onOpenJob={vi.fn()}
+      onOpenJob={onOpenJob}
     />);
 
-    expect(await screen.findByText(/source\.mp4/)).toBeInTheDocument();
-    expect(screen.getByText(/origin_language_srt\.srt/)).toBeInTheDocument();
-    expect(screen.getByText(/target_language_srt\.srt/)).toBeInTheDocument();
-    expect(screen.getByText(/bilingual_srt\.srt/)).toBeInTheDocument();
+    const card = await screen.findByRole('link', { name: '打开 source.mp4' });
+    expect(document.querySelectorAll('.dashboard-generation-result-card')).toHaveLength(1);
+    expect(card).toHaveTextContent('target_language_srt.srt');
+    expect(screen.getAllByRole('button', { name: '删除项目 source.mp4' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: '下载 target_language_srt.srt' }));
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith('job_translation', 'artifact_target'));
+    fireEvent.click(card);
+    expect(onOpenJob).toHaveBeenCalledOnce();
+    expect(onOpenJob).toHaveBeenCalledWith(translation);
     fireEvent.click(screen.getByRole('button', { name: 'text' }));
-    expect(screen.queryByText(/source\.mp4|origin_language_srt\.srt|target_language_srt\.srt|bilingual_srt\.srt/)).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.dashboard-generation-result-card')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(document.querySelectorAll('.dashboard-generation-result-card')).toHaveLength(1);
+    click.mockRestore();
+  });
+
+  it('uses the newest translation result when an older version has a rendered video', async () => {
+    const translation = job('job_translation_versions', 'video-translation', [
+      artifact('job_translation_versions', 'artifact_old_video', 'horizontal_video', 'old-video.mp4', '2026-11-15T10:00:00.000Z'),
+      { ...artifact('job_translation_versions', 'artifact_new_subtitle', 'target_subtitle', 'new-subtitle.srt', '2026-11-16T10:00:00.000Z'), version: 2 }
+    ]);
+    const onOpenJob = vi.fn();
+    render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [translation] })), openArtifact: vi.fn() }}
+      initialType="video"
+      onBackCreation={vi.fn()}
+      onOpenJob={onOpenJob}
+    />);
+
+    const card = await screen.findByRole('link', { name: '打开 视频翻译' });
+    expect(document.querySelectorAll('.dashboard-generation-result-card')).toHaveLength(1);
+    expect(card).toHaveTextContent('new-subtitle.srt · V2');
+    expect(screen.getByRole('button', { name: '下载 new-subtitle.srt' })).toBeInTheDocument();
+    fireEvent.click(card);
+    expect(onOpenJob).toHaveBeenCalledWith(translation);
   });
 
   it('shows the source video cover for a subtitle result while keeping the result openable', async () => {

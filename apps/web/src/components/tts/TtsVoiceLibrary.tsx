@@ -17,6 +17,7 @@ export type VoiceLibraryOption = {
   custom: boolean;
   recommended: boolean;
   previewAvailable?: boolean;
+  previewUnavailableLabel?: string;
   search: string;
 };
 
@@ -134,13 +135,11 @@ export function TtsVoiceLibrary(props: {
           const activePreview = props.previewVoiceId === option.id;
           const tags = [...new Set([option.language, option.gender, option.scenario, ...option.traits ?? [], ...option.useCases ?? [], option.kind].filter(Boolean))];
           const name = [option.name, ...tags].join(' · ');
-          let tone = 0;
-          for (const character of option.id) tone = (tone + character.codePointAt(0)!) % 5;
           return <div key={option.id} className="tts-voice-library-row" data-selected={selected} data-previewing={activePreview && (props.previewing || props.playing)}>
-            <button className="tts-voice-library-play" type="button" data-tone={tone} disabled={props.disabled || !props.canPreview || option.previewAvailable === false}
+            <button className="tts-voice-library-play" type="button" disabled={props.disabled || !props.canPreview || option.previewAvailable === false}
               tabIndex={option.id === focusId ? 0 : -1}
               aria-label={`${activePreview && props.playing ? l('暂停', 'Pause') : l('试听', 'Preview')} · ${option.name}`}
-              aria-pressed={activePreview && props.playing} title={option.name} onClick={() => props.onPreview(option.id)}>
+              aria-pressed={activePreview && props.playing} title={option.previewUnavailableLabel ?? option.name} onClick={() => props.onPreview(option.id)}>
               {activePreview && props.previewing ? <LoaderCircle className="tts-voice-picker-spinner" size={20} aria-hidden="true" /> : activePreview && props.playing ? <Pause size={20} aria-hidden="true" /> : <Play size={20} aria-hidden="true" />}
             </button>
             <button ref={element => { if (element) rowRefs.current.set(option.id, element); else rowRefs.current.delete(option.id); }}
@@ -149,6 +148,7 @@ export function TtsVoiceLibrary(props: {
               <span className="tts-voice-library-copy">
                 <span className="tts-voice-library-name"><bdi>{option.name}</bdi>{option.name !== option.id ? <small dir="ltr">{option.id}</small> : null}</span>
                 {option.description ? <span className="tts-voice-library-description">{option.description}</span> : null}
+                {option.previewUnavailableLabel ? <span className="tts-voice-library-preview-unavailable">{option.previewUnavailableLabel}</span> : null}
                 {tags.length || option.recommended ? <span className="tts-voice-library-tags">
                   {option.recommended ? <span className="tts-voice-library-recommended"><Star size={11} aria-hidden="true" />{l('推荐', 'Recommended')}</span> : null}
                   {tags.map(tag => <span key={tag}>{tag}</span>)}

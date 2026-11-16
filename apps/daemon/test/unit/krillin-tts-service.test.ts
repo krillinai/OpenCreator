@@ -30,10 +30,12 @@ describe('KrillinTtsService', () => {
     const service = createKrillinTtsService({ resourceRoot: join(root, 'runtime'), workRoot: join(root, 'work'), configStore: source.store, executeUtility, officialPreviewLanguages });
     await expect(service.listVoices('aliyun', 'personal-model')).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
     const result = await service.listVoices('openai', 'official-second');
-    expect(result).toMatchObject({ provider: 'openai', model: 'official-second', voices: [{ id: 'second-voice', provider: 'openai', previewLanguages: ['en'] }] });
+    expect(result).toMatchObject({ provider: 'openai', model: 'official-second', previewCatalogStatus: 'ready', voices: [{ id: 'second-voice', provider: 'openai', previewLanguages: ['en'] }] });
     expect(officialPreviewLanguages).toHaveBeenCalledWith('official-second');
     officialPreviewLanguages.mockRejectedValueOnce(new Error('sample catalog unavailable'));
-    expect(await service.listVoices('openai', 'official-second')).toMatchObject({ voices: [{ id: 'second-voice', previewLanguages: [] }] });
+    expect(await service.listVoices('openai', 'official-second')).toMatchObject({ previewCatalogStatus: 'error', voices: [{ id: 'second-voice', previewLanguages: [] }] });
+    officialPreviewLanguages.mockResolvedValueOnce({ 'second-voice': [], 'first-voice': [] });
+    expect(await service.listVoices('openai', 'official-second')).toMatchObject({ previewCatalogStatus: 'empty', voices: [{ id: 'second-voice', previewLanguages: [] }] });
     expect((await service.listVoices('openai')).voices.map(voice => voice.id)).toEqual(['first-voice']);
     expect(executeUtility).not.toHaveBeenCalled();
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'audio/mpeg' } }));

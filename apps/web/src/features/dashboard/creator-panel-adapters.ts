@@ -107,6 +107,11 @@ export const videoTranslationPanelAdapter: CreatorPanelAdapter = {
   id: 'video-translation',
   taskProgress: videoTranslationTaskProgress,
   failedProgressText(stage, l) {
+    if (stage.errorCode === 'creator_translation_output_language_mismatch') return l(
+      '目标语言是中文，但生成的字幕主要仍是英文，未通过检查。',
+      'The target language is Chinese, but the generated subtitles were mostly English and did not pass validation.',
+      'Målspråket är kinesiska, men de genererade undertexterna var mestadels på engelska och klarade inte kontrollen.'
+    );
     if (stage.stageId === 'subtitle' && isYtDlpCaptionTimeout(stage.errorCode, stage.errorMessage)) return l(
       '视频平台连接超时，字幕读取未完成。请检查网络或代理设置后重试。',
       'The video platform connection timed out, so captions could not be read. Check the network or proxy settings and retry.',
@@ -222,6 +227,7 @@ export const videoTranslationPanelAdapter: CreatorPanelAdapter = {
   },
   readStageProgress(stage, localize) {
     const standard = readStandardProgress(stage);
+    if (stage.status === 'failed') return { ...standard, percent: null };
     const fallbackMessage = captionFallbackMessage(stage, localize);
     if (stage.stageId === 'prepare-source-video' || stage.stageId === 'preview-source-video') {
       const bytes = readFiniteNumber(stage.progress.downloadedBytes) ?? 0;

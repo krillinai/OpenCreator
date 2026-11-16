@@ -228,6 +228,10 @@
 }
 
 @container smart-dubbing (max-width: 520px) {
+  .creator-tool-embedded .dashboard-speech-composer.smart-dubbing-composer { height: auto; min-height: 360px; max-height: none; }
+  .creator-tool-embedded .dashboard-speech-composer .smart-dubbing-fields { grid-template-rows: minmax(180px, 1fr) auto; }
+  .dashboard-speech-composer .smart-dubbing-side-fields { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-speech-composer .smart-dubbing-submit-row { grid-column: 1; }
   .smart-dubbing-model-row > .creator-tool-field, .smart-dubbing-configured-model { padding: 12px; }
   .smart-dubbing-configured-model .smart-dubbing-provider-row { display: grid; }
   .smart-dubbing-configured-model .smart-dubbing-provider-row small { text-align: start; }

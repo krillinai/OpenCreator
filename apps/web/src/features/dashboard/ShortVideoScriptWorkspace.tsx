@@ -7,7 +7,7 @@ import {
   RotateCcw,
   Sparkles
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import { useGenerationAccess } from './DashboardGenerationAccess.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
@@ -69,6 +69,8 @@ export default function ShortVideoScriptWorkspace(props: {
   const [resultText, setResultText] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [validationError, setValidationError] = useState<'topic' | 'duration' | null>(null);
+  const topicInputRef = useRef<HTMLTextAreaElement>(null);
   const [taskControlPending, setTaskControlPending] = useState<'canceling' | 'resuming'>();
   const result = useMemo(
     () => props.forceComposer ? undefined : readLatestResult(session?.job.artifacts ?? []),
@@ -81,7 +83,11 @@ export default function ShortVideoScriptWorkspace(props: {
     : session?.error === null || session?.error === undefined
       ? ''
       : generationError(session.error.code, session.error.message, l);
-  const visibleError = error || runtimeError;
+  const visibleError = validationError === 'topic'
+    ? l('请填写主题或素材后再生成脚本', 'Enter a topic or source material to generate a script')
+    : validationError === 'duration'
+      ? l('目标时长应为 15 到 600 秒的整数', 'Duration must be an integer from 15 to 600 seconds')
+      : error || runtimeError;
 
   useEffect(() => {
     if (official.official || props.creatorServicesService == null) {
@@ -113,8 +119,8 @@ export default function ShortVideoScriptWorkspace(props: {
 
   useEffect(() => {
     setResultText('');
-    setError('');
     if (session === null || result === undefined) return;
+    setError('');
     let active = true;
     void readCreatorArtifactText(
       session,
@@ -132,6 +138,7 @@ export default function ShortVideoScriptWorkspace(props: {
   function updateTopic(value: string) {
     setTopic(value);
     session?.updateDraft({ topic: value });
+    if (value.trim()) setValidationError(current => current === 'topic' ? null : current);
     setError('');
   }
 
@@ -152,6 +159,7 @@ export default function ShortVideoScriptWorkspace(props: {
     const seconds = Number(value);
     if (Number.isInteger(seconds) && seconds >= 15 && seconds <= 600) {
       session?.updateDraft({ targetDurationSeconds: seconds });
+      setValidationError(current => current === 'duration' ? null : current);
     }
     setError('');
   }
@@ -179,7 +187,8 @@ export default function ShortVideoScriptWorkspace(props: {
       return;
     }
     if (!topic.trim()) {
-      setError(l('请先填写创作主题或素材', 'Enter a topic or source material'));
+      setValidationError('topic');
+      topicInputRef.current?.focus();
       return;
     }
     const targetDurationSeconds = Number(targetDuration);
@@ -188,9 +197,10 @@ export default function ShortVideoScriptWorkspace(props: {
       || targetDurationSeconds < 15
       || targetDurationSeconds > 600
     ) {
-      setError(l('目标时长应为 15 到 600 秒的整数', 'Duration must be an integer from 15 to 600 seconds'));
+      setValidationError('duration');
       return;
     }
+    setValidationError(null);
     setError('');
     setNotice('');
     session.updateDraft({
@@ -213,7 +223,10 @@ export default function ShortVideoScriptWorkspace(props: {
         'Generation started. The script will appear automatically.'
       ));
       props.onGenerated?.();
-    } catch {}
+    } catch (cause) {
+      const code = (cause as { code?: unknown } | null)?.code;
+      setError(generationError(typeof code === 'string' ? code : null, null, l));
+    }
   }
 
   async function copyResult() {
@@ -285,11 +298,13 @@ export default function ShortVideoScriptWorkspace(props: {
                 <div className="creator-tool-field image-generation-prompt-field">
                   <label className="image-generation-visually-hidden" htmlFor="short-video-script-topic-input">{l('创作主题或素材', 'Topic or source material')}</label>
                   <textarea
+                    ref={topicInputRef}
                     id="short-video-script-topic-input"
                     rows={4}
                     value={topic}
                     onChange={event => updateTopic(event.target.value)}
                     placeholder={l('输入短视频主题、产品信息或创作素材', 'Enter a short video topic, product details, or source material')}
+                    aria-invalid={validationError === 'topic'}
                   />
                 </div>
                 <div className="dashboard-additional-source-row">
@@ -370,6 +385,7 @@ export default function ShortVideoScriptWorkspace(props: {
             <label className="creator-tool-field">
               <span>{l('主题或素材', 'Topic or source material')}</span>
               <textarea
+                ref={topicInputRef}
                 rows={8}
                 maxLength={5000}
                 value={topic}
@@ -494,9 +510,9 @@ export default function ShortVideoScriptWorkspace(props: {
           )}
         </section>
 
-        {error ? (
+        {visibleError ? (
           <div className="short-video-script-error" role="alert">
-            <span>{error}</span>
+            <span>{visibleError}</span>
           </div>
         ) : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
@@ -553,14 +569,20 @@ function generationError(
   _message: string | null,
   l: (zh: string, en: string) => string
 ): string {
+  const withCode = (message: string) => code !== null && /^[a-zA-Z0-9_]{1,80}$/.test(code)
+    ? `${message} (${code})`
+    : message;
   if (code === 'creator_llm_config_missing') {
-    return l(
+    return withCode(l(
       '请先在设置的 AI 服务中配置文本模型',
       'Configure a text model in AI Services first'
-    );
+    ));
   }
   if (code === 'creator_stage_input_missing') {
-    return l('请检查主题和脚本设置', 'Check the topic and script settings');
+    return withCode(l('请检查主题和脚本设置', 'Check the topic and script settings'));
   }
-  return l('脚本生成失败，请在 Agent 区域查看诊断后重试', 'Script generation failed. Review the diagnosis in the Agent panel and retry.');
+  if (code === 'services_not_ready') {
+    return withCode(l('官方模型服务尚未就绪，请稍后重试', 'The official model service is not ready. Try again shortly.'));
+  }
+  return withCode(l('脚本生成失败，请检查设置后重试', 'Script generation failed. Check the settings and retry.'));
 }

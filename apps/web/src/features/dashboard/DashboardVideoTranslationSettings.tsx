@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronUp, SlidersHorizontal } from 'lucide-react';
+import { ChevronUp, SlidersHorizontal, X } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import './ImageGenerationSettings.css';
 import './DashboardGenerationComposer.css';
@@ -9,6 +9,7 @@ export default function DashboardVideoTranslationSettings(props: {
   summary: string[];
   disabled?: boolean;
   label?: string;
+  variant?: 'speech';
   children: ReactNode;
 }) {
   const l = useLocalizedCopy();
@@ -24,6 +25,10 @@ export default function DashboardVideoTranslationSettings(props: {
     maxHeight: number;
     above: boolean;
   }>();
+  const closeSettings = () => {
+    setOpen(false);
+    rootRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+  };
 
   useEffect(() => {
     if (props.disabled) setOpen(false);
@@ -32,15 +37,16 @@ export default function DashboardVideoTranslationSettings(props: {
   useEffect(() => {
     if (!open) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node) && !panelRef.current?.contains(event.target as Node)) {
+      const target = event.target as Element;
+      if (props.variant === 'speech' && target.closest('.tts-voice-menu, .app-select-menu')) return;
+      if (!rootRef.current?.contains(target) && !panelRef.current?.contains(target)) {
         setOpen(false);
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
-      setOpen(false);
-      rootRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+      closeSettings();
     };
     document.addEventListener('pointerdown', closeOnOutsidePointer);
     document.addEventListener('keydown', closeOnEscape);
@@ -48,7 +54,11 @@ export default function DashboardVideoTranslationSettings(props: {
       document.removeEventListener('pointerdown', closeOnOutsidePointer);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [open]);
+  }, [open, props.variant]);
+
+  useLayoutEffect(() => {
+    if (open && position && props.variant === 'speech') panelRef.current?.focus({ preventScroll: true });
+  }, [open, !!position, props.variant]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -62,6 +72,18 @@ export default function DashboardVideoTranslationSettings(props: {
       const viewportBottom = viewportTop + (viewport?.height ?? window.innerHeight);
       const below = viewportBottom - rect.bottom - 12;
       const above = rect.top - viewportTop - 12;
+      if (props.variant === 'speech') {
+        const height = viewport?.height ?? window.innerHeight;
+        const width = Math.max(0, Math.min(680, viewportWidth - 16));
+        setPosition({
+          left: viewportLeft + (viewportWidth - width) / 2,
+          top: viewportTop + height / 2,
+          width,
+          maxHeight: Math.max(0, height - 24),
+          above: false
+        });
+        return;
+      }
       const opensAbove = above > 80 || (below < 320 && above > below);
       const width = Math.min(480, viewportWidth - 16);
       const left = Math.max(
@@ -87,7 +109,7 @@ export default function DashboardVideoTranslationSettings(props: {
       window.visualViewport?.removeEventListener('resize', place);
       window.visualViewport?.removeEventListener('scroll', place);
     };
-  }, [open]);
+  }, [open, props.variant]);
 
   return (
     <div className="image-generation-settings dashboard-translation-settings" ref={rootRef}>
@@ -107,23 +129,41 @@ export default function DashboardVideoTranslationSettings(props: {
         </span>
         <ChevronUp size={14} className={open ? 'is-open' : undefined} aria-hidden="true" />
       </button>
-      {open && position ? createPortal(
+      {open && position ? createPortal(<>
+        {props.variant === 'speech' ? <div className="dashboard-speech-settings-backdrop" aria-hidden="true" /> : null}
         <div
           id={`${id}-panel`}
           ref={panelRef}
-          className="image-generation-settings-panel dashboard-translation-settings-panel"
+          className={`image-generation-settings-panel dashboard-translation-settings-panel${props.variant === 'speech' ? ' dashboard-speech-settings-panel' : ''}`}
           role="dialog"
           aria-label={label}
+          aria-modal={props.variant === 'speech' ? true : undefined}
+          tabIndex={props.variant === 'speech' ? -1 : undefined}
+          onKeyDown={event => {
+            if (props.variant !== 'speech' || event.key !== 'Tab') return;
+            const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+              .filter(control => control.getClientRects().length > 0 || control.offsetParent !== null);
+            const first = controls[0];
+            const last = controls.at(-1);
+            if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) {
+              event.preventDefault();
+              last?.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first?.focus();
+            }
+          }}
           style={{
             left: position.left,
             top: position.top,
             width: position.width,
             maxHeight: position.maxHeight,
-            transform: position.above ? 'translateY(-100%)' : undefined
+            transform: props.variant === 'speech' ? 'translateY(-50%)' : position.above ? 'translateY(-100%)' : undefined
           }}
         >
+          {props.variant === 'speech' ? <header><strong>{label}</strong><button type="button" aria-label={l('关闭', 'Close')} title={l('关闭', 'Close')} onClick={closeSettings}><X size={17} aria-hidden="true" /></button></header> : null}
           <div className="dashboard-translation-settings-sections">{props.children}</div>
-        </div>,
+        </div></>,
         document.body
       ) : null}
     </div>

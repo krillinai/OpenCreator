@@ -14268,93 +14268,6 @@
   min-width: 0;
 }
 
-.video-translation-wizard-main[data-failed="true"] .video-translation-header p {
-  overflow-wrap: anywhere;
-}
-
-.video-translation-failure-view {
-  width: min(590px, 100%);
-  margin: clamp(28px, 8vh, 76px) auto 0;
-  padding: 0 10px 36px;
-  box-sizing: border-box;
-  color: var(--text);
-}
-
-.video-translation-failure-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-.video-translation-failure-heading > svg {
-  flex: 0 0 auto;
-  margin-top: 3px;
-  color: var(--danger);
-}
-
-.video-translation-failure-heading span {
-  color: var(--danger);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.video-translation-failure-heading h2 {
-  margin: 5px 0 0;
-  font-size: 21px;
-  font-weight: 650;
-  line-height: 1.35;
-}
-
-.video-translation-failure-reason {
-  margin: 14px 0 28px 36px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.video-translation-failure-next {
-  padding: 20px 0 0 36px;
-  border-top: 1px solid var(--border-hairline);
-}
-
-.video-translation-failure-next strong {
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.video-translation-failure-next p {
-  margin: 7px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.video-translation-failure-background {
-  margin: 18px 0 0 36px;
-}
-
-.video-translation-failure-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  margin: 19px 0 0 36px;
-}
-
-.video-translation-failure-actions > :is(a, button) {
-  min-height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 13px;
-  border-radius: 7px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 620;
-  text-decoration: none;
-  cursor: pointer;
-}
-
 .video-translation-failure-secondary {
   border: 1px solid var(--border);
   background: var(--surface);
@@ -14366,26 +14279,174 @@
   background: var(--surface-2);
 }
 
-.video-translation-failure-actions > button:disabled {
-  opacity: .55;
-  cursor: default;
-}
-
 .video-translation-failure-error {
-  margin: 12px 0 0 36px;
+  margin: 0;
   color: var(--danger);
   font-size: 12px;
 }
 
-@container video-translation-workspace (max-width: 520px) {
-  .video-translation-failure-view { padding-inline: 0; }
-  .video-translation-failure-reason,
-  .video-translation-failure-next,
-  .video-translation-failure-background,
-  .video-translation-failure-actions,
-  .video-translation-failure-error { margin-left: 0; }
-  .video-translation-failure-next { padding-left: 0; }
-  .video-translation-failure-actions > :is(a, button) { flex: 1 1 auto; }
+.video-translation-failure-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-inline-start: 3px solid var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 7%, var(--surface));
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.video-translation-failure-notice > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--destructive);
+}
+
+.video-translation-failure-notice strong {
+  font-size: 13px;
+}
+
+.video-translation-failure-notice p {
+  margin: 3px 0 0;
+}
+
+.video-translation-failure-notice p:last-child {
+  color: var(--muted);
+}
+
+@media (min-width: 1100px) {
+  .video-translation-failure-page .creator-resizable-layout {
+    --creator-agent-pane-width: 420px;
+  }
+}
+
+@media (min-width: 1800px) {
+  .video-translation-failure-page .creator-resizable-layout {
+    --creator-agent-pane-width: 520px;
+  }
+}
+
+.video-translation-failure-page .dashboard-translation-composer {
+  height: 304px;
+  min-height: 304px;
+  max-height: none;
+}
+
+@media (min-width: 521px) {
+  .video-translation-failure-page .dashboard-translation-composer:has(.dashboard-translation-source[data-source-type="file"]) .image-generation-editor {
+    grid-template-columns: 280px 24px minmax(0, 1fr);
+  }
+}
+
+.video-translation-failure-page .dashboard-translation-source[data-source-type="file"] {
+  width: min(240px, calc(100% - 40px));
+  height: 135px;
+}
+
+.video-translation-failure-page .dashboard-translation-file-preview small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-translation-failure-page .dashboard-translation-source[data-source-type="file"] + .dashboard-translation-source-divider {
+  visibility: hidden;
+}
+
+.video-translation-failure-source-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 8px 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--conversation-bg);
+}
+
+.video-translation-failure-source-file > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.video-translation-failure-source-file > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.video-translation-failure-source-file strong,
+.video-translation-failure-source-file small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-translation-failure-source-file strong {
+  font-size: 12px;
+}
+
+.video-translation-failure-source-file small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.video-translation-failure-page .image-generation-submit-row {
+  gap: 8px;
+  align-items: center;
+}
+
+.video-translation-failure-page .image-generation-submit-row .video-translation-failure-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+@container image-generation (max-width: 520px) {
+  .video-translation-failure-page .dashboard-translation-composer {
+    height: auto;
+    min-height: 0;
+  }
+
+  .video-translation-failure-page .dashboard-translation-composer .image-generation-fields {
+    height: auto;
+    grid-template-rows: auto auto;
+  }
+
+  .video-translation-failure-page .dashboard-translation-composer .image-generation-editor {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  .video-translation-failure-page .dashboard-translation-source[data-source-type="url"],
+  .video-translation-failure-page .dashboard-translation-source-divider {
+    display: none;
+  }
+
+  .video-translation-failure-page .dashboard-translation-composer .dashboard-translation-url-field {
+    grid-column: 1;
+  }
+
+  .video-translation-failure-page .image-generation-action-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .video-translation-failure-page .image-generation-submit-row {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    flex-wrap: wrap;
+  }
 }
 
 .video-result-workspace {

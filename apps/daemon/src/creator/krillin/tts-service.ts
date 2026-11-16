@@ -164,9 +164,16 @@ export function createKrillinTtsService(input: {
       const defaultVoice = selected?.capabilities.includes('default_voice') ?? gateway.capabilities?.speech?.includes('default_voice');
       const selectedModel = selected?.id ?? gateway.models.speech ?? '';
       // Sample discovery must not hide voices used for ordinary speech generation.
-      const languages: Record<string, string[]> | undefined = await input.officialPreviewLanguages?.(selectedModel).catch(() => ({}));
-      return { provider: 'openai', model: selectedModel, voices: (defaultVoice ? [gatewayDefaultVoiceId] : selected?.voices ?? gateway.speechVoices ?? []).map(id => ({ ...selected?.voiceProfiles?.[id], id, name: id === gatewayDefaultVoiceId ? 'Default voice' : id, provider: 'openai' as const, kind: 'builtin' as const,
-        ...(languages ? { previewLanguages: languages[id] ?? [] } : {}) })) };
+      let languages: Record<string, string[]> = {};
+      let previewCatalogStatus: CreatorTtsVoicesResponse['previewCatalogStatus'] = 'empty';
+      try {
+        languages = await input.officialPreviewLanguages?.(selectedModel) ?? {};
+        if (Object.values(languages).some(items => items.length > 0)) previewCatalogStatus = 'ready';
+      } catch {
+        previewCatalogStatus = 'error';
+      }
+      return { provider: 'openai', model: selectedModel, previewCatalogStatus, voices: (defaultVoice ? [gatewayDefaultVoiceId] : selected?.voices ?? gateway.speechVoices ?? []).map(id => ({ ...selected?.voiceProfiles?.[id], id, name: id === gatewayDefaultVoiceId ? 'Default voice' : id, provider: 'openai' as const, kind: 'builtin' as const,
+        previewLanguages: languages[id] ?? [] })) };
     }
     if (provider === 'edge-tts') {
       return { provider, model: '', voices: [] };

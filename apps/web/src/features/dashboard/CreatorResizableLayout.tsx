@@ -62,8 +62,12 @@ export default function CreatorResizableLayout(props: {
   function widthBounds() {
     const rect = layoutRef.current?.getBoundingClientRect();
     const fallbackWidth = 900;
+    const configuredWidth = layoutRef.current
+      ? Number.parseFloat(getComputedStyle(layoutRef.current).getPropertyValue('--creator-agent-pane-width'))
+      : NaN;
+    const defaultAgentWidth = Number.isFinite(configuredWidth) ? configuredWidth : DEFAULT_AGENT_WIDTH;
     return {
-      fallback: rect ? Math.round(rect.width - DEFAULT_AGENT_WIDTH - RESIZE_HANDLE_WIDTH) : fallbackWidth,
+      fallback: rect ? Math.round(rect.width - defaultAgentWidth - RESIZE_HANDLE_WIDTH) : fallbackWidth,
       max: rect
         ? Math.max(WORKSPACE_MIN_WIDTH, rect.width - AGENT_MIN_WIDTH - RESIZE_HANDLE_WIDTH)
         : fallbackWidth
