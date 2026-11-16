@@ -118,6 +118,7 @@ function projectState(
   let bytes = Buffer.byteLength('{}', 'utf8');
   let truncated = false;
   for (const [key, value] of Object.entries(state)) {
+    if (key === '__creatorUserEdited') continue;
     const candidateBytes = Buffer.byteLength(JSON.stringify({ [key]: value }), 'utf8');
     if (bytes + candidateBytes > maxBytes) {
       truncated = true;

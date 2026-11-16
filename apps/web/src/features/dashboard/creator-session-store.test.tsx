@@ -169,6 +169,35 @@ describe('CreatorSessionStore', () => {
     expect(session.job.stages[0]!.progress).toMatchObject({ percent: 20 });
   });
 
+  it('shows unknown video provider progress after submission until a measured value arrives', async () => {
+    const stage: CreatorStageRun = {
+      id: 'video_1', jobId: 'job_1', stageId: 'generate', executor: 'video', status: 'running',
+      dispatchStatus: 'claimed', claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null,
+      scopeKey: null, inputFingerprint: null, progress: { phase: 'submitting', percent: 8 },
+      errorCode: null, errorMessage: null, startedAt: null, finishedAt: null
+    };
+    const initial = { ...job(2, {}), templateId: 'video-generation', status: 'running' as const, stages: [stage] };
+    let session!: ReturnType<typeof useCreatorSession>;
+    let emit!: (event: CreatorEventEnvelope) => void;
+    function SnapshotHarness() { session = useCreatorSession(); return <Harness />; }
+    render(<CreatorSessionProvider initialJob={initial} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn(),
+      getJob: vi.fn(async () => ({ job: initial })),
+      subscribeJobEvents: vi.fn((_id, onEvent) => { emit = onEvent; return { close: vi.fn() }; })
+    } as never}><SnapshotHarness /></CreatorSessionProvider>);
+    await waitFor(() => expect(emit).toBeDefined());
+    const queued = { ...stage, progress: { phase: 'queued', percent: null } };
+    act(() => session.applyRemoteSnapshot({ ...initial, stages: [queued] }));
+    expect(session.job.stages[0]!.progress).toMatchObject({ phase: 'queued', percent: null });
+    const unknown = { ...stage, progress: { phase: 'generating', percent: null } };
+    act(() => emit({ id: 'video:unknown', jobId: initial.id, revision: 3, kind: 'stage_progress',
+      payload: { stage: unknown as never }, createdAt: initial.updatedAt }));
+    expect(session.job.stages[0]!.progress).toMatchObject({ phase: 'generating', percent: null });
+    const generating = { ...stage, progress: { phase: 'generating', percent: 34 } };
+    act(() => emit({ id: 'video:measured', jobId: initial.id, revision: 4, kind: 'stage_progress',
+      payload: { stage: generating as never }, createdAt: initial.updatedAt }));
+    expect(session.job.stages[0]!.progress).toMatchObject({ phase: 'generating', percent: 34 });
+  });
+
   it('does not overwrite a failed job with a delayed successful action response', async () => {
     let resolveAction!: (value: { job: CreatorJob }) => void;
     const applyAction = vi.fn(() => new Promise<{ job: CreatorJob }>(resolve => { resolveAction = resolve; }));
@@ -325,9 +354,29 @@ describe('CreatorSessionStore', () => {
     await act(async () => vi.advanceTimersByTimeAsync(350));
 
     expect(ensureJob).toHaveBeenCalledTimes(1);
-    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'ja', dubbing: false });
+    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'ja', dubbing: false, __creatorUserEdited: true });
     expect(applyAction).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it('persists automatic settings on an existing job without marking user input', async () => {
+    let session!: ReturnType<typeof useCreatorSession>;
+    const applyAction = vi.fn(async (_id: string, request: { input: { patch: Record<string, unknown> } }) => ({
+      job: job(1, { ...request.input.patch })
+    }));
+    function AutoSettings() { session = useCreatorSession(); return null; }
+    render(<CreatorSessionProvider initialJob={job(0, {})} service={{ applyAction } as never}><AutoSettings /></CreatorSessionProvider>);
+
+    await act(async () => {
+      session.updateDraft({ candidateCount: 1 }, { userEdited: false });
+      await session.flush();
+    });
+
+    expect(applyAction).toHaveBeenCalledWith('job_1', expect.objectContaining({
+      action: 'update-settings',
+      input: expect.objectContaining({ patch: { candidateCount: 1 } })
+    }));
+    expect(session.state.__creatorUserEdited).toBeUndefined();
   });
 
   it('creates a pending job before sending the first Agent message', async () => {
@@ -350,7 +399,7 @@ describe('CreatorSessionStore', () => {
     fireEvent.click(screen.getByRole('button', { name: 'pending-agent' }));
     await waitFor(() => expect(startAgentTurn).toHaveBeenCalledTimes(1));
     expect(ensureJob).toHaveBeenCalledTimes(1);
-    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'en', dubbing: false });
+    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'en', dubbing: false, __creatorUserEdited: true });
     expect(startAgentTurn).toHaveBeenCalledWith('job_1', expect.objectContaining({
       message: 'start from agent'
     }));
@@ -557,7 +606,7 @@ describe('CreatorSessionStore', () => {
       expect.objectContaining({
         action: 'update-settings',
         input: expect.objectContaining({
-          patch: { targetLanguage: 'ja' }
+          patch: { targetLanguage: 'ja', __creatorUserEdited: true }
         })
       })
     ));

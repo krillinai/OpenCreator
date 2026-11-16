@@ -595,7 +595,7 @@ Hindi kailangan ng karamihan ang environment variable. Gamitin kapag kailangan n
 | Environment variable | Default | Layunin |
 | --- | --- | --- |
 | `OPENCREATOR_DATA_DIR` | `.runtime` | Database, Run, attachment, at managed workspace ng OpenCreator |
-| `OPENCREATOR_GATEWAY_ORIGIN` | `https://www.open-creator.ai` | Gateway para sa login, subscription, credit, at opisyal na modelo; palitan para sa lokal na Gateway |
+| `OPENCREATOR_GATEWAY_ORIGIN` | `https://open-creator.ai` | Gateway para sa login, subscription, credit, at opisyal na modelo; palitan para sa lokal na Gateway |
 | `OPENCREATOR_CODEX_BIN` | `codex` | Path ng Codex CLI executable |
 | `CODEX_HOME` | `~/.codex` | Awtoridad para sa Codex session, configuration, Skills, MCP, at Profile |
 | `OPENCREATOR_DEFAULT_CWD` | Kasalukuyang working directory | Default na working directory ng daemon |

@@ -20,6 +20,17 @@ export async function verifyMacAppIcon(iconPath, sourcePath, options = {}) {
       || !packaged.data.equals(source.data)) {
       throw new Error('Packaged macOS icon does not match resources/icon.png');
     }
+    for (const name of ['icon_16x16.png', 'icon_32x32.png']) {
+      const { data } = await sharp(join(iconset, name)).ensureAlpha().raw()
+        .toBuffer({ resolveWithObject: true });
+      for (let index = 0; index < data.length; index += 4) {
+        if (data[index + 3] < 128) continue;
+        if (Math.max(data[index], data[index + 1], data[index + 2])
+          - Math.min(data[index], data[index + 1], data[index + 2]) > 10) {
+          throw new Error(`Packaged macOS icon ${name} has colored pixels`);
+        }
+      }
+    }
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }

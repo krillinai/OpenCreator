@@ -7,6 +7,7 @@ import {
   type CreatorJson,
   type ImageGenerationQuality
 } from '@opencreator/protocol';
+import { useGenerationAccess } from './DashboardGenerationAccess.js';
 import {
   Check,
   Download,
@@ -21,14 +22,15 @@ import {
   UploadCloud,
   X
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
-import { OfficialTaskModelFields } from './official-services.js';
+import ImageGenerationSettings, { type ImageGenerationSettingSection } from './ImageGenerationSettings.js';
+import { OfficialModelField, OfficialTaskModelFields, useOfficialServices } from './official-services.js';
 import { coverPanelAdapter } from './creator-panel-adapters.js';
 import {
   captureCreatorClientFailure,
@@ -54,15 +56,21 @@ const samplePromptEn = 'Keep the core reference subject, use direct thumbnail co
 export default function CoverGeneratorWorkspace(props: {
   onBack(): void;
   promptHint?: string;
+  embedded?: boolean;
+  embeddedTabs?: ReactNode;
+  forceComposer?: boolean;
+  onGenerated?(): void;
 }) {
   const l = useLocalizedCopy();
+  const requireGenerationAccess = useGenerationAccess();
   const { language: appLanguage } = useAppLanguage();
   const session = useOptionalCreatorSession();
+  const official = useOfficialServices('image');
   const restoredResults = session?.job.artifacts.some(artifact => (
     artifact.kind === 'cover_image' && artifact.status === 'completed'
   )) === true;
   const restoredStep = readStep(session?.state.currentStep, restoredResults ? 2 : 0);
-  const [currentStep, setCurrentStep] = useState<CoverStep>(restoredStep);
+  const [currentStep, setCurrentStep] = useState<CoverStep>(props.forceComposer ? 0 : restoredStep);
   const [furthestStep, setFurthestStep] = useState<CoverStep>(() => (
     Math.max(
       restoredStep,
@@ -366,6 +374,7 @@ export default function CoverGeneratorWorkspace(props: {
 
   async function generate() {
     if (submitting || generating) return;
+    if (!requireGenerationAccess()) return;
     if (session === null) {
       setError(l(
         '封面生成服务暂不可用，请检查 Runtime 连接',
@@ -434,6 +443,7 @@ export default function CoverGeneratorWorkspace(props: {
       });
       openStep(2);
       setResultTab('options');
+      props.onGenerated?.();
       if (latestResultValueRef.current === resultVersionBeforeRun) {
         setNotice(sourceType === 'youtube'
           ? l('正在分析视频内容，完成后会自动生成封面', 'Analyzing the video. Thumbnail generation will start automatically.')
@@ -624,6 +634,104 @@ export default function CoverGeneratorWorkspace(props: {
       )
     }
   ];
+
+  if (props.embedded && currentStep !== 2) {
+    const busy = submitting || generating;
+    const qualityLabel = quality === 'high' ? l('高清', 'High') : quality === 'low' ? l('快速', 'Fast') : l('标准', 'Standard');
+    const settingSections: ImageGenerationSettingSection[] = [
+      {
+        id: 'ratio', label: l('封面画幅', 'Thumbnail aspect ratio'), value: ratio, ratio: true,
+        options: ['16:9', '1:1', '9:16'].map(value => ({ value, label: value })),
+        onChange: value => updateRatio(value as CoverRatio)
+      },
+      {
+        id: 'count', label: l('方案数量', 'Number of options'), value: String(candidateCount),
+        options: [1, 2, 3, 4].map(value => ({ value: String(value), label: l(`${value} 个方案`, `${value} options`) })),
+        onChange: value => updateCandidateCount(Number(value) as CoverCandidateCount)
+      },
+      {
+        id: 'quality', label: l('生成质量', 'Quality'), value: quality,
+        options: ([['low', l('快速', 'Fast')], ['medium', l('标准', 'Standard')], ['high', l('高清', 'High')]] as const).map(([value, label]) => ({ value, label })),
+        onChange: value => updateQuality(value as ImageGenerationQuality)
+      },
+      {
+        id: 'style', label: l('封面风格', 'Thumbnail style'), value: coverStyle,
+        options: (['personal-growth', 'psychology', 'wealth-platinum-red', 'bilibili-red-blue-white', 'custom'] as const)
+          .map(value => ({ value, label: coverStyleLabel(value, l) })),
+        onChange: value => updateCoverStyle(value as CoverStyleId)
+      },
+      {
+        id: 'language', label: l('封面文字语言', 'Cover text language'), value: coverTextLanguage,
+        options: [
+          { value: 'zh-CN', label: '简体中文' }, { value: 'zh-TW', label: '繁體中文' },
+          { value: 'en-US', label: 'English' }, { value: 'ja-JP', label: '日本語' }, { value: 'ko-KR', label: '한국어' }
+        ],
+        onChange: value => updateCoverTextLanguage(value as CoverTextLanguage)
+      }
+    ];
+    return (
+      <div className="creator-tool-embedded">
+        <div className="creator-tool-stack image-generation-studio">
+          <form className="image-generation-composer dashboard-cover-composer" aria-label={l('封面生成', 'Cover Generator')} onSubmit={event => {
+            event.preventDefault();
+            void generate();
+          }}>
+            <fieldset className="image-generation-fields" disabled={busy}>
+              <div className="image-generation-editor">
+                <div className="image-generation-composer-heading">{props.embeddedTabs}</div>
+                <div className="image-generation-reference" data-loaded={Boolean(currentReferenceName)}>
+                  <label className="image-generation-reference-upload" title={currentReferenceName ? l('更换参考图', 'Replace reference') : l('上传封面参考图', 'Upload a thumbnail reference')}>
+                    <input type="file" accept="image/*" aria-label={l('上传封面参考图', 'Upload a thumbnail reference')} onChange={event => {
+                      chooseReference(event.target.files?.[0] ?? null);
+                      event.target.value = '';
+                    }} />
+                    <span className="image-generation-reference-thumbnail">{referencePreview ? <img src={referencePreview} alt={l('封面参考图', 'Thumbnail reference')} /> : <ImagePlus size={24} strokeWidth={1.5} />}</span>
+                    <span className="image-generation-reference-copy"><span><strong>{currentReferenceName || l('参考图', 'Reference')}</strong>{!currentReferenceName ? <small>{l('选填', 'Optional')}</small> : null}</span><small>{currentReferenceName ? l('更换参考图', 'Replace reference') : l('JPG、PNG、WebP', 'JPG, PNG, WebP')}</small></span>
+                    <span className="image-generation-reference-count">{currentReferenceName ? 1 : 0}/1</span>
+                  </label>
+                  {currentReferenceName ? <button className="image-generation-reference-remove" type="button" aria-label={l('清除参考图', 'Clear reference image')} onClick={clearReference}><X size={16} /></button> : null}
+                </div>
+                <div className="creator-tool-field image-generation-prompt-field">
+                  <label className="image-generation-visually-hidden" htmlFor="cover-prompt-input">{l('封面内容要求', 'Thumbnail content requirements')}</label>
+                  <textarea
+                    id="cover-prompt-input"
+                    rows={3}
+                    maxLength={creatorPromptMaxLength}
+                    value={prompt}
+                    onChange={event => updatePrompt(event.target.value)}
+                    placeholder={l('描述封面主体、文案、风格和画面氛围', 'Describe the thumbnail subject, copy, style, and visual mood')}
+                  />
+                </div>
+                <div className="dashboard-additional-source-row dashboard-cover-link-row">
+                  <label className="dashboard-translation-url-input">
+                    <Link2 size={18} strokeWidth={1.8} aria-hidden="true" />
+                    <input type="url" aria-label={l('YouTube 链接', 'YouTube URL')} value={youtubeUrl} onChange={event => updateYoutubeUrl(event.target.value)} placeholder={l('或粘贴 YouTube 链接', 'Or paste a YouTube URL')} />
+                  </label>
+                </div>
+                {error || notice ? <p className={error ? 'dashboard-translation-message is-error' : 'dashboard-translation-message'} role={error ? 'alert' : 'status'}>{error || notice}</p> : null}
+              </div>
+              <div className="image-generation-action-bar">
+                <div className="image-generation-model-row"><OfficialModelField label={l('图片模型', 'Image model')} service={official} disabled={busy} /></div>
+                <ImageGenerationSettings
+                  label={l('封面设置', 'Cover settings')}
+                  summary={{ aspectRatio: ratio, count: l(`${candidateCount} 个方案`, `${candidateCount} options`), resolution: coverStyleLabel(coverStyle, l), quality: qualityLabel }}
+                  sections={settingSections}
+                  disabled={busy}
+                  hideHeader
+                />
+                <div className="image-generation-submit-row">
+                  <button className="creator-tool-primary" type="submit" disabled={busy}>
+                    {busy ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}
+                    {busy ? l('正在生成', 'Generating') : l('生成封面', 'Generate Cover')}
+                  </button>
+                </div>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <CreatorToolShell

@@ -56,6 +56,7 @@ type Command struct {
 	Render            pipeline.RenderRequest
 	Compile           CompileSubtitleRequest
 	Cover             pipeline.CoverRequest
+	Clip              pipeline.ClipRequest
 	Pipeline          pipeline.PipelineRequest
 	Voices            VoicesRequest
 }
@@ -91,6 +92,8 @@ func Parse(args []string) (Command, error) {
 	switch name {
 	case "subtitle":
 		return parseSubtitle(name, args[1:])
+	case "clip":
+		return parseClip(name, args[1:])
 	case "tts":
 		return parseTTS(name, args[1:])
 	case "speech":
@@ -139,6 +142,24 @@ Flags:
   --subtitle-style-file <file>  JSON subtitle style override file
   --dry-run                  Validate command without external calls
   -h, --help                 Show this help
+`
+	case "clip":
+		return `Usage:
+  krillinai-cli clip --input <video-or-url> --count <n> --min-duration-sec <n> --max-duration-sec <n> --workdir <dir> [flags]
+
+Flags:
+  --input <source>          Public video URL or local video file
+  --count <n>               Maximum number of clips, 1 to 20 (default 3)
+  --min-duration-sec <n>    Minimum clip length in seconds (default 90)
+  --max-duration-sec <n>    Maximum clip length in seconds (default 180)
+  --origin-lang <lang>      Source language for transcription (default auto)
+  --caption-source <kind>  any, platform, or whisper (default any)
+  --defer-transcription    Return a dependency request if YouTube captions are unavailable
+  --input-srt <file>        Optional existing source-language SRT
+  --workdir <dir>           Task working directory
+  --task-id <id>            Optional task id
+  --dry-run                 Validate parameters without external calls
+  -h, --help                Show this help
 `
 	case "tts":
 		return `Usage:
@@ -296,6 +317,9 @@ func Execute(ctx context.Context, svc pipeline.StageService, cmd Command) pipeli
 		}
 		cmd.Subtitle.SubtitleStyle = style
 		resp, err := pipeline.GenerateSubtitles(ctx, svc, cmd.Subtitle)
+		return responseWithError(resp, err)
+	case "clip":
+		resp, err := pipeline.RunClip(ctx, svc, cmd.Clip)
 		return responseWithError(resp, err)
 	case "tts":
 		resp, err := pipeline.GenerateTTS(ctx, svc, cmd.TTS)
@@ -520,6 +544,40 @@ func parseCover(name string, args []string) (Command, error) {
 	}, nil
 }
 
+func parseClip(name string, args []string) (Command, error) {
+	if hasHelpArg(args) {
+		return Command{Name: name, Help: true}, nil
+	}
+	fs := newFlagSet(name)
+	input := fs.String("input", "", "video source")
+	inputSRT := fs.String("input-srt", "", "existing source subtitles")
+	workdir := fs.String("workdir", "", "workdir")
+	taskID := fs.String("task-id", "", "task id")
+	count := fs.Int("count", 3, "maximum clips")
+	minDuration := fs.Int("min-duration-sec", 90, "minimum clip seconds")
+	maxDuration := fs.Int("max-duration-sec", 180, "maximum clip seconds")
+	originLang := fs.String("origin-lang", "auto", "source language")
+	captionSource := fs.String("caption-source", string(pipeline.CaptionSourceAny), "caption source")
+	deferTranscription := fs.Bool("defer-transcription", false, "request transcription dependencies after caption fallback")
+	dryRun := fs.Bool("dry-run", false, "validate without external calls")
+	if err := fs.Parse(args); err != nil {
+		return Command{}, err
+	}
+	if fs.NArg() != 0 {
+		return Command{}, errors.New("clip accepts input through --input only")
+	}
+	req := pipeline.ClipRequest{
+		Input: *input, InputSRT: *inputSRT, Workdir: *workdir, TaskID: *taskID,
+		Count: *count, MinDurationSec: *minDuration, MaxDurationSec: *maxDuration,
+		OriginLang: *originLang, CaptionSource: pipeline.CaptionSource(*captionSource),
+		DeferTranscription: *deferTranscription,
+	}
+	if err := req.Validate(); err != nil {
+		return Command{}, err
+	}
+	return Command{Name: name, DryRun: *dryRun, Clip: req}, nil
+}
+
 func parseSubtitle(name string, args []string) (Command, error) {
 	if hasHelpArg(args) {
 		return Command{Name: name, Help: true}, nil
@@ -734,6 +792,8 @@ func dryRun(cmd Command) pipeline.Response {
 			return styleLoadFailure(pipeline.StageSubtitle, cmd.Subtitle.Workdir, cmd.Subtitle.TaskID, err)
 		}
 		return dryRunResponse(pipeline.StageSubtitle, cmd.Subtitle.Workdir, cmd.Subtitle.TaskID)
+	case "clip":
+		return dryRunResponse(pipeline.StageClip, cmd.Clip.Workdir, cmd.Clip.TaskID)
 	case "tts":
 		return dryRunManifest(cmd.TTS.Workdir, cmd.TTS.TaskID, pipeline.StageTTS, nil)
 	case "speech":

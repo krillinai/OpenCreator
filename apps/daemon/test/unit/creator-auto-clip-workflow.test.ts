@@ -18,6 +18,16 @@ afterEach(() => {
 });
 
 describe('auto clip workflow', () => {
+  it('queues one KrillinAI clip stage for the latest template', () => {
+    const fixture = setup('url', 3);
+    const stageId = fixture.dispatcher.dispatch(fixture.jobId, {
+      action: 'run-stage', expectedRevision: 0, idempotencyKey: 'auto-clip-v3',
+      input: { stageId: 'clip' }
+    }, 'user').commandReceipt.stageRunId!;
+    expect(fixture.service.getJob(fixture.jobId)?.stages.map(stage => stage.stageId)).toEqual(['clip']);
+    fixture.repository.updateStageRun({ id: stageId, status: 'succeeded' });
+    fixture.db.close();
+  });
   it('queues URL preparation, transcription, analysis, and rendering in order', async () => {
     const fixture = setup('url');
     const probe = fixture.dispatcher.dispatch(fixture.jobId, {
@@ -108,7 +118,7 @@ describe('auto clip workflow', () => {
   });
 });
 
-function setup(sourceType: 'url' | 'file') {
+function setup(sourceType: 'url' | 'file', templateVersion = 2) {
   tempDir = mkdtempSync(join(tmpdir(), 'creator-auto-clip-workflow-'));
   const db = openRuntimeDatabase(join(tempDir, 'runtime.sqlite'));
   const repository = createCreatorRepository(db);
@@ -119,6 +129,7 @@ function setup(sourceType: 'url' | 'file') {
   const job = service.createJob({
     projectId: 'project-auto-clip',
     templateId: 'auto-clip',
+    templateVersion,
     state: {
       sourceType,
       sourceUrl: sourceType === 'url' ? 'https://www.youtube.com/watch?v=auto-clip' : ''

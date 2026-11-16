@@ -1,10 +1,11 @@
 import { changeControl } from '../../test/select-option.js';
-import type { CreatorActionRequest, CreatorArtifact, CreatorJob } from '@opencreator/protocol';
+import { createDefaultCreatorServicesConfig, type CreatorActionRequest, type CreatorArtifact, type CreatorJob } from '@opencreator/protocol';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import ShortVideoScriptWorkspace from './ShortVideoScriptWorkspace.js';
-import { CreatorSessionProvider } from './creator-session-store.js';
+import { CreatorSessionProvider, useCreatorSession } from './creator-session-store.js';
+import { OfficialServicesContext } from './official-services.js';
 
 describe('ShortVideoScriptWorkspace', () => {
   it('saves settings, generates a script, and copies and downloads the edited content', async () => {
@@ -129,6 +130,98 @@ describe('ShortVideoScriptWorkspace', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('目标时长应为 15 到 600 秒的整数');
     expect(applyAction).not.toHaveBeenCalled();
+  });
+
+  it('keeps the required topic error visible and submits text entered in the main field', async () => {
+    let current = initialJob();
+    const applyAction = vi.fn(async (_jobId: string, request: CreatorActionRequest) => {
+      if (request.action === 'update-settings') {
+        current = {
+          ...current,
+          revision: current.revision + 1,
+          state: { ...current.state, ...(request.input.patch as CreatorJob['state']) }
+        };
+      }
+      return {
+        job: current,
+        receipt: {
+          actor: 'user' as const,
+          action: request.action,
+          summary: request.action,
+          affectedArtifacts: [],
+          newRevision: current.revision,
+          createdAt: current.updatedAt
+        }
+      };
+    });
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider initialJob={current} service={{ applyAction, runAgentTurn: vi.fn() }}>
+          <ShortVideoScriptWorkspace embedded onBack={vi.fn()} />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    const topic = screen.getByRole('textbox', { name: '创作主题或素材' });
+    expect(screen.getByPlaceholderText('例如：初次接触产品的用户')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '生成脚本' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('请填写主题或素材后再生成脚本');
+    expect(topic).toHaveFocus();
+
+    fireEvent.change(topic, { target: { value: '我爱学习' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '生成脚本' }));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith('script_job', expect.objectContaining({ action: 'run-stage' })));
+    expect(current.state).toMatchObject({ topic: '我爱学习', audience: '', platform: 'douyin', targetDurationSeconds: 60, tone: 'natural' });
+  });
+
+  it.each([
+    { locale: 'zh-CN' as const, message: '官方模型服务尚未就绪，请稍后重试' },
+    { locale: 'en-US' as const, message: 'The official model service is not ready. Try again shortly.' }
+  ])('explains unavailable official services in $locale without asking the user to change script settings', async ({ locale, message }) => {
+    const job = { ...initialJob(), state: { ...initialJob().state, topic: '测试主题' } };
+    const applyAction = vi.fn(async () => {
+      throw Object.assign(new Error('private upstream detail'), { code: 'services_not_ready' });
+    });
+    function RefreshSnapshot() {
+      const session = useCreatorSession();
+      return <button type="button" onClick={() => session.applyRemoteSnapshot(job)}>Refresh snapshot</button>;
+    }
+    render(
+      <LanguageProvider initialPreference={locale}>
+        <CreatorSessionProvider initialJob={job} service={{ applyAction, runAgentTurn: vi.fn() }}>
+          <ShortVideoScriptWorkspace embedded onBack={vi.fn()} />
+          <RefreshSnapshot />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: locale === 'zh-CN' ? '生成脚本' : 'Generate Script' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByRole('alert')).toHaveTextContent('services_not_ready');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('private upstream detail');
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh snapshot' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(message);
+  });
+
+  it('shows the configured text model instead of an unavailable official model', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.llm.model = 'gpt-4o-mini';
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <OfficialServicesContext.Provider value={{ source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null }}>
+          <ShortVideoScriptWorkspace
+            embedded
+            onBack={vi.fn()}
+            creatorServicesService={{ getConfig: vi.fn(async () => ({ config, configuredCredentials: [] })) } as never}
+          />
+        </OfficialServicesContext.Provider>
+      </LanguageProvider>
+    );
+
+    expect(await screen.findByRole('status', { name: '文本模型' })).toHaveTextContent('gpt-4o-mini');
+    expect(screen.queryByDisplayValue('暂不可用')).not.toBeInTheDocument();
+    expect(document.querySelector('.official-model-value .model-brand-icon')).toHaveAttribute('data-brand', 'openai');
   });
 });
 

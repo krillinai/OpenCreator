@@ -242,6 +242,31 @@ describe('Short video script panel', () => {
 });
 
 describe('CreatorCollaborationPanel', () => {
+  it.each([
+    ['downloading_media', 41, '下载视频与音频', '正在下载视频：27.7 MiB / 39.8 MiB；预计剩余 165 秒'],
+    ['analyzing_clips', 48, '分析高光与传播潜力', '正在查找完整片段'],
+    ['rendering_clips', 60, '正在导出视频切片 0/3', '正在生成片段 1/3']
+  ])('shows the auto-clip %s phase and live detail beside overall progress', (phase, percent, label, message) => {
+    const job = videoGenerationJob();
+    job.templateId = 'auto-clip';
+    job.templateVersion = 3;
+    job.state = { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=fixture', clipCount: 3, duration: '90-180' };
+    job.activities = [];
+    job.stages[0] = {
+      ...job.stages[0]!, stageId: 'clip', executor: 'krillinai',
+      progress: { phase, percent, message, completed: 0, total: 3 }
+    };
+    const { container } = render(<LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={job} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+        <CreatorCollaborationPanel adapter={creatorPanelAdapterFor('auto-clip')} stepLabel="生成视频切片" contextSummary="3 个片段" />
+      </CreatorSessionProvider>
+    </LanguageProvider>);
+
+    expect(screen.getByText(label)).toBeVisible();
+    expect(container.querySelector('.creator-collaboration-stage-message')).toHaveTextContent(message);
+    expect(screen.getByRole('progressbar', { name: '生成视频切片进度' })).toHaveAttribute('aria-valuenow', String(percent));
+  });
+
   it('keeps the failed subtitle retry distinct from an active source download', () => {
     const job = videoGenerationJob();
     job.templateId = 'video-translation';
@@ -273,6 +298,40 @@ describe('CreatorCollaborationPanel', () => {
     expect(screen.getByRole('button', { name: '重试字幕翻译' })).toBeDisabled();
     expect(screen.getByRole('progressbar', { name: '原视频预览准备进度' })).toHaveAttribute('aria-valuenow', '39');
     expect(applyAction).not.toHaveBeenCalled();
+  });
+
+  it('offers proxy settings and the existing stage retry for a timed-out translation subtitle', () => {
+    const job = videoGenerationJob();
+    job.templateId = 'video-translation';
+    job.status = 'failed';
+    job.state = { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=demo' };
+    const failedStage = { ...job.stages[0]!, id: 'subtitle_timeout', stageId: 'subtitle', status: 'failed' as const,
+      errorCode: 'platform_caption_access_failed',
+      errorMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 60] Operation timed out',
+      progress: { phase: 'failed', percent: 1, workflow: true }, finishedAt: job.updatedAt };
+    job.stages = [failedStage];
+    const previousHash = window.location.hash;
+    window.location.hash = `#/workbench?tool=video-translation&jobId=${job.id}&returnTo=projects`;
+    const issue = { ...normalizePageIssue('runtime', 'creator.retry-stage', new Error(failedStage.errorMessage),
+      failedStage.errorMessage), source: 'stage' as const, code: failedStage.errorCode,
+      stageId: 'subtitle', stageRunId: failedStage.id, status: 'open' as const,
+      publicFacts: { kind: 'unknown' as const, provider: 'krillinai', upstreamMessage: failedStage.errorMessage },
+      repairActions: [{ kind: 'retry-operation' as const, operationId: 'creator.retry-stage', requiresConfirmation: false, risk: 'normal' as const }] };
+    render(<LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={job} externalIssues={[issue]}
+        service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+        <CreatorCollaborationPanel adapter={videoTranslationPanelAdapter} stepLabel="翻译字幕" contextSummary="English → 简体中文" />
+        <TaskProgressBarHarness />
+      </CreatorSessionProvider>
+    </LanguageProvider>);
+
+    expect(screen.getByRole('log', { name: '协作时间线' })).toHaveTextContent('视频平台连接超时，字幕读取未完成');
+    const settings = screen.getByRole('link', { name: '检查代理设置' });
+    expect(settings.getAttribute('href')).toContain('#/settings?from=video-translation&returnPath=');
+    expect(new URLSearchParams(settings.getAttribute('href')?.split('?')[1]).get('returnPath'))
+      .toBe(`#/workbench?tool=video-translation&jobId=${job.id}&returnTo=projects`);
+    expect(screen.getByRole('button', { name: '重试字幕翻译' })).toBeEnabled();
+    window.location.hash = previousHash;
   });
 
   it('places a supplied summary above the timeline and preserves current issues', () => {
@@ -398,7 +457,7 @@ describe('CreatorCollaborationPanel', () => {
       id: 'real-person-die-cut-sticker-poster',
       title: '真人切模贴纸海报',
       version: 2,
-      adapterId: 'generic'
+      adapterId: 'image-generation'
     },
     {
       module: 'video-generation' as const,

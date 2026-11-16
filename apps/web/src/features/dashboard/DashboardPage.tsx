@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { CreatorJob, CreatorJson, GatewayAccountState, OpenCreatorIssue } from '@opencreator/protocol';
-import { OfficialServicesContext } from './official-services.js';
+import { OfficialModelMemoryContext, OfficialServicesContext } from './official-services.js';
+import DashboardGenerationAccess from './DashboardGenerationAccess.js';
 import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { createLocalizedCopy } from '../../i18n/localized-copy.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import {
-  ArrowUpRight,
+  Captions,
   Clapperboard,
   Download,
   FilePenLine,
@@ -16,7 +17,6 @@ import {
   Mic2,
   PenLine,
   Newspaper,
-  Search,
   ServerOff,
   Sparkles,
   UserRound,
@@ -27,14 +27,27 @@ import './dashboard.css';
 import AutoClipWorkspace from './AutoClipWorkspace.js';
 import CoverGeneratorWorkspace from './CoverGeneratorWorkspace.js';
 import DigitalAvatarWorkspace from './DigitalAvatarWorkspace.js';
+import DashboardGenerationComposer, {
+  dashboardGenerationGroup,
+  dashboardGenerationWorkspace,
+  readPendingDashboardGenerationMode,
+  type DashboardGenerationMode,
+  type DashboardGenerationWorkspace
+} from './DashboardGenerationComposer.js';
+import DashboardImageCarousel from './DashboardImageCarousel.js';
+import DashboardVideoDownloadCover from './DashboardVideoDownloadCover.js';
+import DashboardGenerationHistory, { type GenerationHistoryType } from './DashboardGenerationHistory.js';
+import { generationHistoryTypeForWorkspace } from './generation-history-type.js';
+import DashboardGenerationSession from './DashboardGenerationSession.js';
 import ImageGenerationWorkspace from './ImageGenerationWorkspace.js';
 import ShortVideoScriptWorkspace from './ShortVideoScriptWorkspace.js';
 import SmartDubbingWorkspace from './SmartDubbingWorkspace.js';
+import TranscriptionWorkspace from './TranscriptionWorkspace.js';
 import XiaohongshuPostWorkspace from './XiaohongshuPostWorkspace.js';
 import WechatArticleWorkspace from './WechatArticleWorkspace.js';
 import StickmanVideoWorkspace from './StickmanVideoWorkspace.js';
 import VideoDownloadBatchWorkspace from './VideoDownloadBatchWorkspace.js';
-import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
+import VideoTranslationWorkspace, { resultVersionsFromArtifacts } from './VideoTranslationWorkspace.js';
 import VideoGenerationWorkspace from './VideoGenerationWorkspace.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
 import { ApiClientError } from '../../runtime/errors.js';
@@ -50,14 +63,15 @@ import type {
 import {
   creatorTemplateForWorkspace,
   creatorTemplateVersionForWorkspace,
+  creatorWorkspaceForTemplate,
   isVisibleCreatorWorkspace
 } from './creator-workspace.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
-import { CreateProjectDropdown } from '../projects/CreateProjectDropdown.js';
 import type { CreatorProjectType } from '../projects/project-types.js';
 import { IssueList } from '../issues/IssuePresenter.js';
 import { usePageIssueState } from '../issues/page-issue-state.js';
+import { timePeriodGreeting } from '../conversation/ConversationEmptyState.js';
 
 type DashboardCategory = '视频创作' | '图像创作' | '文案创作' | '音频处理' | '视频编辑' | '数字人';
 
@@ -67,39 +81,9 @@ type DashboardEntry = {
   prompt: string;
   category: DashboardCategory;
   icon: LucideIcon;
-  badge?: 'NEW' | 'HOT';
+  badge?: 'NEW' | 'HOT' | 'LANGUAGE';
   workspace?: CreatorWorkspace;
 };
-
-type FeaturedEntry = Pick<DashboardEntry, 'title' | 'prompt'> & {
-  image: string;
-  accent: 'warm' | 'cyan' | 'neutral';
-  workspace?: CreatorWorkspace;
-};
-
-const featuredTools: FeaturedEntry[] = [
-  {
-    title: '视频翻译配音',
-    image: '/dashboard/templates/video-translation-example.png',
-    prompt: '帮我把这段视频翻译成目标语言，保留原片语气，并生成匹配的字幕和配音。',
-    accent: 'cyan',
-    workspace: 'video-translation'
-  },
-  {
-    title: '封面生成',
-    image: '/dashboard/templates/peter-openclaw-cover.png',
-    prompt: '根据我的内容主题生成一张封面，请先规划标题层级、主体画面、构图和视觉风格。',
-    accent: 'warm',
-    workspace: 'cover-generator'
-  },
-  {
-    title: '图像生成',
-    image: '/dashboard/templates/image-generation-cover.png',
-    prompt: '根据我的创意生成一组图片，请先确认画面主体、风格、构图和使用场景。',
-    accent: 'neutral',
-    workspace: 'image-generation'
-  }
-];
 
 const creatorTools: DashboardEntry[] = [
   {
@@ -112,11 +96,11 @@ const creatorTools: DashboardEntry[] = [
   },
   {
     title: '视频翻译',
-    description: '字幕、配音与口型同步',
+    description: '影视级字幕 · 配音 · 唇形同步',
     prompt: '帮我把这段视频翻译成目标语言，保留原片语气，并生成匹配的字幕和配音。',
     category: '视频编辑',
     icon: Languages,
-    badge: 'HOT',
+    badge: 'LANGUAGE',
     workspace: 'video-translation'
   },
   {
@@ -195,6 +179,15 @@ const creatorTools: DashboardEntry[] = [
     workspace: 'smart-dubbing'
   },
   {
+    title: '视频转录',
+    description: '视频语音转文字与 SRT 字幕',
+    prompt: '帮我转录这个视频，保留原文并生成可下载的文本和 SRT 字幕。',
+    category: '音频处理',
+    icon: Captions,
+    badge: 'NEW',
+    workspace: 'transcription'
+  },
+  {
     title: '数字人口播',
     description: '快速制作专业口播',
     prompt: '帮我制作一支数字人口播视频，请先优化文案，再规划人物、声音和画面。',
@@ -204,15 +197,35 @@ const creatorTools: DashboardEntry[] = [
   }
 ];
 
-const categories = ['推荐', '全部', '视频创作', '视频编辑', '图像创作', '文案创作', '音频处理'] as const;
+const categories = ['推荐', '视频创作', '视频编辑', '图像创作', '文案创作', '音频处理'] as const;
 type CategoryFilter = typeof categories[number];
 const recommendedTabWorkspaces = new Set<CreatorWorkspace>([
   'video-download',
   'video-translation',
   'video-generation',
-  'image-generation',
-  'smart-dubbing'
+  'image-generation'
 ]);
+
+const creatorToolImages: Record<CreatorWorkspace, string> = {
+  'video-translation': '/dashboard/templates/video-translation-example.png',
+  'video-download': '/dashboard/templates/video-download-cover.png',
+  'stickman-video': '/dashboard/templates/ai-video-insane.jpg',
+  'auto-clips': '/dashboard/templates/intelligent-clipping-cover.png',
+  'smart-dubbing': '/dashboard/templates/intelligent-clipping-cover.png',
+  'transcription': '/dashboard/templates/video-localization.jpg',
+  'xiaohongshu-post': '/dashboard/templates/image-generation-cover.png',
+  'short-video-script': '/skill-market/examples/seedance-2-video-ad.png',
+  'wechat-article': '/dashboard/templates/animated-story.jpg',
+  'digital-avatar': '/dashboard/templates/digital-presenter.jpg',
+  'cover-generator': '/dashboard/templates/peter-openclaw-cover.png',
+  'image-generation': '/dashboard/templates/image-generation-cover.png',
+  'video-generation': '/dashboard/templates/animated-story.jpg'
+};
+
+const creatorToolVideos: Partial<Record<CreatorWorkspace, string>> = {
+  'video-generation': '/dashboard/templates/seedance-2.5-demo.mp4',
+  'video-translation': '/dashboard/templates/video-translation-demo.mp4'
+};
 
 const CREATOR_JOB_CREATE_ATTEMPT_TIMEOUT_MS = 4_000;
 const CREATOR_JOB_CREATE_ATTEMPTS = 3;
@@ -223,13 +236,17 @@ export default function DashboardPage(props: {
   onSelectPrompt(prompt: string): void;
   onBackToHome?(): void;
   onWorkspaceModeChange?(active: boolean): void;
+  onGenerationModeChange?(mode: DashboardGenerationMode): void;
   skillLaunch?: CreatorSkillLaunch;
   creatorServicesService?: CreatorServicesSettingsService | null;
   gatewayState?: GatewayAccountState | null;
   gatewayAccountService?: GatewayAccountSettingsService | null;
+  onGatewayStateChange?(state: GatewayAccountState): void;
+  openExternal?(url: string): Promise<void> | void;
   videoMetadataService?: VideoMetadataService;
   workspace?: CreatorWorkspace;
   jobId?: string;
+  returnTo?: 'projects';
   projectId?: string;
   creatorService?: CreatorWebService | null;
   runtimeDependencies?: RuntimeDependenciesController;
@@ -246,6 +263,11 @@ export default function DashboardPage(props: {
 }) {
   const { language, t } = useAppLanguage();
   const l = useLocalizedCopy();
+  const greeting = timePeriodGreeting(new Date());
+  const accountNickname = props.gatewayState?.authState === 'signed_in'
+    ? props.gatewayState.account?.email.split('@')[0]?.trim()
+    : undefined;
+  const greetingText = greetingWithNickname(t(`home.greeting.${greeting}`), accountNickname);
   const launchIssues = usePageIssueState('creator-launch');
   const [activeWorkspace, setActiveWorkspace] = useState<CreatorWorkspace | null>(
     () => props.skillLaunch?.workspace ?? props.workspace ?? null
@@ -253,24 +275,36 @@ export default function DashboardPage(props: {
   const [activePromptHint, setActivePromptHint] = useState(
     () => props.skillLaunch?.promptHint
   );
+  const generationJobIdsRef = useRef<Partial<Record<CreatorWorkspace, string>>>(
+    props.workspace && props.jobId ? { [props.workspace]: props.jobId } : {}
+  );
   const [activeJobId, setActiveJobId] = useState(props.jobId);
+  const [generationResultActive, setGenerationResultActive] = useState(props.workspace === 'image-generation' && props.jobId !== undefined);
+  const [generationHistoryActive, setGenerationHistoryActive] = useState(false);
+  const [generationSessionActive, setGenerationSessionActive] = useState(false);
+  const generationSessionReturnRef = useRef<{ workspace: CreatorWorkspace; jobId?: string }>();
+  const historyJobRef = useRef<CreatorJob>();
+  const generationHistoryOriginRef = useRef<{
+    workspace: CreatorWorkspace;
+    jobId?: string;
+    creationWorkspace: CreatorWorkspace | null;
+    creationJobId?: string;
+    type: GenerationHistoryType;
+    visibleCount?: number;
+  }>();
+  const internalWorkspaceNavigationRef = useRef<CreatorWorkspace | undefined>(undefined);
   const [workspaceOrigin, setWorkspaceOrigin] = useState<'home' | 'dashboard'>(
     () => props.skillLaunch === undefined ? 'dashboard' : 'home'
   );
   const [category, setCategory] = useState<CategoryFilter>('推荐');
-  const [query, setQuery] = useState('');
-  const normalizedQuery = query.trim().toLocaleLowerCase();
   const localize = (value: string) => createLocalizedCopy(language)(value, englishDashboardLabels[value] ?? value);
   const visibleTools = useMemo(() => creatorTools.filter(tool => {
     if (tool.workspace === undefined || !isVisibleCreatorWorkspace(tool.workspace)) return false;
-    const matchesCategory = category === '全部'
-      || (category === '推荐' ? recommendedTabWorkspaces.has(tool.workspace) : tool.category === category);
-    const matchesQuery = normalizedQuery.length === 0
-      || `${localize(tool.title)} ${localize(tool.description)} ${localize(tool.category)}`
-        .toLocaleLowerCase()
-        .includes(normalizedQuery);
-    return matchesCategory && matchesQuery;
-  }), [category, language, normalizedQuery]);
+    return category === '推荐' ? recommendedTabWorkspaces.has(tool.workspace) : tool.category === category;
+  }), [category]);
+  const unifiedComposerActive = !generationResultActive && activeWorkspace !== null && [
+    'video-translation', 'transcription', 'image-generation', 'cover-generator', 'video-generation', 'video-download', 'auto-clips', 'smart-dubbing', 'short-video-script'
+  ].includes(activeWorkspace);
 
   useEffect(() => {
     if (props.createProjectError === undefined) launchIssues.resolveOperation('creator-launch.create-project');
@@ -287,11 +321,19 @@ export default function DashboardPage(props: {
   ]);
 
   useEffect(() => {
-    props.onWorkspaceModeChange?.(activeWorkspace !== null);
+    props.onWorkspaceModeChange?.(activeWorkspace !== null && !unifiedComposerActive && !generationSessionActive);
     return () => props.onWorkspaceModeChange?.(false);
-  }, [activeWorkspace, props.onWorkspaceModeChange]);
+  }, [activeWorkspace, generationSessionActive, props.onWorkspaceModeChange, unifiedComposerActive]);
 
   useEffect(() => {
+    if (props.skillLaunch?.workspace === undefined && internalWorkspaceNavigationRef.current !== undefined && internalWorkspaceNavigationRef.current === props.workspace) {
+      internalWorkspaceNavigationRef.current = undefined;
+      return;
+    }
+    internalWorkspaceNavigationRef.current = undefined;
+    setGenerationResultActive(props.workspace === 'image-generation' && props.jobId !== undefined);
+    setGenerationHistoryActive(false);
+    setGenerationSessionActive(false);
     if (props.skillLaunch?.workspace !== undefined) {
       setWorkspaceOrigin('home');
       setActiveWorkspace(props.skillLaunch.workspace);
@@ -304,12 +346,69 @@ export default function DashboardPage(props: {
 
   useEffect(() => {
     setActiveJobId(props.jobId);
-  }, [props.jobId]);
+    if (props.workspace === undefined) {
+      generationJobIdsRef.current = {};
+      return;
+    }
+    if (props.jobId === undefined) delete generationJobIdsRef.current[props.workspace];
+    else generationJobIdsRef.current[props.workspace] = props.jobId;
+  }, [props.jobId, props.workspace]);
+
+  useEffect(() => {
+    if ((props.workspace !== 'video-generation' && props.workspace !== 'video-translation')
+      || props.returnTo !== 'projects' || !props.jobId || !props.creatorService) return;
+    const controller = new AbortController();
+    void props.creatorService.getJob(props.jobId, { signal: controller.signal }).then(({ job }) => {
+      if (controller.signal.aborted) return;
+      setGenerationResultActive(props.workspace === 'video-generation'
+        ? job.stages.some(stage => stage.stageId === 'generate')
+        : (job.status === 'failed' || job.status === 'needs_input')
+          && job.stages.some(stage => stage.status === 'failed')
+          && resultVersionsFromArtifacts(job.artifacts, job.state).length === 0);
+      setGenerationSessionActive(false);
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [props.creatorService, props.jobId, props.returnTo, props.workspace]);
+
+  const resetCreationSession = (workspace: CreatorWorkspace | null) => {
+    historyJobRef.current = undefined;
+    setActiveJobId(undefined);
+    if (workspace) delete generationJobIdsRef.current[workspace];
+  };
 
   const closeWorkspace = () => {
+    historyJobRef.current = undefined;
+    const sessionReturn = generationSessionReturnRef.current;
+    if (sessionReturn) {
+      generationSessionReturnRef.current = undefined;
+      setActiveWorkspace(sessionReturn.workspace);
+      setActiveJobId(sessionReturn.jobId);
+      setGenerationResultActive(true);
+      setGenerationSessionActive(true);
+      return;
+    }
+    if (generationSessionActive) {
+      setGenerationSessionActive(false);
+      setGenerationResultActive(false);
+      resetCreationSession(activeWorkspace);
+      props.onWorkspaceNavigate?.(activeWorkspace);
+      return;
+    }
+    const historyOrigin = generationHistoryActive && generationResultActive ? generationHistoryOriginRef.current : undefined;
+    if (historyOrigin) {
+      setActiveWorkspace(historyOrigin.workspace);
+      setActivePromptHint(undefined);
+      setActiveJobId(historyOrigin.jobId);
+      setGenerationResultActive(false);
+      internalWorkspaceNavigationRef.current = historyOrigin.workspace !== props.workspace ? historyOrigin.workspace : undefined;
+      props.onWorkspaceNavigate?.(historyOrigin.workspace, historyOrigin.jobId);
+      return;
+    }
     setActiveWorkspace(null);
     setActivePromptHint(undefined);
     setActiveJobId(undefined);
+    setGenerationResultActive(false);
+    setGenerationHistoryActive(false);
     if (workspaceOrigin === 'home') {
       props.onBackToHome?.();
     } else {
@@ -317,12 +416,44 @@ export default function DashboardPage(props: {
     }
   };
 
-  const openWorkspace = (workspace: CreatorWorkspace) => {
+  const openWorkspace = (workspace: CreatorWorkspace, jobId?: string, generated = false, historyJob?: CreatorJob) => {
+    historyJobRef.current = historyJob;
     setWorkspaceOrigin('dashboard');
     setActivePromptHint(undefined);
-    setActiveJobId(undefined);
+    setActiveJobId(jobId);
     setActiveWorkspace(workspace);
-    props.onWorkspaceNavigate?.(workspace);
+    setGenerationResultActive(generated);
+    setGenerationSessionActive(generated && !generationHistoryActive);
+    internalWorkspaceNavigationRef.current = workspace !== props.workspace ? workspace : undefined;
+    props.onWorkspaceNavigate?.(workspace, jobId);
+  };
+
+  const openJobEditor = (workspace: CreatorWorkspace, job: CreatorJob) => {
+    if (activeWorkspace) generationSessionReturnRef.current = { workspace: activeWorkspace, jobId: activeJobId };
+    openWorkspace(workspace, job.id, true, job);
+    setGenerationSessionActive(false);
+  };
+
+  const openGenerationHistory = () => {
+    const workspace = activeWorkspace ?? 'image-generation';
+    const jobId = generationJobIdsRef.current[workspace];
+    generationHistoryOriginRef.current = {
+      workspace,
+      jobId,
+      creationWorkspace: activeWorkspace,
+      creationJobId: activeJobId,
+      type: generationHistoryTypeForWorkspace(activeWorkspace)
+    };
+    setWorkspaceOrigin('dashboard');
+    setActivePromptHint(undefined);
+    setActiveWorkspace(workspace);
+    setActiveJobId(jobId);
+    setGenerationResultActive(false);
+    setGenerationSessionActive(false);
+    generationSessionReturnRef.current = undefined;
+    setGenerationHistoryActive(true);
+    internalWorkspaceNavigationRef.current = workspace !== props.workspace ? workspace : undefined;
+    props.onWorkspaceNavigate?.(workspace, jobId);
   };
 
   const handleJobCreated = (workspace: CreatorRuntimeWorkspace, job: CreatorJob) => {
@@ -331,7 +462,11 @@ export default function DashboardPage(props: {
     props.onWorkspaceNavigate?.(workspace, job.id, { replace: true });
   };
 
-  const renderCreatorWorkspace = (workspace: CreatorRuntimeWorkspace, content: ReactNode) => {
+  const renderCreatorWorkspace = (
+    workspace: CreatorRuntimeWorkspace,
+    content: ReactNode,
+    options?: { key?: string; jobId?: string; onJobCreated?(job: CreatorJob): void }
+  ) => {
     if (!props.projectId || !props.creatorService) {
       return (
         <CreatorRuntimeBlocker
@@ -342,19 +477,225 @@ export default function DashboardPage(props: {
     }
     return (
       <CreatorWorkspaceSession
+        key={options?.key}
         projectId={props.projectId}
         service={props.creatorService}
         templateId={creatorTemplateForWorkspace(workspace)}
         templateVersion={creatorTemplateVersionForWorkspace(workspace)}
-        jobId={activeJobId}
-        onJobCreated={job => handleJobCreated(workspace, job)}
+        jobId={options ? options.jobId : activeJobId}
+        initialJob={historyJobRef.current}
+        onJobCreated={job => options?.onJobCreated ? options.onJobCreated(job) : handleJobCreated(workspace, job)}
         onAskIssue={props.onAskIssue}
         onBack={closeWorkspace}
       >
-        <OfficialServicesContext.Provider value={props.gatewayState}>{content}</OfficialServicesContext.Provider>
+        <DashboardGenerationAccess
+          gatewayState={props.gatewayState}
+          gatewayAccountService={props.gatewayAccountService}
+          onGatewayStateChange={props.onGatewayStateChange}
+          openExternal={props.openExternal}
+        >
+          <OfficialModelMemoryContext.Provider value={props.gatewayAccountService?.rememberTaskModel ? {
+            service: { getState: props.gatewayAccountService.getState, rememberTaskModel: props.gatewayAccountService.rememberTaskModel },
+            onStateChange: props.onGatewayStateChange
+          } : null}>
+            <OfficialServicesContext.Provider value={props.gatewayState}>{content}</OfficialServicesContext.Provider>
+          </OfficialModelMemoryContext.Provider>
+        </DashboardGenerationAccess>
       </CreatorWorkspaceSession>
     );
   };
+
+  const renderEmbeddedGenerationWorkspace = (
+    workspace: DashboardGenerationWorkspace,
+    tabs: ReactNode,
+    mode: DashboardGenerationMode
+  ) => {
+    const onGenerated = (jobId?: string) => {
+      if (jobId) generationJobIdsRef.current[workspace] = jobId;
+      openWorkspace(workspace, jobId ?? generationJobIdsRef.current[workspace], true);
+    };
+    return renderCreatorWorkspace(workspace, workspace === 'image-generation' ? (
+      <ImageGenerationWorkspace
+        embedded
+        embeddedTabs={tabs}
+        forceComposer={generationSessionActive}
+        onGenerated={onGenerated}
+        creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
+        onBack={closeWorkspace}
+      />
+    ) : workspace === 'cover-generator' ? (
+      <CoverGeneratorWorkspace
+        embedded
+        embeddedTabs={tabs}
+        forceComposer={generationSessionActive}
+        onGenerated={onGenerated}
+        onBack={closeWorkspace}
+      />
+    ) : workspace === 'video-generation' ? (
+      <VideoGenerationWorkspace
+        embedded
+        embeddedTabs={tabs}
+        forceComposer={generationSessionActive}
+        onGenerated={onGenerated}
+        creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
+        onBack={closeWorkspace}
+      />
+    ) : workspace === 'video-translation' ? (
+      <VideoTranslationWorkspace
+        embedded
+        embeddedTabs={tabs}
+        forceComposer={generationSessionActive}
+        onGenerated={onGenerated}
+        initialDubbing={mode === 'voiceover' ? true : mode === 'translation-subtitles' ? false : undefined}
+        initialComposeVideo={mode === 'voiceover' ? true : mode === 'translation-subtitles' ? false : undefined}
+        runtimeDependencies={props.runtimeDependencies}
+        videoMetadataService={props.videoMetadataService}
+        creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
+        backToParentOnExit={props.returnTo === 'projects'}
+        onBack={closeWorkspace}
+      />
+    ) : workspace === 'smart-dubbing' ? (
+      <SmartDubbingWorkspace
+        embedded
+        embeddedTabs={tabs}
+        forceComposer={generationSessionActive}
+        onGenerated={onGenerated}
+        creatorServicesService={props.creatorServicesService}
+        onBack={closeWorkspace}
+      />
+    ) : workspace === 'transcription' ? (
+      <TranscriptionWorkspace
+        embedded
+        embeddedTabs={tabs}
+        forceComposer={generationSessionActive}
+        onGenerated={onGenerated}
+        creatorServicesService={props.creatorServicesService}
+        onBack={closeWorkspace}
+      />
+    ) : workspace === 'auto-clips' ? (
+      <AutoClipWorkspace
+        embedded
+        embeddedTabs={tabs}
+        forceComposer={generationSessionActive}
+        startInResults={generationResultActive && !generationSessionActive}
+        onGenerated={onGenerated}
+        service={props.creatorService!}
+        videoMetadataService={props.videoMetadataService}
+        onBack={closeWorkspace}
+      />
+    ) : workspace === 'short-video-script' ? (
+      <ShortVideoScriptWorkspace
+        embedded
+        embeddedTabs={tabs}
+        forceComposer={generationSessionActive}
+        onGenerated={onGenerated}
+        creatorServicesService={props.creatorServicesService}
+        onBack={closeWorkspace}
+      />
+    ) : (
+      <VideoDownloadBatchWorkspace
+        embedded
+        embeddedTabs={tabs}
+        forceComposer={generationSessionActive}
+        onGenerated={onGenerated}
+        service={props.creatorService!}
+        runtimeDependencies={props.runtimeDependencies}
+        onOpenRuntimeComponents={props.onOpenRuntimeComponents}
+        onBack={closeWorkspace}
+      />
+    ), {
+      key: `${workspace}:${activeJobId ?? 'new'}`,
+      jobId: generationJobIdsRef.current[workspace],
+      onJobCreated: job => {
+        generationJobIdsRef.current[workspace] = job.id;
+        props.onJobCreated?.(job);
+      }
+    });
+  };
+
+  if (generationHistoryActive && !generationResultActive && activeWorkspace !== null && props.projectId && props.creatorService) {
+    return <DashboardGenerationHistory
+      projectId={props.projectId}
+      service={props.creatorService}
+      initialType={generationHistoryOriginRef.current?.type}
+      initialVisibleCount={generationHistoryOriginRef.current?.visibleCount}
+      onViewChange={view => {
+        if (generationHistoryOriginRef.current) generationHistoryOriginRef.current = { ...generationHistoryOriginRef.current, ...view };
+      }}
+      onBackCreation={() => {
+        const creationWorkspace = generationHistoryOriginRef.current ? generationHistoryOriginRef.current.creationWorkspace : activeWorkspace;
+        setActiveWorkspace(creationWorkspace);
+        setGenerationResultActive(false);
+        setGenerationHistoryActive(false);
+        resetCreationSession(creationWorkspace);
+        internalWorkspaceNavigationRef.current = creationWorkspace !== null && creationWorkspace !== props.workspace ? creationWorkspace : undefined;
+        props.onWorkspaceNavigate?.(creationWorkspace);
+      }}
+      onOpenJob={job => openWorkspace(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job.id, true, job)}
+    />;
+  }
+
+  const unifiedGenerationModes: Partial<Record<CreatorWorkspace, DashboardGenerationMode>> = {
+    'video-translation': 'translation',
+    transcription: 'transcription',
+    'image-generation': 'image',
+    'cover-generator': 'cover',
+    'video-generation': 'video',
+    'video-download': 'download',
+    'auto-clips': 'clips',
+    'smart-dubbing': 'speech',
+    'short-video-script': 'script'
+  };
+  const pendingGenerationMode = unifiedComposerActive
+    ? readPendingDashboardGenerationMode()
+    : undefined;
+  const initialGenerationMode = activeWorkspace === null || (generationResultActive && !generationSessionActive)
+    ? undefined
+    : pendingGenerationMode !== undefined && dashboardGenerationWorkspace(pendingGenerationMode) === activeWorkspace
+      ? pendingGenerationMode
+      : unifiedGenerationModes[activeWorkspace];
+  if (generationSessionActive && initialGenerationMode !== undefined && activeWorkspace !== null && props.projectId && props.creatorService) {
+    return <DashboardGenerationSession
+      history={{
+        projectId: props.projectId,
+        service: props.creatorService,
+        initialType: activeWorkspace === 'image-generation' ? 'image' : activeWorkspace === 'video-download' || activeWorkspace === 'video-generation' ? 'video' : undefined,
+        onBackCreation: closeWorkspace,
+        onOpenJob: job => openJobEditor(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job)
+      }}
+      composer={{
+        showExtendedModes: true,
+        initialMode: initialGenerationMode,
+        modeGroup: dashboardGenerationGroup(initialGenerationMode),
+        onModeChange: props.onGenerationModeChange,
+        onOpenHistory: openGenerationHistory,
+        renderWorkspace: renderEmbeddedGenerationWorkspace
+      }}
+    />;
+  }
+
+  if (initialGenerationMode !== undefined && activeWorkspace !== null) {
+    return (
+      <main className="opencreator-scroll-page creator-tools-page dashboard-unified-workspace-page">
+        <div className="opencreator-page-content creator-tools-page-inner dashboard-unified-workspace-content">
+          <DashboardGenerationComposer
+            showExtendedModes
+            initialMode={initialGenerationMode}
+            modeGroup={dashboardGenerationGroup(initialGenerationMode)}
+            onModeChange={props.onGenerationModeChange}
+            onOpenHistory={openGenerationHistory}
+            renderWorkspace={renderEmbeddedGenerationWorkspace}
+          />
+        </div>
+      </main>
+    );
+  }
 
   if (activeWorkspace === 'video-translation') {
     return renderCreatorWorkspace('video-translation', (
@@ -363,6 +704,9 @@ export default function DashboardPage(props: {
         promptHint={activePromptHint}
         videoMetadataService={props.videoMetadataService}
         creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
+        backToParentOnExit={props.returnTo === 'projects' || generationSessionReturnRef.current !== undefined || (generationHistoryActive && generationResultActive)}
         onBack={closeWorkspace}
       />
     ));
@@ -383,6 +727,16 @@ export default function DashboardPage(props: {
   if (activeWorkspace === 'smart-dubbing') {
     return renderCreatorWorkspace('smart-dubbing', (
       <SmartDubbingWorkspace
+        promptHint={activePromptHint}
+        creatorServicesService={props.creatorServicesService}
+        onBack={closeWorkspace}
+      />
+    ));
+  }
+
+  if (activeWorkspace === 'transcription') {
+    return renderCreatorWorkspace('transcription', (
+      <TranscriptionWorkspace
         promptHint={activePromptHint}
         creatorServicesService={props.creatorServicesService}
         onBack={closeWorkspace}
@@ -422,6 +776,8 @@ export default function DashboardPage(props: {
       <ImageGenerationWorkspace
         promptHint={activePromptHint}
         creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
         onBack={closeWorkspace}
       />
     ));
@@ -431,7 +787,13 @@ export default function DashboardPage(props: {
     return renderCreatorWorkspace('video-generation', (
       <VideoGenerationWorkspace
         promptHint={activePromptHint}
+        onGenerated={() => {
+          if (props.returnTo === 'projects') props.onWorkspaceNavigate?.(null);
+          else openGenerationHistory();
+        }}
         creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
         onBack={closeWorkspace}
       />
     ));
@@ -461,6 +823,7 @@ export default function DashboardPage(props: {
     return renderCreatorWorkspace('auto-clips', (
       <AutoClipWorkspace
         promptHint={activePromptHint}
+        startInResults={generationResultActive && !generationSessionActive}
         videoMetadataService={props.videoMetadataService}
         onBack={closeWorkspace}
       />
@@ -479,44 +842,19 @@ export default function DashboardPage(props: {
   return (
     <main className="opencreator-scroll-page creator-tools-page">
       <div className="opencreator-page-content creator-tools-page-inner">
-        <header className="creator-tools-page-header">
-          <h1>{t('dashboard.title')}</h1>
-          {props.onCreateProject ? (
-            <CreateProjectDropdown
-              align="end"
-              onCreate={props.onCreateProject}
-            />
-          ) : null}
-        </header>
-        <IssueList issues={launchIssues.issues} onDismiss={launchIssues.dismissIssue} />
+        <div className="dashboard-primary">
+          <header className="creator-tools-page-header">
+            <h1>{greetingText}</h1>
+            <p>{t('home.question')}</p>
+          </header>
+          <IssueList issues={launchIssues.issues} onDismiss={launchIssues.dismissIssue} />
 
-        <section className="dashboard-featured" aria-labelledby="dashboard-featured-title">
-          <h2 id="dashboard-featured-title">{t('dashboard.featured')}</h2>
-          <div className="dashboard-featured-grid">
-            {featuredTools.map(tool => (
-              <button
-                className="dashboard-featured-card"
-                data-accent={tool.accent}
-                type="button"
-                key={tool.title}
-                onClick={() => tool.workspace
-                  ? openWorkspace(tool.workspace)
-                  : props.onSelectPrompt(tool.prompt)}
-                aria-label={t('dashboard.openTool', { title: localize(tool.title) })}
-              >
-                <img src={tool.image} alt="" />
-                <span className="dashboard-featured-scrim" aria-hidden="true" />
-                <span className="dashboard-featured-copy">
-                  <strong>{localize(tool.title)}</strong>
-                  <span>
-                    {t('dashboard.start')}
-                    <ArrowUpRight size={14} strokeWidth={1.8} aria-hidden="true" />
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
+          <DashboardGenerationComposer
+            onModeChange={props.onGenerationModeChange}
+            onOpenHistory={openGenerationHistory}
+            renderWorkspace={renderEmbeddedGenerationWorkspace}
+          />
+        </div>
 
         <section className="dashboard-directory" aria-label={t('dashboard.apps')}>
           <div className="dashboard-directory-controls">
@@ -537,55 +875,64 @@ export default function DashboardPage(props: {
                 </button>
               ))}
             </div>
-            <label className="dashboard-search">
-              <Search size={16} strokeWidth={1.8} aria-hidden="true" />
-              <input
-                type="search"
-                aria-label={t('dashboard.search')}
-                value={query}
-                onChange={event => setQuery(event.target.value)}
-                placeholder={t('dashboard.search')}
-              />
-            </label>
           </div>
 
-          {visibleTools.length > 0 ? (
-            <div className="dashboard-app-grid">
-              {visibleTools.map(({ title, description, prompt, icon: Icon, badge, workspace }) => (
+          <div className="dashboard-app-grid">
+            {visibleTools.map(({ title, description, prompt, icon: Icon, badge, workspace }) => {
+              const image = workspace ? creatorToolImages[workspace] : undefined;
+              const video = workspace ? creatorToolVideos[workspace] : undefined;
+              return (
                 <button
                   className="dashboard-app-card"
+                  data-has-image={image ? 'true' : 'false'}
                   type="button"
                   key={title}
                   onClick={() => workspace ? openWorkspace(workspace) : props.onSelectPrompt(prompt)}
                 >
-                  <span className="dashboard-app-icon">
-                    <Icon size={19} strokeWidth={1.7} aria-hidden="true" />
-                  </span>
+                  {video ? (
+                    <span className="dashboard-app-media">
+                      <video
+                        src={video}
+                        poster={image}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        preload="metadata"
+                        aria-label={workspace === 'video-translation'
+                          ? l('视频翻译示例', 'Video translation example')
+                          : l('视频生成示例', 'Video generation example')}
+                      />
+                    </span>
+                  ) : workspace === 'video-download' ? <DashboardVideoDownloadCover /> : workspace === 'image-generation' ? <DashboardImageCarousel /> : image ? (
+                    <span className="dashboard-app-media"><img src={image} alt="" /></span>
+                  ) : (
+                    <span className="dashboard-app-icon">
+                      <Icon size={19} strokeWidth={1.7} aria-hidden="true" />
+                    </span>
+                  )}
                   <span className="dashboard-app-copy">
                     <span className="dashboard-app-title">
                       <strong>{localize(title)}</strong>
-                      {badge ? <small>{badge}</small> : null}
+                      {badge && badge !== 'LANGUAGE' ? <small>{badge}</small> : null}
                     </span>
-                    <span>{localize(description)}</span>
+                    {badge === 'LANGUAGE'
+                      ? <span className="dashboard-app-badges">
+                        <span className="dashboard-app-badge">{l('120+ 语言互译', '120+ Languages')}</span>
+                        <span className="dashboard-app-badge">{l('影视级字幕', 'Hollywood Subtitles')}</span>
+                      </span>
+                      : workspace === 'video-generation' || workspace === 'image-generation' ? null : <span>{localize(description)}</span>}
+                    {workspace === 'video-generation' || workspace === 'image-generation' ? <span className="dashboard-app-badges">
+                      {(workspace === 'video-generation'
+                        ? ['Seedance', 'Veo', 'Kling']
+                        : ['GPT Images', 'Seedream', 'Nano Banana']
+                      ).map(model => <span className="dashboard-app-badge" key={model}>{model}</span>)}
+                    </span> : null}
                   </span>
                 </button>
-              ))}
-            </div>
-          ) : (
-            <div className="dashboard-empty" role="status">
-              <Search size={20} strokeWidth={1.6} aria-hidden="true" />
-              <p>{t('dashboard.empty')}</p>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery('');
-                  setCategory('全部');
-                }}
-              >
-                {t('dashboard.showAll')}
-              </button>
-            </div>
-          )}
+              );
+            })}
+          </div>
         </section>
       </div>
     </main>
@@ -622,15 +969,21 @@ function CreatorWorkspaceSession(props: {
   templateId: string;
   templateVersion: number;
   jobId?: string;
+  initialJob?: CreatorJob;
   children: ReactNode;
   onJobCreated(job: CreatorJob): void;
   onAskIssue?(issue: OpenCreatorIssue, question: string): void;
   onBack(): void;
 }) {
   const l = useLocalizedCopy();
+  const historyJob = props.initialJob !== undefined
+    && props.initialJob.id === props.jobId
+    && props.initialJob.projectId === props.projectId
+    && props.initialJob.templateId === props.templateId
+      ? props.initialJob : undefined;
   const [job, setJob] = useState<CreatorJob | undefined>(() => props.jobId === undefined
     ? createPendingCreatorJob(props.projectId, props.templateId, props.templateVersion)
-    : undefined);
+    : historyJob);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [restoreConnection, setRestoreConnection] = useState<CreatorConnectionState>({ status: 'connecting', attempt: 0 });
   const pageIssues = usePageIssueState('creator-launch');
@@ -764,6 +1117,11 @@ function CreatorWorkspaceSession(props: {
 
     if (props.jobId !== createdJobIdRef.current) createdJobIdRef.current = undefined;
     if (jobRef.current?.id === props.jobId) return;
+    if (historyJob !== undefined) {
+      pageIssues.resolveOperation('creator-launch.restore-job');
+      setJob(historyJob);
+      return;
+    }
     const jobId = props.jobId;
     setJob(current => current?.id === props.jobId ? current : undefined);
     const subscription = createCreatorSnapshotSubscription<CreatorJob>({
@@ -800,6 +1158,7 @@ function CreatorWorkspaceSession(props: {
     };
   }, [
     l,
+    historyJob,
     loadAttempt,
     pageIssues.captureOperationFailure,
     pageIssues.resolveOperation,
@@ -1031,10 +1390,10 @@ const englishDashboardLabels: Record<string, string> = {
   火柴人动画: 'Stick Figure Animation',
   视频翻译配音: 'Translate & Dub Video',
   数字人口播: 'Digital Avatar',
-  视频翻译: 'Video Translation',
+  视频翻译: 'Video Translation & Dubbing',
   文章写作: 'Article Writer',
   '公众号、X 等平台文章': 'Articles for WeChat, X, and more',
-  '字幕、配音与口型同步': 'Subtitles, dubbing, and lip sync',
+  '影视级字幕 · 配音 · 唇形同步': 'Cinematic subtitles & dubbing',
   视频生成: 'Video Generation',
   文字或参考图生成视频片段: 'Generate video clips from text or a reference image',
   快速制作专业口播: 'Create professional presenter videos quickly',
@@ -1046,6 +1405,8 @@ const englishDashboardLabels: Record<string, string> = {
   视频切片: 'Video Clips',
   'AI 识别长视频高光片段': 'Find the strongest moments in long videos with AI',
   文本转语音: 'Text to Speech',
+  视频转录: 'Video Transcription',
+  '视频语音转文字与 SRT 字幕': 'Turn video speech into text and SRT subtitles',
   小红书帖子: 'Xiaohongshu Posts',
   从主题和素材生成完整帖子: 'Turn a topic or source material into a complete post',
   自然音色与情绪表达: 'Natural voices with expressive delivery',
@@ -1056,3 +1417,9 @@ const englishDashboardLabels: Record<string, string> = {
   视频下载: 'Video Downloader',
   '下载公开视频，或提取 MP3 音频': 'Download public videos or extract MP3 audio'
 };
+
+function greetingWithNickname(greeting: string, nickname?: string): string {
+  if (!nickname) return greeting;
+  const comma = Math.max(greeting.lastIndexOf(','), greeting.lastIndexOf('，'));
+  return comma >= 0 ? `${greeting.slice(0, comma + 1)}${nickname}` : `${greeting}, ${nickname}`;
+}

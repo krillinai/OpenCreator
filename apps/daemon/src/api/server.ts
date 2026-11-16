@@ -91,7 +91,7 @@ import { createStickmanRemotionExecutor } from '../creator/stickman/remotion-exe
 import { createRemotionComponentManager } from '../creator/stickman/remotion-component.js';
 import { createStickmanMediaValidationExecutor } from '../creator/stickman/media-validation-executor.js';
 import { createStickmanDeliveryExecutor } from '../creator/stickman/delivery-executor.js';
-import { CreatorProviderRequestLedger } from '../creator/provider-requests.js';
+import { CreatorProviderRequestLedger, hasPendingPaidCreatorRequests } from '../creator/provider-requests.js';
 import { createCreatorProjectCoverService } from '../creator/project-cover.js';
 import { createVideoGenerationService } from '../video-generation/service.js';
 import { createImageGenerationService } from '../image-generation/service.js';
@@ -566,7 +566,7 @@ export async function buildServer(input: BuildServerInput) {
     hasActiveTasks: () => [appServerRuntimeManager, creatorAppServerRuntimeManager, stickmanContentRuntimeManager]
       .some(manager => manager?.listScopes().some(scope => scope.active || scope.pending > 0))
       || creatorRepository.listJobs().some(job => job.status === 'running' || job.stages.some(stage => stage.status === 'queued')) || gatewayCreatorSource?.isBusy() === true,
-    hasPendingTasks: () => creatorRepository.listJobs().some(job => job.providerRequests.some(request => request.billingSideEffect && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(request.status))),
+    hasPendingTasks: () => hasPendingPaidCreatorRequests(creatorRepository.listJobs()),
     async closeRuntime() {
       await gatewayCreatorSource?.revoke();
       officialBindings?.beginLogout();
@@ -620,10 +620,13 @@ export async function buildServer(input: BuildServerInput) {
   await gatewayAccount.initialize();
   const creatorTelemetry = createCreatorTelemetrySink({
     outbox: creatorTelemetryOutbox,
-    readAccount() {
+    enabled: process.env.OPENCREATOR_TELEMETRY_ENABLED !== '0',
+    readAccount(job) {
       const account = gatewayAccount.peekState();
       const recharge = gatewayAccount.peekTelemetryRechargeState();
+      const binding = creatorRepository.getServiceBinding(job.id);
       return {
+        userId: binding.source === 'gateway' ? binding.accountId : account.account?.id,
         authState: account.authState === 'signed_in'
           ? 'signed_in'
           : account.authState === 'signed_out' ? 'signed_out' : 'unknown',
@@ -1674,6 +1677,7 @@ export async function buildServer(input: BuildServerInput) {
     async () => gatewayAccount.peekState().source === 'gateway'
       ? { authentication: 'api_key' as const, apiKeyConfigured: false, baseUrl: '', model: gatewayAccount.peekState().selectedModels?.text ?? '' }
       : localCodexTextModelDefaults.readStatus(),
+    storedCreatorServicesConfigStore,
     storedCreatorServicesConfigStore
   );
   await registerGatewayAccountRoutes(server, gatewayAccount);
@@ -1723,7 +1727,7 @@ export async function buildServer(input: BuildServerInput) {
     maxSizeBytes: input.attachmentMaxSizeBytes
   });
   await registerApprovalRoutes(server, approvalManager);
-  await registerTelemetryRoutes(server, creatorTelemetryOutbox);
+  await registerTelemetryRoutes(server, creatorTelemetryOutbox, creatorTelemetry);
   await registerNotificationRoutes(server, notificationService);
   await registerTaskRoutes(server, taskService);
   await registerMemoryRoutes(server, memoryService, {

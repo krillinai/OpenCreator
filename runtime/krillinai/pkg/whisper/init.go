@@ -18,7 +18,7 @@ func NewClient(baseUrl, apiKey, proxyAddr string) *Client {
 		cfg.BaseURL = baseUrl
 	}
 
-	if proxyAddr != "" {
+	if config.ProxyForBaseURL(baseUrl, proxyAddr) != "" {
 		transport := &http.Transport{
 			Proxy: http.ProxyURL(config.Conf.App.ParsedProxy),
 		}

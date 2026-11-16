@@ -28,6 +28,7 @@ export type DaemonStartInput = {
   entryPath: string;
   cwd: string;
   env: NodeJS.ProcessEnv;
+  telemetryEnabled?: boolean;
   appHome: string;
   codexBin: string;
   codexHome: string;
@@ -317,6 +318,7 @@ export function buildDaemonEnvironment(
   const env = { ...input.env };
   Object.assign(env, {
     OPENCREATOR_HOME: input.appHome,
+    OPENCREATOR_TELEMETRY_ENABLED: input.telemetryEnabled === false ? '0' : '1',
     OPENCREATOR_MANAGED_PARENT_PID: String(process.pid),
     OPENCREATOR_CODEX_BIN: input.codexBin,
     OPENCREATOR_CODEX_VERSION: input.codexVersion,

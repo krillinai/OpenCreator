@@ -42,12 +42,28 @@ describe('macOS app icon without Xcode', () => {
     const bundled = join(root, 'icon.icns');
     mkdirSync(iconset);
     copyFileSync(source, join(iconset, 'icon_512x512@2x.png'));
+    await sharp(source).resize(16, 16).png().toFile(join(iconset, 'icon_16x16.png'));
+    await sharp(source).resize(32, 32).png().toFile(join(iconset, 'icon_32x32.png'));
     execFileSync('iconutil', ['--convert', 'icns', '--output', bundled, iconset]);
     await expect(verifyMacAppIcon(bundled, source)).resolves.toBeUndefined();
 
     const changed = join(root, 'changed.png');
     await sharp(source).modulate({ brightness: 0.5 }).toFile(changed);
     await expect(verifyMacAppIcon(bundled, changed)).rejects.toThrow(/does not match/);
+  });
+
+  it.skipIf(process.platform !== 'darwin')('rejects colored pixels in the small macOS icon', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'opencreator-icon-test-'));
+    temporaryDirectories.push(root);
+    const iconset = join(root, 'colored.iconset');
+    const bundled = join(root, 'icon.icns');
+    mkdirSync(iconset);
+    copyFileSync(source, join(iconset, 'icon_512x512@2x.png'));
+    await sharp({ create: { width: 16, height: 16, channels: 4, background: '#ff0000' } })
+      .png().toFile(join(iconset, 'icon_16x16.png'));
+    execFileSync('iconutil', ['--convert', 'icns', '--output', bundled, iconset]);
+
+    await expect(verifyMacAppIcon(bundled, source)).rejects.toThrow(/icon_16x16.png/);
   });
 
   it.skipIf(process.platform !== 'darwin')('fails if the macOS icon is absent', async () => {

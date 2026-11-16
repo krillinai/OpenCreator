@@ -68,7 +68,7 @@ export function createVideoExecutor(input: {
             onGatewayBinding: gateway => {
               providerRequest = input.ledger?.registerBeforeSubmit({ jobId:stage.job.id, stageRunId:stage.stageRun.id, provider:'opencreator-gateway-video', requestKey:gateway.logicalId, gateway,
                 request:{model:request.model ?? null,prompt:request.prompt,duration:request.duration,size:request.size,reference:request.referenceImage?.data ?? null,
-                  references:request.references ?? [],generateAudio:request.generateAudio ?? null,priceVersion:request.priceVersion ?? null} });
+                  references:request.references ?? [],generateAudio:request.generateAudio ?? null} });
               if (providerRequest) providerRequest = input.ledger!.markSubmitting(providerRequest.id);
             },
             onGatewayRequest: id => { if (providerRequest) providerRequest = input.ledger!.markWaitingRemote(providerRequest.id,id); },
@@ -218,7 +218,10 @@ export function createVideoExecutor(input: {
       } catch (error) {
         if (providerRequest && input.ledger && ['submitting', 'waiting_remote'].includes(providerRequest.status)) {
           const status = error instanceof VideoGenerationError ? error.publicFacts?.httpStatus ?? error.statusCode : undefined;
-          if (providerRequest.remoteTaskId === null && status !== undefined && [400, 401, 402, 403, 404, 422, 429].includes(status)) input.ledger.markFailed(providerRequest.id, error);
+          const rejectedPriceVersion = status === 409 && error instanceof VideoGenerationError
+            && error.publicFacts?.upstreamCode === 'video_price_changed';
+          if (providerRequest.remoteTaskId === null && status !== undefined
+            && ([400, 401, 402, 403, 404, 422, 429].includes(status) || rejectedPriceVersion)) input.ledger.markFailed(providerRequest.id, error);
           else input.ledger.markUnknownRemoteAcceptance(providerRequest.id);
         }
         throw creatorVideoError(error);
@@ -239,8 +242,9 @@ async function videoRequest(
   }
   const reference = stage.inputArtifacts.find(artifact => artifact.kind === 'reference_image');
   const officialModels = stage.job.state.officialModels;
-  const model = officialModels && typeof officialModels === 'object' && !Array.isArray(officialModels)
-    ? readString(officialModels.video) : readString(stage.job.state.model);
+  const source = stage.stageRun.progress.videoServiceSource ?? stage.job.state.videoServiceSource;
+  const model = readString(stage.stageRun.progress.videoModelId) || (source !== 'manual' && officialModels && typeof officialModels === 'object' && !Array.isArray(officialModels)
+    ? readString(officialModels.video) : readString(stage.job.state.model));
   return {
     prompt,
     provider: readProvider(stage.job.state.provider),
@@ -251,7 +255,6 @@ async function videoRequest(
     duration: readDuration(stage.job.state.duration),
     ...(Array.isArray(stage.job.state.videoReferences) ? { references: stage.job.state.videoReferences as CreateVideoGenerationRequest['references'] } : {}),
     ...(typeof stage.job.state.generateAudio === 'boolean' ? { generateAudio: stage.job.state.generateAudio } : {}),
-    ...(typeof stage.job.state.videoPriceVersion === 'string' ? { priceVersion: stage.job.state.videoPriceVersion } : {}),
     ...(reference === undefined
       ? {}
       : { referenceImage: await readReferenceImage(reference) })
@@ -298,7 +301,12 @@ function readResumedResultId(stage: CreatorExecutorInput): string | undefined {
   if (typeof resumedFrom !== 'string' && (previous?.errorCode !== 'creator_video_upstream_error'
     || stage.job.providerRequests.some(request => request.stageRunId === previous.id && request.provider === 'opencreator-gateway-video' && request.status === 'failed'))) return undefined;
   const resultId = previous?.progress.videoGenerationResultId;
-  return typeof resultId === 'string' && resultId.length > 0 ? resultId : undefined;
+  if (typeof resultId !== 'string' || resultId.length === 0) return undefined;
+  const rejected = stage.job.providerRequests.some(request => request.provider === 'opencreator-gateway-video'
+    && (request.status === 'failed' || request.status === 'canceled')
+    && stage.job.stages.some(candidate => candidate.id === request.stageRunId
+      && candidate.progress.videoGenerationResultId === resultId));
+  return rejected ? undefined : resultId;
 }
 
 function remoteProgress(result: VideoGenerationResult): Record<string, CreatorJson> {

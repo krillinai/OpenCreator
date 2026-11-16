@@ -119,6 +119,32 @@ describe('creator runtime advanced contracts', () => {
       db.close();
     }
   });
+  it.each(['queued', 'generating'] as const)('clears submission progress when the video provider reports unknown %s progress', async phase => {
+    const { db, repository, service, templates } = setup();
+    let release!: () => void;
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    const runner = createCreatorStageRunner({
+      repository, templates, workRoot: join(tempDir, 'work'),
+      executors: [{ id: 'video', async run({ reportProgress, workdir }) {
+        reportProgress({ phase: 'submitting', percent: 8 });
+        reportProgress({ phase, percent: null });
+        await waiting;
+        reportProgress({ phase: 'generating', percent: 34 });
+        const path = join(workdir, 'generated.mp4');
+        writeFileSync(path, 'video');
+        return { outputs: [{ kind: 'generated_video', status: 'completed', path }] };
+      } }]
+    });
+    try {
+      const job = service.createJob({ projectId: 'p1', templateId: 'video-generation', state: { prompt: 'test video' } });
+      const execution = runner.run(job.id, 'generate');
+      await expect.poll(() => repository.getJob(job.id)?.stages.at(-1)?.progress.phase).toBe(phase);
+      expect(repository.getJob(job.id)?.stages.at(-1)?.progress.percent).toBeNull();
+      release();
+      const stage = await execution;
+      expect(stage.progress).toMatchObject({ phase: 'generating', percent: 34 });
+    } finally { release(); await runner.close(); db.close(); }
+  });
   it('does not treat generated subtitles from an older result snapshot as imported subtitles', async () => {
     const { db, repository, service, templates, dispatcher } = setup();
     const runner = createCreatorStageRunner({ repository, templates, workRoot: join(tempDir, 'work'), executors: [{

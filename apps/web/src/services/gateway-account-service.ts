@@ -1,4 +1,4 @@
-import type { GatewayAccountState, GatewayAuthorization, GatewayBalanceSnapshot, GatewayBalanceState, GatewayModelProbeOptions, ServiceSource } from '@opencreator/protocol';
+import type { GatewayAccountState, GatewayAuthorization, GatewayBalanceSnapshot, GatewayBalanceState, GatewayImageCatalog, GatewayVideoCatalog, GatewayModelCatalog, GatewayModelProbeOptions, ServiceSource } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 export type GatewayPlan = { id: string; name: string; currency: string; amountUnits: string; creditUnits: string; wechatAmountUnits?: string };
 export type GatewayBillingAvailability = {
@@ -23,6 +23,7 @@ export type GatewayBillingSummary = {
   paymentReview?: boolean;
 };
 export type GatewayWebDestination = 'recharge' | 'account' | 'usage' | 'faq';
+const publicCatalogTtlMs = 60 * 60_000;
 export function createGatewayAccountService(client: Pick<RuntimeClient, 'get' | 'post' | 'patch'> & Partial<Pick<RuntimeClient, 'rawGet'>>, options: { authorizationReturnUrl?: string; billingReturnUrl?: string } = {}) {
   const rawGet = client.rawGet?.bind(client);
   let avatarCache: { key: string; work: Promise<Blob> } | undefined;
@@ -30,6 +31,20 @@ export function createGatewayAccountService(client: Pick<RuntimeClient, 'get' | 
   let accountGeneration = 0;
   let summaryCache: { accountId: string; value: GatewayBillingSummary } | undefined;
   let summaryWork: Promise<GatewayBillingSummary> | undefined;
+  const catalogCache: Partial<Record<'image' | 'video' | 'text', { value: GatewayModelCatalog; fetchedAt: number }>> = {};
+  const catalogWork: Partial<Record<'image' | 'video' | 'text', Promise<GatewayModelCatalog>>> = {};
+  function readCatalog(modality: 'image' | 'video' | 'text', refresh = false): Promise<GatewayModelCatalog> {
+    const cached = catalogCache[modality];
+    if (!refresh && cached && Date.now() - cached.fetchedAt < publicCatalogTtlMs) return Promise.resolve(cached.value);
+    if (catalogWork[modality]) return catalogWork[modality];
+    const path = modality === 'image' ? '/gateway/models/catalog' : `/gateway/models/catalog?modality=${modality}`;
+    const work = client.get<GatewayModelCatalog>(path).then(value => {
+      catalogCache[modality] = { value, fetchedAt: Date.now() };
+      return value;
+    }).finally(() => { if (catalogWork[modality] === work) delete catalogWork[modality]; });
+    catalogWork[modality] = work;
+    return work;
+  }
   function clearSummary(nextAccountId?: string) {
     accountGeneration++; accountId = nextAccountId;
     summaryCache = undefined; summaryWork = undefined;
@@ -73,6 +88,12 @@ export function createGatewayAccountService(client: Pick<RuntimeClient, 'get' | 
       }
       return observeState(await client.get<GatewayAccountState>('/gateway/account' + (options?.refreshModels ? '?refreshModels=1' : '')), expected);
     },
+    getCachedImageCatalog(): GatewayImageCatalog | undefined { return catalogCache.image?.value; },
+    getCachedVideoCatalog(): GatewayVideoCatalog | undefined { return catalogCache.video?.value; },
+    getCachedTextCatalog(): GatewayModelCatalog | undefined { return catalogCache.text?.value; },
+    getImageCatalog(options?: { refresh?: boolean }): Promise<GatewayImageCatalog> { return readCatalog('image', options?.refresh); },
+    getVideoCatalog(options?: { refresh?: boolean }): Promise<GatewayVideoCatalog> { return readCatalog('video', options?.refresh); },
+    getTextCatalog(options?: { refresh?: boolean }): Promise<GatewayModelCatalog> { return readCatalog('text', options?.refresh); },
     async start(): Promise<GatewayAuthorization> {
       const grant = await client.post<GatewayAuthorization>('/gateway/auth/start', {});
       if (!options.authorizationReturnUrl) return grant;
@@ -89,6 +110,7 @@ export function createGatewayAccountService(client: Pick<RuntimeClient, 'get' | 
     setSource(source: ServiceSource): Promise<GatewayAccountState> { return client.patch('/gateway/source', { source }); },
     setRegion(region: 'auto' | 'domestic' | 'overseas'): Promise<GatewayAccountState> { return client.patch('/gateway/supplier-region', { region }); },
     selectModel(modality: import('@opencreator/protocol').GatewayModelPurpose, model: string): Promise<GatewayAccountState> { return client.patch('/gateway/model', { modality, model }); },
+    rememberTaskModel(templateId: string, modality: import('@opencreator/protocol').GatewayModelPurpose, model: string): Promise<GatewayAccountState> { return client.patch('/gateway/task-model', { templateId, modality, model }); },
     probeModel(modality: import('@opencreator/protocol').GatewayModel['modality'], model: string, options?: GatewayModelProbeOptions): Promise<{ model: string; modality: import('@opencreator/protocol').GatewayModel['modality']; costBearer: 'customer' }> {
       return client.post('/gateway/model/probe', { modality, model, ...options });
     },
@@ -106,4 +128,4 @@ export function createGatewayAccountService(client: Pick<RuntimeClient, 'get' | 
     portal(): Promise<{ url: string }> { return client.post('/gateway/billing/portal', {}); }
   };
 }
-export type GatewayAccountSettingsService = Omit<ReturnType<typeof createGatewayAccountService>, 'openWebAccount' | 'probeModel' | 'setRegion' | 'getCachedSummary'> & Partial<Pick<ReturnType<typeof createGatewayAccountService>, 'openWebAccount' | 'probeModel' | 'setRegion' | 'getCachedSummary'>>;
+export type GatewayAccountSettingsService = Omit<ReturnType<typeof createGatewayAccountService>, 'openWebAccount' | 'probeModel' | 'setRegion' | 'getCachedSummary' | 'getImageCatalog' | 'getVideoCatalog' | 'getTextCatalog' | 'getCachedImageCatalog' | 'getCachedVideoCatalog' | 'getCachedTextCatalog' | 'rememberTaskModel'> & Partial<Pick<ReturnType<typeof createGatewayAccountService>, 'openWebAccount' | 'probeModel' | 'setRegion' | 'getCachedSummary' | 'getImageCatalog' | 'getVideoCatalog' | 'getTextCatalog' | 'getCachedImageCatalog' | 'getCachedVideoCatalog' | 'getCachedTextCatalog' | 'rememberTaskModel'>>;

@@ -44,12 +44,12 @@ export function TtsVoiceLibraryPopover(props: {
       const top = Math.max(viewportTop, rect?.top ?? viewportTop);
       const right = Math.min(viewportRight, rect?.right ?? viewportRight);
       const bottom = Math.min(viewportBottom, rect?.bottom ?? viewportBottom);
-      const panelWidth = Math.max(0, Math.min(right - left - 24, (right - left) * .92));
+      const panelWidth = Math.max(0, Math.min(720, right - left - 24));
       const next = {
         left: (left + right - panelWidth) / 2,
         top: (top + bottom) / 2,
         width: panelWidth,
-        maxHeight: Math.max(0, Math.min(860, bottom - top - 24)),
+        maxHeight: Math.max(0, Math.min(720, bottom - top - 24)),
         backdropLeft: left,
         backdropTop: top,
         backdropWidth: Math.max(0, right - left),

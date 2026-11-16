@@ -10,7 +10,6 @@ import type {
   ConversationSearchResult,
   CreatorJob,
   OpenCreatorIssue,
-  CreatorPresetSummary,
   CreateMemoryRequest,
   CreateThreadRequest,
   RunDiagnosticsResponse,
@@ -40,8 +39,6 @@ import { Timeline, type TimelineHandle } from '../components/timeline/Timeline.j
 import { eventToTimelineItem, type TimelineItem } from '../components/timeline/timeline-model.js';
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
 import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
-import type { CreatorSkill } from '../features/conversation/CreatorDashboard.js';
-import { getCreatorSkillPromptHint } from '../features/conversation/creator-skill-prompt-hint.js';
 import {
   creatorWorkspaceForTemplate,
   type CreatorSkillLaunch
@@ -106,6 +103,7 @@ import type {
 } from '../features/settings/OpenCreatorSettingsView.js';
 import {
   confirmAgentSetup,
+  hasAgentSetupConfirmation,
   isAgentSetupConfirmed,
   type AgentSetupSnapshot
 } from '../features/settings/agent-setup-state.js';
@@ -113,6 +111,8 @@ import '../features/settings/startup-agent-shell.css';
 import { useLocalizedCopy } from '../i18n/useLocalizedCopy.js';
 import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
 import { OpenCreatorSidebar } from '../features/shell/OpenCreatorSidebar.js';
+import type { CreatorWorkspace } from '../features/dashboard/creator-workspace.js';
+import { selectDashboardGenerationMode, type DashboardGenerationMode } from '../features/dashboard/DashboardGenerationComposer.js';
 import {
   createScheduleDraftSidebarSummaries,
   createSidebarTaskSummaries
@@ -218,9 +218,6 @@ const WORKSPACE_AUTO_COLLAPSE_MAX_WIDTH =
 const WORKSPACE_AUTO_COLLAPSE_MEDIA_QUERY =
   `(min-width: ${MOBILE_NAVIGATION_MAX_WIDTH + 1}px) and (max-width: ${WORKSPACE_AUTO_COLLAPSE_MAX_WIDTH}px)`;
 const RESIZE_KEY_STEP = 32;
-const CREATOR_PRESET_CREATION_TIMEOUT_MS = 15_000;
-const CREATOR_PRESET_CREATION_STORAGE_PREFIX =
-  'opencreator.creator-preset-creation.v1:';
 function canScrollVertically(
   target: EventTarget | null,
   boundary: HTMLElement,
@@ -258,10 +255,7 @@ const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
 const ProjectsPage = lazy(() => import('../features/projects/ProjectsPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
 const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage.js'));
-const CreatorDashboard = lazy(async () => {
-  const module = await import('../features/conversation/CreatorDashboard.js');
-  return { default: module.CreatorDashboard };
-});
+const DashboardGenerationHistory = lazy(() => import('../features/dashboard/DashboardGenerationHistory.js'));
 const ScheduleThreadHeader = lazy(async () => {
   const module = await import('../features/schedules/ScheduleThreadHeader.js');
   return { default: module.ScheduleThreadHeader };
@@ -335,10 +329,6 @@ export function AppController(props: AppControllerProps) {
   const [creatorJobsLoading, setCreatorJobsLoading] = useState(false);
   const [creatorJobsError, setCreatorJobsError] = useState<string>();
   const [hasActiveCreatorTasks, setHasActiveCreatorTasks] = useState(false);
-  const [creatorPresets, setCreatorPresets] = useState<CreatorPresetSummary[]>([]);
-  const [creatorPresetsLoading, setCreatorPresetsLoading] = useState(false);
-  const [creatorPresetsError, setCreatorPresetsError] = useState<string>();
-  const [creatorPresetsReloadKey, setCreatorPresetsReloadKey] = useState(0);
   const defaultFileService = useMemo(() => createUnavailableFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
@@ -377,6 +367,7 @@ export function AppController(props: AppControllerProps) {
   const [historyLoadedThreadId, setHistoryLoadedThreadId] = useState<string>();
   const [threadConfigUpdateError, setThreadConfigUpdateError] = useState<string>();
   const [agentSetup, setAgentSetup] = useState<'checking' | 'ready' | 'needed' | 'skipped'>('checking');
+  const [agentSetupCheckAttempt, setAgentSetupCheckAttempt] = useState(0);
   const [agentSetupRequested, setAgentSetupRequested] = useState(false);
   const [agentSetupSnapshot, setAgentSetupSnapshot] = useState<AgentSetupSnapshot>();
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
@@ -406,6 +397,8 @@ export function AppController(props: AppControllerProps) {
   const [pendingComposerFocusRequestId, setPendingComposerFocusRequestId] = useState<number>();
   const [homeSkillPromptHint, setHomeSkillPromptHint] = useState<string>();
   const [creatorSkillLaunch, setCreatorSkillLaunch] = useState<CreatorSkillLaunch>();
+  const [activeGenerationMode, setActiveGenerationMode] = useState<DashboardGenerationMode>();
+  const projectsHistoryInitialTypeRef = useRef<'video' | undefined>();
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
   const [pendingRunStartsById, setPendingRunStartsById] = useState<PendingRunStartsById>({});
@@ -552,10 +545,6 @@ export function AppController(props: AppControllerProps) {
   const nextComposerFocusRequestIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
-  const creatorPresetCreationIntentsRef = useRef(new Map<string, {
-    creationKey: string;
-    request?: Promise<CreatorJob>;
-  }>());
   const codexModelsRef = useRef(codexModels);
   runRegistryRef.current = runRegistry;
   runtimeThreadsRef.current = runtimeThreads;
@@ -630,7 +619,8 @@ export function AppController(props: AppControllerProps) {
   const platformConnectionsService = useMemo(() => runtimeClient === null ? null : createPlatformConnectionsService(runtimeClient), [runtimeClient]);
   const [gatewayAccountState, setGatewayAccountState] = useState<GatewayAccountState>();
   const officialTextModels = useMemo(() => {
-    if (!gatewayAccountState || (gatewayAccountState.source === 'manual' && gatewayAccountState.authState === 'signed_out')) return undefined;
+    if (!gatewayAccountState || gatewayAccountState.authState === 'authorizing'
+      || (gatewayAccountState.source === 'manual' && gatewayAccountState.authState === 'signed_out')) return undefined;
     return { models: gatewayAccountState.models.filter(model => model.modality === 'text' && model.capabilities.includes('responses')).map((model, index) => ({
       id: model.id, model: model.id, displayName: model.id.split('/').pop()!, description: '',
       supportedReasoningEfforts: [], defaultReasoningEffort: null, inputModalities: ['text' as const],
@@ -644,6 +634,10 @@ export function AppController(props: AppControllerProps) {
     else if (previousGatewaySource.current === 'gateway') setAgentSetup('checking');
     previousGatewaySource.current = next.source;
   }, []);
+  useEffect(() => hostBridge.subscribeAuthorizationReturn?.(() => {
+    if (!gatewayAccountService) return;
+    void gatewayAccountService.getState({ checkAuthorization: true }).then(onGatewayStateChange).catch(() => undefined);
+  }), [hostBridge, gatewayAccountService, onGatewayStateChange]);
   useEffect(() => {
     if (connectionState.status !== 'connected' || !gatewayAccountService) return;
     let canceled = false;
@@ -879,105 +873,6 @@ export function AppController(props: AppControllerProps) {
     });
     setPendingComposerFocusRequestId(nextComposerFocusRequestIdRef.current);
   }, []);
-  function applyDashboardSkill(skill: CreatorSkill) {
-    const promptHint = getCreatorSkillPromptHint(skill, language === 'zh-CN' ? 'zh-CN' : 'en-US');
-    if (skill.interaction?.type === 'workspace') {
-      setHomeSkillPromptHint(undefined);
-      setCreatorSkillLaunch({
-        skillId: skill.id,
-        workspace: skill.interaction.workspace,
-        promptHint
-      });
-      closeMobileSidebar();
-      dispatch({ type: 'set_active_view', activeView: 'dashboard' });
-      navigateToRoute({ view: 'workbench', tool: skill.interaction.workspace });
-      return;
-    }
-
-    setHomeSkillPromptHint(promptHint);
-    nextComposerFocusRequestIdRef.current += 1;
-    setPendingComposerFocusRequestId(nextComposerFocusRequestIdRef.current);
-  }
-  async function applyDashboardPreset(preset: CreatorPresetSummary): Promise<void> {
-    if (creatorService === null) {
-      throw new Error(createLocalizedCopy(language)('本地创作服务不可用。', 'The local creator service is unavailable.'));
-    }
-    const projectId = state.currentProjectId;
-    if (projectId === undefined) {
-      throw new Error(createLocalizedCopy(language)('请先选择项目，再使用模板。', 'Select a project before using a preset.'));
-    }
-    const scope = [
-      projectId,
-      preset.module,
-      preset.id,
-      preset.version,
-      language
-    ].join(':');
-    let intent = creatorPresetCreationIntentsRef.current.get(scope);
-    if (intent === undefined) {
-      intent = {
-        creationKey: readOrCreateCreatorPresetCreationKey(scope)
-      };
-      creatorPresetCreationIntentsRef.current.set(scope, intent);
-    }
-    let request = intent.request;
-    if (request === undefined) {
-      request = withCreatorPresetCreationTimeout(
-        creatorService.createJob({
-          projectId,
-          preset: {
-            module: preset.module,
-            id: preset.id,
-            version: preset.version
-          },
-          locale: language === 'zh-CN' ? 'zh-CN' : 'en-US',
-          creationKey: intent.creationKey
-        }).then(response => response.job),
-        createLocalizedCopy(language)('模板任务创建超时，请重试。', 'Preset creation timed out. Try again.')
-      );
-      intent.request = request;
-    }
-    let job: CreatorJob;
-    try {
-      job = await request;
-    } catch (error) {
-      if (
-        creatorPresetCreationIntentsRef.current.get(scope) === intent
-        && intent.request === request
-      ) {
-        intent.request = undefined;
-        if (isTerminalCreatorPresetCreationError(error)) {
-          creatorPresetCreationIntentsRef.current.delete(scope);
-          clearCreatorPresetCreationKey(scope, intent.creationKey);
-        }
-      }
-      if (
-        error instanceof ApiClientError
-        && error.code === 'creator_preset_not_found'
-      ) {
-        setCreatorPresetsReloadKey(value => value + 1);
-        throw new Error(createLocalizedCopy(language)('该模板已不可用，模板目录已刷新。', 'This preset is no longer available. The catalog has been refreshed.'));
-      }
-      throw error;
-    }
-    if (
-      creatorPresetCreationIntentsRef.current.get(scope) === intent
-      && intent.request === request
-    ) {
-      creatorPresetCreationIntentsRef.current.delete(scope);
-      clearCreatorPresetCreationKey(scope, intent.creationKey);
-    }
-    rememberCreatorJob(job);
-    setCreatorSkillLaunch(undefined);
-    closeMobileSidebar();
-    dispatch({ type: 'set_active_view', activeView: 'dashboard' });
-    navigateToRoute({
-      view: 'workbench',
-      tool: preset.module,
-      jobId: job.id,
-      returnTo: 'home'
-    });
-  }
   const handleCreatorWorkspaceModeChange = useCallback((active: boolean) => {
     setImmersiveWorkspace(active);
     if (active) setCreatorSkillLaunch(undefined);
@@ -1318,6 +1213,10 @@ export function AppController(props: AppControllerProps) {
   useEffect(() => {
     if (connectionState.status !== 'connected' || connectionService === null || agentSetup !== 'checking') return;
     let canceled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const retryCheck = () => {
+      retryTimer = setTimeout(() => setAgentSetupCheckAttempt(attempt => attempt + 1), 1_000);
+    };
     void Promise.all([
       connectionService.getCodexReadiness(), connectionService.getCodexProvider(), gatewayAccountService?.getState().catch(() => undefined)
     ]).then(([readiness, provider, gateway]) => {
@@ -1325,12 +1224,25 @@ export function AppController(props: AppControllerProps) {
       if (gateway?.source === 'gateway') { onGatewayStateChange(gateway); return; }
       const snapshot = { readiness, provider };
       setAgentSetupSnapshot(snapshot);
+      if (hasAgentSetupConfirmation() && (
+        readiness.state === 'blocked' || readiness.binary.status !== 'ready'
+        || readiness.protocol.status !== 'ready' || readiness.models.status !== 'ready'
+        || readiness.account.status === 'unavailable'
+      )) {
+        retryCheck();
+        return;
+      }
       setAgentSetup(isAgentSetupConfirmed(snapshot) ? 'ready' : 'needed');
     }).catch(() => {
-      if (!canceled) setAgentSetup('needed');
+      if (canceled) return;
+      if (hasAgentSetupConfirmation()) {
+        retryCheck();
+      } else {
+        setAgentSetup('needed');
+      }
     });
-    return () => { canceled = true; };
-  }, [agentSetup, connectionService, connectionState.status, gatewayAccountService, onGatewayStateChange]);
+    return () => { canceled = true; clearTimeout(retryTimer); };
+  }, [agentSetup, agentSetupCheckAttempt, connectionService, connectionState.status, gatewayAccountService, onGatewayStateChange]);
 
   useEffect(() => {
     let canceled = false;
@@ -1455,43 +1367,6 @@ export function AppController(props: AppControllerProps) {
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, [connectionState.status, hostBridge, projectService, threadService]);
-
-  useEffect(() => {
-    let canceled = false;
-    if (connectionState.status !== 'connected' || creatorService === null) {
-      setCreatorPresetsLoading(false);
-      return () => {
-        canceled = true;
-      };
-    }
-
-    setCreatorPresetsLoading(true);
-    setCreatorPresetsError(undefined);
-    void creatorService.listPresets(language === 'zh-CN' ? 'zh-CN' : 'en-US')
-      .then(response => {
-        if (!canceled) setCreatorPresets(response.presets);
-      })
-      .catch(error => {
-        if (!canceled) {
-          setCreatorPresetsError(getRuntimeErrorMessage(
-            error,
-            createLocalizedCopy(language)('无法加载创作模板', 'Unable to load creator presets')
-          ));
-        }
-      })
-      .finally(() => {
-        if (!canceled) setCreatorPresetsLoading(false);
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, [
-    connectionState.status,
-    creatorPresetsReloadKey,
-    creatorService,
-    language
-  ]);
 
   useEffect(() => {
     let canceled = false;
@@ -3037,6 +2912,10 @@ export function AppController(props: AppControllerProps) {
 
   function openPrimaryView(activeView: ActiveView) {
     if ((activeView === 'account' || activeView === 'subscription') && props.route.view !== 'account' && props.route.view !== 'subscription') accountReturnRouteRef.current = props.route;
+    if (activeView === 'projects') {
+      projectsHistoryInitialTypeRef.current = props.route.view === 'workbench' && (props.route.tool === 'video-generation' || props.route.tool === 'video-translation')
+        ? 'video' : undefined;
+    }
     closeMobileSidebar();
     if (activeView === 'files') {
       followedFileWorkspaceThreadIdRef.current = undefined;
@@ -3048,6 +2927,7 @@ export function AppController(props: AppControllerProps) {
       return;
     }
 
+    if (activeView === 'dashboard') setCreatorSkillLaunch(undefined);
     dispatch({ type: 'set_active_view', activeView });
     navigateToRoute(routeForActiveView(activeView, state.selectedThreadId));
   }
@@ -4331,8 +4211,6 @@ export function AppController(props: AppControllerProps) {
   const conversationConfirmedEmpty = conversationEmpty && !conversationHistoryPending;
   const showConversationEmptyState = conversationConfirmedEmpty
     && (selectedThread === undefined || selectedThread.purpose === 'conversation');
-  const showCreatorHome = props.route.view === 'home'
-    && state.selectedThreadId === undefined;
   const showConversationHeader = selectedThread !== undefined
     || selectedScheduleTask !== undefined
     || selectedConversation !== undefined;
@@ -4381,18 +4259,6 @@ export function AppController(props: AppControllerProps) {
   const pendingComposerApproval = [...timelineItems].reverse().find(item => (
     item.kind === 'approval' && item.approval.status === 'pending'
   ));
-  const creatorDashboard = (
-    <Suspense fallback={<div role="status">{createLocalizedCopy(language)('正在加载模板...', 'Loading templates...')}</div>}>
-      <CreatorDashboard
-        presets={creatorPresets}
-        loading={creatorPresetsLoading}
-        error={creatorPresetsError}
-        onRetry={() => setCreatorPresetsReloadKey(value => value + 1)}
-        onSelectPreset={applyDashboardPreset}
-        onSelectSkill={applyDashboardSkill}
-      />
-    </Suspense>
-  );
   const conversationComposer = (
     <Composer
       key={composerAttachmentScope}
@@ -4476,8 +4342,7 @@ export function AppController(props: AppControllerProps) {
     <section
       className={[
         'conversation-page',
-        showConversationEmptyState || showCreatorHome ? 'is-empty' : undefined,
-        showCreatorHome ? 'is-creator-home' : undefined,
+        showConversationEmptyState ? 'is-empty' : undefined,
         !useIntegratedConversationTitleBar && showConversationHeader
           ? 'has-header'
           : undefined,
@@ -4493,7 +4358,7 @@ export function AppController(props: AppControllerProps) {
           {conversationTaskToolbar}
         </div>
       ) : null}
-      {showCreatorHome ? null : (
+      {(
         <div className="conversation-body">
           {showConversationEmptyState ? null : (
             <Timeline
@@ -4540,11 +4405,7 @@ export function AppController(props: AppControllerProps) {
           ) : null}
         </div>
       )}
-      {showCreatorHome ? (
-        <div className="creator-home-wrap">
-          {creatorDashboard}
-        </div>
-      ) : (
+      {(
         <div className="composer-wrap" onWheel={handleComposerWheel}>
           <RuntimeConnectionNotice />
           {showConversationEmptyState ? (
@@ -4593,7 +4454,6 @@ export function AppController(props: AppControllerProps) {
             </div>
           ) : null}
           {conversationComposer}
-          {showConversationEmptyState ? creatorDashboard : null}
         </div>
       )}
     </section>
@@ -4634,40 +4494,57 @@ export function AppController(props: AppControllerProps) {
     </section>
   ) : conversationPage;
   const accountPageActive = state.activeView === 'account' || state.activeView === 'subscription';
-  const configurationPageActive = accountPageActive || (state.activeView === 'settings' && !agentSetupRequested);
+  const agentSetupGateDeferred = !agentSetupRequested && (
+    accountPageActive || state.activeView === 'settings' || state.activeView === 'dashboard'
+    || (agentSetup === 'checking' && hasAgentSetupConfirmation())
+  );
   const main = props.capabilitiesView !== undefined ? (
     <CapabilitiesPage {...props.capabilitiesView} />
   ) : state.activeView === 'projects' ? (
-    <ProjectsPage
-      jobs={creatorJobs}
-      workspaces={projects}
-      loading={creatorJobsLoading}
-      error={creatorJobsError}
-      service={creatorService}
-      onCreateProject={
-        projectService === null
-          ? undefined
-          : projectType => createProject(projectType, 'projects')
-      }
-      createProjectError={createProjectError}
-      onOpenJob={openCreatorJob}
-      onDeleteJob={creatorService === null ? undefined : deleteCreatorJob}
-    />
+    creatorService && (state.currentProjectId || creatorJobs[0]?.projectId || projects[0]?.id) ? (
+      <DashboardGenerationHistory
+        projectId={state.currentProjectId ?? creatorJobs[0]?.projectId ?? projects[0]?.id ?? ''}
+        service={creatorService}
+        initialType={projectsHistoryInitialTypeRef.current}
+        onBackCreation={() => openPrimaryView('dashboard')}
+        onOpenJob={openCreatorJob}
+      />
+    ) : (
+      <ProjectsPage
+        jobs={creatorJobs}
+        workspaces={projects}
+        loading={creatorJobsLoading}
+        error={creatorJobsError}
+        service={creatorService}
+        onCreateProject={
+          projectService === null
+            ? undefined
+            : projectType => createProject(projectType, 'projects')
+        }
+        createProjectError={createProjectError}
+        onOpenJob={openCreatorJob}
+        onDeleteJob={creatorService === null ? undefined : deleteCreatorJob}
+      />
+    )
   ) : state.activeView === 'dashboard' ? (
     <DashboardPage
       onSelectPrompt={startCreatorTool}
       onBackToHome={() => startNewConversation({ destination: 'home' })}
       skillLaunch={creatorSkillLaunch}
       onWorkspaceModeChange={handleCreatorWorkspaceModeChange}
+      onGenerationModeChange={setActiveGenerationMode}
       projectId={state.currentProjectId}
       creatorService={creatorService}
       runtimeDependencies={runtimeDependencies}
       creatorServicesService={creatorServicesService}
       gatewayState={gatewayAccountState ?? (gatewayAccountService ? null : undefined)}
       gatewayAccountService={gatewayAccountService}
+      onGatewayStateChange={onGatewayStateChange}
+      openExternal={url => hostBridge.openExternal(url)}
       videoMetadataService={videoMetadataService}
       workspace={props.route.view === 'workbench' ? props.route.tool : undefined}
       jobId={props.route.view === 'workbench' ? props.route.jobId : undefined}
+      returnTo={props.route.view === 'workbench' && props.route.returnTo === 'projects' ? 'projects' : undefined}
       onJobCreated={rememberCreatorJob}
       onAskIssue={askAgentAboutIssue}
       onCreateProject={
@@ -4696,6 +4573,7 @@ export function AppController(props: AppControllerProps) {
           && props.route.view === 'workbench'
           && props.route.returnTo === 'projects'
         ) {
+          projectsHistoryInitialTypeRef.current = props.route.tool === 'video-generation' || props.route.tool === 'video-translation' ? 'video' : undefined;
           dispatch({ type: 'set_active_view', activeView: 'projects' });
           navigateToRoute({ view: 'projects' }, options);
           return;
@@ -4942,7 +4820,7 @@ export function AppController(props: AppControllerProps) {
         }
         aria-live="polite"
       />
-      {agentSetup === 'needed' && !configurationPageActive ? null : <AppLayout
+      {agentSetup === 'needed' && !agentSetupGateDeferred ? null : <AppLayout
       sidebar={
         <OpenCreatorSidebar
           projects={projects}
@@ -4952,6 +4830,8 @@ export function AppController(props: AppControllerProps) {
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}
+          activeWorkspace={props.route.view === 'workbench' ? props.route.tool : undefined}
+          activeGenerationMode={activeGenerationMode}
           gatewayAccountState={gatewayAccountState}
           loadAccountAvatar={gatewayAccountService?.getAvatar}
           homeActive={state.activeView === 'conversation' && props.route.view === 'home'}
@@ -4965,6 +4845,20 @@ export function AppController(props: AppControllerProps) {
           onSelectConversation={selectConversation}
           onSelectTask={selectSidebarTask}
           onOpenView={openPrimaryView}
+          onOpenWorkspace={(workspace: CreatorWorkspace, mode) => {
+            closeMobileSidebar();
+            const generationMode = mode ?? (
+              workspace === 'video-translation' ? 'translation'
+                : workspace === 'transcription' ? 'transcription'
+                  : workspace === 'image-generation' ? 'image'
+                    : workspace === 'video-generation' ? 'video'
+                      : workspace === 'video-download' ? 'download'
+                        : workspace === 'smart-dubbing' ? 'speech' : undefined
+            );
+            if (generationMode !== undefined) selectDashboardGenerationMode(generationMode);
+            dispatch({ type: 'set_active_view', activeView: 'dashboard' });
+            navigateToRoute({ view: 'workbench', tool: workspace });
+          }}
           onAddProject={
             projectService === null
               ? undefined
@@ -5018,12 +4912,12 @@ export function AppController(props: AppControllerProps) {
       onOpenMobileSidebar={openMobileSidebar}
       onCloseMobileSidebar={dismissMobileSidebar}
       />}
-      {agentSetup === 'checking' && connectionState.status === 'connected' && !configurationPageActive ? (
+      {agentSetup === 'checking' && connectionState.status === 'connected' && !agentSetupGateDeferred ? (
         <main className="startup-agent-setup" role="status">
           {l('正在检查 Agent 配置…', 'Checking Agent configuration…')}
         </main>
       ) : null}
-      {agentSetup === 'needed' && connectionService !== null && !configurationPageActive ? (
+      {agentSetup === 'needed' && connectionService !== null && !agentSetupGateDeferred ? (
         <Suspense fallback={<main className="startup-agent-setup" role="status">{l('正在加载 Agent 配置…', 'Loading Agent setup…')}</main>}>
           <StartupAgentSetup
             service={connectionService}
@@ -5037,7 +4931,9 @@ export function AppController(props: AppControllerProps) {
               confirmAgentSetup(snapshot);
               setAgentSetupSnapshot(snapshot);
               setAgentSetup('ready');
-              startNewConversation({ destination: 'home' });
+              startNewConversation({ updateRoute: false });
+              dispatch({ type: 'set_active_view', activeView: 'dashboard' });
+              navigateToRoute({ view: 'workbench' });
             }}
             onSkip={() => { setAgentSetupRequested(false); setAgentSetup('skipped'); }}
           />
@@ -5152,74 +5048,6 @@ export function AppController(props: AppControllerProps) {
       />
     );
   }
-}
-
-function readOrCreateCreatorPresetCreationKey(scope: string): string {
-  const storageKey = creatorPresetCreationStorageKey(scope);
-  try {
-    const existing = window.sessionStorage.getItem(storageKey);
-    if (existing) return existing;
-  } catch {
-    // Session storage is a recovery aid; in-memory retry still works without it.
-  }
-  const creationKey = `creator_preset_${createCreatorPresetCreationKeySuffix()}`;
-  try {
-    window.sessionStorage.setItem(storageKey, creationKey);
-  } catch {
-    // The caller retains the key in memory when storage is unavailable.
-  }
-  return creationKey;
-}
-
-function clearCreatorPresetCreationKey(scope: string, expectedKey: string): void {
-  try {
-    const storageKey = creatorPresetCreationStorageKey(scope);
-    if (window.sessionStorage.getItem(storageKey) === expectedKey) {
-      window.sessionStorage.removeItem(storageKey);
-    }
-  } catch {
-    // Session storage cleanup must not block a completed creation.
-  }
-}
-
-function creatorPresetCreationStorageKey(scope: string): string {
-  return `${CREATOR_PRESET_CREATION_STORAGE_PREFIX}${encodeURIComponent(scope)}`;
-}
-
-function createCreatorPresetCreationKeySuffix(): string {
-  return globalThis.crypto?.randomUUID?.()
-    ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
-}
-
-function withCreatorPresetCreationTimeout<T>(
-  promise: Promise<T>,
-  message: string
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(
-      () => reject(new Error(message)),
-      CREATOR_PRESET_CREATION_TIMEOUT_MS
-    );
-    promise.then(
-      value => {
-        window.clearTimeout(timeout);
-        resolve(value);
-      },
-      error => {
-        window.clearTimeout(timeout);
-        reject(error);
-      }
-    );
-  });
-}
-
-function isTerminalCreatorPresetCreationError(error: unknown): boolean {
-  return error instanceof ApiClientError && [
-    'creator_idempotency_key_reused',
-    'creator_preset_not_found',
-    'creator_preset_incompatible',
-    'creator_preset_invalid'
-  ].includes(error.code);
 }
 
 function mergeTimelineItems(

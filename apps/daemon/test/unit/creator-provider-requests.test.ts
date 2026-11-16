@@ -6,6 +6,7 @@ import { z } from 'zod/v3';
 import {
   CreatorProviderRequestError,
   CreatorProviderRequestLedger,
+  hasPendingPaidCreatorRequests,
   type CreatorProviderCapabilities
 } from '../../src/creator/provider-requests.js';
 import { createCreatorIssueService } from '../../src/creator/issues.js';
@@ -47,6 +48,31 @@ function setup(path = join(tempDir, 'runtime.sqlite')) {
 }
 
 describe('creator provider request ledger', () => {
+  it('does not block account reconnection for a confirmed legacy video price rejection', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-video-price-rejection-'));
+    const { db, repository, job, stage, ledger } = setup();
+    try {
+      const request = ledger.registerBeforeSubmit({
+        jobId: job.id, stageRunId: stage.id, provider: 'opencreator-gateway-video',
+        requestKey: stage.id, request: { model: 'wan3.0-video' }
+      });
+      ledger.markSubmitting(request.id);
+      ledger.markUnknownRemoteAcceptance(request.id);
+      expect(hasPendingPaidCreatorRequests(repository.listJobs())).toBe(true);
+
+      createCreatorIssueService(repository).capture({
+        jobId: job.id, stageId: stage.stageId, stageRunId: stage.id, source: 'provider',
+        code: 'creator_provider_resolution_required',
+        publicFacts: { kind: 'http-rejected', provider: 'opencreator-gateway-video',
+          httpStatus: 409, upstreamCode: 'video_price_changed' }
+      });
+      expect(hasPendingPaidCreatorRequests(repository.listJobs())).toBe(false);
+
+      ledger.markWaitingRemote(request.id, 'accepted-video-id');
+      expect(hasPendingPaidCreatorRequests(repository.listJobs())).toBe(true);
+    } finally { db.close(); }
+  });
+
   it('leaves a stage retry resolving during automatic request failures and closes it with the stage outcome', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-managed-stage-retry-'));
     const { db, repository, job, stage } = setup();

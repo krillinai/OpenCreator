@@ -13,7 +13,7 @@ import {
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { parse, stringify } from '@iarna/toml';
-import { openCreatorLanguages, type OpenCreatorLanguage } from '@opencreator/protocol';
+import { openCreatorAccentColors, openCreatorLanguages, type OpenCreatorAccentColor, type OpenCreatorLanguage } from '@opencreator/protocol';
 import type {
   OpenCreatorStorageSettings,
   OpenCreatorUiSettings,
@@ -86,7 +86,7 @@ export type OpenCreatorConfigSnapshot = {
 const defaultUiSettings: OpenCreatorUiSettings = {
   language: 'en-US',
   colorMode: 'dark',
-  accentColor: 'red',
+  accentColor: 'brand',
   customAccentColor: '#3b82f6',
   defaultPermission: 'danger-full-access'
 };
@@ -279,15 +279,9 @@ function normalizeUiSettings(value: unknown): OpenCreatorUiSettings {
       ? source.language as OpenCreatorLanguage
       : 'system',
     colorMode: colorMode === 'light' ? 'light' : 'dark',
-    accentColor:
-      accentColor === 'neutral'
-      || accentColor === 'blue'
-      || accentColor === 'cyan'
-      || accentColor === 'purple'
-      || accentColor === 'orange'
-      || accentColor === 'custom'
-        ? accentColor
-        : 'red',
+    accentColor: openCreatorAccentColors.includes(accentColor as OpenCreatorAccentColor)
+      ? accentColor as OpenCreatorAccentColor
+      : defaultUiSettings.accentColor,
     customAccentColor,
     defaultPermission:
       defaultPermission === 'follow-project'

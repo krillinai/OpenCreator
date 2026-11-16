@@ -35,6 +35,16 @@ it('removes incompatible selections and falls back to a ready recommended model'
     .toMatchObject({ selected: { text: 'gpt-6.1-sol', transcription: 'whisper-1' }, manual: {}, changed: true });
 });
 
+it('selects DeepSeek Flash when the gateway has no text default, then falls back to the first ready text model', () => {
+  const models = [text('gpt-6-luna'), text('deepseek-v4.1-flash'), text('gpt-6.1-sol')];
+  expect(resolveModelPreferences(models, {}, {}).selected.text).toBe('deepseek-v4.1-flash');
+  expect(resolveModelPreferences(models, {}, { text: 'gpt-6.1-sol' }).selected.text).toBe('gpt-6.1-sol');
+  expect(resolveModelPreferences([models[0]!, models[2]!], {}, {}).selected.text).toBe('gpt-6-luna');
+  expect(resolveModelPreferences([
+    { ...models[0]!, status: 'temporarily_unavailable' }, models[2]!
+  ], {}, {}).selected.text).toBe('gpt-6.1-sol');
+});
+
 
 it('retains the same model when a saved supplier ID becomes a public identity', () => {
   const old = '88api/gpt-6-sol';

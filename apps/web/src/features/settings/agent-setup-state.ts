@@ -35,6 +35,10 @@ export function isAgentSetupConfirmed(snapshot: AgentSetupSnapshot): boolean {
     && readJsonFromStorage<string>(confirmationKey) === confirmationValue(snapshot);
 }
 
+export function hasAgentSetupConfirmation(): boolean {
+  return readJsonFromStorage<string>(confirmationKey) !== null;
+}
+
 export function confirmAgentSetup(snapshot: AgentSetupSnapshot): void {
   try {
     writeJsonToStorage(confirmationKey, confirmationValue(snapshot));

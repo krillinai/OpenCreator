@@ -59,7 +59,7 @@ export default function VideoSourceInput(props: {
         <input
           ref={fileInputRef}
           type="file"
-          accept="video/*,audio/*"
+          accept="video/*,audio/*,.mp4,.mov,.m4v,.webm,.mkv,.avi,.mp3,.wav,.m4a,.aac,.flac,.ogg"
           onChange={event => props.onFileChange(event.target.files?.[0] ?? null)}
           aria-label={l('上传本地视频', 'Upload a local video')}
         />

@@ -1,4 +1,5 @@
 export const accentColors = [
+  'brand',
   'neutral',
   'blue',
   'cyan',
@@ -12,7 +13,7 @@ export type AccentColor = typeof accentColors[number];
 
 export const accentColorStorageKey = 'opencreator.preferences.accentColor';
 export const customAccentColorStorageKey = 'opencreator.preferences.customAccentColor';
-export const defaultAccentColor: AccentColor = 'red';
+export const defaultAccentColor: AccentColor = 'brand';
 export const defaultCustomAccentColor = '#3b82f6';
 
 export function readAccentColorPreference(): AccentColor {

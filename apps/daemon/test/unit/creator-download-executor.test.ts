@@ -22,6 +22,7 @@ import { createDownloadExecutor } from '../../src/creator/download/executor.js';
 import { parseDownloadProbe } from '../../src/creator/download/probe-parser.js';
 import type { CreatorExecutorInput } from '../../src/creator/executor.js';
 import { createCreatorProcessControl } from '../../src/creator/process-tree.js';
+import { failureDiagnosticFromError } from '../../src/telemetry/diagnostic.js';
 
 let tempDir = '';
 
@@ -1530,15 +1531,22 @@ describe('creator download executor', () => {
     await mkdir(workdir, { recursive: true });
     const executor = createDownloadExecutor(binaries);
 
-    await expect(executor.run(stageInput({
+    const failure = await executor.run(stageInput({
       workdir,
       stageId: 'probe',
       state: { sourceUrl: 'https://www.youtube.com/watch?v=demo' }
-    }))).rejects.toMatchObject({
+    })).then(() => undefined, error => error);
+    expect(failure).toMatchObject({
       code: 'network_unavailable',
       message: expect.stringContaining('proxy connection was refused'),
       publicFacts: { kind: 'connection-refused', provider: 'yt-dlp' }
     });
+    expect(failureDiagnosticFromError(failure, 'download.probe')).toMatchObject({
+      operation: 'yt-dlp.probe',
+      network: { route: 'proxy', peer: 'proxy', proxy_scope: 'loopback', proxy_port: 7897 },
+      evidence: ['connection_refused', 'proxy_failed']
+    });
+    expect(JSON.stringify(failureDiagnosticFromError(failure, 'download.probe'))).not.toContain('secret');
   });
 
   it('reports an upstream HTTP status without leaking the request URL', async () => {

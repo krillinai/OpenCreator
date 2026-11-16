@@ -595,7 +595,7 @@ OpenCreator-এ পরিকল্পনা বাছুন। কিনতে S
 | এনভায়রনমেন্ট ভেরিয়েবল | ডিফল্ট | উদ্দেশ্য |
 | --- | --- | --- |
 | `OPENCREATOR_DATA_DIR` | `.runtime` | OpenCreator ডেটাবেস, Run, সংযুক্তি ও পরিচালিত কর্মক্ষেত্র |
-| `OPENCREATOR_GATEWAY_ORIGIN` | `https://www.open-creator.ai` | লগইন, সাবস্ক্রিপশন, ক্রেডিট ও অফিশিয়াল মডেল পরিষেবার Gateway; স্থানীয় Gateway হলে বদলান |
+| `OPENCREATOR_GATEWAY_ORIGIN` | `https://open-creator.ai` | লগইন, সাবস্ক্রিপশন, ক্রেডিট ও অফিশিয়াল মডেল পরিষেবার Gateway; স্থানীয় Gateway হলে বদলান |
 | `OPENCREATOR_CODEX_BIN` | `codex` | Codex CLI executable-এর পাথ |
 | `CODEX_HOME` | `~/.codex` | Codex সেশন, কনফিগারেশন, Skills, MCP ও Profiles-এর প্রামাণিক উৎস |
 | `OPENCREATOR_DEFAULT_CWD` | বর্তমান কাজের ফোল্ডার | daemon-এর ডিফল্ট কাজের ফোল্ডার |

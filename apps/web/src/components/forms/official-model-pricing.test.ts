@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { GatewayModel } from '@opencreator/protocol';
-import { officialModelPrice, officialModelPriceDescription } from './official-model-pricing.js';
+import { officialModelPrice, officialModelPriceDescription, officialVideoModelListPrice } from './official-model-pricing.js';
 
 const zh = (value: string) => value;
 const en = (_: string, value: string) => value;
@@ -30,6 +30,26 @@ it('quotes each video second at a supported resolution independently of clip dur
   expect(officialModelPrice(fallback, zh)).toBe('1080p：每秒约 45 积分');
   expect(officialModelPriceDescription(fallback, zh)).toContain('1080p：每秒约 45 积分');
   expect(officialModelPrice({ ...video, durations: [] }, zh)).toBe(officialModelPrice(video, zh));
+});
+
+it.each([
+  { clipCredits: '600000000', seconds: 3, rate: 200_000_000, expected: '200' },
+  { clipCredits: '2000000000', seconds: 8, rate: 250_000_000, expected: '250' },
+  { clipCredits: '85714286', seconds: 2, rate: 42_857_143, expected: '43' }
+])('shows a one-second video list price instead of a $seconds-second sample clip', ({ clipCredits, seconds, rate, expected }) => {
+  const value = model('video', {
+    version: 'v1', videoUnitsPerSecond: { '720p': rate },
+    estimates: { clip: { creditUnits: clipCredits, seconds, resolution: '720p' } }
+  }, { resolutions: ['720p'], durations: [seconds] });
+  expect(officialVideoModelListPrice(value, zh)).toBe(`约 ${expected} 积分 / 1 秒 · 720p`);
+  expect(officialVideoModelListPrice(value, en)).toBe(`About ${expected} credits / 1s · 720p`);
+});
+
+it('does not infer a per-second price from a clip estimate without a per-second tariff', () => {
+  const value = model('video', { version: 'v1', estimates: {
+    clip: { creditUnits: '600000000', seconds: 3, resolution: '720p' }
+  } });
+  expect(officialVideoModelListPrice(value, zh)).toBe('价格暂不可用');
 });
 
 it('explains video cost with a supported duration and unrounded database rates', () => {
@@ -69,7 +89,7 @@ it('does not guess missing or invalid model prices', () => {
   for (const value of [model('image', { version: 'v1', billing: 'usage', outputPerMillion: 100 }), model('speech', { version: 'v1', perMillionCharacters: NaN })]) {
     expect(officialModelPrice(value, zh)).toBe('暂无法估算');
   }
-  expect(officialModelPrice({ ...video, resolutions: [] }, zh)).toBe('价格暂不可用');
+  expect(officialModelPrice({ ...video, price: { version: 'v1' } }, zh)).toBe('价格暂不可用');
 });
 
 it('uses current audio token tariffs independently of example workloads', () => {

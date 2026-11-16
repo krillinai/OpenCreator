@@ -1,13 +1,25 @@
 import AppSelect from '../../components/forms/Select.js';
 import { useId, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { FileVideo, X } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import {
   captureCreatorClientFailure,
   useOptionalCreatorSession
 } from './creator-session-store.js';
 
-export function VideoTranslationSubtitleImport(props: { sourceLanguage: string; targetLanguage: string; disabled: boolean; sourceOnly?: boolean; onBusyChange?(busy: boolean): void }) {
+export function VideoTranslationSubtitleImport(props: {
+  sourceLanguage: string;
+  targetLanguage: string;
+  disabled: boolean;
+  sourceOnly?: boolean;
+  compact?: boolean;
+  mediaOnly?: boolean;
+  accept?: string;
+  onMediaFile?(file: File): void;
+  onBusyChange?(busy: boolean): void;
+  onError?(message: string): void;
+  onImported?(): void;
+}) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
   const [enabled, setEnabled] = useState(() => session?.job.artifacts.some(artifact => artifact.metadata.source === 'local-upload' && artifact.kind.endsWith('_subtitle')) ?? false);
@@ -24,7 +36,9 @@ export function VideoTranslationSubtitleImport(props: { sourceLanguage: string; 
   async function importFile(file: File) {
     if (session === null) return;
     if (!/\.srt$/i.test(file.name) || file.size > 512 * 1024) {
-      setError(l('请选择不超过 512 KiB 的 UTF-8 SRT 文件', 'Choose a UTF-8 SRT file up to 512 KiB'));
+      const message = l('请选择不超过 512 KiB 的 UTF-8 SRT 文件', 'Choose a UTF-8 SRT file up to 512 KiB');
+      setError(message);
+      props.onError?.(message);
       return;
     }
     setBusy(true);
@@ -46,12 +60,59 @@ export function VideoTranslationSubtitleImport(props: { sourceLanguage: string; 
         fileName: file.name, contentBase64, kind: props.sourceOnly ? 'source_subtitle' : kind,
         language: props.sourceOnly || kind === 'source_subtitle' ? 'auto' : props.targetLanguage
       } });
+      props.onImported?.();
     } catch {
-      // The session records runtime and file-read failures in the shared Agent panel.
+      if (props.compact) {
+        const message = l('字幕导入失败，请检查文件后重试。', 'Could not import the subtitles. Check the file and try again.');
+        setError(message);
+        props.onError?.(message);
+      }
     } finally {
       setBusy(false);
       props.onBusyChange?.(false);
     }
+  }
+
+  if (props.compact) {
+    const fileName = String(imports.at(-1)?.metadata.fileName ?? '') || selectedFileName;
+    const unified = props.onMediaFile !== undefined;
+    const uploadLabel = props.mediaOnly
+      ? l('上传视频或音频', 'Upload video or audio')
+      : l('上传视频、音频或 SRT 字幕', 'Upload video, audio, or SRT subtitles');
+    return (
+      <label className="image-generation-reference-upload dashboard-translation-subtitle-upload" title={unified ? uploadLabel : l('上传需要翻译的 SRT 字幕', 'Upload SRT subtitles to translate')}>
+        <input
+          id={fileInputId}
+          ref={fileInputRef}
+          type="file"
+          accept={props.accept ?? '.srt'}
+          aria-label={unified ? uploadLabel : l('上传字幕文件', 'Upload subtitle file')}
+          disabled={props.disabled || busy}
+          onChange={event => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) {
+              if (props.mediaOnly && /\.srt$/i.test(file.name)) {
+                const message = l('请选择视频或音频文件', 'Choose a video or audio file');
+                setError(message);
+                props.onError?.(message);
+                return;
+              }
+              setSelectedFileName(file.name);
+              if (!/\.srt$/i.test(file.name) && props.onMediaFile) props.onMediaFile(file);
+              else void importFile(file);
+            }
+          }}
+        />
+        <span className="image-generation-reference-thumbnail"><FileVideo size={23} strokeWidth={1.5} /></span>
+        <span className="image-generation-reference-copy">
+          <span>
+            <strong>{fileName || (unified ? props.mediaOnly ? l('视频 / 音频', 'Video / Audio') : l('视频 / 音频 / SRT', 'Video / Audio / SRT') : l('字幕', 'Subs'))}</strong>
+            <small>{busy ? l('正在导入…', 'Importing…') : fileName ? l('已选择文件', 'File selected') : unified ? l('点击上传', 'Choose file') : 'SRT'}</small>
+          </span>
+        </span>
+      </label>
+    );
   }
 
   return <div className="video-translation-subtitle-import" role="group" aria-label={l('导入已有字幕', 'Import existing subtitles')}>

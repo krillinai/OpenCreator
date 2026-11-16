@@ -1,4 +1,5 @@
 import {
+  openCreatorAccentColors,
   openCreatorLanguagePreferences,
   type OpenCreatorStorageSettingsResponse,
   type UpdateOpenCreatorStorageSettingsRequest,
@@ -15,15 +16,7 @@ import { apiError } from './errors.js';
 const updateSchema = z.object({
   language: z.enum(openCreatorLanguagePreferences).optional(),
   colorMode: z.enum(['light', 'dark']).optional(),
-  accentColor: z.enum([
-    'neutral',
-    'blue',
-    'cyan',
-    'purple',
-    'orange',
-    'red',
-    'custom'
-  ]).optional(),
+  accentColor: z.enum(openCreatorAccentColors).optional(),
   customAccentColor: z.string().regex(/^#[\da-f]{6}$/i).optional(),
   defaultPermission: z.enum([
     'follow-project',

@@ -65,6 +65,89 @@ it('keeps options usable if a brand image fails to load', async () => {
   expect(change).toHaveBeenCalledExactlyOnceWith('kling-v2-1-master');
 });
 
+it('omits sign-in badges from public text models while retaining selection', async () => {
+  const local: GatewayModel = { id: '__local_text__', name: 'Local Codex runtime', vendor: 'Local model', modality: 'text', capabilities: [] };
+  const publicModel: GatewayModel = { id: 'deepseek/deepseek-v4.1-flash', name: 'deepseek-v4.1-flash', vendor: 'DeepSeek', modality: 'text', capabilities: [],
+    price: { version: 'v1', inputPerMillion: 418, outputPerMillion: 1673 } };
+  const change = vi.fn();
+  render(<LanguageProvider initialPreference="en-US"><OfficialModelSelect label="Translation model" models={[local, publicModel]}
+    value={local.id} layout="grouped" loginRequiredModelIds={new Set([publicModel.id])} onChange={change} /></LanguageProvider>);
+  await userEvent.setup().click(screen.getByRole('combobox', { name: 'Translation model' }));
+  const option = screen.getByRole('option', { name: publicModel.name });
+  expect(option).not.toHaveTextContent('Sign in to use');
+  expect(option).toHaveTextContent('credits/M tokens');
+  await userEvent.setup().click(option);
+  expect(change).toHaveBeenCalledExactlyOnceWith(publicModel.id);
+});
+
+it.each(['grouped', 'list', 'catalog'] as const)('lists model families together without provider headings in %s layout', async layout => {
+  const models: GatewayModel[] = [
+    { id: 'xai/grok-1.5', name: 'Grok Imagine Video 1.5', vendor: 'Others', modality: 'video', capabilities: [] },
+    { id: 'google/veo-3.1', name: 'Veo 3.1', vendor: 'Google', modality: 'video', capabilities: [] },
+    { id: '__local_video__', name: 'Local video service', vendor: 'Local', modality: 'video', capabilities: [] },
+    { id: 'xai/grok', name: 'Grok Imagine Video', vendor: 'xAI', modality: 'video', capabilities: [] },
+    { id: 'other/veo-fast', name: 'Veo 3.1 Fast', vendor: 'Others', modality: 'video', capabilities: [] }
+  ];
+  render(<OfficialModelSelect label="Video model" models={models} value="google/veo-3.1" layout={layout} onChange={vi.fn()} />);
+  await userEvent.setup().click(screen.getByRole('combobox'));
+  const list = screen.getByRole('listbox');
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+  expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
+    'Local video service', 'Grok Imagine Video', 'Grok Imagine Video 1.5', 'Veo 3.1', 'Veo 3.1 Fast'
+  ]);
+  expect(screen.queryByRole('navigation', { name: 'Model providers' })).not.toBeInTheDocument();
+  expect(within(list).getByRole('option', { name: 'Veo 3.1' })).toHaveAttribute('aria-selected', 'true');
+});
+
+it('keeps a generic icon for a video model without a gateway vendor', async () => {
+  const models: GatewayModel[] = [
+    { id: 'SD2.0', name: 'SD 2.0', modality: 'video', capabilities: [] },
+    { id: 'bytedance/seedance', name: 'Seedance', vendor: 'ByteDance', modality: 'video', capabilities: [] }
+  ];
+  render(<OfficialModelSelect label="视频模型" models={models} value={models[0]!.id} layout="grouped" compactOptions onChange={vi.fn()} />);
+  await userEvent.setup().click(screen.getByRole('combobox'));
+  const list = screen.getByRole('listbox');
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+  expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual(['SD 2.0', 'Seedance']);
+  const sd = within(list).getByRole('option', { name: 'SD 2.0' });
+  expect(sd.querySelector('[data-brand="generic"] svg')).not.toBeNull();
+});
+
+it('sorts video models by name regardless of vendor metadata', async () => {
+  const models: GatewayModel[] = [
+    { id: 'SD2.0', name: 'SD 2.0', modality: 'video', capabilities: [] },
+    { id: 'custom/film', name: 'Custom Film', vendor: 'Others', modality: 'video', capabilities: [] },
+    { id: 'bytedance/seedance', name: 'Seedance', vendor: 'ByteDance', modality: 'video', capabilities: [] }
+  ];
+  render(<OfficialModelSelect label="视频模型" models={models} value={models[0]!.id} layout="grouped" compactOptions onChange={vi.fn()} />);
+  await userEvent.setup().click(screen.getByRole('combobox'));
+  const list = screen.getByRole('listbox');
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+  expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label')))
+    .toEqual(['Custom Film', 'SD 2.0', 'Seedance']);
+});
+
+it.each([
+  { language: 'zh-CN' as const, price: '约 30 积分 / 1 秒 · 720p', unavailable: '价格暂不可用' },
+  { language: 'en-US' as const, price: 'About 30 credits / 1s · 720p', unavailable: 'Price unavailable' },
+  { language: 'sv-SE' as const, price: 'Cirka 30 krediter / 1 s · 720p', unavailable: 'Pris saknas' }
+])('shows gateway video credit estimates in the compact list in $language', async ({ language, price, unavailable }) => {
+  const models: GatewayModel[] = [
+    { id: '__local_video__', name: 'Local video service', vendor: 'Local', modality: 'video', capabilities: [] },
+    { id: 'vendor/clip', name: 'Clip', vendor: 'Vendor', modality: 'video', capabilities: [], durations: [5], resolutions: ['720p'],
+      price: { version: 'v1', videoUnitsPerSecond: { '720p': 30_000_000 }, estimates: { clip: { creditUnits: '150000000', seconds: 5, resolution: '720p' } } } },
+    { id: 'vendor/unpriced', name: 'Unpriced', vendor: 'Vendor', modality: 'video', capabilities: [] }
+  ];
+  render(<LanguageProvider initialPreference={language}><OfficialModelSelect label="Video model" models={models} value={models[0]!.id}
+    layout="grouped" compactOptions onChange={vi.fn()} /></LanguageProvider>);
+  await userEvent.setup().click(screen.getByRole('combobox'));
+  const clip = screen.getByRole('option', { name: 'Clip' });
+  expect(clip).toHaveTextContent(price);
+  expect(clip).not.toHaveTextContent(/Duration|时长|Längd/);
+  expect(screen.getByRole('option', { name: 'Unpriced' })).toHaveTextContent(unavailable);
+  expect(screen.getByRole('option', { name: 'Local video service' })).not.toHaveTextContent(/积分|credits|krediter|价格|Price|Pris/);
+});
+
 it('localizes branded video metadata and search states in Swedish', async () => {
   render(<LanguageProvider initialPreference="sv-SE"><OfficialModelSelect label="Videomodell" models={[{
     id: 'google/veo-3.1', name: 'Veo 3.1', modality: 'video', capabilities: [], durations: [4, 8]
@@ -72,19 +155,19 @@ it('localizes branded video metadata and search states in Swedish', async () => 
   const user = userEvent.setup();
   await user.click(screen.getByRole('combobox', { name: 'Videomodell' }));
   expect(screen.getByRole('option', { name: 'Veo 3.1' })).toHaveTextContent('Längd 4, 8 sekunder');
-  expect(screen.getByText('1 modeller')).toBeInTheDocument();
+  expect(screen.queryByText('1 modeller')).not.toBeInTheDocument();
   await user.type(screen.getByRole('combobox'), 'zzzzzzzzzz');
   expect(screen.getByText('Inga matchande modeller')).toBeInTheDocument();
 });
 
-it('shows the same concise duration and clear billing rule for recommended video models', async () => {
+it('shows concise duration and per-resolution pricing for recommended video models without a menu heading', async () => {
   const video: GatewayModel = { id: 'sd-2.5', name: 'SD 2.5', modality: 'video', capabilities: [],
     durations: Array.from({ length: 27 }, (_, index) => index + 4), resolutions: ['480p', '720p', '1080p'],
     price: { version: 'db-1', videoUnitsPerSecond: { '480p': 10_000_000, '720p': 30_000_000, '1080p': 60_000_000 } } };
   const change = vi.fn();
   render(<OfficialModelSelect label="视频模型" models={[video]} value={video.id} recommendedModel={video} followsRecommendation onChange={change} />);
   await userEvent.setup().click(screen.getByRole('combobox', { name: '视频模型' }));
-  expect(screen.getByText('按秒计费，价格随清晰度变化')).toBeVisible();
+  expect(screen.queryByText('按秒计费，价格随清晰度变化')).not.toBeInTheDocument();
   const option = screen.getByRole('option', { name: '系统推荐 · SD 2.5' });
   expect(option).toHaveTextContent('时长 4–30 秒 · 480p / 720p / 1080p');
   expect(option).toHaveTextContent('720p：每秒约 30 积分');
@@ -121,7 +204,7 @@ it('shows search results immediately in the same control without retaining unrel
   await user.type(input, 'Model 11');
   const list = screen.getByRole('listbox', { name: '文本模型' });
   expect(within(list).getAllByRole('option')).toHaveLength(1);
-  expect(screen.getByText('1 个匹配项')).toBeInTheDocument();
+  expect(screen.queryByText('1 个匹配项')).not.toBeInTheDocument();
   expect(change).not.toHaveBeenCalled();
   await user.click(within(list).getByRole('option', { name: 'Model 11' }));
   expect(change).toHaveBeenCalledWith('vendor/model-11');
@@ -221,18 +304,18 @@ it('lists the recommended model once and can search its original ID', async () =
   const user = userEvent.setup();
   const input = screen.getByRole('combobox');
   await user.click(input);
-  expect(screen.getByText('2 个模型')).toBeInTheDocument();
+  expect(screen.queryByText('2 个模型')).not.toBeInTheDocument();
   expect(screen.getAllByRole('option')).toHaveLength(2);
-  expect(screen.queryByRole('option', { name: 'GPT Image Flare' })).not.toBeInTheDocument();
-  const option = screen.getByRole('option', { name: '系统推荐 · GPT Image Flare' });
+  const option = screen.getByRole('option', { name: 'GPT Image Flare' });
   expect(option).toHaveAttribute('aria-selected', 'true');
-  expect(within(option).getByText('约 64 积分/张')).toBeInTheDocument();
+  expect(option.querySelector('.official-model-option-name')).toHaveTextContent(/^GPT Image Flare$/);
+  expect(option.querySelector('.official-model-option-price')).toHaveTextContent('约 64 积分/张');
   expect(option.title).toContain('按服务器提供的图片规格估算');
   await user.type(input, recommended.id);
   expect(screen.getAllByRole('option')).toHaveLength(1);
   await user.keyboard('{Enter}');
   expect(change).not.toHaveBeenCalled();
-  expect(input).toHaveValue('系统推荐 · GPT Image Flare');
+  expect(input).toHaveValue('GPT Image Flare');
 });
 
 it('preserves a manual selection matching the recommendation and can enable future recommendations', async () => {
@@ -273,4 +356,63 @@ it('never displays relay routing in names, groups, details or tooltips, includin
   expect(change).toHaveBeenCalledWith('chatanywhere/gpt-6-luna');
   view.rerender(<OfficialModelSelect label="模型" models={[]} value="88api/gpt-image-2" onChange={change} />);
   expect(screen.getByRole('combobox')).toHaveValue('gpt-image-2');
+});
+
+it('shows catalog models directly without provider navigation', async () => {
+  const models: GatewayModel[] = [{ id: 'bytedance/seedance-2', name: 'Seedance 2.0', modality: 'video', capabilities: [], durations: [5, 10] }];
+  render(<LanguageProvider initialPreference="en-US"><OfficialModelSelect label="视频模型" layout="catalog" models={models} value={models[0]!.id} onChange={vi.fn()} /></LanguageProvider>);
+
+  await userEvent.setup().click(screen.getByRole('combobox', { name: '视频模型' }));
+  expect(screen.queryByRole('navigation', { name: 'Model providers' })).not.toBeInTheDocument();
+  expect(screen.queryByText('MODELS')).not.toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Seedance 2.0' })).toBeVisible();
+});
+
+it('sorts image models without company groups and keeps the xAI icon after filtering', async () => {
+  const models: GatewayModel[] = [
+    { id: '__local_image__', name: 'Local image service', vendor: 'Local', modality: 'image', capabilities: [] },
+    { id: 'openai/image-2', name: 'Image 2', vendor: 'OpenAI', modality: 'image', capabilities: [] },
+    { id: 'grok-imagine-image', name: 'Grok Imagine', vendor: 'xAI', modality: 'image', capabilities: [] },
+    { id: 'grok-imagine-image-2.0', name: 'Grok Imagine 2', vendor: 'xAI', modality: 'image', capabilities: [] }
+  ];
+  render(<LanguageProvider initialPreference="en-US"><OfficialModelSelect label="Image model" layout="grouped" models={models} value="__local_image__" onChange={vi.fn()} /></LanguageProvider>);
+  const input = screen.getByRole('combobox', { name: 'Image model' });
+  await userEvent.setup().click(input);
+  const list = screen.getByRole('listbox', { name: 'Image model' });
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+  expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
+    'Local image service', 'Grok Imagine', 'Grok Imagine 2', 'Image 2'
+  ]);
+  expect(screen.getByRole('option', { name: 'Grok Imagine' }).querySelector('[data-brand="xai"] img')).toHaveAttribute('src', '/model-brands/xai.svg');
+
+  await userEvent.setup().type(input, 'grok');
+  expect(within(list).queryByRole('group')).not.toBeInTheDocument();
+  expect(within(list).getAllByRole('option')).toHaveLength(2);
+});
+
+it.each([
+  { language: 'zh-CN' as const, price: '约 21 积分/张', quality: '按 low 质量档位估算' },
+  { language: 'en-US' as const, price: 'About 21 credits / image', quality: 'Estimated for the low quality setting' },
+  { language: 'sv-SE' as const, price: 'Cirka 21 krediter/bild', quality: 'Beräknat för kvalitetsnivån low' }
+])('shows the gateway image estimate per image in $language without generation parameters', async ({ language, price, quality }) => {
+  const model: GatewayModel = { id: 'gpt-image-2', name: 'gpt-image-2', modality: 'image', capabilities: ['generate'],
+    imageOptions: { aspectRatios: ['1:1', '16:9'], resolutions: ['1K', '2K'], qualities: ['low', 'high'], maxImages: 1, maxReferences: 0 },
+    price: { version: 'v1', perRequest: 21.428571, estimates: { image: { creditUnits: '21428571', images: 1, quality: 'low' } } } };
+  render(<LanguageProvider initialPreference={language}><OfficialModelSelect label="图片模型" models={[model]} value={model.id} onChange={vi.fn()} /></LanguageProvider>);
+  await userEvent.setup().click(screen.getByRole('combobox', { name: '图片模型' }));
+  const option = screen.getByRole('option', { name: 'gpt-image-2' });
+  expect(option.querySelector('[data-brand="openai"]')).not.toBeNull();
+  expect(option.querySelector('.official-model-option-price')).toHaveTextContent(price);
+  expect(option).toHaveAttribute('aria-describedby', option.querySelector('.official-model-option-price')?.id);
+  expect(option.querySelector('.official-model-option-text')).not.toHaveTextContent(/16:9|1K|high/);
+  expect(option.title).toContain(quality);
+});
+
+it('leaves unpriced local image models without a price', async () => {
+  const model: GatewayModel = { id: '__local_image__', name: 'Local image service', modality: 'image', capabilities: [] };
+  render(<OfficialModelSelect label="图片模型" models={[model]} value={model.id} onChange={vi.fn()} />);
+  await userEvent.setup().click(screen.getByRole('combobox', { name: '图片模型' }));
+  const option = screen.getByRole('option', { name: 'Local image service' });
+  expect(option.querySelector('.official-model-option-price')).toBeNull();
+  expect(option.title).toBe('Local image service');
 });

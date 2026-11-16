@@ -20,6 +20,7 @@ describe('creator workspace contract', () => {
     expect(creatorTemplateVersionForWorkspace('video-translation')).toBe(2);
     expect(creatorTemplateVersionForWorkspace('video-download')).toBe(2);
     expect(creatorTemplateVersionForWorkspace('stickman-video')).toBe(2);
+    expect(creatorTemplateVersionForWorkspace('auto-clips')).toBe(3);
     expect(creatorTemplateVersionForWorkspace('image-generation')).toBe(2);
     expect(creatorTemplateVersionForWorkspace('cover-generator')).toBe(2);
     expect(creatorTemplateVersionForWorkspace('video-generation')).toBe(1);

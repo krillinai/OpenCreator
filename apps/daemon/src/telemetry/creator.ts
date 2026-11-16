@@ -1,5 +1,6 @@
-import type { CreatorJob, CreatorStageRun, OpenCreatorIssue } from '@opencreator/protocol';
+import type { CreatorJob, CreatorStageRun, OpenCreatorIssue, PublicErrorFacts } from '@opencreator/protocol';
 import type { CreatorTelemetryOutbox } from './outbox.js';
+import type { FailureDiagnostic } from './diagnostic.js';
 import {
   createCreatorTelemetryEvent,
   type CreatorTelemetryAccountSnapshot,
@@ -10,18 +11,23 @@ export type CreatorTelemetrySink = ReturnType<typeof createCreatorTelemetrySink>
 
 export function createCreatorTelemetrySink(input: {
   outbox: CreatorTelemetryOutbox;
-  readAccount(): CreatorTelemetryAccountSnapshot;
+  readAccount(job: CreatorJob): CreatorTelemetryAccountSnapshot;
   now?(): string;
+  enabled?: boolean;
 }) {
   const now = input.now ?? (() => new Date().toISOString());
+  let enabled = input.enabled !== false;
   const write = (
     eventType: 'task_started' | 'task_finished',
     job: CreatorJob,
     stage: CreatorStageRun,
     feature: string,
     outcome?: CreatorTelemetryOutcome,
-    issue?: OpenCreatorIssue
+    issue?: OpenCreatorIssue,
+    diagnostic?: FailureDiagnostic,
+    failureFacts?: PublicErrorFacts
   ) => {
+    if (!enabled) return;
     try {
       input.outbox.enqueue(createCreatorTelemetryEvent({
         eventType,
@@ -30,8 +36,10 @@ export function createCreatorTelemetrySink(input: {
         stage,
         feature,
         ...(outcome === undefined ? {} : { outcome }),
-        account: input.readAccount(),
-        ...(issue === undefined ? {} : { issue })
+        account: input.readAccount(job),
+        ...(issue === undefined ? {} : { issue }),
+        ...(diagnostic === undefined ? {} : { diagnostic }),
+        ...(failureFacts === undefined ? {} : { failureFacts })
       }), `${stage.id}:${eventType}`);
     } catch {
       // Telemetry must never change Creator execution.
@@ -39,6 +47,15 @@ export function createCreatorTelemetrySink(input: {
   };
 
   return {
+    setEnabled(value: boolean): void {
+      if (!value) {
+        enabled = false;
+        input.outbox.clear();
+      } else {
+        if (!enabled) input.outbox.clear();
+        enabled = true;
+      }
+    },
     stageStarted(job: CreatorJob, stage: CreatorStageRun, feature: string): void {
       write('task_started', job, stage, feature);
     },
@@ -47,9 +64,11 @@ export function createCreatorTelemetrySink(input: {
       stage: CreatorStageRun,
       feature: string,
       outcome: CreatorTelemetryOutcome,
-      issue?: OpenCreatorIssue
+      issue?: OpenCreatorIssue,
+      diagnostic?: FailureDiagnostic,
+      failureFacts?: PublicErrorFacts
     ): void {
-      write('task_finished', job, stage, feature, outcome, issue);
+      write('task_finished', job, stage, feature, outcome, issue, diagnostic, failureFacts);
     }
   };
 }

@@ -51,6 +51,32 @@ afterEach(() => {
 });
 
 describe('VideoDownloadWorkspace', () => {
+  it('analyzes an embedded video URL and opens the generated download task', async () => {
+    const current = job();
+    const applyAction = vi.fn(async (_id: string, request: CreatorActionRequest) => ({
+      job: {
+        ...current,
+        revision: current.revision + 1,
+        state: {
+          ...current.state,
+          ...(request.action === 'update-settings' ? request.input.patch as Record<string, CreatorJson> : {})
+        }
+      }
+    }));
+    const onGenerated = vi.fn();
+    renderWorkspace(current, { applyAction, embedded: true, onGenerated });
+
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=demo' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '获取' }));
+
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith(current.id, expect.objectContaining({
+      action: 'run-stage', input: { stageId: 'probe' }
+    })));
+    expect(onGenerated).toHaveBeenCalledOnce();
+  });
+
   it('localizes subtitle provenance and reorders tracks when the display language changes', () => {
     const probe = probeArtifact();
     const tracks = ['en', ...appLanguageOptions.filter(option => option.value !== 'en-US').map(option => option.value)];
@@ -288,6 +314,36 @@ describe('VideoDownloadWorkspace', () => {
     expect(screen.queryByText('链接解析完成，请选择下载规格')).not.toBeInTheDocument();
   });
 
+  it('downloads a selected format locally as soon as it completes and shows OK', async () => {
+    const initial = job({
+      state: { sourceUrl: 'https://www.youtube.com/watch?v=demo' },
+      artifacts: [probeArtifact()]
+    });
+    let applySnapshot: ((next: CreatorJob) => void) | undefined;
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    createObjectURL.mockReturnValue('blob:direct-download');
+    renderWorkspace(initial, {
+      applyAction: vi.fn(async () => ({ job: initial })),
+      openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))),
+      onSnapshot: callback => { applySnapshot = callback; }
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: '下载 1080p' }));
+    act(() => applySnapshot?.(job({
+      ...initial,
+      revision: 1,
+      artifacts: [probeArtifact(), videoArtifact()],
+      stages: [downloadStage('download_1080', 'video-1080-1', 'succeeded', 100)]
+    })));
+
+    await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(click.mock.instances[0]).toHaveProperty('download', 'Creator Download.mp4');
+    expect(screen.getByLabelText('OK 1080p')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '作品' })).toHaveAttribute('aria-selected', 'false');
+    click.mockRestore();
+  });
+
   it('marks downloaded formats complete and only offers saving project files locally', async () => {
     const current = job({
       state: {
@@ -308,17 +364,10 @@ describe('VideoDownloadWorkspace', () => {
     expect(screen.queryByRole('tab', { name: '视频信息' })).not.toBeInTheDocument();
     expect(screen.getByText('Creator Download')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '更换链接' })).toBeInTheDocument();
-    const panel = screen.getByRole('complementary', { name: 'OpenCreator' });
-    const summary = within(panel).getByRole('complementary', { name: '任务摘要' });
-    expect(screen.getAllByRole('complementary', { name: '任务摘要' })).toHaveLength(1);
-    expect(summary.querySelector('details')).not.toHaveAttribute('open');
-    fireEvent.click(within(summary).getByText('任务摘要'));
-    expect(summary.querySelector('details')).toHaveAttribute('open');
-    expect(summary).toHaveTextContent('https://www.youtube.com/watch?v=demo');
-    expect(summary).toHaveTextContent('当前选择1080p');
-    expect(screen.getAllByText('1080p')).toHaveLength(2);
+    expect(screen.queryByRole('complementary', { name: 'OpenCreator' })).not.toBeInTheDocument();
+    expect(screen.getByText('1080p')).toBeInTheDocument();
     expect(screen.getByText('MP4 · 1920 x 1080 · 30 FPS · 84 MB')).toBeInTheDocument();
-    expect(screen.getByLabelText('已完成 1080p')).toBeInTheDocument();
+    expect(screen.getByLabelText('OK 1080p')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '下载 1080p' }))
       .not.toBeInTheDocument();
     expect(screen.queryByText('OpenCreator 视频示例')).not.toBeInTheDocument();
@@ -549,7 +598,7 @@ describe('VideoDownloadWorkspace', () => {
 
     expect(await screen.findByText('可重新加载预览或保存到本机'))
       .toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: 'OpenCreator' }).querySelector('.creator-collaboration-issue')).toBeInTheDocument();
+    expect(document.querySelector('.creator-workspace-local-issue')).toBeInTheDocument();
     expect(screen.queryByText(/诊断编号：OC-/)).not.toBeInTheDocument();
     expect(screen.queryByText('preview unavailable')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
@@ -623,6 +672,7 @@ describe('VideoDownloadWorkspace', () => {
     const availableButton = screen.getByRole('button', { name: '下载 720p' });
     expect(runningButton).toBeDisabled();
     expect(runningButton).toHaveTextContent('下载中');
+    expect(runningButton).toHaveTextContent('42%');
     expect(availableButton).toBeEnabled();
 
     fireEvent.click(availableButton);
@@ -638,6 +688,7 @@ describe('VideoDownloadWorkspace', () => {
         })
       })
     ));
+    fireEvent.click(screen.getByRole('tab', { name: '作品' }));
     expect(await screen.findByText('Creator Download · 1080p')).toBeInTheDocument();
     expect(screen.getByText('Creator Download · 720p')).toBeInTheDocument();
     expect(screen.getByText('42%')).toBeInTheDocument();
@@ -978,8 +1029,8 @@ describe('VideoDownloadWorkspace', () => {
       applyAction: vi.fn()
     });
 
-    expect(screen.getAllByText('无法连接视频平台，请检查网络或代理设置后重试'))
-      .toHaveLength(2);
+    expect(screen.getByText('无法连接视频平台，请检查网络或代理设置后重试'))
+      .toBeInTheDocument();
   });
 
   it('keeps routine yt-dlp version management out of the download workspace', () => {
@@ -1078,6 +1129,8 @@ function renderWorkspace(
     controlDownload?: ReturnType<typeof vi.fn>;
     runtimeDependencies?: Partial<RuntimeDependenciesController>;
     onOpenRuntimeComponents?: () => void;
+    embedded?: boolean;
+    onGenerated?: () => void;
     onSnapshot?: (callback: (next: CreatorJob) => void) => void;
     language?: AppLanguage;
   }
@@ -1109,6 +1162,8 @@ function renderWorkspace(
           onBack={vi.fn()}
           runtimeDependencies={runtimeDependencies}
           onOpenRuntimeComponents={input.onOpenRuntimeComponents}
+          embedded={input.embedded}
+          onGenerated={input.onGenerated}
         />
       </CreatorSessionProvider>
     </LanguageProvider>

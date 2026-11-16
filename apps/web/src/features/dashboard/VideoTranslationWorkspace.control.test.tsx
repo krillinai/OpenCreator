@@ -16,42 +16,304 @@ import { createLocalizedCopy } from '../../i18n/localized-copy.js';
 import { CreatorSessionProvider, useCreatorSession } from './creator-session-store.js';
 import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
 import { LanguageSwitchControls } from '../../test/LanguageSwitchControls.js';
+import { normalizePageIssue } from '../issues/page-issue-state.js';
 
 describe('VideoTranslationWorkspace task controls', () => {
-  it.each(['zh-CN', 'en-US'] as const)('dismisses return confirmations after five seconds and restarts the timer for repeated actions in %s', async language => {
-    const l = createLocalizedCopy(language);
-    let current = job({ status: 'completed', revision: 1, stages: [], artifacts: [subtitleArtifact(1, 'Hello world')] });
-    const applyAction = vi.fn(async (_id: string, request: { input: { patch?: Record<string, CreatorJson> } }) => {
-      current = { ...current, revision: current.revision + 1, state: { ...current.state, ...request.input.patch } };
+  it('keeps the translation workspace visible around a failed task', async () => {
+    const failed = job({ status: 'failed', revision: 1, state: {
+      currentStep: 0, furthestStep: 0, workspacePhase: 'result'
+    }, stages: [{ ...stage({ id: 'subtitle_timeout', status: 'failed', dispatchStatus: 'finished',
+      progress: { phase: 'failed', percent: 1, workflow: true } }),
+      errorCode: 'platform_caption_access_failed',
+      errorMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 60] Operation timed out'
+    }] });
+    const onBack = vi.fn();
+    const applyAction = vi.fn(async () => ({ job: job({ status: 'running', revision: 2,
+      state: { ...failed.state }, stages: [
+        ...failed.stages,
+        stage({ id: 'subtitle_retry', status: 'running', dispatchStatus: 'claimed', progress: { phase: 'reading_captions', workflow: true } })
+      ] }) }));
+    const issue = { ...normalizePageIssue('runtime', 'creator.retry-stage', new Error('Caption timeout'), 'Caption timeout'),
+      source: 'stage' as const, stageId: 'subtitle', stageRunId: 'subtitle_timeout', status: 'open' as const };
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={failed} externalIssues={[issue]}
+      service={{ applyAction, runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded backToParentOnExit onBack={onBack} />
+    </CreatorSessionProvider></LanguageProvider>);
+
+    const workspace = await screen.findByRole('region', { name: '视频翻译 操作区' });
+    expect(document.querySelector('.creator-resizable-layout')).not.toHaveAttribute('data-agent-panel', 'hidden');
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: '告诉 Agent 你的要求' })).toBeEnabled();
+    expect(within(workspace).getByRole('textbox', { name: '视频链接' })).toHaveValue('https://www.youtube.com/watch?v=job-control');
+    expect(within(workspace).getByRole('button', { name: '翻译设置' })).toBeEnabled();
+    expect(document.querySelector('.creator-collaboration-stage')).toHaveTextContent('视频平台连接超时，字幕读取未完成。');
+    expect(screen.getByText('字幕读取失败', { selector: '.creator-collaboration-context strong' })).toBeVisible();
+    expect(within(workspace).getByRole('alert')).toHaveTextContent('字幕读取失败');
+    expect(within(workspace).getByRole('alert')).toHaveTextContent('视频平台连接超时，字幕读取未完成。');
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' }).querySelector('.creator-collaboration-context')).not.toBeNull();
+    const settings = within(workspace).getByRole('link', { name: '检查网络代理' });
+    expect(settings.getAttribute('href')).toContain('tab=general');
+    expect(new URLSearchParams(settings.getAttribute('href')?.split('?')[1]).get('returnPath'))
+      .toBe('#/workbench?tool=video-translation&jobId=job_control&returnTo=projects');
+    expect(within(workspace).queryByRole('region', { name: '视频翻译项目产出' })).not.toBeInTheDocument();
+    expect(within(workspace).queryByText('项目 V1')).not.toBeInTheDocument();
+    expect(within(workspace).queryByRole('button', { name: '调整任务设置' })).not.toBeInTheDocument();
+
+    expect(within(workspace).queryByRole('button', { name: '查看任务诊断' })).not.toBeInTheDocument();
+
+    fireEvent.click(within(workspace).getByRole('button', { name: '重试当前阶段' }));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({
+      action: 'run-stage', input: expect.objectContaining({ stageId: 'subtitle', resumedFromStageRunId: 'subtitle_timeout' })
+    })));
+    await waitFor(() => expect(onBack).toHaveBeenCalledOnce());
+  });
+
+  it('opens a failed Chinese translation check in recovery with Agent chat and retry', async () => {
+    const failure = job({ status: 'needs_input', revision: 1, state: {
+      workspacePhase: 'result', resultVersions: [],
+      needsInput: { code: 'creator_translation_output_language_mismatch',
+        message: 'The target language is Chinese, but the translation is mostly English. Generate it again.',
+        stageId: 'subtitle' }
+    }, artifacts: [sourceVideoArtifact(1)], stages: [{
+      ...stage({ id: 'subtitle_language_check', status: 'failed', dispatchStatus: 'finished',
+        progress: { phase: 'failed', workflow: true } }),
+      errorCode: 'creator_translation_output_language_mismatch',
+      errorMessage: 'The target language is Chinese, but the translation is mostly English. Generate it again.'
+    }] });
+    let current = failure;
+    const applyAction = vi.fn(async (_jobId: string, request: { action: string; input: { patch?: Record<string, CreatorJson> } }) => {
+      current = {
+        ...current,
+        revision: current.revision + 1,
+        status: request.action === 'run-stage' ? 'running' : current.status,
+        state: request.action === 'update-settings'
+          ? { ...current.state, ...request.input.patch }
+          : current.state
+      };
       return { job: current };
     });
-    render(<LanguageProvider initialPreference={language}><CreatorSessionProvider initialJob={current}
+    const onBack = vi.fn();
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={failure}
       service={{ applyAction, runAgentTurn: vi.fn() } as never}>
-      <VideoTranslationWorkspace onBack={vi.fn()} />
+      <VideoTranslationWorkspace embedded backToParentOnExit onBack={onBack} />
     </CreatorSessionProvider></LanguageProvider>);
-    const workspace = within(screen.getByRole('region', { name: l('视频翻译操作区', 'Video translation workspace') }));
-    const notice = l('已返回 V1，配置草稿仍然保留', 'Returned to V1. Your configuration draft is still saved.');
-    const returnFromSettings = async () => {
-      await act(async () => { fireEvent.click(screen.getByRole('button', { name: l('产出文件', 'Output files') })); });
-      await act(async () => { fireEvent.click(screen.getByRole('button', { name: l('调整任务设置', 'Adjust settings') })); });
-      await act(async () => { fireEvent.click(workspace.getByRole('button', { name: l('返回 V1 成品', 'Return to V1 output') })); });
-    };
-    vi.useFakeTimers();
+
+    const workspace = await screen.findByRole('region', { name: '视频翻译 操作区' });
+    expect(screen.getByText('译文语言不符合目标语言', { selector: '.creator-collaboration-context strong' })).toBeVisible();
+    expect(within(workspace).getByRole('alert')).toHaveTextContent('译文语言不符合目标语言');
+    expect(within(workspace).getByRole('alert')).toHaveTextContent('目标语言是中文，但生成的字幕主要仍是英文，未通过检查。');
+    expect(within(workspace).getByRole('alert')).toHaveTextContent('检查当前任务的目标语言和翻译模型，然后重试字幕翻译。');
+    expect(within(workspace).queryByRole('button', { name: '开始翻译' })).not.toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toBeVisible();
+    expect(within(workspace).queryByRole('button', { name: '检查翻译设置' })).not.toBeInTheDocument();
+    fireEvent.click(within(workspace).getByRole('button', { name: '翻译设置' }));
+    const settings = await screen.findByRole('dialog', { name: '翻译设置' });
+    changeControl(within(settings).getByRole('combobox', { name: '翻译为' }), { target: { value: 'ja' } });
+    expect(within(workspace).getByRole('button', { name: '翻译设置' })).toHaveTextContent('日本語');
+    expect(screen.getByText('译文语言不符合目标语言', { selector: '.creator-collaboration-context strong' })).toBeVisible();
+    fireEvent.click(within(workspace).getByRole('button', { name: '重试当前阶段' }));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({
+      action: 'update-settings', input: expect.objectContaining({ patch: expect.objectContaining({ targetLanguage: 'ja' }) })
+    })));
+    await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({
+      action: 'run-stage', input: expect.objectContaining({ stageId: 'subtitle', resumedFromStageRunId: 'subtitle_language_check' })
+    })));
+    expect(applyAction.mock.calls.findIndex(([, request]) => request.action === 'update-settings' && request.input.patch?.targetLanguage === 'ja'))
+      .toBeLessThan(applyAction.mock.calls.findIndex(([, request]) => request.action === 'run-stage'));
+    await waitFor(() => expect(onBack).toHaveBeenCalledOnce());
+  });
+
+  it.each([
+    { kind: 'video', fileName: 'uploaded-video.mp4', mimeType: 'video/mp4', previewLabel: '本地视频预览', uploadedLabel: '本地视频已上传' },
+    { kind: 'audio', fileName: 'uploaded-audio.mp3', mimeType: 'audio/mpeg', previewLabel: '本地音频预览', uploadedLabel: '本地音频' }
+  ])('restores an uploaded $kind in a failed task after reopening the workspace', async ({ kind, fileName, mimeType, previewLabel, uploadedLabel }) => {
+    const objectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+    const revokeDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:uploaded-source') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    const source = { ...sourceVideoArtifact(1), metadata: {
+      ...sourceVideoArtifact(1).metadata, source: 'local-upload', fileName, mimeType
+    } };
+    const failure = job({ status: 'needs_input', revision: 1, state: {
+      sourceType: 'file', sourceUrl: '', sourceArtifactId: source.id,
+      sourceFileName: fileName, workspacePhase: 'result', resultVersions: []
+    }, artifacts: [source], stages: [{ ...stage({ id: 'subtitle_failed', status: 'failed', dispatchStatus: 'finished',
+      progress: { phase: 'failed', workflow: true } }),
+      errorCode: 'creator_translation_output_language_mismatch', errorMessage: 'Translation language mismatch'
+    }] });
+    const openArtifact = vi.fn(async () => new Response(new Blob([kind], { type: mimeType })));
+    const view = render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={failure}
+      service={{ applyAction: vi.fn(), openArtifact, runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
     try {
-      await returnFromSettings();
-      expect(screen.getByText(notice)).toBeVisible();
-      await act(async () => { vi.advanceTimersByTime(4_000); });
-      await returnFromSettings();
-      await act(async () => { vi.advanceTimersByTime(1_000); });
-      expect(screen.getByText(notice)).toBeVisible();
-      await act(async () => { vi.advanceTimersByTime(3_999); });
-      expect(screen.getByText(notice)).toBeVisible();
-      await act(async () => { vi.advanceTimersByTime(1); });
-      expect(screen.queryByText(notice)).not.toBeInTheDocument();
-      expect(workspace.getByRole('textbox', { name: l('横屏字幕 1', 'Horizontal subtitles 1') })).toHaveValue('Hello world');
+      const workspace = await screen.findByRole('region', { name: '视频翻译 操作区' });
+      expect(await within(workspace).findByLabelText(previewLabel)).toHaveAttribute('src', 'blob:uploaded-source');
+      expect(within(workspace).queryByLabelText('上传视频、音频或 SRT 字幕')).not.toBeInTheDocument();
+      expect(within(workspace).getByText(uploadedLabel)).toBeVisible();
+      expect(within(workspace).getByText(fileName)).toBeVisible();
+      expect(within(workspace).queryByRole('textbox', { name: '视频链接' })).not.toBeInTheDocument();
+      expect(openArtifact).toHaveBeenCalledWith('job_control', source.id);
+      expect(within(workspace).getByRole('button', { name: '重试当前阶段' })).toBeVisible();
     } finally {
-      vi.useRealTimers();
+      view.unmount();
+      restoreUrlMethod('createObjectURL', objectUrlDescriptor);
+      restoreUrlMethod('revokeObjectURL', revokeDescriptor);
     }
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:uploaded-source');
+  });
+
+  it('lets the user ask Agent about a failed translation', async () => {
+    const failure = job({ status: 'needs_input', revision: 1, stages: [{
+      ...stage({ id: 'subtitle_language_check', status: 'failed', dispatchStatus: 'finished', progress: { workflow: true } }),
+      errorCode: 'creator_translation_output_language_mismatch'
+    }] });
+    let current = failure;
+    const applyAction = vi.fn(async (_jobId: string, request: { action: string; input: { patch?: Record<string, CreatorJson> } }) => {
+      current = { ...current, revision: current.revision + 1,
+        state: request.action === 'update-settings' ? { ...current.state, ...request.input.patch } : current.state };
+      return { job: current };
+    });
+    const runAgentTurn = vi.fn(async () => ({}));
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={failure}
+      service={{ applyAction, runAgentTurn } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+
+    expect(await screen.findByText('译文语言不符合目标语言', { selector: '.creator-collaboration-context strong' })).toBeVisible();
+    fireEvent.change(screen.getByRole('textbox', { name: '告诉 Agent 你的要求' }), {
+      target: { value: '这次为什么失败？' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '发送给 Agent' }));
+    await waitFor(() => expect(runAgentTurn).toHaveBeenCalledWith('job_control', expect.objectContaining({
+      message: '这次为什么失败？'
+    })));
+  });
+
+  it.each([
+    ['en-US', 'Translation language does not match the target', 'The target language is Chinese, but the generated subtitles were mostly English and did not pass validation.'],
+    ['sv-SE', 'Översättningens språk matchar inte målspråket', 'Målspråket är kinesiska, men de genererade undertexterna var mestadels på engelska och klarade inte kontrollen.']
+  ] as const)('localizes the rejected translation in %s', (language, title, reason) => {
+    const failure = job({ status: 'needs_input', revision: 1, stages: [{
+      ...stage({ id: 'subtitle_language_check', status: 'failed', dispatchStatus: 'finished', progress: { workflow: true } }),
+      errorCode: 'creator_translation_output_language_mismatch'
+    }] });
+    render(<LanguageProvider initialPreference={language}><CreatorSessionProvider initialJob={failure}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+    expect(screen.getByText(title, { selector: '.creator-collaboration-context strong' })).toBeVisible();
+    expect(document.querySelector('.creator-collaboration-stage')).toHaveTextContent(reason);
+  });
+
+  it.each([
+    ['platform_session_required', 'Website verification required', '平台连接需要处理', '检查平台连接', 'platform-connections'],
+    ['yt_dlp_update_recommended', 'Extractor outdated', '视频解析失败', '检查第三方组件', 'local-components'],
+    ['platform_request_signature_required', 'Douyin request signature is required', '视频解析失败', null, null]
+  ])('gives a specific recovery path for %s', async (code, message, title, action, tab) => {
+    const failed = job({ status: 'failed', revision: 1, state: { workspacePhase: 'result' }, stages: [{
+      ...stage({ id: 'failure', status: 'failed', dispatchStatus: 'finished', progress: { phase: 'failed', workflow: true } }),
+      errorCode: code, errorMessage: message
+    }] });
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={failed}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+    const workspace = await screen.findByRole('region', { name: '视频翻译 操作区' });
+    expect(screen.getByText(title, { selector: '.creator-collaboration-context strong' })).toBeVisible();
+    if (action && tab) expect(within(workspace).getByRole('link', { name: action }).getAttribute('href')).toContain(`tab=${tab}`);
+    else expect(within(workspace).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['en-US', 'Caption retrieval failed', 'The video platform connection timed out, so captions could not be read.', 'Check network proxy'],
+    ['sv-SE', 'Det gick inte att läsa undertexter', 'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas.', 'Kontrollera nätverksproxy']
+  ] as const)('localizes the failed translation view in %s', async (language, title, reason, action) => {
+    const failed = job({ status: 'failed', revision: 1, state: { workspacePhase: 'result' }, stages: [{
+      ...stage({ id: 'caption_timeout', status: 'failed', dispatchStatus: 'finished', progress: { phase: 'failed', workflow: true } }),
+      errorCode: 'platform_caption_access_failed', errorMessage: 'yt-dlp subtitle metadata: Operation timed out'
+    }] });
+    render(<LanguageProvider initialPreference={language}><CreatorSessionProvider initialJob={failed}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+    expect(await screen.findByText(title, { selector: '.creator-collaboration-context strong' })).toBeVisible();
+    expect(document.querySelector('.creator-collaboration-stage')).toHaveTextContent(reason);
+    expect(document.querySelector('.video-translation-failure-notice')).toHaveTextContent(title);
+    expect(document.querySelector('.video-translation-failure-notice')).toHaveTextContent(reason);
+    expect(screen.getByRole('link', { name: action })).toBeVisible();
+  });
+
+  it('keeps embedded video, subtitle and URL sources mutually exclusive and clears them before choosing another', async () => {
+    let current = job({ status: 'draft', revision: 0, stages: [], state: { sourceUrl: '' } });
+    const applyAction = vi.fn(async (_id: string, request: { action: string; input: Record<string, CreatorJson> }) => {
+      if (request.action === 'import-subtitle') {
+        const artifact = {
+          ...subtitleArtifact(1, 'Hello'),
+          id: 'embedded-source-srt',
+          kind: 'source_subtitle',
+          metadata: {
+            ...subtitleArtifact(1, 'Hello').metadata,
+            source: 'local-upload',
+            fileName: String(request.input.fileName)
+          }
+        };
+        current = {
+          ...current,
+          revision: current.revision + 1,
+          artifacts: [...current.artifacts, artifact],
+          state: { ...current.state, importedSourceSubtitleId: artifact.id }
+        };
+      } else if (request.action === 'update-settings') {
+        current = {
+          ...current,
+          revision: current.revision + 1,
+          state: { ...current.state, ...request.input.patch as object }
+        };
+      }
+      return { job: current };
+    });
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:embedded-video') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorSessionProvider initialJob={current}
+      service={{ applyAction, runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+
+    let upload = screen.getByLabelText('上传视频、音频或 SRT 字幕');
+    const url = screen.getByRole('textbox', { name: '视频链接' });
+    expect(upload).toBeEnabled();
+    expect(upload).toHaveAttribute('accept', expect.stringContaining('.mkv'));
+    expect(upload).toHaveAttribute('accept', expect.stringContaining('.srt'));
+    expect(url).toBeEnabled();
+
+    fireEvent.change(url, { target: { value: 'https://www.youtube.com/watch?v=abc123' } });
+    expect(screen.queryByLabelText('上传视频、音频或 SRT 字幕')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('视频链接预览')).toBeInTheDocument();
+    expect(url.parentElement?.querySelector('button[aria-label="移除当前来源"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '移除当前来源' }));
+    expect(url).toHaveValue('');
+    upload = screen.getByLabelText('上传视频、音频或 SRT 字幕');
+    expect(upload).toBeEnabled();
+
+    changeControl(upload, { target: { files: [new File(['video'], 'lesson.mp4', { type: 'video/mp4' })] } });
+    expect(url).toBeDisabled();
+    expect(screen.queryByLabelText('上传视频、音频或 SRT 字幕')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('本地视频预览')).toHaveAttribute('src', 'blob:embedded-video');
+    fireEvent.click(screen.getByRole('button', { name: '移除当前来源' }));
+    expect(url).toBeEnabled();
+    upload = screen.getByLabelText('上传视频、音频或 SRT 字幕');
+    expect(upload).toBeEnabled();
+
+    changeControl(upload, { target: { files: [new File(['1\n00:00:00,000 --> 00:00:01,000\nHello'], 'lesson.srt', { type: 'application/x-subrip' })] } });
+    await waitFor(() => expect(url).toBeDisabled());
+    expect(upload).toBeDisabled();
+    expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({ action: 'import-subtitle' }));
+    fireEvent.click(screen.getByRole('button', { name: '移除当前来源' }));
+    expect(url).toBeEnabled();
+    upload = screen.getByLabelText('上传视频、音频或 SRT 字幕');
+    expect(upload).toBeEnabled();
   });
 
   it('keeps stale-output hints visible until the output is updated', async () => {
@@ -662,9 +924,9 @@ describe('VideoTranslationWorkspace task controls', () => {
     fireEvent.click(within(workspace).getByRole('button', { name: '开始翻译' }));
     await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({ action: 'run-stage', input: { stageId: 'subtitle', workflow: true } })));
     expect(uploadSourceVideo).not.toHaveBeenCalled();
-    expect(within(workspace).getByRole('tab', { name: '字幕' })).toHaveAttribute('aria-selected', 'true');
-    expect(within(workspace).queryByRole('tab', { name: '作品' })).not.toBeInTheDocument();
-    expect(within(workspace).queryByRole('tab', { name: '配音' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '字幕' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: '作品' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '配音' })).not.toBeInTheDocument();
   });
 
   it('restores subtitle-only results with source text, downloads and no video player', () => {
@@ -708,7 +970,7 @@ describe('VideoTranslationWorkspace task controls', () => {
     ['running', 'queued', '字幕等待生成'],
     ['running', 'running', '字幕尚未就绪'],
     ['running', 'succeeded', '字幕尚未就绪'],
-    ['needs_input', 'failed', '翻译任务等待处理'],
+    ['needs_input', 'failed', '翻译任务失败'],
     ['failed', 'failed', '翻译任务失败'],
     ['canceled', 'canceled', '翻译任务已终止'],
     ['failed', 'interrupted', '翻译任务已中断']
@@ -720,9 +982,11 @@ describe('VideoTranslationWorkspace task controls', () => {
       })] })}
       service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}
     ><VideoTranslationWorkspace onBack={vi.fn()} /></CreatorSessionProvider></LanguageProvider>);
-    const workspace = screen.getByRole('region', { name: '视频翻译操作区' });
-    expect(within(workspace).getByText(title)).toBeVisible();
-    expect(workspace.querySelector('.video-translation-header p')).toHaveTextContent('https://www.youtube.com/watch?v=job-control');
+    const failedView = stageStatus === 'failed';
+    const workspace = screen.getByRole('region', { name: failedView ? '视频翻译 操作区' : '视频翻译操作区' });
+    expect(failedView ? screen.getByText(title, { selector: '.creator-collaboration-context strong' }) : within(workspace).getByText(title)).toBeVisible();
+    if (failedView) expect(within(workspace).getByRole('textbox', { name: '视频链接' })).toHaveValue('https://www.youtube.com/watch?v=job-control');
+    else expect(workspace.querySelector('.video-translation-header p')).toHaveTextContent('https://www.youtube.com/watch?v=job-control');
     expect(within(workspace).queryByText('当前项目版本没有作品')).not.toBeInTheDocument();
   });
 
@@ -1510,7 +1774,7 @@ describe('VideoTranslationWorkspace task controls', () => {
     );
 
     try {
-      expect(await screen.findByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: '视频翻译', level: 2 })).toBeInTheDocument();
       await waitFor(() => expect(openArtifact).toHaveBeenCalledWith('job_control', source.id));
       expect(createObjectURL).toHaveBeenCalledOnce();
 
@@ -1871,7 +2135,7 @@ describe('VideoTranslationWorkspace task controls', () => {
       </LanguageProvider>
     );
 
-    expect(await screen.findByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '视频翻译', level: 2 })).toBeInTheDocument();
     const horizontal = screen.getByRole('textbox', { name: '横屏字幕 1' });
     fireEvent.change(horizontal, { target: { value: '横屏修改后字幕' } });
     expect(horizontal).toHaveValue('横屏修改后字幕');
@@ -1902,7 +2166,7 @@ describe('VideoTranslationWorkspace task controls', () => {
     ));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '历史版本' })).toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: '视频翻译工作区' })).toBeVisible();
+      expect(screen.getByRole('heading', { name: '视频翻译', level: 2 })).toBeVisible();
       expect(screen.getByText(/已保存/)).toBeVisible();
       expect(currentJob.artifacts.find(artifact => artifact.id === vertical.id)?.metadata.cues).toEqual(vertical.metadata.cues);
     });
@@ -1962,7 +2226,7 @@ describe('VideoTranslationWorkspace task controls', () => {
       </LanguageProvider>
     );
 
-    expect(await screen.findByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '视频翻译', level: 2 })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '历史版本' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toHaveValue('第一版本字幕');
     expect(screen.queryByText('正在基于 V1 调整')).not.toBeInTheDocument();
@@ -2120,8 +2384,8 @@ describe('VideoTranslationWorkspace task controls', () => {
     );
 
     const workspace = screen.getByRole('region', { name: '视频翻译操作区' });
-    const stopButton = await screen.findByRole('button', { name: '终止字幕翻译' });
-    expect(stopButton.querySelector('.lucide-square')).toHaveAttribute('fill', 'currentColor');
+    const stopButton = await screen.findByRole('button', { name: '终止当前任务' });
+    expect(stopButton).toBeEnabled();
     expect(within(workspace).queryByRole('button', { name: '终止任务' })).not.toBeInTheDocument();
     expect(within(workspace).queryByRole('button', { name: '开始翻译' })).not.toBeInTheDocument();
 
@@ -2142,18 +2406,17 @@ describe('VideoTranslationWorkspace task controls', () => {
       expect(within(workspace).getByText(notice)).toBeVisible();
       await act(async () => { vi.advanceTimersByTime(1); });
       expect(within(workspace).queryByText(notice)).not.toBeInTheDocument();
-      expect(screen.getByText('已终止，可继续')).toBeVisible();
+      expect(within(workspace).getByText('翻译任务已终止')).toBeVisible();
+      expect(within(workspace).getByText('已有产出保留，继续时从当前阶段重新开始')).toBeVisible();
     } finally {
       vi.useRealTimers();
     }
-    const resumeButton = await screen.findByRole('button', { name: '继续字幕翻译' });
-    await waitFor(() => expect(resumeButton).toBeEnabled());
     const progressBar = within(workspace).getByRole('region', { name: '当前任务进度' });
     const inlineResumeButton = within(progressBar).getByRole('button', { name: '继续任务' });
     expect(inlineResumeButton).toBeEnabled();
-    expect(screen.getByText('已终止，可继续')).toBeInTheDocument();
-    expect(screen.getByText('已终止，可继续').closest('[data-status="canceled"]')?.querySelector('.lucide-square'))
-      .toHaveAttribute('fill', 'currentColor');
+    expect(progressBar).toHaveAttribute('data-state', 'canceled');
+    expect(within(progressBar).getByText('翻译字幕已终止')).toBeVisible();
+    expect(within(progressBar).getByText('已有产出保留，继续时从当前阶段重新开始')).toBeVisible();
 
     vi.useFakeTimers();
     try {
@@ -2166,7 +2429,7 @@ describe('VideoTranslationWorkspace task controls', () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(await screen.findByRole('button', { name: '终止字幕翻译' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '终止当前任务' })).toBeInTheDocument();
     expect(within(workspace).queryByRole('button', { name: '终止任务' })).not.toBeInTheDocument();
     expect(within(workspace).queryByRole('button', { name: '开始翻译' })).not.toBeInTheDocument();
   });
@@ -2239,10 +2502,10 @@ describe('VideoTranslationWorkspace task controls', () => {
       expect(screen.queryByText('任务状态刚刚发生变化，请重试一次。你的设置没有丢失。')).not.toBeInTheDocument();
     });
     expect(screen.getByText('翻译任务已开始，进度会实时同步到创作动态')).toBeInTheDocument();
-    expect(within(workspace).getByText('字幕尚未就绪')).toBeVisible();
+    expect(screen.getByRole('region', { name: '当前任务进度' })).toBeVisible();
     expect(within(workspace).queryByText('当前项目版本没有作品')).not.toBeInTheDocument();
     expect(within(workspace).queryByRole('button', { name: '终止任务' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '终止字幕翻译' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '终止当前任务' })).toBeInTheDocument();
     expect(applyAction.mock.calls.filter(([, request]) => request.action === 'run-stage')).toHaveLength(1);
     act(() => currentSession!.applyRemoteSnapshot(job({
       status: 'completed', revision: 4, artifacts: [subtitleArtifact(1, '翻译完成')],

@@ -1,4 +1,4 @@
-import { copyFile, link, mkdir, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, link, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
@@ -11,6 +11,7 @@ import { CreatorExecutorError } from '../executor.js';
 import { sha256CreatorFile } from '../file-hash.js';
 import { publicErrorKindForCode, sanitizePublicErrorFacts, type PublicErrorFacts } from '@opencreator/protocol';
 import { spawnCreatorProcess } from '../process-tree.js';
+import { attachFailureDiagnostic, processFailureDiagnostic } from '../../telemetry/diagnostic.js';
 import { createKrillinConfigToml } from './config-bridge.js';
 import { gatewayCreatorBinding } from '../../gateway/creator-service-source.js';
 import { isYouTubeSource } from './execution-plan.js';
@@ -60,6 +61,9 @@ type KrillinCliResponse = {
     code?: string;
     message?: string;
     retryable?: boolean;
+    http_status?: number;
+    upstream_code?: string;
+    request_id?: string;
   };
 };
 
@@ -86,7 +90,8 @@ export class KrillinCliError extends Error {
     message: string,
     readonly kind?: string,
     readonly retryable = false,
-    options?: ErrorOptions
+    options?: ErrorOptions,
+    diagnostic?: { http_status?: number; upstream_code?: string; request_id?: string }
   ) {
     super(message, options);
     this.name = 'KrillinCliError';
@@ -96,12 +101,18 @@ export class KrillinCliError extends Error {
     const status = sessionRequired || signatureRequired ? /http error\s+(\d{3})\b/i.exec(message) : null;
     const outputRejected = /\bstatus code:\s*400\b/i.test(message)
       && /Requested output exceeds the gateway limit of \d+ tokens/.test(message);
+    const captionTimeout = code === 'platform_caption_access_failed'
+      && /(?:downloadYouTubeSubtitle|yt-dlp subtitle metadata)/i.test(message)
+      && /(?:timed out|etimedout)/i.test(message)
+      && !/cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message);
     this.publicFacts = sanitizePublicErrorFacts({
-      kind: outputRejected ? 'http-rejected' : signatureRequired ? 'unsupported' : sessionRequired ? 'unauthorized' : /^prepare_(?:media|audio_fallback)_failed$/.test(code)
+      kind: captionTimeout ? 'timeout' : outputRejected ? 'http-rejected' : signatureRequired ? 'unsupported' : sessionRequired ? 'unauthorized' : /^prepare_(?:media|audio_fallback)_failed$/.test(code)
         && /bilibili risk control (?:rejected the media request|blocked media extraction)/i.test(message)
-        ? 'http-rejected' : publicErrorKindForCode(code) ?? 'unknown', provider: 'krillinai',
-      upstreamCode: outputRejected ? 'output_too_large' : code, upstreamMessage: message,
-      ...(outputRejected ? { httpStatus: 400 } : status === null ? {} : { httpStatus: Number(status[1]) })
+        ? 'http-rejected' : publicErrorKindForCode(code) ?? 'unknown', provider: captionTimeout ? 'yt-dlp' : 'krillinai',
+      upstreamCode: diagnostic?.upstream_code ?? (outputRejected ? 'output_too_large' : code), upstreamMessage: message,
+      ...(diagnostic?.request_id === undefined ? {} : { requestId: diagnostic.request_id }),
+      ...(diagnostic?.http_status !== undefined ? { httpStatus: diagnostic.http_status }
+        : outputRejected ? { httpStatus: 400 } : status === null ? {} : { httpStatus: Number(status[1]) })
     });
   }
 }
@@ -241,6 +252,10 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
       response = await executeCli({
         executable: resolveInside(input.resourceRoot, cli.path),
         args,
+        operation: `krillinai.${args[0]}`,
+        version: input.manifest.cliVersion ?? String(input.manifest.version),
+        proxy: input.config.proxy || process.env.HTTPS_PROXY || process.env.https_proxy || process.env.ALL_PROXY || '',
+        sourceUrl: stringOption(input.options, 'sourceUrl'),
         cwd: launcherRoot,
         runtimeBin,
         resourceRoot: cliResourceRoot,
@@ -347,7 +362,7 @@ export function buildKrillinCliCommandArguments(
     return [
       'subtitle',
       ...(source ? [source] : []),
-      ...(!subtitleOnly && source && !sourceOnly && booleanOption(options, 'prepareVideo', true) ? ['--prepare-video'] : []),
+      ...(!subtitleOnly && source && (!sourceOnly || stage.job.templateId === 'transcription') && booleanOption(options, 'prepareVideo', true) ? ['--prepare-video'] : []),
       '--origin-lang', requiredOption(options, 'originLanguage'),
       '--target-lang', requiredOption(options, 'targetLanguage'),
       '--caption-source', stringOption(options, 'captionSource') ?? 'any',
@@ -357,6 +372,20 @@ export function buildKrillinCliCommandArguments(
       ...common,
       ...styleArgument(stylePath)
     ];
+  }
+  if (command === 'clip') {
+    const source = options.sourceType === 'file' ? artifactPath(artifacts, 'source_video') : sourceUrl;
+    if (!source) throw new CreatorExecutorError('creator_stage_input_missing', 'A video URL or uploaded file is required');
+    const duration = stringOption(options, 'duration') ?? '90-180';
+    const [minimum, maximum] = duration.split('-').map(Number);
+    if (!Number.isInteger(minimum) || !Number.isInteger(maximum)) {
+      throw new CreatorExecutorError('creator_stage_config_missing', 'Invalid clip duration');
+    }
+    return ['clip', '--input', source, '--count', String(options.clipCount ?? 3),
+      '--min-duration-sec', String(minimum), '--max-duration-sec', String(maximum),
+      '--origin-lang', stringOption(options, 'originLanguage') ?? 'auto',
+      '--caption-source', stringOption(options, 'captionSource') ?? 'any',
+      ...(options.deferTranscription === true ? ['--defer-transcription'] : []), ...common];
   }
   if (command === 'tts') {
     const target = artifactPath(artifacts, 'target_subtitle');
@@ -450,6 +479,10 @@ async function writeInitialManifest(
 function executeCli(input: {
   executable: string;
   args: string[];
+  operation: string;
+  version: string;
+  proxy: string;
+  sourceUrl?: string;
   cwd: string;
   runtimeBin: string;
   resourceRoot: string;
@@ -485,7 +518,17 @@ function executeCli(input: {
       );
     });
     child.stderr?.on('data', chunk => { stderr = boundedAppend(stderr, String(chunk)); });
-    child.once('error', reject);
+    const diagnostic = (output: string, exitCode?: number | null) => processFailureDiagnostic({
+      operation: /downloadYouTubeSubtitle/i.test(output) ? 'yt-dlp.subtitle'
+        : /yt-dlp/i.test(output) ? 'yt-dlp.prepare-media' : input.operation,
+      tool: 'krillinai',
+      version: input.version,
+      exitCode,
+      output,
+      proxy: input.proxy,
+      sourceUrl: input.sourceUrl
+    });
+    child.once('error', error => reject(attachFailureDiagnostic(error, diagnostic(error.message))));
     child.once('exit', code => {
       if (input.signal.aborted) {
         reject(new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled'));
@@ -494,19 +537,21 @@ function executeCli(input: {
       reportProgressLine(pendingStdoutLine, reportProgress);
       const response = parseResponse(stdout);
       if (response === undefined) {
-        reject(new KrillinCliError(
+        reject(attachFailureDiagnostic(new KrillinCliError(
           'krillin_cli_failed',
           redact(stderr || `KrillinAI CLI exited with code ${code ?? 'unknown'}`)
-        ));
+        ), diagnostic(stderr, code)));
         return;
       }
       if (response.ok !== true || code !== 0) {
-        reject(new KrillinCliError(
+        reject(attachFailureDiagnostic(new KrillinCliError(
           response.error?.code ?? 'krillin_cli_failed',
           redact(response.error?.message ?? (stderr || 'KrillinAI CLI failed')),
           response.error?.kind,
-          response.error?.retryable === true
-        ));
+          response.error?.retryable === true,
+          undefined,
+          response.error
+        ), diagnostic(`${stderr}\n${response.error?.message ?? ''}`, code)));
         return;
       }
       resolvePromise(response);
@@ -583,6 +628,72 @@ async function collectArtifacts(
         ? { metadata: krillinTranslationReport(response) } : {})
     });
   }
+  if (input.stage.stageRun.stageId === 'clip') {
+    const index = candidates.find(candidate => candidate.kind === 'clip_index');
+    if (index === undefined) throw new CreatorExecutorError('krillin_output_missing', 'KrillinAI did not produce a clip index');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFile(index.path, 'utf8')) as unknown;
+    } catch {
+      throw new CreatorExecutorError('krillin_output_invalid', 'Clip index is not valid JSON');
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new CreatorExecutorError('krillin_output_invalid', 'Clip index is invalid');
+    }
+    const clipIndex = parsed as Record<string, unknown>;
+    if (clipIndex.schema_version !== 1 || typeof clipIndex.caption_source !== 'string'
+      || !Number.isInteger(clipIndex.requested_count) || (clipIndex.requested_count as number) < 1
+      || (clipIndex.requested_count as number) > 20) {
+      throw new CreatorExecutorError('krillin_output_invalid', 'Clip index schema is invalid');
+    }
+    const clips = clipIndex.clips;
+    if (!Array.isArray(clips) || clips.length < 1 || clips.length > 20) {
+      throw new CreatorExecutorError('krillin_output_invalid', 'Clip index has an invalid clip count');
+    }
+    const ids = new Set<string>();
+    for (const item of clips) {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+        throw new CreatorExecutorError('krillin_output_invalid', 'Clip index contains an invalid item');
+      }
+      const clip = item as Record<string, unknown>;
+      if (typeof clip.id !== 'string' || !clip.id || ids.has(clip.id)
+        || typeof clip.file !== 'string' || !clip.file.endsWith('.mp4')
+        || !Number.isInteger(clip.start_ms) || !Number.isInteger(clip.end_ms)
+        || (clip.start_ms as number) < 0 || (clip.end_ms as number) <= (clip.start_ms as number)
+        || typeof clip.score !== 'number' || clip.score < 0 || clip.score > 1) {
+        throw new CreatorExecutorError('krillin_output_invalid', 'Clip index contains invalid metadata');
+      }
+      ids.add(clip.id);
+      let path: string;
+      try {
+        path = await realpath(resolve(dirname(index.path), clip.file));
+      } catch {
+        throw new CreatorExecutorError('krillin_output_missing', `Clip output is missing: ${clip.id}`);
+      }
+      if (!isInside(jobRoot, path)) {
+        throw new CreatorExecutorError('krillin_output_escape', 'Clip output escapes the current Job root');
+      }
+      const info = await stat(path);
+      if (!info.isFile() || info.size === 0) {
+        throw new CreatorExecutorError('krillin_output_invalid', 'Clip output is empty');
+      }
+      result.push({
+        id: `${input.stage.stageRun.id}:auto_clip_video:${clip.id}`,
+        kind: 'auto_clip_video',
+        relativePath: relative(input.jobsRoot, path).replaceAll('\\', '/'),
+        mimeType: 'video/mp4',
+        size: info.size,
+        sha256: await sha256CreatorFile(path, input.stage.signal),
+        metadata: {
+          candidateId: clip.id,
+          start: (clip.start_ms as number) / 1000,
+          end: (clip.end_ms as number) / 1000,
+          duration: ((clip.end_ms as number) - (clip.start_ms as number)) / 1000,
+          score: clip.score
+        }
+      });
+    }
+  }
   return result;
 }
 
@@ -603,7 +714,9 @@ export function krillinTranslationReport(response: Pick<KrillinCliResponse, 'war
 }
 
 export function outputMappings(stageId: string): Array<[string, string]> {
+  if (stageId === 'clip') return [['origin_video', 'source_video'], ['clip_index', 'clip_index']];
   if (stageId === 'source-transcript') return [['origin_srt', 'source_subtitle']];
+  if (stageId === 'transcription') return [['origin_video', 'source_video'], ['origin_srt', 'source_subtitle']];
   if (stageId === 'narration') return [['tts_audio', 'narration_audio']];
   if (stageId === 'subtitles') return [['bilingual_srt', 'bilingual_subtitle']];
   if (stageId === 'bilingual-render') return [['horizontal_video', 'bilingual_video']];
@@ -630,7 +743,7 @@ export function outputMappings(stageId: string): Array<[string, string]> {
 }
 
 function krillinCliStageId(stageId: string): string {
-  if (stageId === 'source-transcript' || stageId === 'subtitles') return 'subtitle';
+  if (stageId === 'source-transcript' || stageId === 'subtitles' || stageId === 'transcription') return 'subtitle';
   if (stageId === 'narration') return 'tts';
   if (stageId === 'bilingual-render') return 'render-horizontal';
   return stageId;
@@ -1107,6 +1220,7 @@ function styleArgument(path: string | undefined): string[] {
 function mimeType(path: string): string | undefined {
   const extension = basename(path).split('.').at(-1)?.toLowerCase();
   if (extension === 'srt') return 'application/x-subrip';
+  if (extension === 'json') return 'application/json';
   if (extension === 'wav') return 'audio/wav';
   if (extension === 'mp3') return 'audio/mpeg';
   if (extension === 'mp4') return 'video/mp4';

@@ -15,10 +15,10 @@ it('emits the selected ASR marker only for an official runtime and keeps custom 
   expect(createKrillinConfigToml(config)).not.toContain('official_model');
   const official = parse(createKrillinConfigToml(config, undefined, 'official-asr'));
   expect(official).toMatchObject({
-    app: { youtube_proxy: config.proxy },
+    app: { proxy: config.proxy },
     transcribe: { openai: { official_model: 'official-asr' } }
   });
-  expect(official.app).not.toHaveProperty('proxy');
+  expect(official.app).toEqual({ proxy: config.proxy });
   expect(config.transcription.openai.model).toBe('custom-asr');
 });
 

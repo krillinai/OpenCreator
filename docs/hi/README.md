@@ -595,7 +595,7 @@ OpenCreator/
 | वातावरण चर | डिफ़ॉल्ट | उद्देश्य |
 | --- | --- | --- |
 | `OPENCREATOR_DATA_DIR` | `.runtime` | OpenCreator डेटाबेस, Run, संलग्नक और प्रबंधित कार्यक्षेत्र |
-| `OPENCREATOR_GATEWAY_ORIGIN` | `https://www.open-creator.ai` | लॉगिन, सदस्यता, क्रेडिट और आधिकारिक मॉडल सेवाओं का Gateway; स्थानीय Gateway के लिए बदलें |
+| `OPENCREATOR_GATEWAY_ORIGIN` | `https://open-creator.ai` | लॉगिन, सदस्यता, क्रेडिट और आधिकारिक मॉडल सेवाओं का Gateway; स्थानीय Gateway के लिए बदलें |
 | `OPENCREATOR_CODEX_BIN` | `codex` | Codex CLI निष्पादन योग्य फ़ाइल का पथ |
 | `CODEX_HOME` | `~/.codex` | Codex सत्र, कॉन्फ़िगरेशन, Skills, MCP और Profiles का प्रामाणिक स्रोत |
 | `OPENCREATOR_DEFAULT_CWD` | वर्तमान कार्य फ़ोल्डर | daemon का डिफ़ॉल्ट कार्य फ़ोल्डर |

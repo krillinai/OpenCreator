@@ -1,6 +1,7 @@
 import type {
   CreatorTtsProvider,
-  CreatorTtsVoice
+  CreatorTtsVoice,
+  CreatorTtsVoicesResponse
 } from '@opencreator/protocol';
 import {
   LoaderCircle,
@@ -28,7 +29,7 @@ export function TtsVoicePicker(props: {
   value: string;
   service: Pick<CreatorServicesSettingsService, 'getTtsVoices' | 'previewTtsVoice'> | null;
   label?: string;
-  presentation?: 'select' | 'library';
+  presentation?: 'select' | 'library' | 'library-inline';
   disabled?: boolean;
   allowCustomVoice?: boolean;
   allowPreviewLanguage?: boolean;
@@ -40,6 +41,8 @@ export function TtsVoicePicker(props: {
   const allowCustomVoice = props.allowCustomVoice ?? props.provider === 'volcengine';
   const pageIssues = usePageIssueState('tts-voice');
   const [voices, setVoices] = useState<CreatorTtsVoice[]>([]);
+  const [previewCatalogStatus, setPreviewCatalogStatus] = useState<CreatorTtsVoicesResponse['previewCatalogStatus']>();
+  const [voiceCatalogFailed, setVoiceCatalogFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -58,6 +61,8 @@ export function TtsVoicePicker(props: {
     let active = true;
     if (props.service === null || props.provider === 'edge-tts') {
       setVoices([]);
+      setPreviewCatalogStatus(undefined);
+      setVoiceCatalogFailed(false);
       setLoading(false);
       pageIssues.resolveOperation('tts.load-voices');
       return () => {
@@ -66,15 +71,21 @@ export function TtsVoicePicker(props: {
     }
     setLoading(true);
     setVoices([]);
+    setPreviewCatalogStatus(undefined);
+    setVoiceCatalogFailed(false);
     void props.service.getTtsVoices(props.provider, props.model)
       .then(response => {
         if (!active) return;
         setVoices(response.voices);
+        setPreviewCatalogStatus(response.previewCatalogStatus ?? (response.voices.some(voice => voice.previewLanguages?.length) ? 'ready' : 'empty'));
+        setVoiceCatalogFailed(false);
         pageIssues.resolveOperation('tts.load-voices');
       })
       .catch(cause => {
         if (active) {
           setVoices([]);
+          setPreviewCatalogStatus(undefined);
+          setVoiceCatalogFailed(true);
           pageIssues.captureOperationFailure(
             'tts.load-voices',
             cause,
@@ -129,20 +140,17 @@ export function TtsVoicePicker(props: {
   const previewLanguage = props.allowPreviewLanguage
     ? availablePreviewLanguage(previewLanguages, previewLanguageOverride, appLanguage)
     : appLanguage;
-  const visibleOptions = useMemo(() => props.allowPreviewLanguage && previewLanguage
-    ? options.filter(voice => voice.previewLanguages?.includes(previewLanguage))
-    : options, [options, previewLanguage, props.allowPreviewLanguage]);
-  const selectGroups = useMemo<TtsVoiceSelectGroup[]>(() => groupVoices(visibleOptions).map(group => ({
+  const selectGroups = useMemo<TtsVoiceSelectGroup[]>(() => groupVoices(options).map(group => ({
     label: group.label ? voiceScenarioLabel(group.label, l) : '',
     options: group.voices.map(voice => ({
       value: voice.id,
       name: voiceName(voice, l),
       detail: voiceDetail(voice, l, appLanguage, group.label)
     }))
-  })), [appLanguage, l, visibleOptions]);
+  })), [appLanguage, l, options]);
   const selected = options.find(voice => voice.id === props.value);
   const selectedHasPreview = !props.allowPreviewLanguage || !!previewLanguage && !!selected?.previewLanguages?.includes(previewLanguage);
-  const libraryOptions = useMemo<VoiceLibraryOption[]>(() => visibleOptions.map(voice => ({
+  const libraryOptions = useMemo<VoiceLibraryOption[]>(() => options.map(voice => ({
     id: voice.id,
     name: voice.name,
     language: voiceLanguageLabel(voice.language, appLanguage, l) ?? '',
@@ -154,13 +162,16 @@ export function TtsVoicePicker(props: {
     kind: voiceKindLabel(voice.kind, l),
     custom: voice.kind === 'custom',
     recommended: voice.recommended === true,
-    previewAvailable: !props.allowPreviewLanguage || !!voice.previewLanguages?.length,
+    previewAvailable: !props.allowPreviewLanguage || !!previewLanguage && !!voice.previewLanguages?.includes(previewLanguage),
+    previewUnavailableLabel: props.allowPreviewLanguage && (!previewLanguage || !voice.previewLanguages?.includes(previewLanguage))
+      ? previewLanguage ? l('此语言暂无样音', 'No sample in this language') : l('暂无试听样音', 'No voice sample available')
+      : undefined,
     search: [voice.id, voice.name, voice.language, voice.gender, voice.scenario,
       ...Object.values(voice.traits ?? {}).flat(), ...Object.values(voice.useCases ?? {}).flat(),
       ...Object.values(voice.description ?? {}),
       voiceLanguageLabel(voice.language, appLanguage, l), voiceGenderLabel(voice.gender, l),
       voice.scenario ? voiceScenarioLabel(voice.scenario, l) : '', voiceKindLabel(voice.kind, l)].join(' ')
-  })), [appLanguage, l, visibleOptions, props.allowPreviewLanguage]);
+  })), [appLanguage, l, options, previewLanguage, props.allowPreviewLanguage]);
 
   useEffect(() => {
     if (selected) onVoiceResolvedRef.current?.(selected);
@@ -259,7 +270,20 @@ export function TtsVoicePicker(props: {
     }
   }
 
-  const previewLanguageControl = props.allowPreviewLanguage ? <div className="tts-voice-preview-language">
+  const previewLanguageControl = !props.allowPreviewLanguage ? null
+    : voiceCatalogFailed ? <div className="tts-voice-preview-status" role="status">
+      {l('无法加载音色列表，请重试。', 'Could not load voices. Retry.')}
+    </div>
+    : !loading && !previewLanguages.length && previewCatalogStatus !== undefined
+    ? <div className="tts-voice-preview-status" role="status">
+      <span>{previewCatalogStatus === 'error'
+        ? l('无法加载试听样音，请重试。', 'Could not load voice samples. Retry.')
+        : l('此模型暂无试听样音', 'No voice samples for this model')}</span>
+      {previewCatalogStatus === 'error' ? <button type="button" onClick={() => setReloadToken(current => current + 1)}>
+        <RefreshCw size={15} aria-hidden="true" />{l('重试', 'Retry')}
+      </button> : null}
+    </div>
+    : <div className="tts-voice-preview-language">
     <span id={`${props.id}-preview-language-label`}>{l('试听语言', 'Preview language')}</span>
     <TtsVoiceSelect id={`${props.id}-preview-language`} labelId={`${props.id}-preview-language-label`} value={previewLanguage}
       groups={[{ label: '', options: previewLanguages.map(language => {
@@ -276,8 +300,8 @@ export function TtsVoicePicker(props: {
       ? sampleLanguage.toLowerCase().split('-')[0] !== previewLanguage.toLowerCase().split('-')[0]
         ? l(`所选语言暂无样音，当前试听：${voiceLanguageLabel(sampleLanguage, appLanguage, l)}`, `No sample for the selected language. Playing: ${voiceLanguageLabel(sampleLanguage, appLanguage, l)}`)
         : l(`当前试听：${voiceLanguageLabel(sampleLanguage, appLanguage, l)}`, `Playing: ${voiceLanguageLabel(sampleLanguage, appLanguage, l)}`)
-      : l('免费试听，选好语言后再选择音色。', 'Free previews. Choose a language, then a voice.')}</small>
-  </div> : null;
+      : loading ? l('正在加载语言', 'Loading languages') : l('选择语言后试听音色。', 'Choose a language to preview a voice.')}</small>
+  </div>;
 
   const voiceDetails = <>
     {allowCustomVoice ? (
@@ -323,8 +347,31 @@ export function TtsVoicePicker(props: {
     />
   </>;
 
+  const library = (close?: () => void) => <>
+    <TtsVoiceLibrary
+      key={`${props.provider}:${props.model}:${appLanguage}:${previewLanguage}`}
+      id={props.id}
+      label={props.label ?? l('默认音色', 'Default voice')}
+      value={props.value}
+      options={libraryOptions}
+      loading={loading}
+      disabled={props.disabled || props.provider === 'edge-tts'}
+      canRefresh={props.service !== null && props.provider !== 'edge-tts'}
+      canPreview={props.service !== null && props.provider !== 'edge-tts'}
+      previewVoiceId={previewVoiceId}
+      previewing={previewing}
+      playing={playing}
+      onRefresh={() => { stopPreview(); setReloadToken(current => current + 1); }}
+      onPreview={voiceId => void preview(voiceId)}
+      onStopPreview={stopPreview}
+      onChange={(voiceId, commit) => { selectVoice(voiceId); if (commit) close?.(); }}
+      onClose={close}
+    />
+    {voiceDetails}
+  </>;
+
   return (
-    <div className={`tts-voice-picker${props.presentation === 'library' ? ' is-library' : ''}`}>
+    <div className={`tts-voice-picker${props.presentation === 'library' || props.presentation === 'library-inline' ? ' is-library' : ''}${props.presentation === 'library-inline' ? ' is-inline' : ''}`}>
       {previewLanguageControl}
       {props.presentation === 'library' ? <TtsVoiceLibraryPopover
         label={props.label ?? l('默认音色', 'Default voice')}
@@ -335,28 +382,7 @@ export function TtsVoicePicker(props: {
         disabled={props.disabled || props.provider === 'edge-tts'}
         resetKey={`${props.provider}:${props.model}:${appLanguage}:${previewLanguage}`}
         onClose={stopPreview}
-      >{close => <>
-        <TtsVoiceLibrary
-          key={`${props.provider}:${props.model}:${appLanguage}:${previewLanguage}`}
-          id={props.id}
-          label={props.label ?? l('默认音色', 'Default voice')}
-          value={props.value}
-          options={libraryOptions}
-          loading={loading}
-          disabled={props.disabled || props.provider === 'edge-tts'}
-          canRefresh={props.service !== null && props.provider !== 'edge-tts'}
-          canPreview={props.service !== null && props.provider !== 'edge-tts'}
-          previewVoiceId={previewVoiceId}
-          previewing={previewing}
-          playing={playing}
-          onRefresh={() => { stopPreview(); setReloadToken(current => current + 1); }}
-          onPreview={voiceId => void preview(voiceId)}
-          onStopPreview={stopPreview}
-          onChange={(voiceId, commit) => { selectVoice(voiceId); if (commit) close(); }}
-          onClose={close}
-        />
-        {voiceDetails}
-      </>}</TtsVoiceLibraryPopover> : <>
+      >{close => library(close)}</TtsVoiceLibraryPopover> : props.presentation === 'library-inline' ? library() : <>
         <div className="tts-voice-picker-field">
           <span id={`${props.id}-label`}>{props.label ?? l('默认音色', 'Default voice')}</span>
           <TtsVoiceSelect
@@ -402,7 +428,7 @@ export function TtsVoicePicker(props: {
         </div>
       </>}
       <audio ref={audioRef} hidden onEnded={stopPreview} />
-      {props.presentation !== 'library' ? voiceDetails : null}
+      {props.presentation !== 'library' && props.presentation !== 'library-inline' ? voiceDetails : null}
     </div>
   );
 }

@@ -28,9 +28,34 @@ func TestChatCompletionReceivesCompleteJSON(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"complete-json","choices":[{"message":{"role":"assistant","content":"完整译文"}}]}`))
 	}))
 	defer server.Close()
-	text, err := newClient(server.URL, "test-key", "", time.Second).ChatCompletion("translate")
+	text, err := newClient(server.URL, "test-key", "http://127.0.0.1:1", time.Second).ChatCompletion("translate")
 	if err != nil || text != "完整译文" {
 		t.Fatalf("text=%q error=%v", text, err)
+	}
+}
+
+func TestChatCompletionUsesClipSpecificSystemPrompt(t *testing.T) {
+	setTestModel(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		if len(request.Messages) != 2 || request.Messages[0].Role != "system" || request.Messages[0].Content != "clip editor" || request.Messages[1].Content != "find clips" {
+			t.Errorf("unexpected clip messages: %+v", request.Messages)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"clips\":[]}"}}]}`))
+	}))
+	defer server.Close()
+	client := newClient(server.URL, "test-key", "", time.Second)
+	if _, err := client.ChatCompletionContextWithSystem(context.Background(), "clip editor", "find clips"); err != nil {
+		t.Fatal(err)
 	}
 }
 

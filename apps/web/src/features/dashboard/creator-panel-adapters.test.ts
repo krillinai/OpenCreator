@@ -25,6 +25,20 @@ describe('video download controls', () => {
   });
 });
 
+describe('video translation failures', () => {
+  it('describes a rejected Chinese translation without exposing the raw stage message', () => {
+    const failed = { ...stage('subtitle', '', 'failed', null, 'subtitle'),
+      errorCode: 'creator_translation_output_language_mismatch',
+      errorMessage: 'internal model response' };
+    expect(videoTranslationPanelAdapter.failedProgressText?.(failed, zh))
+      .toBe('目标语言是中文，但生成的字幕主要仍是英文，未通过检查。');
+    expect(videoTranslationPanelAdapter.failedProgressText?.(failed, en))
+      .toBe('The target language is Chinese, but the generated subtitles were mostly English and did not pass validation.');
+    expect(videoTranslationPanelAdapter.failedProgressText?.(failed, createLocalizedCopy('sv-SE')))
+      .toBe('Målspråket är kinesiska, men de genererade undertexterna var mestadels på engelska och klarade inte kontrollen.');
+  });
+});
+
 describe('Remotion preparation progress', () => {
   it('uses the shared stickman adapter without exposing transcription or internal dependency fields', () => {
     const running = { ...stage('render', 'render-clean', 'running', null, 'render-clean'), stageId: 'render-clean', progress: { phase: 'preparing_dependencies', percent: 3, message: 'internal', dependencyItem: 'private archive' } };
@@ -85,6 +99,19 @@ describe('video generation progress', () => {
 });
 
 describe('shared native image progress', () => {
+  it('treats the unmeasured image provider wait as indeterminate while preserving real progress', () => {
+    const adapter = creatorPanelAdapterFor('image-generation');
+    const waiting = { ...stage('generate', '', 'running', null, 'generate'), progress: {
+      phase: 'generating_candidates', percent: 10, completed: 0, failed: 0, total: 1
+    } };
+    expect(adapter.phaseLabel('generating_candidates', zh)).toBe('正在生成图片');
+    expect(adapter.phaseLabel('generating_candidates', en)).toBe('Generating image');
+    expect(adapter.phaseLabel('generating_candidates', createLocalizedCopy('sv-SE'))).toBe('Skapar bild');
+    expect(adapter.readStageProgress(waiting, en)).toMatchObject({ percent: null, indeterminate: true });
+    expect(adapter.readStageProgress({ ...waiting, progress: { ...waiting.progress, percent: 45 } }, en))
+      .toMatchObject({ percent: 45 });
+  });
+
   it.each(['image-generation', 'cover', 'stickman-video', 'wechat-article'])('shows native preparation and generation phases without fake percentages (%s)', template => {
     const adapter = creatorPanelAdapterFor(template);
     expect(adapter.phaseLabel('preparing_native_image', zh)).toContain('ChatGPT');

@@ -22,6 +22,7 @@ import { spawnCreatorProcess } from '../process-tree.js';
 import { validateMediaFile } from '../validators/media.js';
 import { validateSrtFile } from '../validators/srt.js';
 import { withYtDlpProxy } from '../yt-dlp/args.js';
+import { attachFailureDiagnostic, processFailureDiagnostic } from '../../telemetry/diagnostic.js';
 import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
 import { parseDownloadProbe } from './probe-parser.js';
 
@@ -1368,6 +1369,18 @@ async function run(
       },
       stdio: ['ignore', 'pipe', 'pipe']
     }, stage.signal, stage.processControl);
+    const tool = /(?:^|[/\\])ff(?:mpeg|probe)(?:\.exe)?$/i.test(binary) ? 'ffmpeg' : 'yt-dlp';
+    const proxyIndex = args.indexOf('--proxy');
+    const proxy = proxyIndex >= 0 ? args[proxyIndex + 1] ?? ''
+      : env?.HTTPS_PROXY ?? env?.https_proxy ?? process.env.HTTPS_PROXY ?? process.env.https_proxy ?? '';
+    const diagnostic = (output: string, exitCode?: number | null) => processFailureDiagnostic({
+      operation: `${tool}.${stage.stageRun.stageId}`,
+      tool,
+      output,
+      exitCode,
+      proxy,
+      sourceUrl: args.filter(argument => /^https?:\/\//i.test(argument)).at(-1)
+    });
     let stdout = '';
     let stderr = '';
     const stdoutDecoder = new StringDecoder('utf8');
@@ -1396,7 +1409,7 @@ async function run(
     child.once('error', error => {
       if (settled) return;
       settled = true;
-      rejectPromise(error);
+      rejectPromise(attachFailureDiagnostic(error, diagnostic(error.message)));
     });
     child.once('close', code => {
       if (settled) return;
@@ -1412,7 +1425,7 @@ async function run(
       if (code === 0) {
         void (stage.processControl?.waitUntilResumed() ?? Promise.resolve()).then(() => resolvePromise(stdout), rejectPromise);
       }
-      else rejectPromise(classifyDownloadError(stderr, code));
+      else rejectPromise(attachFailureDiagnostic(classifyDownloadError(stderr, code), diagnostic(stderr, code)));
     });
   });
 }

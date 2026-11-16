@@ -13,11 +13,13 @@ import type { RuntimeClient } from '../runtime/client.js';
 
 type ClientLike = Pick<RuntimeClient, 'get' | 'patch' | 'delete' | 'rawRequest'>;
 
-export type CreatorServicesSettingsService = Omit<ReturnType<typeof createCreatorServicesService>, 'getCodexImageStatus' | 'getCodexModelStatus' | 'getNetwork' | 'saveNetwork'> & {
+export type CreatorServicesSettingsService = Omit<ReturnType<typeof createCreatorServicesService>, 'getCodexImageStatus' | 'getCodexModelStatus' | 'getNetwork' | 'saveNetwork' | 'getLocalVideoConfig' | 'saveLocalVideoConfig'> & {
   getCodexImageStatus?: () => Promise<CodexImageStatus>;
   getCodexModelStatus?: () => Promise<CodexProviderConfig>;
   getNetwork?: () => Promise<{ proxy: string }>;
   saveNetwork?: (network: { proxy: string }) => Promise<{ proxy: string }>;
+  getLocalVideoConfig?: () => Promise<CreatorServicesConfigResponse>;
+  saveLocalVideoConfig?: (video: CreatorServicesConfig['video'], clearCredentials?: CreatorServicesCredentialField[]) => Promise<CreatorServicesConfigResponse>;
 };
 
 export function createCreatorServicesService(client: ClientLike) {
@@ -35,6 +37,12 @@ export function createCreatorServicesService(client: ClientLike) {
     },
     getConfig(): Promise<CreatorServicesConfigResponse> {
       return client.get('/creator-services/config');
+    },
+    getLocalVideoConfig(): Promise<CreatorServicesConfigResponse> {
+      return client.get('/creator-services/video/local');
+    },
+    saveLocalVideoConfig(video: CreatorServicesConfig['video'], clearCredentials: CreatorServicesCredentialField[] = []): Promise<CreatorServicesConfigResponse> {
+      return client.patch('/creator-services/video/local', { video, clearCredentials });
     },
     saveConfig(
       config: CreatorServicesConfig,

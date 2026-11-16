@@ -371,7 +371,7 @@ test('@package-smoke 充值回跳进入个人中心并以网关订单确认到�
   }
 });
 
-test('@package-smoke 授权回调唤起个人中心，模型初始化期间立即显示登录态', async ({}, testInfo) => {
+test('@package-smoke 授权回调保留图像生成工作台和草稿，模型初始化期间更新登录态', async ({}, testInfo) => {
   let approved = false;
   let tokenRequests = 0;
   let releaseBootstrap!: () => void;
@@ -406,10 +406,11 @@ test('@package-smoke 授权回调唤起个人中心，模型初始化期间立�
   try {
     fixture = await launchPackagedDesktop('success', { gatewayOrigin: origin });
     await waitForWorkspace(fixture.page);
+    await navigateToAppRoute(fixture.page, '#/workbench?tool=image-generation');
+    const prompt = fixture.page.getByRole('textbox', { name: '提示词' });
+    await prompt.fill('A sunlit studio portrait');
     const grant = await runtimeRequest(fixture.page, 'POST', '/gateway/auth/start', {});
     expect(grant.status).toBe(200);
-    await navigateToAppRoute(fixture.page, '#/account');
-    await expect(fixture.page.getByText('请在浏览器中完成登录')).toBeVisible();
     if (process.platform === 'win32') {
       if (fixture.process.pid === undefined) throw new Error('Desktop process ID is unavailable');
       execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `
@@ -434,23 +435,22 @@ test('@package-smoke 授权回调唤起个人中心，模型初始化期间立�
     const checks: string[] = [];
     fixture.page.on('request', request => { if (request.url().endsWith('/gateway/auth/check')) checks.push(request.url()); });
     await launchSecondInstance(fixture, ['opencreator://auth/complete']);
-    await expect(fixture.page).toHaveURL(/#\/account\?login=complete$/);
+    await expect(fixture.page).toHaveURL(/#\/workbench\?tool=image-generation$/);
     await expect.poll(() => fixture!.page.evaluate(() => document.visibilityState)).toBe('visible');
     await expect.poll(() => checks.length).toBeGreaterThan(0);
-    await expect(fixture.page.getByRole('region', { name: 'OpenCreator 账户', exact: true }).getByRole('status')).toHaveText('已登录', { timeout: 10_000 });
-    await expect(fixture.page.getByText('官方模型服务正在连接', { exact: true })).toBeVisible();
+    await expect(prompt).toHaveValue('A sunlit studio portrait');
+    await expect(fixture.page.getByRole('main', { name: '个人中心' })).toHaveCount(0);
+    await expect.poll(async () => (await runtimeRequest<{ authState: string }>(fixture!.page, 'GET', '/gateway/account')).body.authState).toBe('signed_in');
     const state = await runtimeRequest<{ authState: string; activationState: string }>(fixture.page, 'GET', '/gateway/account');
     expect(state.body).toMatchObject({ authState: 'signed_in', activationState: 'loading' });
     expect(tokenRequests).toBe(1);
-    await fixture.page.screenshot({ path: testInfo.outputPath('login-models-loading.png') });
+    await fixture.page.screenshot({ path: testInfo.outputPath('login-return-workbench.png') });
     releaseBootstrap();
-    await expect(fixture.page.getByRole('heading', { name: account.email, exact: true })).toBeVisible();
-    await expect(fixture.page.getByRole('region', { name: 'OpenCreator 账户', exact: true }).getByRole('status')).toHaveText('已登录');
-    await expect(fixture.page.getByText('官方模型服务暂不可用', { exact: true })).toBeVisible();
-    await expect(fixture.page.getByRole('button', { name: '模型设置', exact: true })).toBeEnabled();
+    await expect.poll(async () => (await runtimeRequest<{ activationState: string }>(fixture!.page, 'GET', '/gateway/account')).body.activationState).toBe('blocked');
     const signedIn = await runtimeRequest(fixture.page, 'GET', '/gateway/account');
     expect(signedIn.body).toMatchObject({ authState: 'signed_in', activationState: 'blocked', account });
     expect(JSON.stringify(signedIn.body)).not.toMatch(/private-access|private-refresh|private-device-secret/);
+    await expect(prompt).toHaveValue('A sunlit studio portrait');
   } finally {
     releaseBootstrap();
     if (fixture) await closeFixture(fixture);

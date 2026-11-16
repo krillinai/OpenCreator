@@ -10,9 +10,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
+	"krillin-ai/config"
 	"krillin-ai/internal/types"
 )
 
@@ -31,6 +33,18 @@ type TtsClient struct {
 	httpClient *http.Client
 }
 
+type SpeechHTTPError struct {
+	StatusCode   int
+	UpstreamCode string
+	RequestID    string
+	Message      string
+}
+
+func (e *SpeechHTTPError) Error() string { return e.Message }
+
+var speechDiagnosticCode = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
+var speechGatewayRequestID = regexp.MustCompile(`^ocreq_[0-9a-f]{48}$`)
+
 func NewTtsClient(baseURL, apiKey, model, proxy string) *TtsClient {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
@@ -40,7 +54,7 @@ func NewTtsClient(baseURL, apiKey, model, proxy string) *TtsClient {
 		model = DefaultTTSModel
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if proxyURL, err := url.Parse(strings.TrimSpace(proxy)); err == nil && proxyURL.Scheme != "" {
+	if proxyURL, err := url.Parse(strings.TrimSpace(config.ProxyForBaseURL(baseURL, proxy))); err == nil && proxyURL.Scheme != "" {
 		transport.Proxy = http.ProxyURL(proxyURL)
 	}
 	return &TtsClient{
@@ -104,7 +118,26 @@ func (c *TtsClient) Synthesize(ctx context.Context, options types.TTSSpeechOptio
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 2048))
-		return fmt.Errorf("openai tts returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(message)))
+		var payload struct {
+			Error struct {
+				Code string `json:"code"`
+				Type string `json:"type"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(message, &payload)
+		upstreamCode := payload.Error.Code
+		if !speechDiagnosticCode.MatchString(upstreamCode) {
+			upstreamCode = ""
+		}
+		if upstreamCode == "" && speechDiagnosticCode.MatchString(payload.Error.Type) {
+			upstreamCode = payload.Error.Type
+		}
+		requestID := response.Header.Get("X-Request-ID")
+		if !speechGatewayRequestID.MatchString(requestID) {
+			requestID = ""
+		}
+		return &SpeechHTTPError{StatusCode: response.StatusCode, UpstreamCode: upstreamCode, RequestID: requestID,
+			Message: fmt.Sprintf("openai tts returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(message)))}
 	}
 	if err := os.MkdirAll(filepath.Dir(options.OutputFile), 0755); err != nil {
 		return err

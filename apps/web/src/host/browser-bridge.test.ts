@@ -5,6 +5,41 @@ describe('browserBridge', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.location.hash = '#/';
+  });
+
+  it('returns browser sign-in to the original creation tab', () => {
+    window.location.hash = '#/workbench?tool=image-generation';
+    const returnHash = new URL(browserBridge.authorizationReturnUrl!).hash;
+    expect(returnHash).toMatch(/^#\/account\?login=complete&tabId=[^&]+$/);
+
+    const channels: Channel[] = [];
+    class Channel {
+      onmessage?: (event: { data: unknown }) => void;
+      close = vi.fn();
+      constructor() { channels.push(this); }
+      postMessage(value: unknown) {
+        for (const channel of channels) if (channel !== this) channel.onmessage?.({ data: value });
+      }
+    }
+    vi.stubGlobal('BroadcastChannel', Channel);
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => {});
+    const close = vi.spyOn(window, 'close').mockImplementation(() => {});
+    const received = vi.fn();
+    const unsubscribeOriginal = browserBridge.subscribeAuthorizationReturn!(received);
+
+    window.location.hash = returnHash;
+    const unsubscribeCallback = browserBridge.subscribeAuthorizationReturn!(vi.fn());
+
+    expect(received).toHaveBeenCalledOnce();
+    expect(focus).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    unsubscribeOriginal();
+    unsubscribeCallback();
+    expect(channels.every(channel => channel.close.mock.calls.length === 1)).toBe(true);
+    focus.mockRestore();
+    close.mockRestore();
   });
 
   it('loads the same-origin dev runtime config before local storage', async () => {

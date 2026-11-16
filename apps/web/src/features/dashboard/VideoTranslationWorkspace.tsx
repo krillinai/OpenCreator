@@ -1,5 +1,6 @@
 import AppSelect from '../../components/forms/Select.js';
-import { gatewayModelIdMatches, normalizeSubtitleRenderCues } from '@opencreator/protocol';
+import { useGenerationAccess } from './DashboardGenerationAccess.js';
+import { gatewayModelIdMatches, gatewayModelReady, gatewayModelSupports, gatewayTranslationFlashModel, normalizeSubtitleRenderCues } from '@opencreator/protocol';
 import {
   useCallback,
   useEffect,
@@ -8,7 +9,8 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties
+  type CSSProperties,
+  type ReactNode
 } from 'react';
 import { createPortal } from 'react-dom';
 import { HexColorPicker } from 'react-colorful';
@@ -17,13 +19,17 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  CircleAlert,
   Captions,
+  FileAudio,
   FileVideo,
   History,
   Languages,
+  Link2,
   Mic2,
   Pencil,
   Plus,
+  RefreshCw,
   RotateCcw,
   RectangleHorizontal,
   RectangleVertical,
@@ -34,21 +40,28 @@ import {
 } from 'lucide-react';
 import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
 import { OfficialModelField, useOfficialServices } from './official-services.js';
+import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
 import { LocalTranscriptionNotice } from './LocalTranscriptionNotice.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
+import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import { CreatorTaskProgressBar, CreatorTaskProgressNotice, useCreatorTaskProgress } from './CreatorCollaborationPanel.js';
 import { creatorStageProgressPercent } from './creator-panel-adapters.js';
+import { isYtDlpCaptionTimeout } from '../issues/issue-catalog.js';
 import { clearTranslationContinuation, readTranslationContinuation, saveTranslationContinuation, ttsServiceConfigured, type TranslationEditorContext } from './video-translation-continuation.js';
 import VideoTranslationAgentPanel from './VideoTranslationAgentPanel.js';
+import CreatorToolShell from './CreatorToolShell.js';
 import CreatorResizableLayout from './CreatorResizableLayout.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
+import DashboardVideoTranslationSettings from './DashboardVideoTranslationSettings.js';
+import SupportedVideoSources from './SupportedVideoSources.js';
+import DashboardTranslationModelSettings from './DashboardTranslationModelSettings.js';
 import { sameSubtitleCues } from './subtitle-editing.js';
 import VideoSourceInput from './VideoSourceInput.js';
 import { BilibiliPartSelector } from './BilibiliPartSelector.js';
-import { parseVideoSource } from './VideoSourcePreview.js';
+import { LocalVideoPreview, parseVideoSource } from './VideoSourcePreview.js';
 import { VideoTranslationSubtitleImport } from './VideoTranslationSubtitleImport.js';
 import SubtitleCompositionPreview from './SubtitleCompositionPreview.js';
 import { readJsonFromStorage, writeJsonToStorage } from '../../storage/browser-storage.js';
@@ -77,6 +90,9 @@ import {
   type CreatorJson,
   type CreatorResultSnapshot,
   type CreatorServicesConfig,
+  type GatewayAccountState,
+  type GatewayModel,
+  type GatewayModelCatalog,
   type CreatorSubtitlePreviewRequest,
   type CreatorTtsProvider,
   type VideoMetadataResponse
@@ -93,6 +109,7 @@ type WizardStep = 0 | 1;
 type WorkspacePhase = 'configure' | 'result';
 type ResultProposal = 'regenerate' | 'video' | 'voice';
 type TranslationStageId = 'subtitle' | 'tts' | 'render-horizontal' | 'render-vertical';
+const localTranslationModelId = '__local_text__';
 
 type TranslationSettingsSnapshot = {
   sourceLanguage: string;
@@ -1742,11 +1759,21 @@ function SubtitleColorControl(props: {
 export default function VideoTranslationWorkspace(props: {
   onBack(): void;
   promptHint?: string;
+  backToParentOnExit?: boolean;
+  embedded?: boolean;
+  embeddedTabs?: ReactNode;
+  forceComposer?: boolean;
+  onGenerated?(): void;
+  initialDubbing?: boolean;
+  initialComposeVideo?: boolean;
   videoMetadataService?: VideoMetadataService;
   creatorServicesService?: CreatorServicesSettingsService | null;
+  gatewayAccountService?: GatewayAccountSettingsService | null;
+  onGatewayStateChange?(state: GatewayAccountState): void;
   runtimeDependencies?: RuntimeDependenciesController;
 }) {
   const l = useLocalizedCopy();
+  const requireGenerationAccess = useGenerationAccess();
   const translationStartedNotice = l(
     '翻译任务已开始，进度会实时同步到创作动态',
     'Translation started. Progress will appear in creation activity.'
@@ -1754,6 +1781,107 @@ export default function VideoTranslationWorkspace(props: {
   const creatorSession = useOptionalCreatorSession();
   const officialText = useOfficialServices('text');
   const officialSpeech = useOfficialServices('speech');
+  const [textConfig, setTextConfig] = useState<CreatorServicesConfig['llm']>();
+  const [textCredentialConfigured, setTextCredentialConfigured] = useState(false);
+  const [codexTextReady, setCodexTextReady] = useState(false);
+  const [publicTextCatalog, setPublicTextCatalog] = useState<GatewayModelCatalog | undefined>(() => props.gatewayAccountService?.getCachedTextCatalog?.());
+  const [textCatalogState, setTextCatalogState] = useState<'loading' | 'ready' | 'error'>(() => props.gatewayAccountService?.getCachedTextCatalog?.() ? 'ready' : 'loading');
+  const textCatalogRequest = useRef(0);
+  const textCatalogWork = useRef<{ service: GatewayAccountSettingsService; promise: Promise<GatewayModelCatalog> }>();
+  const [pendingTextModelId, setPendingTextModelId] = useState<string>();
+  const pendingTextValidation = useRef<string>();
+  const [textModelNotice, setTextModelNotice] = useState('');
+  const [localModelSettingsOpen, setLocalModelSettingsOpen] = useState(false);
+  const localTextReady = (textConfig?.source === 'codex' && codexTextReady) || (textConfig?.source === 'custom'
+    && !!textConfig.model.trim() && !!textConfig.baseUrl.trim() && textCredentialConfigured);
+  const localTextModel: GatewayModel = {
+    id: localTranslationModelId, modality: 'text', capabilities: [], vendor: l('本地模型', 'Local model'),
+    name: textConfig?.source === 'codex' ? l('本机 Codex', 'Local Codex runtime')
+      : textConfig?.model.trim() || l('自定义模型服务', 'Custom model service'),
+    status: localTextReady ? 'ready' : 'temporarily_unavailable'
+  };
+  const publicTextModels = publicTextCatalog?.models.filter(model => gatewayModelSupports(model, 'text')) ?? [];
+  const textCatalogModels = officialText.official ? officialText.models : [localTextModel, ...publicTextModels];
+  const textLoginRequiredModelIds = new Set(officialText.official ? [] : publicTextModels.map(model => model.id));
+  const selectedTextCatalogId = officialText.official ? officialText.selected ?? officialText.model?.id ?? ''
+    : pendingTextModelId ?? (localTextReady ? localTranslationModelId : '');
+  function loadPublicTextCatalog(force = false) {
+    const request = ++textCatalogRequest.current;
+    const service = props.gatewayAccountService;
+    if (!service?.getTextCatalog) { setTextCatalogState('error'); return; }
+    const cached = service.getCachedTextCatalog?.();
+    if (cached) { setPublicTextCatalog(cached); setTextCatalogState('ready'); }
+    else setTextCatalogState('loading');
+    const promise = !force && textCatalogWork.current?.service === service
+      ? textCatalogWork.current.promise : service.getTextCatalog({ refresh: force });
+    textCatalogWork.current = { service, promise };
+    void promise.then(catalog => {
+      if (request === textCatalogRequest.current) { setPublicTextCatalog(catalog); setTextCatalogState('ready'); }
+    }).catch(() => {
+      if (request === textCatalogRequest.current) setTextCatalogState(cached ? 'ready' : 'error');
+    }).finally(() => {
+      if (textCatalogWork.current?.promise === promise) textCatalogWork.current = undefined;
+    });
+  }
+  useEffect(() => {
+    if (!officialText.official) loadPublicTextCatalog();
+    return () => { textCatalogRequest.current++; };
+  }, [props.gatewayAccountService, officialText.official]);
+  const refreshLocalTextModel = useCallback(async () => {
+    const service = props.creatorServicesService;
+    if (!service) return;
+    try {
+      const response = await service.getConfig();
+      setTextConfig(response.config.llm);
+      setTextCredentialConfigured(response.configuredCredentials?.includes('llm.apiKey') ?? !!response.config.llm.apiKey);
+      if (response.config.llm.source === 'codex') {
+        const provider = await service.getCodexModelStatus?.();
+        setCodexTextReady(provider?.authentication === 'chatgpt' || provider?.apiKeyConfigured === true);
+      } else setCodexTextReady(false);
+    } catch { setCodexTextReady(false); }
+  }, [props.creatorServicesService]);
+  useEffect(() => {
+    if (!officialText.official) void refreshLocalTextModel();
+  }, [officialText.official, refreshLocalTextModel]);
+  useEffect(() => {
+    if (!pendingTextModelId || officialText.authState !== 'signed_in' || officialText.activationState !== 'ready'
+      || pendingTextValidation.current === pendingTextModelId || !props.gatewayAccountService) return;
+    pendingTextValidation.current = pendingTextModelId;
+    let active = true;
+    void props.gatewayAccountService.getState({ refreshModels: true }).then(state => {
+      if (!active) return;
+      props.onGatewayStateChange?.(state);
+      const ready = state.models.filter(model => gatewayModelSupports(model, 'text') && gatewayModelReady(model));
+      const requested = ready.find(model => gatewayModelIdMatches(model.id, pendingTextModelId));
+      const recommended = ready.find(model => gatewayModelIdMatches(model.id, state.recommendedModels?.text))
+        ?? ready.find(model => model.recommended) ?? gatewayTranslationFlashModel(ready);
+      const chosen = requested ?? recommended ?? ready[0];
+      if (chosen) creatorSession?.updateDraft({ officialModels: { text: chosen.id }, __creatorUserSelected: true });
+      if (!requested) setTextModelNotice(chosen
+        ? l('所选模型当前账户不可用，已切换为可用的翻译模型。', 'The selected model is unavailable for this account. Another model is selected.')
+        : l('暂无可用模型', 'No models available'));
+      setPendingTextModelId(undefined);
+    }).catch(() => {
+      if (active) {
+        setPendingTextModelId(undefined);
+        setTextModelNotice(l('模型列表加载失败，请重试。', 'Could not load the model list. Try again.'));
+      }
+    });
+    return () => { active = false; };
+  }, [pendingTextModelId, officialText.authState, officialText.activationState, props.gatewayAccountService, props.onGatewayStateChange, creatorSession?.job.id]);
+  function selectTextCatalogModel(id: string) {
+    if (id === localTranslationModelId) {
+      if (!localTextReady) setLocalModelSettingsOpen(true);
+      else { setPendingTextModelId(undefined); pendingTextValidation.current = undefined; }
+      return;
+    }
+    if (officialText.official) { officialText.selectModel(id); setTextModelNotice(''); return; }
+    if (!publicTextModels.some(model => gatewayModelIdMatches(model.id, id) && gatewayModelReady(model))) return;
+    setPendingTextModelId(id);
+    creatorSession?.updateDraft({ __creatorUserSelected: true }, { semantic: true });
+    pendingTextValidation.current = undefined;
+    requireGenerationAccess();
+  }
   const legacyModelBaselines = useRef(new Map<string, { text?: string; transcription?: string }>());
   const mediaPreviewContextRef = useRef({ session: creatorSession, localize: l });
   mediaPreviewContextRef.current = { session: creatorSession, localize: l };
@@ -1814,14 +1942,14 @@ export default function VideoTranslationWorkspace(props: {
   const [subtitleShadowOffsetX, setSubtitleShadowOffsetX] = useState(defaultSubtitleStyle.subtitleShadowOffsetX);
   const [subtitleShadowOffsetY, setSubtitleShadowOffsetY] = useState(defaultSubtitleStyle.subtitleShadowOffsetY);
   const [subtitleShadowBlur, setSubtitleShadowBlur] = useState(defaultSubtitleStyle.subtitleShadowBlur);
-  const [dubbingRequested, setDubbing] = useState(false);
+  const [dubbingRequested, setDubbing] = useState(props.initialDubbing ?? false);
   const [ttsProvider, setTtsProvider] = useState<CreatorTtsProvider>('openai');
   const [ttsModel, setTtsModel] = useState('gpt-4o-mini-tts');
   const [voiceCode, setVoiceCode] = useState('');
   const [voiceName, setVoiceName] = useState('');
   const speechDraftRef = useRef({ ttsProvider, ttsModel, voiceCode, voiceName });
   speechDraftRef.current = { ttsProvider, ttsModel, voiceCode, voiceName };
-  const [composeVideoRequested, setComposeVideo] = useState(false);
+  const [composeVideoRequested, setComposeVideo] = useState(props.initialComposeVideo ?? false);
   const composeVideo = !subtitleOnly && composeVideoRequested;
   const dubbing = !subtitleOnly && dubbingRequested;
   const [videoFormat, setVideoFormat] = useState<VideoFormat>('horizontal');
@@ -1842,7 +1970,6 @@ export default function VideoTranslationWorkspace(props: {
   const [subtitleSaveError, setSubtitleSaveError] = useState('');
   const subtitleSaveWorkRef = useRef<Promise<boolean>>();
   const [subtitleAssistantOpen, setSubtitleAssistantOpen] = useState(false);
-  const [taskDetailsRequest, setTaskDetailsRequest] = useState<{ key: number; stageRunId?: string }>();
   const [draftBaseVersion, setDraftBaseVersion] = useState<number>();
   const [resultProposal, setResultProposal] = useState<ResultProposal>();
   const [resultNoticeState, setResultNoticeState] = useState({ message: '' });
@@ -2323,6 +2450,7 @@ export default function VideoTranslationWorkspace(props: {
         size: readArtifactNumber(registeredSourceArtifact, 'size') ?? 0,
         mime: readArtifactString(registeredSourceArtifact, 'mimeType') ?? 'application/octet-stream'
       };
+  const registeredSourceIsAudio = registeredSourceFile?.mime.startsWith('audio/') === true;
   const previewPosterUrl = sourceType === 'url'
     ? currentUrlMetadata?.thumbnailUrl
       ?? (parsedVideoSource.kind === 'youtube' ? parsedVideoSource.thumbnailUrl : undefined)
@@ -2420,7 +2548,57 @@ export default function VideoTranslationWorkspace(props: {
     { label: l('输出', 'Output'), value: outputLabel }
   ], [bilingual, composeVideo, dubbing, initialTranslation, l, outputLabel, sourceLanguage, subtitlePosition, subtitleStyleLabel, targetLanguage, voiceCode, voiceName]);
   const targetLanguageLabel = languageLabel(targetLanguages, targetLanguage);
-  const selectedResult = resultVersions.find(version => version.value === resultVersion);
+  const selectedResult = props.forceComposer ? undefined : resultVersions.find(version => version.value === resultVersion);
+  const failedWithoutResult = (creatorSession?.job.status === 'failed' || creatorSession?.job.status === 'needs_input')
+    && taskProgress?.stage?.status === 'failed'
+    && selectedResult === undefined
+    && resultVersionsFromArtifacts(creatorSession.job.artifacts, creatorSession.state).length === 0;
+  const backgroundPreviewStage = failedWithoutResult ? [...(creatorSession?.job.stages ?? [])].reverse().find(stage =>
+    stage.stageId === 'preview-source-video' && (stage.status === 'queued' || stage.status === 'running')) : undefined;
+  const failureRecovery = failedWithoutResult ? translationFailureRecovery(
+    stageFailure?.errorCode ?? taskProgress?.stage?.errorCode ?? null,
+    stageFailure?.errorMessage ?? taskProgress?.stage?.errorMessage ?? null,
+    l
+  ) : undefined;
+  const failureSettingsHref = failureRecovery?.settingsTab === undefined ? undefined
+    : `#/settings?${new URLSearchParams({
+      tab: failureRecovery.settingsTab,
+      ...(failureRecovery.settingsSection ? { section: failureRecovery.settingsSection } : {}),
+      from: 'video-translation',
+      returnPath: `#/workbench?${new URLSearchParams({
+        tool: 'video-translation', jobId: creatorSession?.job.id ?? '',
+        ...(props.backToParentOnExit ? { returnTo: 'projects' } : {})
+      })}`
+    })}`;
+  const failedSourceArtifactId = failedWithoutResult && sourceType === 'file' && videoFile === null
+    ? registeredSourceArtifact?.id : undefined;
+  const [failedSourcePreview, setFailedSourcePreview] = useState<{ artifactId: string; src?: string; error?: boolean }>();
+  useEffect(() => {
+    const { session, localize } = mediaPreviewContextRef.current;
+    if (failedSourceArtifactId === undefined || session === null || !canOpenMediaPreview) {
+      setFailedSourcePreview(undefined);
+      return;
+    }
+    let canceled = false;
+    let objectUrl: string | undefined;
+    setFailedSourcePreview({ artifactId: failedSourceArtifactId });
+    void createCreatorArtifactObjectUrl(session, failedSourceArtifactId,
+      'video-translation.load-failed-source-preview',
+      localize('文件预览加载失败，请稍后重试。', 'The file preview failed to load. Try again later.'))
+      .then(src => {
+        objectUrl = src;
+        if (canceled) { URL.revokeObjectURL(src); return; }
+        setFailedSourcePreview({ artifactId: failedSourceArtifactId, src });
+      }).catch(() => {
+        if (!canceled) setFailedSourcePreview({ artifactId: failedSourceArtifactId, error: true });
+      });
+    return () => {
+      canceled = true;
+      if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
+    };
+  }, [failedSourceArtifactId, canOpenMediaPreview, mediaPreviewJobId]);
+  const currentFailedSourcePreview = failedSourcePreview?.artifactId === failedSourceArtifactId
+    ? failedSourcePreview : undefined;
   const selectedSubtitleOnly = (selectedResult?.source.sourceType ?? sourceType) === 'subtitle';
   const selectedResultState = readCreatorResultSnapshots(creatorSession?.state.resultSnapshots)
     .find(snapshot => snapshot.version === selectedResult?.value)?.state;
@@ -3131,6 +3309,9 @@ export default function VideoTranslationWorkspace(props: {
       chooseVideo(null);
       return;
     }
+    if (sourceType === 'subtitle') {
+      creatorSession?.updateDraft({ importedSourceSubtitleId: null, importedTargetSubtitleId: null });
+    }
     setVideoUrl('');
     setSourceType('url');
     setAttemptedContinue(false);
@@ -3259,6 +3440,7 @@ export default function VideoTranslationWorkspace(props: {
 
   async function submit() {
     if (subtitleImportPending) return;
+    if (!requireGenerationAccess(!officialText.official && !pendingTextModelId)) return;
     if (importedSourceSubtitle && sourceLanguage === 'auto') {
       setCurrentStep(1);
       setResultNotice(l('未能可靠识别字幕语言，请手动选择源语言。', 'The subtitle language could not be reliably detected. Select the source language.'));
@@ -3311,9 +3493,11 @@ export default function VideoTranslationWorkspace(props: {
       if (isRegeneration) {
         await executeRegeneration(stageId);
       } else {
-        creatorSession.updateDraft({ composeVideo: false, dubbing: false, skipVideoDownload });
-        setComposeVideo(false);
-        setDubbing(false);
+        const startComposeVideo = props.initialComposeVideo === undefined ? false : composeVideo;
+        const startDubbing = props.initialDubbing === undefined ? false : dubbing;
+        creatorSession.updateDraft({ composeVideo: startComposeVideo, dubbing: startDubbing, skipVideoDownload });
+        setComposeVideo(props.initialComposeVideo ?? false);
+        setDubbing(props.initialDubbing ?? false);
         await creatorSession.applyAction({
           action: 'run-stage',
           input: { stageId: 'subtitle', workflow: true }
@@ -3335,6 +3519,7 @@ export default function VideoTranslationWorkspace(props: {
                 `The new version started from "${translationStageLabel(stageId, l)}" and will reuse existing upstream outputs.`
               )
           : translationStartedNotice);
+      props.onGenerated?.();
     } catch (cause) {
       if ((cause as { code?: unknown })?.code === 'creator_revision_conflict') {
         setStartRevisionConflict(true);
@@ -4046,13 +4231,264 @@ export default function VideoTranslationWorkspace(props: {
     </div>
   );
 
+  if ((props.embedded && !selectedResult) || failedWithoutResult) {
+    const hasVideoSource = videoFile !== null || videoFileName !== null
+      || (sourceType === 'file' && registeredSourceArtifact !== undefined);
+    const hasSubtitleSource = importedSourceSubtitle !== undefined;
+    const hasUrlSource = videoUrl.trim().length > 0;
+    const sourceInvalid = attemptedContinue && (!hasSource || !sourceSelectionReady);
+    const sourceMessage = sourceInvalid
+      ? sourceType === 'url' && videoUrl.trim() && !hasSource
+        ? l('请输入一个有效的视频链接', 'Enter one valid video link')
+        : !hasSource
+          ? l('请先上传视频、字幕或填写一个视频链接', 'Upload a video, subtitles, or paste one video link first')
+          : l('请确认链接有效，并选择要翻译的分集后开始', 'Check the link and choose a part before starting')
+      : resultNotice;
+    const linkPreviewFallback = <span><Link2 size={23} strokeWidth={1.5} /><strong>{l('链接预览', 'Link preview')}</strong><small>{l('已添加链接', 'Link added')}</small></span>;
+    const composer = (
+        <div className="creator-tool-stack image-generation-studio">
+          {failedWithoutResult && failureRecovery ? <div className="video-translation-failure-notice" role="alert">
+            <CircleAlert size={18} aria-hidden="true" />
+            <div>
+              <strong>{failureRecovery.title}</strong>
+              <p>{failureRecovery.reason}</p>
+              <p>{failureRecovery.nextStep}</p>
+            </div>
+          </div> : null}
+          <form className="image-generation-composer dashboard-translation-composer" aria-label={l('视频翻译', 'Video Translation')} onSubmit={event => {
+            event.preventDefault();
+            if (failedWithoutResult) {
+              if (taskProgress) void taskProgress.retry().then(started => { if (started) props.onBack(); });
+            } else void submit();
+          }}>
+            <fieldset className="image-generation-fields" disabled={submitting}>
+              <div className="image-generation-editor">
+                <div className="image-generation-composer-heading">{!failedWithoutResult && props.embeddedTabs ? props.embeddedTabs : <h2><FileVideo size={18} aria-hidden="true" />{l('视频翻译', 'Video Translation')}</h2>}</div>
+                <div className="image-generation-reference dashboard-translation-source" data-loaded={hasVideoSource || hasSubtitleSource || hasUrlSource} data-source-type={sourceType}>
+                  {hasUrlSource ? (
+                    <div className="dashboard-translation-link-preview" aria-label={l('视频链接预览', 'Video link preview')}>
+                      {failedWithoutResult ? linkPreviewFallback : previewPosterUrl ? <img src={previewPosterUrl} alt="" /> : linkPreviewFallback}
+                    </div>
+                  ) : hasVideoSource && videoFile ? (
+                    <div className="dashboard-translation-link-preview dashboard-translation-file-preview">
+                      <LocalVideoPreview file={videoFile} onDimensions={updateSourceOrientation} />
+                    </div>
+                  ) : failedWithoutResult && sourceType === 'file' && registeredSourceArtifact !== undefined ? (
+                    <div className="dashboard-translation-link-preview dashboard-translation-file-preview" title={registeredSourceFile?.name}>
+                      {currentFailedSourcePreview?.src && !currentFailedSourcePreview.error
+                        ? registeredSourceIsAudio
+                          ? <audio controls src={currentFailedSourcePreview.src} aria-label={l('本地音频预览', 'Local audio preview')}
+                            onError={() => setFailedSourcePreview({ artifactId: registeredSourceArtifact.id, error: true })} />
+                          : <video controls playsInline preload="metadata" src={currentFailedSourcePreview.src}
+                            aria-label={l('本地视频预览', 'Local video preview')}
+                            onError={() => setFailedSourcePreview({ artifactId: registeredSourceArtifact.id, error: true })} />
+                        : <span>{registeredSourceIsAudio ? <FileAudio size={23} strokeWidth={1.5} aria-hidden="true" />
+                          : <FileVideo size={23} strokeWidth={1.5} aria-hidden="true" />}
+                          <strong>{registeredSourceIsAudio ? l('本地音频', 'Local audio') : l('本地视频已上传', 'Local video uploaded')}</strong>
+                          <small>{registeredSourceFile?.name}</small>
+                        </span>}
+                    </div>
+                  ) : (
+                    <VideoTranslationSubtitleImport
+                      compact
+                      sourceOnly
+                      sourceLanguage={sourceLanguage}
+                      targetLanguage={targetLanguage}
+                      accept="video/*,audio/*,.srt,.mp4,.mov,.m4v,.webm,.mkv,.avi,.mp3,.wav,.m4a,.aac,.flac,.ogg"
+                      disabled={failedWithoutResult || hasVideoSource || hasSubtitleSource || hasUrlSource}
+                      onMediaFile={chooseVideo}
+                      onBusyChange={setSubtitleImportPending}
+                      onError={setResultNotice}
+                      onImported={() => {
+                        setSourceType('subtitle');
+                        setVideoUrl('');
+                        setVideoFile(null);
+                        setVideoFileName(null);
+                        setVideoFileSize(null);
+                        setVideoFileLastModified(null);
+                        setAttemptedContinue(false);
+                        setResultNotice(l('字幕已添加，可以开始翻译。', 'Subtitles added. Ready to translate.'));
+                      }}
+                    />
+                  )}
+                  {!hasUrlSource && (hasVideoSource || hasSubtitleSource) && !failedWithoutResult ? (
+                    <button className="image-generation-reference-remove" type="button" aria-label={l('移除当前来源', 'Clear current source')} title={l('移除当前来源', 'Clear current source')} onClick={clearCurrentSource}>
+                      <X size={16} strokeWidth={1.8} />
+                    </button>
+                  ) : null}
+                </div>
+                <span className="dashboard-translation-source-divider" aria-hidden="true">{l('或', 'or')}</span>
+                <div className="image-generation-prompt-field dashboard-translation-url-field">
+                  {failedWithoutResult && sourceType === 'file' && registeredSourceFile ? (
+                    <div className="video-translation-failure-source-file">
+                      {registeredSourceIsAudio ? <FileAudio size={18} strokeWidth={1.8} aria-hidden="true" />
+                        : <FileVideo size={18} strokeWidth={1.8} aria-hidden="true" />}
+                      <span><strong>{registeredSourceIsAudio ? l('本地音频', 'Local audio') : l('本地视频已上传', 'Local video uploaded')}</strong>
+                        <small title={registeredSourceFile.name}>{registeredSourceFile.name}</small></span>
+                    </div>
+                  ) : <>
+                    <label className="image-generation-visually-hidden" htmlFor="dashboard-translation-video-url">{l('视频链接', 'Video link')}</label>
+                    <div className="dashboard-translation-url-input">
+                      <Link2 size={18} strokeWidth={1.8} aria-hidden="true" />
+                      <input
+                        id="dashboard-translation-video-url"
+                        type="url"
+                        aria-label={l('视频链接', 'Video link')}
+                        aria-describedby={sourceMessage ? 'dashboard-translation-source-message' : undefined}
+                        aria-invalid={sourceInvalid || undefined}
+                        disabled={hasVideoSource || hasSubtitleSource}
+                        readOnly={failedWithoutResult}
+                        placeholder={l('粘贴视频链接', 'Paste a video URL')}
+                        value={videoUrl}
+                        onChange={event => {
+                          setVideoUrl(normalizeVideoSourceUrl(event.target.value));
+                          setSourceType('url');
+                          setVideoFile(null);
+                          setSourceOrientation('landscape');
+                          setAttemptedContinue(false);
+                          setResultNotice('');
+                        }}
+                      />
+                      {hasUrlSource && !failedWithoutResult ? (
+                        <button className="dashboard-translation-url-clear" type="button" aria-label={l('移除当前来源', 'Clear current source')} title={l('清除视频链接', 'Clear video link')} onClick={clearCurrentSource}>
+                          <X size={16} strokeWidth={1.8} />
+                        </button>
+                      ) : null}
+                    </div>
+                    <SupportedVideoSources compact label={l('支持平台', 'Supported platforms')} />
+                  </>}
+                  {sourceMessage ? (
+                    <p
+                      id="dashboard-translation-source-message"
+                      className={sourceInvalid ? 'dashboard-translation-message is-error' : 'dashboard-translation-message'}
+                      role={sourceInvalid ? 'alert' : resultNotice ? 'status' : undefined}
+                    >
+                      {sourceMessage}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="image-generation-action-bar dashboard-translation-action-bar">
+                <div className="image-generation-model-row dashboard-translation-model">
+                  <OfficialModelSelect
+                    label={l('翻译模型', 'Translation model')}
+                    models={textCatalogModels}
+                    value={selectedTextCatalogId}
+                    layout="grouped"
+                    loginRequiredModelIds={textLoginRequiredModelIds}
+                    disabled={submitting || activeGenerationStage !== undefined || (officialText.official && !officialText.selectable)}
+                    configureModel={{ id: localTranslationModelId, title: l('打开文本模型设置', 'Open text model settings'), onConfigure: () => setLocalModelSettingsOpen(true) }}
+                    onChange={selectTextCatalogModel}
+                  />
+                  {!officialText.official ? <DashboardTranslationModelSettings
+                      service={props.creatorServicesService}
+                      disabled={submitting || activeGenerationStage !== undefined}
+                      compact
+                      requestedOpen={localModelSettingsOpen}
+                      onRequestedOpenChange={setLocalModelSettingsOpen}
+                      onClose={() => void refreshLocalTextModel()}
+                    /> : null}
+                  {!officialText.official && props.gatewayAccountService && textCatalogState !== 'ready' ? <div className="dashboard-translation-catalog-status" role="status">
+                    {textCatalogState === 'loading' ? l('正在加载模型', 'Loading models') : <>
+                      <span>{l('模型列表加载失败，请重试。', 'Could not load the model list. Try again.')}</span>
+                      <button type="button" onClick={() => loadPublicTextCatalog(true)} aria-label={l('重试', 'Retry')}><RefreshCw size={14} />{l('重试', 'Retry')}</button>
+                    </>}
+                  </div> : null}
+                  {textModelNotice ? <p className="dashboard-translation-model-notice" role="status" aria-label={l('翻译模型', 'Translation model')}>{textModelNotice}</p> : null}
+                </div>
+                <DashboardVideoTranslationSettings
+                  disabled={submitting || activeGenerationStage !== undefined}
+                  summary={[
+                    `${languageLabel(sourceLanguages, sourceLanguage)} → ${targetLanguageLabel}`,
+                    bilingual ? l('双语', 'Bilingual') : l('仅译文', 'Translation only'),
+                    bilingual
+                      ? subtitlePosition === 'top' ? l('译文在上', 'Translated above') : l('译文在下', 'Translated below')
+                      : l('单语字幕', 'Single-language subtitles'),
+                    preferPlatformCaptions
+                      ? l('平台字幕优先', 'Platform captions first')
+                      : l('需要时自动识别', 'Transcribe when needed')
+                  ]}
+                >
+                  {languageControls}
+                  {transcriptionModelControl}
+                  <div className="video-translation-toggle-list">
+                    {subtitleLayoutControls}
+                    {subtitleImportControl}
+                    {platformCaptionsControl}
+                    {sourceType === 'url' ? <Switch
+                      checked={skipVideoDownload}
+                      label={l('暂不下载原视频', 'Skip downloading the source video')}
+                      description={skipVideoDownload
+                        ? l('先生成字幕；预览或合成时再下载视频', 'Generate subtitles first; download the video when previewing or composing')
+                        : l('原视频下载与字幕生成同时开始，完成后即可预览', 'Download the video while generating subtitles so it is ready to preview')}
+                      onChange={setSkipVideoDownload}
+                    /> : null}
+                  </div>
+                  {sourceType === 'url' && parsedVideoSource.kind === 'bilibili' ? (
+                    <BilibiliPartSelector
+                      metadata={currentUrlMetadata}
+                      error={bilibiliMetadataError?.url === videoUrl ? bilibiliMetadataError.message : props.videoMetadataService === undefined
+                        ? l('分集信息服务不可用，请确认 Creator Runtime 已连接', 'The parts service is unavailable. Check the Creator Runtime connection.') : undefined}
+                      onRetry={props.videoMetadataService === undefined ? undefined : () => {
+                        setBilibiliMetadataError(undefined);
+                        setMetadataRetry(value => value + 1);
+                      }}
+                      onSelect={selectBilibiliPart}
+                    />
+                  ) : null}
+                </DashboardVideoTranslationSettings>
+                <div className="image-generation-submit-row">
+                  {failedWithoutResult && failureSettingsHref ? <a className="video-translation-failure-secondary" href={failureSettingsHref}>{failureRecovery?.settingsLabel}<ArrowRight size={15} aria-hidden="true" /></a> : null}
+                  <button className="creator-tool-primary" type="submit" disabled={submitting || (failedWithoutResult && (taskProgress?.retryPending || taskProgress?.retryBlocked))}>
+                    {failedWithoutResult ? <RefreshCw size={16} aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
+                    {failedWithoutResult
+                      ? taskProgress?.retryPending ? l('正在重试…', 'Retrying…') : l('重试当前阶段', 'Retry stage')
+                      : submitting
+                        ? submissionPhase === 'uploading' ? l('正在上传...', 'Uploading...') : l('正在启动...', 'Starting...')
+                        : l('开始翻译', 'Translate')}
+                  </button>
+                </div>
+                {failedWithoutResult && taskProgress?.controlError ? <p className="video-translation-failure-error" role="alert">{taskProgress.controlError}</p> : null}
+              </div>
+            </fieldset>
+          </form>
+          {failedWithoutResult && backgroundPreviewStage ? <CreatorTaskProgressNotice stage={backgroundPreviewStage} /> : null}
+        </div>
+    );
+    if (!failedWithoutResult) return <div className="creator-tool-embedded">{composer}</div>;
+    return <CreatorToolShell
+      title={l('视频翻译', 'Video Translation')}
+      titleIcon={<Languages size={20} strokeWidth={1.8} />}
+      subtitle={l('创建字幕、配音与多画幅成片', 'Create subtitles, dubbing, and videos in multiple formats')}
+      context={failureRecovery?.title ?? ''}
+      currentIssue={failureRecovery?.title}
+      taskSummary={<CreatorTaskSummary
+        sourceIcon={subtitleOnly ? Captions : FileVideo}
+        sourceLabel={subtitleOnly ? l('字幕文件', 'Subtitle file') : l('视频来源', 'Video source')}
+        sourceValue={sourceName}
+        items={summaryItems}
+        compactSummary={`${languageLabel(sourceLanguages, sourceLanguage)} → ${targetLanguageLabel} · ${outputLabel}`}
+      />}
+      suggestions={[]}
+      placeholder={props.promptHint ?? l('告诉 Agent 你的要求', 'Tell Agent what you need')}
+      stepLabel={l('失败任务', 'Failed task', 'Misslyckad uppgift')}
+      quickActions={[{
+        id: 'agent-review', label: l('询问失败原因', 'Ask about the failure', 'Fråga om felet'), kind: 'agent',
+        prompt: l('分析当前视频翻译任务的失败原因，并建议下一步操作。', 'Analyze why this video translation failed and recommend the next step.', 'Analysera varför videoöversättningen misslyckades och föreslå nästa steg.')
+      }]}
+      onBack={() => void leaveWorkspace()}
+      pageClassName="video-translation-failure-page"
+      contentClassName="media-generation-workspace-content"
+    ><div className="creator-tool-embedded">{composer}</div></CreatorToolShell>;
+  }
+
   return (
     <main className="video-translation-page" data-subtitle-immersive={subtitleImmersive && subtitleOutputs.length > 0 && workspacePhase === 'result' && resultTab === 'subtitles' || undefined}
       data-subtitle-assistant={subtitleAssistantOpen || undefined}>
       <div className="video-translation-page-inner video-translation-wizard">
         <CreatorResizableLayout
           className="video-translation-collab-layout"
-          agentPanelRequest={taskDetailsRequest}
+          showAgentPanel={workspacePhase !== 'result' || (subtitleImmersive && subtitleAssistantOpen)}
           workspace={<div
             className="video-translation-wizard-main"
             data-step={currentStep}
@@ -4068,9 +4504,10 @@ export default function VideoTranslationWorkspace(props: {
             <Languages size={20} strokeWidth={1.8} />
           </span>
           <div className="video-translation-header-copy">
-            <h1>{(workspacePhase === 'result' ? selectedSubtitleOnly : subtitleOnly) ? l('字幕翻译', 'Subtitle Translation') : workspacePhase === 'result' ? l('视频翻译项目', 'Video Translation Project') : l('视频翻译配音', 'Translate & Dub Video')}</h1>
+            <h1>{(workspacePhase === 'result' ? selectedSubtitleOnly : subtitleOnly) ? l('字幕翻译', 'Subtitle Translation') : l('视频翻译', 'Video Translation')}</h1>
             <p>{workspacePhase === 'result' ? selectedSourceName : subtitleOnly ? sourceName : l('创建字幕、配音与多画幅成片', 'Create subtitles, dubbing, and videos in multiple formats')}</p>
           </div>
+          {workspacePhase === 'result' && selectedResult !== undefined ? <button type="button" className="video-translation-result-settings" onClick={adjustSettingsFromResult}>{l('调整任务设置', 'Adjust settings')}</button> : null}
         </header>
 
         {workspacePhase === 'configure' ? (
@@ -4091,7 +4528,7 @@ export default function VideoTranslationWorkspace(props: {
                 </button>
               </div>
             ) : null}
-            <nav className="video-translation-steps" aria-label={l('翻译流程', 'Translation steps')}>
+            <nav className="video-translation-steps creator-tool-steps-two" aria-label={l('翻译流程', 'Translation steps')}>
               <ol>
                 {steps.map((step, index) => {
                   const completed = index < currentStep;
@@ -4119,7 +4556,7 @@ export default function VideoTranslationWorkspace(props: {
           {workspacePhase === 'result' ? (
             <VideoTranslationResultWorkspace
               workbench
-              onBack={() => void leaveWorkspace(selectedSubtitleOnly ? 'project' : 'outputs')}
+              onBack={() => void leaveWorkspace(props.backToParentOnExit || selectedSubtitleOnly ? 'project' : 'outputs')}
               onRequestOutput={requestOutput}
               generationLabel={generationLabel}
               outputUpToDate={outputUpToDate}
@@ -4128,10 +4565,6 @@ export default function VideoTranslationWorkspace(props: {
               outputBusyLabel={taskProgress?.active && !['prepare-source-video', 'preview-source-video'].includes(taskProgress.stage?.stageId ?? '') ? taskProgress.title : undefined}
               videoPreviewRequest={videoPreviewRequest}
               taskProgress={taskProgress ? <CreatorTaskProgressBar task={taskProgress}
-                onDetails={() => {
-                  setSubtitleAssistantOpen(true);
-                  setTaskDetailsRequest(previous => ({ key: (previous?.key ?? 0) + 1, stageRunId: taskProgress.stage?.id }));
-                }}
                 onCancel={activeStage ? requestCancelTask : undefined}
                 onResume={resumableStage ? () => void resumeTask() : undefined}
                 controlPending={taskControlPending}
@@ -4413,16 +4846,16 @@ export default function VideoTranslationWorkspace(props: {
                 kind: 'action' as const,
                 onAction: () => { window.location.hash = creatorServicesSettingsHref(sessionError?.code, needsInput?.code, stageConfigurationCode); }
               }] : []),
-              {
+              ...(workspacePhase !== 'result' || selectedResult !== undefined ? [{
                 id: 'open-settings',
                 label: workspacePhase === 'result'
                   ? l('调整任务设置', 'Adjust settings')
                   : l('打开翻译设置', 'Open translation settings'),
-                kind: 'action',
+                kind: 'action' as const,
                 onAction: () => workspacePhase === 'result'
                   ? adjustSettingsFromResult()
                   : openWizardStep(1)
-              },
+              }] : []),
               ...(workspacePhase === 'configure' || activeStage !== undefined || resumableStage !== undefined ? [{
                 id: 'run-translation',
                 label: activeStage !== undefined
@@ -4650,6 +5083,9 @@ function creatorErrorMessage(cause: unknown, l: LocalizeCopy): string {
   if (code === 'creator_tts_config_missing') {
     return l('已开启配音，请先配置配音服务。', 'Dubbing is enabled. Configure a TTS service first.');
   }
+  if (code === 'creator_translation_output_language_mismatch') {
+    return l('目标语言是中文，但生成的字幕主要仍是英文，未通过检查。', 'The target language is Chinese, but the generated subtitles were mostly English and did not pass validation.', 'Målspråket är kinesiska, men de genererade undertexterna var mestadels på engelska och klarade inte kontrollen.');
+  }
   if (code === 'unsupported_source') {
     return l('请使用 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书、Pinterest、Reddit 的单个公开视频链接或已上传的本地视频。', 'Use a single public video link from YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, Pinterest, or Reddit, or an uploaded local video.');
   }
@@ -4717,12 +5153,70 @@ function stageResumeDescription(
 }
 
 function stageErrorMessage(code: string | null, message: string | null, l: LocalizeCopy): string {
+  if (isYtDlpCaptionTimeout(code, message)) return l(
+    '视频平台连接超时，字幕读取未完成。请检查网络或代理设置后重试。',
+    'The video platform connection timed out, so captions could not be read. Check the network or proxy settings and retry.',
+    'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
+  );
   const configurationCode = normalizeStageConfigurationError(code, message);
   if (configurationCode !== null) return creatorErrorMessage({ code: configurationCode }, l);
   if (code === 'dependency_not_packaged') {
     return l('当前安装包缺少所选语音识别能力，请更换服务或重新安装完整运行时。', 'The selected transcription runtime is not packaged. Choose another service or reinstall the full runtime.');
   }
   return l('翻译阶段执行失败，请在 Agent 区域查看诊断和服务配置。', 'The translation stage failed. Review the diagnosis in the Agent panel and service configuration.');
+}
+
+function translationFailureRecovery(code: string | null, message: string | null, l: LocalizeCopy): {
+  title: string;
+  reason: string;
+  nextStep: string;
+  settingsTab?: 'general' | 'platform-connections' | 'local-components' | 'ai-services';
+  settingsSection?: 'text' | 'transcription' | 'tts';
+  settingsLabel?: string;
+} {
+  if (code === 'creator_translation_output_language_mismatch') return {
+    title: l('译文语言不符合目标语言', 'Translation language does not match the target', 'Översättningens språk matchar inte målspråket'),
+    reason: l('目标语言是中文，但生成的字幕主要仍是英文，未通过检查。', 'The target language is Chinese, but the generated subtitles were mostly English and did not pass validation.', 'Målspråket är kinesiska, men de genererade undertexterna var mestadels på engelska och klarade inte kontrollen.'),
+    nextStep: l('检查当前任务的目标语言和翻译模型，然后重试字幕翻译。', 'Check this task\'s target language and translation model, then retry subtitle translation.', 'Kontrollera uppgiftens målspråk och översättningsmodell och försök sedan översätta undertexterna igen.'),
+  };
+  if (isYtDlpCaptionTimeout(code, message)) return {
+    title: l('字幕读取失败', 'Caption retrieval failed', 'Det gick inte att läsa undertexter'),
+    reason: l('视频平台连接超时，字幕读取未完成。', 'The video platform connection timed out, so captions could not be read.', 'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas.'),
+    nextStep: l('检查网络代理和视频链接是否可访问，然后重试当前阶段。', 'Check the network proxy and video link, then retry this stage.', 'Kontrollera nätverksproxyn och videolänken och försök sedan igen med steget.'),
+    settingsTab: 'general', settingsLabel: l('检查网络代理', 'Check network proxy', 'Kontrollera nätverksproxy')
+  };
+  if (code === 'platform_session_required' || code === 'platform_caption_access_failed'
+    && /cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message ?? '')) return {
+    title: l('平台连接需要处理', 'Platform connection needs attention', 'Plattformsanslutningen behöver åtgärdas'),
+    reason: l('视频平台未接受当前浏览器会话，或要求完成网页验证。', 'The video platform rejected the browser session or requires website verification.', 'Videoplattformen avvisade webbläsarsessionen eller kräver webbverifiering.'),
+    nextStep: l('检查视频平台的网页验证与平台连接，然后返回此任务重试。', 'Check website verification and the platform connection, then return and retry.', 'Kontrollera webbverifieringen och plattformsanslutningen, återgå sedan och försök igen.'),
+    settingsTab: 'platform-connections', settingsLabel: l('检查平台连接', 'Check platform connections', 'Kontrollera plattformsanslutningar')
+  };
+  if (code === 'yt_dlp_update_recommended') return {
+    title: l('视频解析失败', 'Video extraction failed', 'Videoextraheringen misslyckades'),
+    reason: l('当前下载器可能不支持此平台的最新解析方式。', 'The downloader may not support the platform\'s current extraction method.', 'Nedladdaren kanske inte stöder plattformens nuvarande extraheringsmetod.'),
+    nextStep: l('检查第三方组件中的 yt-dlp 更新，然后返回此任务重试。', 'Check for a yt-dlp update in Third-party components, then return and retry.', 'Sök efter en uppdatering av yt-dlp under Tredjepartskomponenter. Återgå sedan och försök igen.'),
+    settingsTab: 'local-components', settingsLabel: l('检查第三方组件', 'Check third-party components', 'Kontrollera tredjepartskomponenter')
+  };
+  if (code === 'platform_request_signature_required') return {
+    title: l('视频解析失败', 'Video extraction failed', 'Videoextraheringen misslyckades'),
+    reason: l('当前下载器尚不支持此平台的请求签名校验。', 'The downloader does not yet support this platform\'s request signature check.', 'Nedladdaren stöder ännu inte plattformens kontroll av begäranssignaturer.'),
+    nextStep: l('请改用本地视频文件创建翻译任务。', 'Create a translation task from a local video file instead.', 'Skapa en översättningsuppgift från en lokal videofil i stället.')
+  };
+  if (needsCreatorServicesConfiguration(code)) return {
+    title: l('服务配置不完整', 'Service configuration required', 'Tjänstkonfiguration krävs'),
+    reason: l('当前翻译阶段缺少可用的 AI 服务配置。', 'The current translation stage needs an available AI service.', 'Det aktuella översättningssteget behöver en tillgänglig AI-tjänst.'),
+    nextStep: l('检查 AI 服务设置，然后返回此任务重试。', 'Check AI service settings, then return to this task and retry.', 'Kontrollera AI-tjänstens inställningar, återgå sedan till uppgiften och försök igen.'),
+    settingsTab: 'ai-services',
+    settingsSection: code === 'creator_tts_config_missing' ? 'tts'
+      : ['creator_transcription_config_missing', 'creator_transcription_language_unsupported', 'creator_transcription_timestamps_unavailable'].includes(code ?? '') ? 'transcription' : 'text',
+    settingsLabel: l('检查 AI 服务', 'Check AI services', 'Kontrollera AI-tjänster')
+  };
+  return {
+    title: l('翻译任务失败', 'Translation failed', 'Översättningen misslyckades'),
+    reason: l('当前阶段未完成，尚无可用结果。', 'The current stage did not finish, and no result is available yet.', 'Det aktuella steget slutfördes inte och inget resultat finns ännu.'),
+    nextStep: l('检查输入和相关设置，然后重试当前阶段。', 'Check the input and related settings, then retry this stage.', 'Kontrollera inmatningen och relevanta inställningar och försök sedan igen med steget.')
+  };
 }
 
 function normalizeStageConfigurationError(code: string | null | undefined, message: string | null | undefined): string | null {

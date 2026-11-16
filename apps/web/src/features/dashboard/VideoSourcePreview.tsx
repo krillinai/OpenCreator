@@ -78,7 +78,7 @@ export function parseVideoSource(value: string): VideoSource {
   }
 }
 
-function LocalVideoPreview(props: { file: File; onDimensions?(width: number, height: number): void }) {
+export function LocalVideoPreview(props: { file: File; onDimensions?(width: number, height: number): void }) {
   const l = useLocalizedCopy();
   const [objectUrl, setObjectUrl] = useState('');
 

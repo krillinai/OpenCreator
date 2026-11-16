@@ -59,6 +59,7 @@ export type CreatorTtsVoicesResponse = {
   provider: CreatorTtsProvider;
   model: string;
   voices: CreatorTtsVoice[];
+  previewCatalogStatus?: 'ready' | 'empty' | 'error';
 };
 
 export type CreatorTtsPreviewRequest = {

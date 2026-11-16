@@ -23,6 +23,12 @@ export async function registerGatewayAccountRoutes(server: FastifyInstance, serv
     if (!query.success) throw new GatewayError('invalid_parameters', 400);
     return service.readState({ refreshModels: query.data.refreshModels === '1' });
   }, reply));
+  server.get('/gateway/models/catalog', (r, reply) => respond(() => {
+    const query = z.object({ modality: z.enum(['image', 'video', 'text']).optional() }).strict().safeParse(r.query);
+    if (!query.success) throw new GatewayError('invalid_parameters', 400);
+    return query.data.modality === 'text' ? service.readPublicTextCatalog()
+      : query.data.modality === 'video' ? service.readPublicVideoCatalog() : service.readPublicImageCatalog();
+  }, reply));
   server.post('/gateway/account/web', (r, reply) => respond(async () => {
     const value = z.object({ destination: z.enum(['recharge', 'account', 'usage', 'faq']), locale: z.enum(['zh', 'en']), returnUrl: z.string().max(2048).optional() }).strict().safeParse(r.body);
     if (!value.success) throw new GatewayError('invalid_parameters', 400);
@@ -62,6 +68,11 @@ export async function registerGatewayAccountRoutes(server: FastifyInstance, serv
     const value = z.object({ modality: z.enum(['text', 'image', 'video', 'speech', 'transcription']), model: z.string().min(1).max(256) }).strict().safeParse(r.body);
     if (!value.success) throw new GatewayError('invalid_model', 400);
     return service.selectModel(value.data.modality, value.data.model);
+  }, reply));
+  server.patch('/gateway/task-model', (r, reply) => respond(async () => {
+    const value = z.object({ templateId: z.string().min(1).max(128), modality: z.enum(['text', 'image', 'video', 'speech', 'transcription']), model: z.string().min(1).max(256) }).strict().safeParse(r.body);
+    if (!value.success) throw new GatewayError('invalid_model', 400);
+    return service.rememberTaskModel(value.data.templateId, value.data.modality, value.data.model);
   }, reply));
   server.get('/gateway/billing/summary', (_r, reply) => respond(() => service.billing('/api/v1/billing/summary'), reply));
   server.get('/gateway/plans', (_r, reply) => respond(() => service.readPlans(), reply));

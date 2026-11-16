@@ -1,11 +1,70 @@
 import { expect, it, vi } from 'vitest';
 import { RuntimeClient } from '../runtime/client.js';
-import type { GatewayAccountState } from '@opencreator/protocol';
+import type { GatewayAccountState, GatewayModelCatalog } from '@opencreator/protocol';
 import { createGatewayAccountService, type GatewayBillingSummary } from './gateway-account-service.js';
 
 const signedIn: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: null, models: [], activationError: null };
 const signedOut: GatewayAccountState = { ...signedIn, source: 'manual', authState: 'signed_out', account: null };
 const summary: GatewayBillingSummary = { balance: { availableUnits: '123000000', reservedUnits: '0', periodEnd: null, asOf: '2026-10-15T00:00:00Z' }, subscription: null, billingAvailable: true };
+
+it('reuses image and video catalogs for one hour across repeated workspace visits', async () => {
+  const image: GatewayModelCatalog = { models: [{ id: 'image/a', name: 'Image A', vendor: 'Vendor', modality: 'image', capabilities: [] }] };
+  const video: GatewayModelCatalog = { models: [{ id: 'video/a', name: 'Video A', vendor: 'Vendor', modality: 'video', capabilities: [] }] };
+  const get = vi.fn(async (path: string) => path.includes('modality=video') ? video : image);
+  const service = createGatewayAccountService({ get, post: vi.fn(), patch: vi.fn() } as never);
+  const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+  try {
+    expect(service.getCachedImageCatalog()).toBeUndefined();
+    await expect(service.getImageCatalog()).resolves.toBe(image);
+    await expect(service.getVideoCatalog()).resolves.toBe(video);
+    now.mockReturnValue(1_000 + 60 * 60_000 - 1);
+    await expect(service.getImageCatalog()).resolves.toBe(image);
+    await expect(service.getVideoCatalog()).resolves.toBe(video);
+    expect(service.getCachedImageCatalog()).toBe(image);
+    expect(service.getCachedVideoCatalog()).toBe(video);
+    expect(get).toHaveBeenCalledTimes(2);
+    now.mockReturnValue(1_000 + 60 * 60_000);
+    await service.getImageCatalog();
+    expect(get).toHaveBeenCalledTimes(3);
+  } finally { now.mockRestore(); }
+});
+
+it('reuses the public text catalog for one hour and refreshes it independently', async () => {
+  const text: GatewayModelCatalog = { models: [{ id: 'vendor/text', name: 'Text One', vendor: 'Vendor', modality: 'text', capabilities: ['chat'] }] };
+  const get = vi.fn(async () => text);
+  const service = createGatewayAccountService({ get, post: vi.fn(), patch: vi.fn() } as never);
+  const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+  try {
+    expect(service.getCachedTextCatalog()).toBeUndefined();
+    await expect(service.getTextCatalog()).resolves.toBe(text);
+    expect(get).toHaveBeenCalledWith('/gateway/models/catalog?modality=text');
+    now.mockReturnValue(1_000 + 60 * 60_000 - 1);
+    await expect(service.getTextCatalog()).resolves.toBe(text);
+    expect(get).toHaveBeenCalledOnce();
+    now.mockReturnValue(1_000 + 60 * 60_000);
+    await service.getTextCatalog();
+    expect(get).toHaveBeenCalledTimes(2);
+  } finally { now.mockRestore(); }
+});
+
+it('shares in-flight catalog requests and lets retry bypass a fresh cache without discarding it on failure', async () => {
+  const image: GatewayModelCatalog = { models: [{ id: 'image/a', modality: 'image', capabilities: [] }] };
+  const updated: GatewayModelCatalog = { models: [{ id: 'image/b', modality: 'image', capabilities: [] }] };
+  let finish!: (catalog: GatewayModelCatalog) => void;
+  const get = vi.fn().mockImplementationOnce(() => new Promise<GatewayModelCatalog>(resolve => { finish = resolve; }))
+    .mockResolvedValueOnce(updated).mockRejectedValueOnce(new Error('offline'));
+  const service = createGatewayAccountService({ get, post: vi.fn(), patch: vi.fn() } as never);
+  const first = service.getImageCatalog();
+  const second = service.getImageCatalog();
+  expect(get).toHaveBeenCalledOnce();
+  finish(image);
+  await expect(Promise.all([first, second])).resolves.toEqual([image, image]);
+  await expect(service.getImageCatalog({ refresh: true })).resolves.toBe(updated);
+  expect(service.getCachedImageCatalog()).toBe(updated);
+  await expect(service.getImageCatalog({ refresh: true })).rejects.toThrow('offline');
+  expect(service.getCachedImageCatalog()).toBe(updated);
+  expect(get).toHaveBeenCalledTimes(3);
+});
 
 it('checks task models through the Daemon without changing global defaults', async () => {
   const client = new RuntimeClient({ baseUrl: 'http://localhost', fetchImpl: vi.fn(async () => Response.json({ costBearer: 'customer' })) });
@@ -13,6 +72,16 @@ it('checks task models through the Daemon without changing global defaults', asy
   await createGatewayAccountService(client).probeModel('video', 'vendor/video');
   expect(post).toHaveBeenCalledWith('/gateway/model/probe', { modality: 'video', model: 'vendor/video' });
   expect(patch).not.toHaveBeenCalled();
+});
+
+it('remembers a task model without changing the account model', async () => {
+  const client = new RuntimeClient({ baseUrl: 'http://localhost', fetchImpl: vi.fn(async () => Response.json(signedIn)) });
+  const patch = vi.spyOn(client, 'patch');
+  await createGatewayAccountService(client).rememberTaskModel('image-generation', 'image', 'vendor/image-2');
+  expect(patch).toHaveBeenCalledWith('/gateway/task-model', {
+    templateId: 'image-generation', modality: 'image', model: 'vendor/image-2'
+  });
+  expect(patch).not.toHaveBeenCalledWith('/gateway/model', expect.anything());
 });
 
 it('checks browser authorization through the shared Daemon and adds the host return destination', async () => {

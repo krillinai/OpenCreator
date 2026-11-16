@@ -131,6 +131,7 @@ export default function VideoTranslationResultWorkspace(props: {
   subtitleSaveError?: string;
   subtitleOnly?: boolean;
   subtitleDownloads?: Array<{ artifactId: string; label: string }>;
+  subtitleExportMenu?: { label: string; items: Array<{ id: string; label: string; onSelect(): void }> };
   activeTab: VideoTranslationResultTab;
   version: number;
   versions: VersionItem[];
@@ -254,7 +255,9 @@ export default function VideoTranslationResultWorkspace(props: {
   const draftVideoPreview = props.immersive && showLiveSubtitles;
   const canSwitchVideoPreview = requestedVideo !== undefined && requestedVideo.variant === activeSubtitleVariant
     && sourceSubtitleVideo !== undefined && sourceSubtitleVideo.artifactId !== requestedVideo.artifactId;
-  const videoPreviewVariant = draftVideoPreview ? props.editorSettings?.previewFormat ?? activeSubtitleVariant : activeSubtitleVariant;
+  const videoPreviewVariant = props.immersive && !generatedPreview
+    ? props.editorSettings?.previewFormat ?? activeSubtitleVariant
+    : activeSubtitleVariant;
   const sourceWidth = subtitleVideoSize.width <= 32 ? 1920 : subtitleVideoSize.width;
   const sourceHeight = subtitleVideoSize.height <= 32 ? 1080 : subtitleVideoSize.height;
   const convertedPreview = videoPreviewVariant === 'vertical' && sourceWidth > sourceHeight;
@@ -874,7 +877,7 @@ export default function VideoTranslationResultWorkspace(props: {
                 disabled={props.subtitleSavePending} onClick={() => props.workbench ? props.onBack?.() : props.onImmersiveChange?.(false)}>
                 <ArrowLeft size={17} />{props.workbench ? l('返回', 'Back') : l('返回项目', 'Back to project')}
               </button> : null}
-              <h2>{props.workbench ? props.subtitleOnly ? l('字幕翻译工作区', 'Subtitle translation workspace') : l('视频翻译工作区', 'Video translation workspace')
+              <h2>{props.workbench ? props.subtitleOnly ? l('字幕翻译', 'Subtitle Translation') : l('视频翻译', 'Video Translation')
                 : props.immersive ? l('字幕编辑', 'Subtitle editor') : l('字幕', 'Subtitles')}</h2>
               <p role={props.subtitleAutosave ? 'status' : undefined}>
                 {props.workbench ? props.targetLanguage : `${l('项目', 'Project')} V${props.version}`}
@@ -914,7 +917,15 @@ export default function VideoTranslationResultWorkspace(props: {
               </> : props.subtitleOnly && activeSubtitleOutput && props.onImmersiveChange ? <button ref={immersiveButtonRef} type="button" onClick={() => props.onImmersiveChange?.(true)}>
                 <Maximize2 size={15} />{l('深度编辑', 'Advanced editing')}
               </button> : null}
-              {props.immersive && !props.subtitleDownloads?.length && activeSubtitleOutput ? <button type="button" className="subtitle-editor-export"
+              {props.immersive && props.subtitleExportMenu && activeSubtitleOutput ? <details className="subtitle-download-menu">
+                <summary><Download size={15} aria-hidden="true" />{props.subtitleExportMenu.label}</summary>
+                <div>{props.subtitleExportMenu.items.map(item => <button key={item.id} type="button"
+                  disabled={hasSubtitleDrafts || props.subtitleSavePending} onClick={event => {
+                    event.currentTarget.closest('details')?.removeAttribute('open');
+                    item.onSelect();
+                  }}>{item.label}</button>)}</div>
+              </details> : null}
+              {props.immersive && !props.subtitleExportMenu && !props.subtitleDownloads?.length && activeSubtitleOutput ? <button type="button" className="subtitle-editor-export"
                 aria-label={props.workbench ? l('下载字幕', 'Download subtitles') : l('导出字幕', 'Export subtitles')}
                 title={props.workbench ? l('下载字幕', 'Download subtitles') : l('导出字幕', 'Export subtitles')} disabled={hasSubtitleDrafts || props.subtitleSavePending}
                 onClick={() => props.onExport('subtitles', activeSubtitleOutput.artifactId)}><Download size={15} /><span>{props.workbench ? l('下载字幕', 'Download subtitles') : l('导出字幕', 'Export subtitles')}</span></button> : null}

@@ -26,6 +26,8 @@ export default function CreatorToolShell(props: {
   onCancelTask?(): void;
   onResumeTask?(): void;
   taskControlPending?: 'canceling' | 'resuming';
+  embedded?: boolean;
+  showAgentPanel?: boolean;
   children: ReactNode;
   onBack(): void;
   onCommand?(command: string): string;
@@ -40,26 +42,34 @@ export default function CreatorToolShell(props: {
     prompt: suggestion
   }));
 
+  if (props.embedded) return <div className="creator-tool-embedded">{props.children}</div>;
+
+  const workspace = <section className="creator-workspace-main" aria-label={`${props.title} ${l('操作区', 'workspace')}`}>
+    <header className={`creator-workspace-header${props.titleIcon === undefined ? '' : ' has-title-icon'}${props.headerActions === undefined ? '' : ' has-actions'}`}>
+      <button type="button" onClick={props.onBack} aria-label={l('返回', 'Back')}>
+        <ArrowLeft size={18} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+      {props.titleIcon === undefined ? null : (
+        <span className="creator-workspace-title-icon" aria-hidden="true">{props.titleIcon}</span>
+      )}
+      <div>
+        <h1>{props.title}</h1>
+        <p>{props.subtitle}</p>
+      </div>
+      {props.headerActions === undefined ? null : <div className="creator-workspace-header-actions">{props.headerActions}</div>}
+    </header>
+    {props.showAgentPanel === false && props.currentIssue ? <div className="creator-workspace-local-issue creator-collaboration-issue">
+      <p>{props.currentIssue}</p>
+      {props.quickActions?.filter(action => action.kind === 'action').map(action => <button type="button" key={action.id} disabled={action.disabled} onClick={action.onAction}>{action.label}</button>)}
+    </div> : null}
+    <div className={`creator-workspace-content${props.contentClassName ? ` ${props.contentClassName}` : ''}`}>{props.children}</div>
+  </section>;
+
   return (
     <main className={`creator-workspace-page${props.pageClassName ? ` ${props.pageClassName}` : ''}`}>
-      <CreatorResizableLayout
+      {props.showAgentPanel === false ? workspace : <CreatorResizableLayout
         className="creator-workspace-layout"
-        workspace={<section className="creator-workspace-main" aria-label={`${props.title} ${l('操作区', 'workspace')}`}>
-          <header className={`creator-workspace-header${props.titleIcon === undefined ? '' : ' has-title-icon'}${props.headerActions === undefined ? '' : ' has-actions'}`}>
-            <button type="button" onClick={props.onBack} aria-label={l('返回', 'Back')}>
-              <ArrowLeft size={18} strokeWidth={1.8} aria-hidden="true" />
-            </button>
-            {props.titleIcon === undefined ? null : (
-              <span className="creator-workspace-title-icon" aria-hidden="true">{props.titleIcon}</span>
-            )}
-            <div>
-              <h1>{props.title}</h1>
-              <p>{props.subtitle}</p>
-            </div>
-            {props.headerActions === undefined ? null : <div className="creator-workspace-header-actions">{props.headerActions}</div>}
-          </header>
-          <div className={`creator-workspace-content${props.contentClassName ? ` ${props.contentClassName}` : ''}`}>{props.children}</div>
-        </section>}
+        workspace={workspace}
         agentPanel={<CreatorCollaborationPanel
           adapter={adapter}
           stepLabel={props.stepLabel ?? props.title}
@@ -72,7 +82,7 @@ export default function CreatorToolShell(props: {
           onResumeTask={props.onResumeTask}
           taskControlPending={props.taskControlPending}
         />}
-      />
+      />}
     </main>
   );
 }

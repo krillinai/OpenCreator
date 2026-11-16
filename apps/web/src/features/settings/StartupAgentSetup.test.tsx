@@ -60,6 +60,8 @@ describe('StartupAgentSetup', () => {
     const englishSelector = screen.getByRole('combobox', { name: 'Display language' });
     expect(englishSelector).toHaveAttribute('data-value', 'en-US');
     expect(englishSelector).toHaveValue('English');
+    const localModeButton = screen.getByRole('button', { name: 'Local mode' });
+    expect(englishSelector.compareDocumentPosition(localModeButton) & Node.DOCUMENT_POSITION_PRECEDING).not.toBe(0);
 
     await user.click(englishSelector);
     await user.click(screen.getByRole('option', { name: /Chinese \(Simplified\)/ }));

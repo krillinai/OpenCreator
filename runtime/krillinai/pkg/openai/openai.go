@@ -25,6 +25,14 @@ func (c *Client) ChatCompletionContext(ctx context.Context, query string) (strin
 }
 
 func (c *Client) ChatCompletionContextWithMaxTokens(ctx context.Context, query string, maxTokens int) (string, error) {
+	return c.chatCompletionContextWithSystemAndMaxTokens(ctx, "You are an assistant that helps with subtitle translation.", query, maxTokens)
+}
+
+func (c *Client) ChatCompletionContextWithSystem(ctx context.Context, systemPrompt, query string) (string, error) {
+	return c.chatCompletionContextWithSystemAndMaxTokens(ctx, systemPrompt, query, 8192)
+}
+
+func (c *Client) chatCompletionContextWithSystemAndMaxTokens(ctx context.Context, systemPrompt, query string, maxTokens int) (string, error) {
 	if maxTokens < 1 || maxTokens > 8192 {
 		return "", fmt.Errorf("llm_translation_invalid_budget: output token budget must be between 1 and 8192")
 	}
@@ -40,7 +48,7 @@ func (c *Client) ChatCompletionContextWithMaxTokens(ctx context.Context, query s
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,
-				Content: "You are an assistant that helps with subtitle translation.",
+				Content: systemPrompt,
 			},
 			{
 				Role:    openai.ChatMessageRoleUser,

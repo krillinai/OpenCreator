@@ -323,6 +323,14 @@ func TestGenerateSubtitlesPreservesTranscriptionClassification(t *testing.T) {
 	}
 }
 
+func TestSubtitleFailureResponsePreservesHTTPDiagnostics(t *testing.T) {
+	cause := &whisper.TranscriptionError{Code: "audio_transcription_api_failed", Message: "private response", HTTPStatus: 503, UpstreamCode: "server_error", RequestID: "ocreq_" + strings.Repeat("b", 48)}
+	response := subtitleFailureResponse(SubtitleRequest{}, nil, ErrorKindRetryable, cause.Code, fmt.Errorf("segment 1: %w", cause))
+	if response.Error == nil || response.Error.Code != cause.Code || response.Error.HTTPStatus != 503 || response.Error.UpstreamCode != "server_error" || response.Error.RequestID != cause.RequestID {
+		t.Fatalf("diagnostics = %+v", response.Error)
+	}
+}
+
 func TestGenerateSubtitlesPassesSubtitleStyleToStepParam(t *testing.T) {
 	dir := t.TempDir()
 	fake := &fakeStageService{}

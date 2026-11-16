@@ -13,9 +13,10 @@ import {
   createLegacyImageGenerationTemplate
 } from './image-generation.js';
 import { createVideoGenerationTemplate } from './video-generation.js';
-import { createAutoClipTemplate, createLegacyAutoClipTemplate } from './auto-clip.js';
+import { createAutoClipTemplate, createAutoClipTemplateV2, createLegacyAutoClipTemplate } from './auto-clip.js';
 import { createStickmanVideoTemplate } from './stickman-video.js';
 import { createSmartDubbingTemplate } from './smart-dubbing.js';
+import { createTranscriptionTemplate } from './transcription.js';
 import { createXiaohongshuPostTemplate } from './xiaohongshu-post.js';
 import { createShortVideoScriptTemplate } from './short-video-script.js';
 import { createWechatArticleTemplate } from './wechat-article.js';
@@ -26,6 +27,7 @@ import type {
 
 export {
   createAutoClipTemplate,
+  createAutoClipTemplateV2,
   createLegacyAutoClipTemplate,
   createCoverTemplate,
   createLegacyCoverTemplate,
@@ -34,6 +36,7 @@ export {
   createVideoGenerationTemplate,
   createStickmanVideoTemplate,
   createSmartDubbingTemplate,
+  createTranscriptionTemplate,
   createXiaohongshuPostTemplate,
   createShortVideoScriptTemplate,
   createWechatArticleTemplate,
@@ -54,11 +57,13 @@ export function createDefaultCreatorTemplateRegistry(): CreatorTemplateRegistry 
     createLegacyImageGenerationTemplate(),
     createImageGenerationTemplate(),
     createSmartDubbingTemplate(),
+    createTranscriptionTemplate(),
     createXiaohongshuPostTemplate(),
     createVideoGenerationTemplate(),
     createShortVideoScriptTemplate(),
     createWechatArticleTemplate(),
     createLegacyAutoClipTemplate(),
+    createAutoClipTemplateV2(),
     createAutoClipTemplate(),
     createStickmanVideoTemplate()
   ]);

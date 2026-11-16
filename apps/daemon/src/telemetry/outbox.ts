@@ -69,6 +69,12 @@ export function createCreatorTelemetryOutbox(
         0
       ))();
     },
+    clear(): void {
+      db.prepare('DELETE FROM telemetry_outbox').run();
+    },
+    dropExpired(cutoff: string): number {
+      return db.prepare('DELETE FROM telemetry_outbox WHERE created_at < ?').run(cutoff).changes;
+    },
     count(): number {
       return (db.prepare('SELECT COUNT(*) AS count FROM telemetry_outbox').get() as { count: number }).count;
     }

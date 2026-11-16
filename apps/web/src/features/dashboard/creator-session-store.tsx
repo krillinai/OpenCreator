@@ -49,7 +49,7 @@ export type CreatorSessionContextValue = {
   runPreflight(stageId: string, options?: { inputResultVersion?: number }): Promise<CreatorPreflightResponse>;
   updateDraft(
     patch: Record<string, CreatorJson>,
-    options?: { semantic?: boolean; persist?: boolean }
+    options?: { semantic?: boolean; persist?: boolean; userEdited?: boolean }
   ): void;
   flush(): Promise<void>;
   clearError(): void;
@@ -222,7 +222,7 @@ export function CreatorSessionProvider(props: {
   dirtyRef.current = dirtyFields;
   localIssuesRef.current = localIssues;
 
-  const ensurePersistedJob = useCallback((): Promise<CreatorJob> => {
+  const ensurePersistedJob = useCallback((userEdited = false): Promise<CreatorJob> => {
     if (!isPendingCreatorJob(confirmedRef.current)) {
       return Promise.resolve(confirmedRef.current);
     }
@@ -232,7 +232,11 @@ export function CreatorSessionProvider(props: {
     }
 
     const capturedDraft = { ...draftRef.current };
-    const creationState = { ...confirmedRef.current.state, ...capturedDraft };
+    const creationState = {
+      ...confirmedRef.current.state,
+      ...capturedDraft,
+      __creatorUserEdited: userEdited || confirmedRef.current.state.__creatorUserEdited === true || capturedDraft.__creatorUserEdited === true
+    };
     const work = props.ensureJob(creationState).then(next => {
       confirmedRef.current = next;
       setConfirmedJob(next);
@@ -339,7 +343,7 @@ export function CreatorSessionProvider(props: {
 
   const updateDraft = useCallback((
     patch: Record<string, CreatorJson>,
-    options: { semantic?: boolean; persist?: boolean } = {}
+    options: { semantic?: boolean; persist?: boolean; userEdited?: boolean } = {}
   ) => {
     const currentState = { ...confirmedRef.current.state, ...draftRef.current };
     // Multiple model fields can initialize in the same render. Merge their
@@ -356,12 +360,15 @@ export function CreatorSessionProvider(props: {
     const changedFields = Object.keys(changedPatch);
     if (changedFields.length === 0) return;
 
-    const nextDraft = { ...draftRef.current, ...changedPatch };
+    const persistedPatch = options.persist === false || options.userEdited === false
+      ? changedPatch
+      : { ...changedPatch, __creatorUserEdited: true };
+    const nextDraft = { ...draftRef.current, ...persistedPatch };
     draftRef.current = nextDraft;
     setDraft(nextDraft);
     if (options.persist === false) return;
 
-    const nextDirty = new Set([...dirtyRef.current, ...changedFields]);
+    const nextDirty = new Set([...dirtyRef.current, ...Object.keys(persistedPatch)]);
     dirtyRef.current = nextDirty;
     setDirtyFields(nextDirty);
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
@@ -899,7 +906,7 @@ export function CreatorSessionProvider(props: {
     let requestRevision = confirmedRef.current.revision;
     try {
       await flush();
-      await ensurePersistedJob();
+      await ensurePersistedJob(true);
       requestRevision = confirmedRef.current.revision;
       const clientMessageId = createClientMessageId();
       const start = props.service.startAgentTurn ?? props.service.runAgentTurn;
@@ -1123,8 +1130,10 @@ function mergeMonotonicStageProgress(incoming: CreatorStageRun, current: Creator
   const incomingPercent = incoming.progress.percent;
   const currentPhasePercent = current.progress.phasePercent;
   const incomingPhasePercent = incoming.progress.phasePercent;
+  const unknownVideoProviderProgress = incoming.executor === 'video' && incomingPercent === null
+    && (incoming.progress.phase === 'queued' || incoming.progress.phase === 'generating');
   const keepPercent = typeof currentPercent === 'number' && Number.isFinite(currentPercent)
-    && (incomingPercent === null
+    && ((incomingPercent === null && !unknownVideoProviderProgress)
       || (typeof incomingPercent === 'number' && Number.isFinite(incomingPercent) && incomingPercent < currentPercent));
   const keepPhasePercent = current.progress.phase === 'normalizing_media'
     && incoming.progress.phase === 'normalizing_media'

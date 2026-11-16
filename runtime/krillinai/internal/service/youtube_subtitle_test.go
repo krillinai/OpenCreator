@@ -183,6 +183,17 @@ func TestYouTubeSubtitleCommandArgsUsesResolvedTrack(t *testing.T) {
 	}
 }
 
+func TestYouTubeSubtitleUsesAppProxy(t *testing.T) {
+	previous := config.Conf.App.Proxy
+	config.Conf.App.Proxy = "http://127.0.0.1:7897"
+	t.Cleanup(func() { config.Conf.App.Proxy = previous })
+
+	args := appendYouTubeAccessArgs([]string{"--skip-download"})
+	if !strings.Contains(strings.Join(args, "\n"), "--proxy\n"+config.Conf.App.Proxy) {
+		t.Fatalf("YouTube subtitle args = %v, want app proxy", args)
+	}
+}
+
 func TestDownloadYouTubeSubtitleAutoIntegration(t *testing.T) {
 	if os.Getenv("KRILLIN_RUN_YOUTUBE_SUBTITLE_AUTO_INTEGRATION") != "1" {
 		t.Skip("set KRILLIN_RUN_YOUTUBE_SUBTITLE_AUTO_INTEGRATION=1 to run the YouTube auto-language integration test")

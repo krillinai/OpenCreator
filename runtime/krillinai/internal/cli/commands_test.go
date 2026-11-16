@@ -93,6 +93,25 @@ func TestParseSubtitleSourceOnly(t *testing.T) {
 	}
 }
 
+func TestParseClipCommand(t *testing.T) {
+	cmd, err := Parse([]string{"clip", "--input", "https://youtu.be/demo", "--workdir", "job", "--count", "4", "--min-duration-sec", "60", "--max-duration-sec", "90", "--defer-transcription", "--dry-run"})
+	if err != nil || cmd.Name != "clip" || cmd.Clip.Count != 4 || !cmd.Clip.DeferTranscription || !cmd.DryRun {
+		t.Fatalf("Parse clip: command=%+v error=%v", cmd, err)
+	}
+	if response := Execute(context.Background(), nil, cmd); !response.OK || response.Stage != pipeline.StageClip {
+		t.Fatalf("dry run response=%+v", response)
+	}
+	for _, args := range [][]string{
+		{"clip", "--input", "video.mp4", "--workdir", "job", "--count", "21"},
+		{"clip", "--input", "video.mp4", "--workdir", "job", "--min-duration-sec", "120", "--max-duration-sec", "60"},
+		{"clip", "--input", "video.mp4", "--workdir", "job", "--caption-source", "platform"},
+	} {
+		if _, err := Parse(args); err == nil {
+			t.Fatalf("expected invalid clip command: %v", args)
+		}
+	}
+}
+
 func TestParseSubtitleCommandCanPutTargetLanguageOnBottom(t *testing.T) {
 	cmd, err := Parse([]string{
 		"subtitle",

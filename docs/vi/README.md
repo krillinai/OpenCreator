@@ -595,7 +595,7 @@ Phần lớn người dùng không cần biến môi trường. Dùng khi cần 
 | Biến môi trường | Mặc định | Mục đích |
 | --- | --- | --- |
 | `OPENCREATOR_DATA_DIR` | `.runtime` | Cơ sở dữ liệu OpenCreator, Run, tệp đính kèm và không gian được quản lý |
-| `OPENCREATOR_GATEWAY_ORIGIN` | `https://www.open-creator.ai` | Gateway đăng nhập, đăng ký, tín dụng và dịch vụ mô hình chính thức; ghi đè để dùng Gateway cục bộ |
+| `OPENCREATOR_GATEWAY_ORIGIN` | `https://open-creator.ai` | Gateway đăng nhập, đăng ký, tín dụng và dịch vụ mô hình chính thức; ghi đè để dùng Gateway cục bộ |
 | `OPENCREATOR_CODEX_BIN` | `codex` | Đường dẫn tệp thực thi Codex CLI |
 | `CODEX_HOME` | `~/.codex` | Nguồn chuẩn cho phiên Codex, cấu hình, Skills, MCP và Profiles |
 | `OPENCREATOR_DEFAULT_CWD` | Thư mục làm việc hiện tại | Thư mục làm việc mặc định của daemon |

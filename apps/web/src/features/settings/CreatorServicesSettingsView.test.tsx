@@ -610,6 +610,21 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.getByLabelText('默认模型')).toHaveValue('veo-3.1-generate-preview');
   });
 
+  it('loads and saves local video settings independently of the signed-in service', async () => {
+    const service = createService();
+    const local = createDefaultCreatorServicesConfig();
+    local.video.provider = 'veo';
+    service.getLocalVideoConfig = vi.fn(async () => ({ config: local, configuredCredentials: ['video.veo.apiKey' as const] }));
+    service.saveLocalVideoConfig = vi.fn(async video => ({ config: { ...local, video }, configuredCredentials: ['video.veo.apiKey' as const] }));
+    render(<LanguageProvider initialPreference="zh-CN"><CreatorServicesSettingsView connected service={service} initialSection="video" /></LanguageProvider>);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '服务商' })).toHaveTextContent('Veo'));
+    await userEvent.click(screen.getByRole('combobox', { name: '服务商' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Seedance' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存配置' }));
+    await waitFor(() => expect(service.saveLocalVideoConfig).toHaveBeenCalledWith(expect.objectContaining({ provider: 'seedance' }), []));
+    expect(service.saveConfig).not.toHaveBeenCalled();
+  });
+
   it('uses local Codex image generation by default without configuration fields', async () => {
     const user = userEvent.setup();
     render(

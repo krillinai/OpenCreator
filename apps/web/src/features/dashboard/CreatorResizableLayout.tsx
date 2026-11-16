@@ -14,6 +14,7 @@ import { useOptionalCreatorSession } from './creator-session-store.js';
 
 const WORKSPACE_MIN_WIDTH = 390;
 const AGENT_MIN_WIDTH = 280;
+const DEFAULT_AGENT_WIDTH = 320;
 const RESIZE_HANDLE_WIDTH = 7;
 const RESIZE_KEY_STEP = 32;
 
@@ -21,6 +22,8 @@ export default function CreatorResizableLayout(props: {
   workspace: ReactNode;
   agentPanel: ReactNode;
   agentPanelRequest?: { key: number; stageRunId?: string };
+  showAgentPanel?: boolean;
+  autoRevealIssues?: boolean;
   className?: string;
 }) {
   const l = useLocalizedCopy();
@@ -32,8 +35,12 @@ export default function CreatorResizableLayout(props: {
   const latestIssueId = session?.issues.filter(issue => issue.status === 'open').at(-1)?.id;
 
   useEffect(() => {
-    if (latestIssueId !== undefined) setMobilePane('agent');
-  }, [latestIssueId]);
+    if (props.autoRevealIssues === false) setMobilePane('workspace');
+  }, [props.autoRevealIssues]);
+
+  useEffect(() => {
+    if (props.autoRevealIssues !== false && latestIssueId !== undefined) setMobilePane('agent');
+  }, [latestIssueId, props.autoRevealIssues]);
 
   useLayoutEffect(() => {
     if (props.agentPanelRequest !== undefined) setMobilePane('agent');
@@ -55,8 +62,12 @@ export default function CreatorResizableLayout(props: {
   function widthBounds() {
     const rect = layoutRef.current?.getBoundingClientRect();
     const fallbackWidth = 900;
+    const configuredWidth = layoutRef.current
+      ? Number.parseFloat(getComputedStyle(layoutRef.current).getPropertyValue('--creator-agent-pane-width'))
+      : NaN;
+    const defaultAgentWidth = Number.isFinite(configuredWidth) ? configuredWidth : DEFAULT_AGENT_WIDTH;
     return {
-      fallback: rect ? Math.round(rect.width * 0.68) : fallbackWidth,
+      fallback: rect ? Math.round(rect.width - defaultAgentWidth - RESIZE_HANDLE_WIDTH) : fallbackWidth,
       max: rect
         ? Math.max(WORKSPACE_MIN_WIDTH, rect.width - AGENT_MIN_WIDTH - RESIZE_HANDLE_WIDTH)
         : fallbackWidth
@@ -97,20 +108,22 @@ export default function CreatorResizableLayout(props: {
   const style = workspaceWidth === undefined
     ? undefined
     : ({ '--creator-workspace-pane-width': `${workspaceWidth}px` } as CSSProperties);
+  const showAgentPanel = props.showAgentPanel !== false;
 
   return (
     <div
       className={`creator-resizable-layout${props.className ? ` ${props.className}` : ''}`}
       ref={layoutRef}
       style={style}
+      data-agent-panel={showAgentPanel ? undefined : 'hidden'}
       data-mobile-pane={mobilePane}
     >
-      <div className="creator-mobile-tabs" role="tablist" aria-label={l('创作视图', 'Creator views')}>
+      <div className="creator-mobile-tabs" role="tablist" aria-label={l('创作视图', 'Creator views')} hidden={!showAgentPanel}>
         <button type="button" role="tab" aria-selected={mobilePane === 'workspace'} onClick={() => setMobilePane('workspace')}>{l('创作', 'Workspace')}</button>
         <button type="button" role="tab" aria-selected={mobilePane === 'agent'} onClick={() => setMobilePane('agent')}>Agent</button>
       </div>
       {props.workspace}
-      <div
+      {showAgentPanel ? <div
         className="pane-resize-handle creator-pane-resize"
         role="separator"
         aria-label={l('调整操作区和对话区宽度', 'Resize workspace and conversation panels')}
@@ -125,8 +138,8 @@ export default function CreatorResizableLayout(props: {
         onDoubleClick={() => setWorkspaceWidth(undefined)}
         onMouseDown={handleMouseDown}
         onKeyDown={handleKeyDown}
-      />
-      {props.agentPanel}
+      /> : null}
+      {showAgentPanel ? props.agentPanel : null}
     </div>
   );
 }

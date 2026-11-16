@@ -182,3 +182,16 @@ it('accepts public gateway metadata while retaining the legacy internal protocol
   expect(await client.bootstrap('device-access')).toMatchObject({ transport: 'gateway', supplier: 'chatanywhere' });
   expect(fetcher.mock.calls[0]?.[0]).toContain('publicMetadata=1');
 });
+
+it('accepts image resolution labels alongside pixel video sizes in gateway bootstrap', async () => {
+  const models = [
+    { id: 'deepseek-flash', modality: 'text', capabilities: ['chat', 'responses'] },
+    { id: 'seedream', modality: 'image', capabilities: ['generate'], sizes: ['1K', '2K', '4K'] },
+    { id: 'seedance', modality: 'video', capabilities: ['generate'], sizes: ['1280x720'] }
+  ];
+  const value = { schemaVersion: 3, transport: 'gateway', keyRotation: false, account: { id: 'a', email: 'a@test', verified: true }, keyVersion: 'gateway-v1', bindingVersion: 'a:gateway:v1', baseUrl: 'https://gateway.example/v1', models, defaults: { text: 'deepseek-flash' } };
+  const client = createGatewayClient('https://gateway.example', vi.fn<typeof fetch>(async () => Response.json(value)));
+
+  expect((await client.bootstrap('device-access')).models).toMatchObject(models);
+  expect(catalogSchema.safeParse({ models: [{ ...models[1], sizes: ['4K?'] }] }).success).toBe(false);
+});

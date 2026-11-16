@@ -34,7 +34,8 @@ export async function registerCreatorServicesRoutes(
   onConfigurationChanged?: () => Promise<void> | void,
   readCodexImageStatus?: () => Promise<CodexImageStatus>,
   readCodexModelStatus?: () => Promise<CodexProviderConfig>,
-  networkStore: CreatorServicesConfigStore = store
+  networkStore: CreatorServicesConfigStore = store,
+  localStore: CreatorServicesConfigStore = networkStore
 ): Promise<void> {
   server.get('/creator-services/network', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store');
@@ -91,6 +92,36 @@ export async function registerCreatorServicesRoutes(
       }
       return presentCreatorServicesConfig(config);
     } catch (error) {
+      return sendStoreError(reply, error);
+    }
+  });
+
+  server.get('/creator-services/video/local', async (_request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    try { return presentCreatorServicesConfig(await localStore.read()); }
+    catch (error) { return sendStoreError(reply, error); }
+  });
+
+  server.patch<{ Body: unknown }>('/creator-services/video/local', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const body = request.body;
+    if (typeof body !== 'object' || body === null || Array.isArray(body)
+      || !Object.hasOwn(body, 'video') || Object.keys(body).some(key => !['video', 'clearCredentials'].includes(key))) {
+      return reply.code(400).send(apiError('VALIDATION_FAILED', 'Invalid local video settings'));
+    }
+    const update = body as { video: unknown; clearCredentials?: unknown };
+    const clear = update.clearCredentials ?? [];
+    if (!Array.isArray(clear) || clear.some(field => typeof field !== 'string'
+      || !field.startsWith('video.') || !(creatorCredentialPaths as readonly string[]).includes(field))) {
+      return reply.code(400).send(apiError('VALIDATION_FAILED', 'Invalid video credential fields'));
+    }
+    try {
+      const current = await localStore.read();
+      const next = parseCreatorServicesConfig({ ...current, video: update.video });
+      const saved = await localStore.write(retainCreatorServicesCredentials(next, current, clear as CreatorServicesCredentialField[]));
+      return presentCreatorServicesConfig(saved);
+    } catch (error) {
+      if (error instanceof ZodError) return reply.code(400).send(apiError('VALIDATION_FAILED', 'Invalid local video settings'));
       return sendStoreError(reply, error);
     }
   });

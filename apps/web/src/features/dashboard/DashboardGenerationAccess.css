@@ -1,0 +1,71 @@
+.dashboard-generation-access-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #000a;
+  backdrop-filter: blur(8px);
+}
+
+.dashboard-generation-access-dialog {
+  position: relative;
+  width: min(440px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 28px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 28px 80px #0009;
+}
+
+.dashboard-generation-access-dialog > header {
+  padding-right: 28px;
+  margin-bottom: 22px;
+}
+
+.dashboard-generation-access-dialog > header h2 {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.dashboard-generation-access-dialog > header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.dashboard-generation-access-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dashboard-generation-access-close:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+@media (max-width: 520px) {
+  .dashboard-generation-access-backdrop {
+    padding: 16px;
+  }
+
+  .dashboard-generation-access-dialog {
+    padding: 24px 20px;
+  }
+}

@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"krillin-ai/internal/service"
 	"krillin-ai/internal/types"
 	pkgimage "krillin-ai/pkg/image"
@@ -30,6 +31,26 @@ type ServiceAdapter struct {
 
 func NewServiceAdapter(svc *service.Service) *ServiceAdapter {
 	return &ServiceAdapter{svc: svc}
+}
+
+func (a *ServiceAdapter) AnalyzeClipWindow(ctx context.Context, prompt string) (string, error) {
+	if a.svc.ChatCompleter == nil {
+		return "", errors.New("text model is not configured")
+	}
+	if contextual, ok := a.svc.ChatCompleter.(interface {
+		ChatCompletionContextWithSystem(context.Context, string, string) (string, error)
+	}); ok {
+		return contextual.ChatCompletionContextWithSystem(ctx, "You are a short-video editor. Select self-contained, publishable clips from source-language subtitles. Return only the requested JSON.", prompt)
+	}
+	if contextual, ok := a.svc.ChatCompleter.(interface {
+		ChatCompletionContext(context.Context, string) (string, error)
+	}); ok {
+		return contextual.ChatCompletionContext(ctx, prompt)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return a.svc.ChatCompleter.ChatCompletion(prompt)
 }
 
 func (a *ServiceAdapter) PrepareMedia(ctx context.Context, p *types.SubtitleTaskStepParam) error {
