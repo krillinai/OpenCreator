@@ -22,6 +22,8 @@
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![AtomGit G-Star](https://img.shields.io/badge/AtomGit-G--Star-DA203E?style=flat)](https://atomgit.com/krillinai/OpenCreator)
 [![X](https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white)](https://x.com/KrillinAIJunxi)
+[![QQ Group](https://img.shields.io/badge/QQ-Join%20Group-12B7F5?logo=qq&logoColor=white)](https://qm.qq.com/q/kc2cNpQ42A)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/3GwBGsjs8)
 
 [Highlights](#project-highlights) · [Creator Tools](#creator-tools) · [Skills](#skills) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Docs](#documentation) · [Community](#community)
 
@@ -29,7 +31,7 @@
 
 ![OpenCreator Agent workspace](./docs/images/opencreator-home-en.png)
 
-## Project Overview
+## Project Overview <a href="https://www.open-creator.ai/"><img align="right" src="https://img.shields.io/badge/Without%20A%20Key%3F-Try%20Our%20Models-0284C7" alt="Without A Key? Try Our Models" /></a>
 
 OpenCreator is built for individuals and teams who want to keep creative and development work running locally. Instead of reimplementing an Agent loop, it uses Codex CLI as the execution engine and adds a stable local Runtime, a visual workspace, and a Desktop host around it.
 
