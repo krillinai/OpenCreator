@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
+import { createRequestDeadline } from '../../runtime/request-deadline.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { isMeaningfulCreatorJob, ProjectCoverImage, projectCover, youtubeThumbnailUrls } from '../projects/ProjectsPage.js';
@@ -67,23 +68,42 @@ export default function DashboardGenerationHistory(props: {
   const [jobPendingDeletion, setJobPendingDeletion] = useState<CreatorJob>();
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const loadControllerRef = useRef<AbortController>();
   const load = useCallback(async () => {
+    if (loadControllerRef.current !== undefined) return;
+    const controller = new AbortController();
+    loadControllerRef.current = controller;
+    const deadline = createRequestDeadline(15_000, controller.signal);
     try {
-      const response = await props.service.listJobs(props.projectId);
+      const response = await props.service.listJobs(props.projectId, { signal: deadline.signal });
+      if (controller.signal.aborted) return;
+      deadline.signal.throwIfAborted();
       setJobs(response.jobs);
       setError('');
     } catch {
-      setError(l('生成记录加载失败，请稍后重试。', 'Could not load generation history. Try again later.'));
+      if (!controller.signal.aborted) {
+        setError(l('生成记录加载失败，请稍后重试。', 'Could not load generation history. Try again later.'));
+      }
     } finally {
-      setLoading(false);
+      deadline.dispose();
+      if (loadControllerRef.current === controller) {
+        loadControllerRef.current = undefined;
+        setLoading(false);
+      }
     }
   }, [l, props.projectId, props.service]);
 
   useEffect(() => {
+    setJobs([]);
+    setError('');
     setLoading(true);
     void load();
     const timer = window.setInterval(() => void load(), 5000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      loadControllerRef.current?.abort();
+      loadControllerRef.current = undefined;
+    };
   }, [load]);
 
   useEffect(() => {

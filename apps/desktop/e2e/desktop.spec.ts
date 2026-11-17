@@ -1628,6 +1628,56 @@ test('@package-smoke 关闭后隐藏保留本地服务，重新打开后可以�
   }
 });
 
+test('@package-smoke 无代理的视频下载事件流反复取消后仍能加载生成历史', async () => {
+  const fixture = await launchPlatformProbeDesktop('success');
+  try {
+    await waitForWorkspace(fixture.page);
+    const projects = await runtimeRequest<{ projects: Array<{ id: string; name: string }> }>(
+      fixture.page, 'GET', '/projects?status=all'
+    );
+    const projectId = projects.body.projects.find(project => project.name === 'Default project')!.id;
+    const created = await runtimeRequest<{ job: { id: string } }>(fixture.page, 'POST', '/creator/jobs', {
+      projectId,
+      templateId: 'video-download',
+      state: { sourceUrl: 'https://www.youtube.com/watch?v=bzLvyhNnpeo' }
+    });
+    expect(created.status).toBe(201);
+    // A draft is sufficient: the reported hang happens before a download stage
+    // starts, and local history must stay usable regardless of source connectivity.
+    for (const cancelReader of [false, true]) {
+      const completed = await fixture.page.evaluate(async ({ jobId, cancelReader }) => {
+        for (let i = 0; i < 20; i++) {
+          const controller = new AbortController();
+          const response = await fetch(`/.opencreator/runtime/creator/jobs/${jobId}/events`, {
+            signal: controller.signal
+          });
+          const reader = response.body!.getReader();
+          await reader.read();
+          if (cancelReader) await reader.cancel();
+          controller.abort();
+          const health = await fetch('/.opencreator/runtime/healthz', { signal: AbortSignal.timeout(2_000) });
+          if (!health.ok) throw new Error('Runtime health failed after cancelling SSE');
+          await health.json();
+        }
+        return 20;
+      }, { jobId: created.body.job.id, cancelReader });
+      expect(completed).toBe(20);
+    }
+    const history = await runtimeRequest<{ jobs: Array<{ id: string }> }>(
+      fixture.page, 'GET', `/creator/jobs?projectId=${encodeURIComponent(projectId)}`
+    );
+    expect(history.status).toBe(200);
+    expect(history.body.jobs.some(job => job.id === created.body.job.id)).toBe(true);
+    await navigateToAppRoute(fixture.page, '#/projects');
+    const historyPage = fixture.page.locator('.dashboard-generation-history-page');
+    await expect(historyPage).toBeVisible();
+    await expect(historyPage.getByText('正在加载生成记录', { exact: true })).toHaveCount(0);
+    await expect(historyPage.getByRole('alert')).toHaveCount(0);
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
 test('@package-smoke 创作模块连接内嵌 Runtime 并使用默认项目', async ({}, testInfo) => {
   const fixture = await launchPackagedDesktop('success');
   try {

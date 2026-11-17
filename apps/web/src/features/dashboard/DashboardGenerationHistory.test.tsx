@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CreatorArtifact, CreatorJob } from '@opencreator/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
@@ -19,11 +19,101 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   if (createObjectURLDescriptor) Object.defineProperty(URL, 'createObjectURL', createObjectURLDescriptor);
   if (revokeObjectURLDescriptor) Object.defineProperty(URL, 'revokeObjectURL', revokeObjectURLDescriptor);
 });
 
 describe('DashboardGenerationHistory', () => {
+  it.each([
+    ['zh-CN', '生成记录加载失败，请稍后重试。', '重试'],
+    ['en-US', 'Could not load generation history. Try again later.', 'Retry']
+  ] as const)('times out a stalled history request and allows retry in %s', async (language, error, retry) => {
+    vi.useFakeTimers();
+    const listJobs = vi.fn((_projectId?: string, options?: { signal?: AbortSignal }) =>
+      new Promise<{ jobs: CreatorJob[] }>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+      }));
+    const view = render(<LanguageProvider initialPreference={language}><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs, openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(listJobs).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(5_000); });
+    expect(listJobs.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(screen.getByRole('alert')).toHaveTextContent(error);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    listJobs.mockResolvedValueOnce({ jobs: [] });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: retry })); });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    view.unmount();
+  });
+
+  it('cancels the previous project request and ignores its late response', async () => {
+    let finishPrevious!: (response: { jobs: CreatorJob[] }) => void;
+    const listJobs = vi.fn((_projectId?: string, _options?: { signal?: AbortSignal }) =>
+      Promise.resolve({ jobs: [generationJobs()[1]!] }))
+      .mockImplementationOnce(() => new Promise(resolve => { finishPrevious = resolve; }));
+    const service = { listJobs, openArtifact: vi.fn(async () => new Response(new Blob(['video']))) };
+    const view = render(<DashboardGenerationHistory
+      projectId="project_1" service={service} onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    />);
+
+    view.rerender(<DashboardGenerationHistory
+      projectId="project_2" service={service} onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    />);
+    expect(await screen.findByText(/city\.mp4/)).toBeInTheDocument();
+    await act(async () => { finishPrevious({ jobs: [generationJobs()[0]!] }); });
+
+    expect(listJobs.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(screen.getByText(/city\.mp4/)).toBeInTheDocument();
+    expect(screen.queryByText(/product\.png/)).not.toBeInTheDocument();
+    const currentSignal = listJobs.mock.calls[1]?.[1]?.signal;
+    expect(currentSignal?.aborted).toBe(false);
+    view.unmount();
+    expect(currentSignal?.aborted).toBe(false);
+  });
+
+  it('aborts an in-flight history request on unmount', () => {
+    const listJobs = vi.fn((_projectId?: string, options?: { signal?: AbortSignal }) =>
+      new Promise<{ jobs: CreatorJob[] }>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+      }));
+    const view = render(<DashboardGenerationHistory
+      projectId="project_1" service={{ listJobs, openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    />);
+
+    view.unmount();
+
+    expect(listJobs.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  it('keeps loaded history visible when a background refresh fails', async () => {
+    vi.useFakeTimers();
+    const listJobs = vi.fn(async () => ({ jobs: generationJobs() }))
+      .mockResolvedValueOnce({ jobs: generationJobs() }).mockRejectedValue(new Error('offline'));
+    const view = render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs, openArtifact: vi.fn(async () => new Response(new Blob(['media']))) }}
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    />);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(screen.getByText(/product\.png/)).toBeInTheDocument();
+
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('生成记录加载失败，请稍后重试。');
+    expect(screen.getByText(/product\.png/)).toBeInTheDocument();
+    expect(screen.getByText(/city\.mp4/)).toBeInTheDocument();
+    view.unmount();
+  });
+
   it('maps creator entries to their generation type and defaults to all', () => {
     expect(generationHistoryTypeForWorkspace('video-translation')).toBe('video');
     expect(generationHistoryTypeForWorkspace('image-generation')).toBe('image');

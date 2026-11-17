@@ -149,7 +149,10 @@ describe('Desktop protocol network lifecycle', () => {
   });
 
   it('releases requests when the renderer cancels a response stream', async () => {
-    const cancel = vi.fn();
+    let abortedBeforeReaderCancel = false;
+    const cancel = vi.fn(() => {
+      abortedBeforeReaderCancel = network.fetch.mock.calls[0]![1]?.signal?.aborted === true;
+    });
     network.fetch.mockResolvedValue(new Response(new ReadableStream({ cancel })));
     const fixture = await setup();
     const response = await fixture.handle(new Request(runtimeUrl('/events')));
@@ -158,8 +161,10 @@ describe('Desktop protocol network lifecycle', () => {
     fixture.controller.suspendRuntime();
 
     expect(cancel).toHaveBeenCalledWith('window closed');
-    expect(network.fetch.mock.calls[0]![1]?.signal?.aborted).toBe(false);
+    expect(abortedBeforeReaderCancel).toBe(true);
+    expect(network.fetch.mock.calls[0]![1]?.signal?.aborted).toBe(true);
     expect(fixture.logger.warn).not.toHaveBeenCalled();
+    expect(fixture.onTransportFailure).not.toHaveBeenCalled();
   });
 
   it('still reports genuine transport errors', async () => {
