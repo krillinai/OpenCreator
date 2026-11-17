@@ -284,7 +284,7 @@ async function generateOpenAiImages(
         void status.body?.cancel().catch(() => undefined);
         throw new ImageGenerationProviderError('upstream_error', 'Could not query the image result. Keep the task to avoid duplicate charges.', { kind: 'provider-failed', upstreamCode: 'request_outcome_unknown', requestId: accepted.requestId });
       }
-      const receipt = await status.json() as { state?: string; error?: { code?: string; status?: number } };
+      const receipt = await status.json() as { state?: string; errorCode?: string };
       if (receipt.state === 'succeeded') {
         response = await fetchCreatorService({ endpoint: appendEndpointPath(statusUrl, 'result'), method: 'GET', headers: { Authorization: `Bearer ${provider.apiKey}` }, proxy: config.proxy.trim(), signal, maxResponseBytes: MAX_RESPONSE_BYTES, fetchImpl });
         if (!response.ok) {
@@ -294,7 +294,14 @@ async function generateOpenAiImages(
         break;
       }
       if (receipt.state === 'failed') {
-        response = Response.json({ error: { code: receipt.error?.code ?? 'official_service_unavailable', message: receipt.error?.code === 'credits_insufficient' ? 'Insufficient credits. Add credits and try again.' : 'The image generation request was rejected' } }, { status: receipt.error?.status ?? 503 });
+        response = await fetchCreatorService({ endpoint: appendEndpointPath(statusUrl, 'result'), method: 'GET',
+          headers: { Authorization: `Bearer ${provider.apiKey}` }, proxy: config.proxy.trim(), signal,
+          maxResponseBytes: 16_384, fetchImpl });
+        if (response.status === 409 || response.status === 410) {
+          void response.body?.cancel().catch(() => undefined);
+          response = Response.json({ error: { code: receipt.errorCode ?? 'official_service_unavailable',
+            message: 'The image generation request failed without a stored reason' } }, { status: 503 });
+        }
         break;
       }
       if (receipt.state === 'outcome_unknown') throw new ImageGenerationProviderError('upstream_error', 'The image result is unconfirmed. Check request status first to avoid duplicate charges.', { kind: 'provider-failed', upstreamCode: 'request_outcome_unknown', requestId: accepted.requestId });

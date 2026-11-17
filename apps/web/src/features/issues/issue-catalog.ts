@@ -223,11 +223,11 @@ export function publicErrorReason(input: PublicErrorFacts, language: AppLanguage
   }
   if (facts.upstreamMessage !== undefined) {
     const size = /\bFile size \((\d+)\) is greater than 2 GiB\b/.exec(facts.upstreamMessage);
-    const message = size === null ? facts.upstreamMessage : localize(
+    const message = mediaContentSafetyReason(facts, localize) ?? (size === null ? facts.upstreamMessage : localize(
       `文件为 ${size[1]} 字节（约 ${(Number(size[1]) / 1024 ** 3).toFixed(2)} GiB），超过本地单次读取的 2 GiB 限制`,
       `The file is ${size[1]} bytes (about ${(Number(size[1]) / 1024 ** 3).toFixed(2)} GiB), exceeding the local 2 GiB limit for a single read`,
       `Filen är ${size[1]} byte (cirka ${(Number(size[1]) / 1024 ** 3).toFixed(2)} GiB) och överskrider den lokala gränsen på 2 GiB för en enskild läsning`
-    );
+    ));
     parts.push(localize(`服务说明：${message}`, `Provider message: ${message}`, `Leverantörens meddelande: ${message}`));
   }
   if (facts.requestId !== undefined) {
@@ -241,6 +241,15 @@ export function publicErrorReason(input: PublicErrorFacts, language: AppLanguage
     );
   }
   return localize(`已确认信息：${parts.join('，')}。`, `Confirmed information: ${parts.join(', ')}.`, `Bekräftad information: ${parts.join(', ')}.`);
+}
+
+export function mediaContentSafetyReason(facts: PublicErrorFacts, localize: LocalizeCopy): string | undefined {
+  if (facts.upstreamCode !== 'content_policy_violation' && !facts.upstreamMessage?.includes('图片未通过内容安全审核')) return undefined;
+  return localize(
+    '内容安全审核未通过，请调整提示词或参考素材后重试',
+    'The request did not pass content safety review. Adjust the prompt or reference media and try again.',
+    'Begäran klarade inte innehållsgranskningen. Ändra prompten eller referensmaterialet och försök igen.'
+  );
 }
 
 function safeIdentifier(value: string): string {

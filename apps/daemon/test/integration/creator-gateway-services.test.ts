@@ -351,3 +351,27 @@ it('video uses the unified gateway task and preserves its account for query and 
   binding.accountId = 'a';
   await expect(service.create({ prompt: 'official model duration', provider: 'veo', size: '720x1280', duration: 5 })).resolves.toMatchObject({ status: 'in_progress', videoSize: '720x1280' });
 });
+
+it('keeps a rejected official video task reason without another submission', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'oc-gateway-video-rejected-'));
+  close.push(() => rm(root, { recursive: true, force: true }));
+  const requestId = `ocreq_${'b'.repeat(48)}`;
+  const fetcher = vi.fn<typeof fetch>(async url => String(url).endsWith('/result')
+    ? Response.json({ error: { code: 'upstream_rejected', message: '图片未通过内容安全审核', requestId } },
+      { status: 400, headers: { 'X-Request-ID': requestId } })
+    : Response.json({ requestId, state: 'failed', errorCode: 'video_submit_rejected' },
+      { headers: { 'X-Request-ID': requestId } }));
+  const binding = { accountId: 'a', bindingVersion: 'a:1', baseUrl: 'https://gateway.example/v1', apiKey: 'local-token',
+    models: { video: 'gateway-video' }, catalog: [{ id: 'gateway-video', modality: 'video' as const,
+      capabilities: [], sizes: ['1280x720'], durations: [5] }] };
+  const service = createVideoGenerationService({ dataDir: root,
+    configStore: { read: async () => createDefaultCreatorServicesConfig(), write: async c => c,
+      reset: async () => createDefaultCreatorServicesConfig() }, fetchImpl: fetcher,
+    gatewaySource: { binding: async () => binding } });
+  const result = await service.create({ prompt: 'test', provider: 'seedance', size: '1280x720', duration: 5 });
+  expect(result).toMatchObject({ status: 'failed', publicFacts: { httpStatus: 400,
+    upstreamCode: 'upstream_rejected', upstreamMessage: '图片未通过内容安全审核', requestId } });
+  expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
+    'https://gateway.example/v1/video/jobs', `https://gateway.example/v1/requests/${requestId}/result`
+  ]);
+});

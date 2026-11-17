@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
-import { publicErrorReason } from '../issues/issue-catalog.js';
+import { mediaContentSafetyReason, publicErrorReason } from '../issues/issue-catalog.js';
 import OfficialModelSelect, { compareGatewayModelsByName } from '../../components/forms/OfficialModelSelect.js';
 import { useOfficialServices } from './official-services.js';
 import { readVideoReferences, videoReferenceIssue } from './OfficialVideoReferences.js';
@@ -1427,6 +1427,8 @@ function formatVideoError(
     ? sanitizePublicErrorFacts(error.publicFacts as PublicErrorFacts) : undefined;
   if (suppliedFacts && isPublicErrorFacts(suppliedFacts) && suppliedFacts.kind !== 'unknown') {
     if (suppliedFacts.provider === 'opencreator-gateway-video') {
+      const contentReason = mediaContentSafetyReason(suppliedFacts, l);
+      if (contentReason) return contentReason;
       if (suppliedFacts.upstreamCode === 'video_price_changed') return l(
         '视频生成未完成，请重试', 'Video generation did not complete. Try again.', 'Videogenereringen slutfördes inte. Försök igen.'
       );
@@ -1442,10 +1444,10 @@ function formatVideoError(
       if (suppliedFacts.kind === 'timeout') return l(
         '请求超时，请稍后重试', 'The request timed out. Try again later.', 'Förfrågan tog för lång tid. Försök igen senare.'
       );
-      if (suppliedFacts.httpStatus === 400 || suppliedFacts.httpStatus === 422) return l(
+      if (suppliedFacts.upstreamCode === 'invalid_parameters' || suppliedFacts.upstreamCode === 'invalid_parameter') return l(
         '当前模型不支持这些参数，请调整设置后重试', 'This model does not support these settings. Adjust them and try again.', 'Modellen stöder inte dessa inställningar. Ändra dem och försök igen.'
       );
-      return l('官方视频服务暂不可用，请稍后重试', 'The official video service is unavailable. Try again later.', 'Den officiella videotjänsten är inte tillgänglig. Försök igen senare.');
+      return publicErrorReason({ ...suppliedFacts, upstreamMessage: undefined }, l);
     }
     return publicErrorReason(suppliedFacts, l);
   }

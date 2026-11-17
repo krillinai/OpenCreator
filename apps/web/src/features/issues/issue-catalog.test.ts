@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { buildIssueAgentPrompt, issueConversationText, issueDiagnosticText, presentIssue } from './issue-catalog.js';
+import { buildIssueAgentPrompt, issueConversationText, issueDiagnosticText, presentIssue, publicErrorReason } from './issue-catalog.js';
 import { normalizePageIssue } from './page-issue-state.js';
 
 const raw = '后台原文：操作无法完成';
 const issue = normalizePageIssue('runtime', 'creator.prepare', new Error(raw), raw);
 
 describe('localized issue copy', () => {
+  it.each([
+    ['zh-CN', '内容安全审核未通过'],
+    ['en-US', 'content safety review'],
+    ['sv-SE', 'innehållsgranskningen']
+  ] as const)('localizes a confirmed image moderation rejection in %s', (language, reason) => {
+    const message = publicErrorReason({ kind: 'http-rejected', provider: 'opencreator-gateway-image',
+      httpStatus: 400, upstreamCode: 'upstream_rejected', upstreamMessage: '图片未通过内容安全审核' }, language);
+    expect(message).toContain(reason);
+    if (language !== 'zh-CN') expect(message).not.toContain('图片未通过内容安全审核');
+  });
   it.each(['zh-CN', 'en-US', 'sv-SE'] as const)('describes uncertain acceptance without reporting a final failure in %s', language => {
     const pending = { ...issue, code: 'creator_provider_resolution_required', summaryKey: 'issue.provider',
       source: 'provider' as const, publicFacts: { kind: 'unknown' as const, provider: 'opencreator-gateway-chat/completions' } };

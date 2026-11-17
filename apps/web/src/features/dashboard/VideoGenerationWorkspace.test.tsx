@@ -609,6 +609,43 @@ describe('VideoGenerationWorkspace', () => {
     expect(panel).not.toHaveTextContent('尚未确认更细的原因');
   });
 
+  it.each([
+    ['zh-CN', '内容安全审核未通过'],
+    ['en-US', 'content safety review'],
+    ['sv-SE', 'innehållsgranskningen']
+  ] as const)('explains an official content rejection in %s', (language, reason) => {
+    const failed = failedVideoRequestJob('failed');
+    failed.issues = [{ ...normalizePageIssue('runtime', 'creator.retry-stage', new Error('Rejected'), 'Video generation failed'),
+      scope: { kind: 'creator-job', jobId: failed.id }, stageRunId: failed.stages[0]!.id,
+      code: 'creator_video_generation_failed', publicFacts: {
+        kind: 'http-rejected', provider: 'opencreator-gateway-video', httpStatus: 400,
+        upstreamCode: 'upstream_rejected', upstreamMessage: '图片未通过内容安全审核', requestId: 'ocreq_content_rejected'
+      }
+    }];
+    renderWorkspace(failed, { language });
+    const panel = screen.getByRole('complementary', { name: 'OpenCreator' });
+    expect(panel).toHaveTextContent(reason);
+    expect(panel).toHaveTextContent('ocreq_content_rejected');
+    expect(panel).not.toHaveTextContent('当前模型不支持这些参数');
+  });
+
+  it.each([
+    ['zh-CN', '内容安全审核未通过'],
+    ['en-US', 'content safety review'],
+    ['sv-SE', 'innehållsgranskningen']
+  ] as const)('explains an official video content-policy code in %s', (language, reason) => {
+    const failed = failedVideoRequestJob('failed');
+    failed.issues = [{ ...normalizePageIssue('runtime', 'creator.retry-stage', new Error('Rejected'), 'Video generation failed'),
+      scope: { kind: 'creator-job', jobId: failed.id }, stageRunId: failed.stages[0]!.id,
+      code: 'creator_video_generation_failed', publicFacts: {
+        kind: 'http-rejected', provider: 'opencreator-gateway-video', httpStatus: 400,
+        upstreamCode: 'content_policy_violation', upstreamMessage: 'Video failed content safety check', requestId: 'ocreq_video_rejected'
+      }
+    }];
+    renderWorkspace(failed, { language });
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent(reason);
+  });
+
   beforeEach(() => {
     let objectUrlCount = 0;
     Object.defineProperty(URL, 'createObjectURL', {
