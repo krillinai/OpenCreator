@@ -318,6 +318,14 @@ export class CreatorProviderRequestLedger {
     stageId: string;
     scopeKey?: string | null;
   }): CreatorProviderRequest[] {
+    return this.pendingForStage(input).filter(request => request.status === 'unknown_remote_acceptance');
+  }
+
+  pendingForStage(input: {
+    jobId: string;
+    stageId: string;
+    scopeKey?: string | null;
+  }): CreatorProviderRequest[] {
     const stageIds = new Set(this.repository.listStageRuns(input.jobId)
       .filter(stage => (
         stage.stageId === input.stageId
@@ -326,7 +334,7 @@ export class CreatorProviderRequestLedger {
       .map(stage => stage.id));
     return this.repository.listProviderRequests(input.jobId).filter(request => (
       stageIds.has(request.stageRunId)
-      && request.status === 'unknown_remote_acceptance'
+      && isPendingRemote(request.status)
     ));
   }
 

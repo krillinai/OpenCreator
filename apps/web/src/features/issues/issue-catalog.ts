@@ -164,6 +164,11 @@ function transcriptionIssueCopy(code: string | undefined, localize: LocalizeCopy
         message: localize('语音识别服务返回了无效结果。', 'The speech recognition service returned an invalid response.', 'Taligenkänningstjänsten returnerade ett ogiltigt svar.'),
         nextStep: localize('请检查服务返回的错误，或更换语音识别模型后重试。', 'Review the provider error, or choose another speech recognition model and retry.', 'Kontrollera leverantörens fel, eller välj en annan taligenkänningsmodell och försök igen.')
       };
+    case 'audio_transcription_pending':
+      return {
+        message: localize('语音转录请求正在核对，结果尚未确定。', 'The transcription request is being verified; its result is not yet known.', 'Transkriptionsbegäran kontrolleras; resultatet är ännu okänt.'),
+        nextStep: localize('请稍后重试当前阶段，客户端会先查询原请求。', 'Retry this stage later. The app will check the original request first.', 'Försök igen med det här steget senare. Appen kontrollerar först den ursprungliga begäran.')
+      };
     case 'creator_transcription_timestamps_unavailable':
     case 'audio_transcription_timestamps_missing':
       return {

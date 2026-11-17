@@ -1664,6 +1664,11 @@ export function creatorSystemIssueText(
       '请先配置语音转录服务',
       'Configure speech transcription to continue'
     ),
+    audio_transcription_pending: l(
+      '语音转录请求正在核对中，请稍后重试当前阶段',
+      'The transcription request is being verified. Retry this stage later.',
+      'Transkriptionsbegäran kontrolleras. Försök igen med det här steget senare.'
+    ),
     creator_tts_config_missing: l(
       '请先配置配音服务',
       'Configure dubbing to continue'

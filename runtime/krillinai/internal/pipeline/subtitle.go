@@ -197,7 +197,7 @@ func GenerateSubtitles(ctx context.Context, svc StageService, req SubtitleReques
 			code, retryable = classified.Code, classified.Retryable()
 		}
 		kind := ErrorKindRetryable
-		if !retryable {
+		if !retryable && code != "audio_transcription_pending" {
 			kind = ErrorKindUsage
 			if code == "audio_transcription_invalid_response" {
 				kind = ErrorKindInternal

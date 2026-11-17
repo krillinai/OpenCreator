@@ -170,9 +170,11 @@ export function createGatewayCreatorSource(input: {
           if (response.status === 401) throw new GatewayError('auth_required', 401);
           if (response.status === 404) return { status: 'not_found' };
           if (!response.ok) throw new GatewayError('gateway_unavailable');
-          const result = await response.json() as { requestId?: string; state?: string };
+          const result = await response.json() as { requestId?: string; state?: string; billingState?: string };
           if (result.requestId !== requestId) throw new GatewayError('invalid_gateway_response');
           if (result.state === 'succeeded') return { status: 'succeeded', remoteTaskId: requestId };
+          if (request.provider === 'opencreator-gateway-audio/transcriptions'
+            && result.state === 'failed' && result.billingState !== 'released') return { status: 'waiting_remote', remoteTaskId: requestId };
           if (result.state === 'failed' || result.state === 'canceled') return { status: 'failed', remoteTaskId: requestId };
           if (result.state === 'outcome_unknown') return { status: 'not_found' };
           if (!['submitting', 'waiting_upstream'].includes(result.state ?? '')) throw new GatewayError('invalid_gateway_response');
@@ -336,10 +338,26 @@ export function createGatewayCreatorSource(input: {
             if (request.method === 'POST') headers['Idempotency-Key'] = typeof identity === 'string' ? identity : original.logicalId
               ? `creator:${createHash('sha256').update(JSON.stringify([original.logicalId, resource, digest])).digest('hex')}`
               : randomUUID();
+            const gatewayTranscription = credentials.transport === 'gateway' && resource === 'audio/transcriptions' && request.method === 'POST';
+            let priorTranscription = false;
             if (input.ledger && original.logicalId && original.jobId && digest && /^(chat\/completions|responses|images\/(generations|edits)|audio\/(speech|transcriptions))$/.test(resource)) {
               const provider = `opencreator-gateway-${resource}`;
-              const requestKey = headers['Idempotency-Key']!;
-              receipt = input.ledger.findLatest(provider, requestKey) ?? input.ledger.registerBeforeSubmit({ jobId: original.jobId, stageRunId: original.stageRunId ?? original.logicalId,
+              if (gatewayTranscription && original.stageRunId && input.readStageRun && typeof identity !== 'string') {
+                let stage = input.readStageRun(original.stageRunId);
+                while (stage) {
+                  const key = `creator:${createHash('sha256').update(JSON.stringify([stage.id, resource, digest])).digest('hex')}`;
+                  receipt = input.ledger.findLatest(provider, key);
+                  if (receipt || typeof stage.progress.resumedFromStageRunId !== 'string') break;
+                  stage = input.readStageRun(stage.progress.resumedFromStageRunId);
+                }
+                if (!receipt && input.ledger.pendingForStage({ jobId: original.jobId, stageId: 'subtitle' })
+                  .some(entry => entry.provider === provider)) throw new GatewayError('request_outcome_unknown', 409);
+              }
+              const requestKey = receipt?.requestKey ?? headers['Idempotency-Key']!;
+              headers['Idempotency-Key'] = requestKey;
+              receipt ??= input.ledger.findLatest(provider, requestKey);
+              priorTranscription = gatewayTranscription && receipt !== undefined;
+              receipt ??= input.ledger.registerBeforeSubmit({ jobId: original.jobId, stageRunId: original.stageRunId ?? original.logicalId,
                 scopeKey: input.readStageRun?.(original.stageRunId ?? original.logicalId)?.scopeKey,
                 provider, requestKey, request: { operation: resource, fingerprint: digest }, gateway: { accountId: original.accountId, bindingVersion: original.bindingVersion, logicalId: requestKey } });
               if (receipt.status === 'registered') receipt = input.ledger.markSubmitting(receipt.id);
@@ -393,6 +411,50 @@ export function createGatewayCreatorSource(input: {
                 }
                 return result;
               };
+              const pendingTranscription = (id: string) => Response.json({ error: { code: 'request_outcome_unknown', message: 'Transcription request is pending verification' } },
+                { status: 409, headers: { 'X-Request-ID': id } });
+              const transcriptionStatus = async (id: string): Promise<'pending' | 'released' | Response> => {
+                const status = await gatewayRequest(`requests/${id}`);
+                if (!status.ok) { await status.body?.cancel(); return 'pending'; }
+                const value = await status.json() as { requestId?: string; state?: string; billingState?: string };
+                if (value.requestId !== id) throw new GatewayError('invalid_gateway_response');
+                if (value.state === 'succeeded') {
+                  const result = await gatewayRequest(`requests/${id}/result`);
+                  if (result.status !== 200 || !result.headers.get('content-type')?.startsWith('application/json')) {
+                    await result.body?.cancel(); return 'pending';
+                  }
+                  if (receipt && input.ledger && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(receipt.status)) {
+                    receipt = await input.ledger.recover(receipt.id, { lookupByRequestKey: false,
+                      lookup: async () => ({ status: 'succeeded', remoteTaskId: id }) });
+                  }
+                  return result;
+                }
+                if (value.state === 'failed' && value.billingState === 'released') {
+                  if (receipt && input.ledger && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(receipt.status)) {
+                    receipt = await input.ledger.recover(receipt.id, { lookupByRequestKey: false,
+                      lookup: async () => ({ status: 'failed', remoteTaskId: id }) });
+                  }
+                  return 'released';
+                }
+                if (!['submitting', 'waiting_upstream', 'outcome_unknown', 'failed', 'canceled'].includes(value.state ?? '')) throw new GatewayError('invalid_gateway_response');
+                return 'pending';
+              };
+              let resolvedTranscription: Response | undefined;
+              if (priorTranscription && receipt && receipt.status !== 'registered') {
+                const id = receipt.remoteTaskId ?? `ocreq_${createHash('sha256').update(`${credentials.accountId}:${receipt.requestKey}`).digest('hex').slice(0, 48)}`;
+                const prior = receipt.status === 'failed' && !receipt.remoteTaskId ? 'released' : await transcriptionStatus(id);
+                if (prior instanceof Response) resolvedTranscription = prior;
+                else if (prior === 'pending' || receipt.stageRunId === original.stageRunId) resolvedTranscription = pendingTranscription(id);
+                else {
+                  const requestKey = `creator:${createHash('sha256').update(JSON.stringify([original.stageRunId, resource, digest])).digest('hex')}`;
+                  headers['Idempotency-Key'] = requestKey;
+                  receipt = input.ledger!.findLatest(receipt.provider, requestKey) ?? input.ledger!.registerBeforeSubmit({ jobId: original.jobId!, stageRunId: original.stageRunId!,
+                    scopeKey: input.readStageRun?.(original.stageRunId!)?.scopeKey, provider: receipt.provider, requestKey,
+                    request: { operation: resource, fingerprint: digest! }, gateway: { accountId: original.accountId, bindingVersion: original.bindingVersion, logicalId: requestKey } });
+                  if (receipt.status === 'registered') receipt = input.ledger!.markSubmitting(receipt.id);
+                  resolvedTranscription = await gatewayRequest(resource, request.method, body);
+                }
+              }
               const resumeSpeech = credentials.transport === 'gateway' && resource === 'audio/speech' && request.method === 'POST' && receipt?.remoteTaskId;
               const speechResponse = (accepted?: Response) => resolveGatewaySpeech({ response: accepted, requestId: receipt?.remoteTaskId ?? undefined,
                   signal, request: gatewayRequest, async onReceipt(value) {
@@ -407,8 +469,18 @@ export function createGatewayCreatorSource(input: {
                   } });
               if (resumeSpeech) response = await speechResponse();
               else {
-                response = await gatewayRequest(resource, request.method, body);
+                response = resolvedTranscription ?? await gatewayRequest(resource, request.method, body);
                 if (credentials.transport === 'gateway' && resource === 'audio/speech' && request.method === 'POST' && response.status === 202) response = await speechResponse(response);
+              }
+              if (gatewayTranscription && (response.status === 202 || response.status === 503)) {
+                const id = response.headers.get('x-request-id');
+                const error = response.status === 503 ? (await response.clone().json().catch(() => null)) as { error?: { code?: string } } | null : null;
+                if (id && /^ocreq_[0-9a-f]{48}$/.test(id) && (response.status === 202 || error?.error?.code === 'request_outcome_unknown')) {
+                  if (receipt && input.ledger && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(receipt.status)) receipt = input.ledger.markWaitingRemote(receipt.id, id);
+                  await response.body?.cancel();
+                  const status = await transcriptionStatus(id);
+                  response = status instanceof Response ? status : pendingTranscription(id);
+                }
               }
             }
             signal.throwIfAborted();

@@ -128,6 +128,7 @@ describe('localized issue copy', () => {
     ['audio_no_speech', '音频为静音或音量过低', '检查原音频和音量'],
     ['audio_transcription_empty', '尚不能确认音频是否含有语音', '换一个语音识别模型核验'],
     ['audio_transcription_invalid_response', '返回了无效结果', '检查服务返回的错误'],
+    ['audio_transcription_pending', '正在核对', '稍后重试'],
     ['audio_transcription_timestamps_missing', '未提供可用的字幕时间戳', '支持字幕时间戳'],
     ['audio_transcription_api_failed', '语音识别服务调用失败', '检查连接、模型权限或配额']
   ])('explains %s using the classified evidence', (code, summary, guidance) => {

@@ -47,6 +47,10 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 			if classified.UpstreamCode == "" {
 				classified.UpstreamCode = safeDiagnosticCode(apiError.Type)
 			}
+			if classified.UpstreamCode == "request_outcome_unknown" {
+				classified.Code = "audio_transcription_pending"
+				classified.Message = "transcription request is pending verification; retry this stage later"
+			}
 		} else {
 			var networkError net.Error
 			if errors.As(err, &networkError) && networkError.Timeout() {

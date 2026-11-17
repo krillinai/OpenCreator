@@ -37,6 +37,7 @@ func TestTranscriptionResponseClassification(t *testing.T) {
 		{"wrong_segments_type", 200, `{"text":"Hello","segments":"bad"}`, "audio_transcription_invalid_response", false},
 		{"malformed_json", 200, `<html>upstream error</html>`, "audio_transcription_invalid_response", false},
 		{"http_error", 503, `{"error":{"message":"unavailable","type":"server_error"}}`, "audio_transcription_api_failed", true},
+		{"pending_gateway_request", 409, `{"error":{"message":"pending verification","code":"request_outcome_unknown"}}`, "audio_transcription_pending", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

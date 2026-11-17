@@ -6,6 +6,7 @@ import {
   videoGenerationPanelAdapter,
   videoDownloadPanelAdapter,
   creatorPanelAdapterFor,
+  creatorSystemIssueText,
   stickmanVideoPanelAdapter,
   type CreatorPanelLocalize
 } from './creator-panel-adapters.js';
@@ -26,6 +27,11 @@ describe('video download controls', () => {
 });
 
 describe('video translation failures', () => {
+  it('explains pending transcription in each supported language', () => {
+    expect(creatorSystemIssueText('audio_transcription_pending', zh)).toContain('核对');
+    expect(creatorSystemIssueText('audio_transcription_pending', en)).toContain('verified');
+    expect(creatorSystemIssueText('audio_transcription_pending', createLocalizedCopy('sv-SE'))).toContain('kontrolleras');
+  });
   it('describes a rejected Chinese translation without exposing the raw stage message', () => {
     const failed = { ...stage('subtitle', '', 'failed', null, 'subtitle'),
       errorCode: 'creator_translation_output_language_mismatch',
