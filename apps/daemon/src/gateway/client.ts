@@ -153,6 +153,7 @@ export function createGatewayClient(origin: string, fetcher: typeof fetch = fetc
       query.set('protocolVersion', '3');
       query.set('catalogSchema', '2');
       query.set('publicMetadata', '1');
+      query.set('sizeLabels', '1');
       if (options) query.set('rotate', options.rotate ? '1' : '0');
       if (options?.modelUsePolicy) query.set('modelUsePolicy', options.modelUsePolicy);
       if (options?.region) query.set('region', options.region);

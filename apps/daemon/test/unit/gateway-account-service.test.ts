@@ -55,7 +55,7 @@ it('reads the public image catalog without account credentials', async () => {
     await expect(f.service.readPublicImageCatalog()).resolves.toMatchObject({
       recommendedModelId: 'vendor/image', models: [{ id: 'vendor/image', imageOptions: { aspectRatios: ['1:1'] } }]
     });
-    expect(request).toHaveBeenCalledWith('/api/v1/models/catalog', '');
+    expect(request).toHaveBeenCalledWith('/api/v1/models/catalog?sizeLabels=1', '');
     request.mockResolvedValueOnce({ models: [{ id: 'broken' }] });
     await expect(f.service.readPublicImageCatalog()).rejects.toMatchObject({ code: 'invalid_gateway_response' });
   } finally { await f.service.close(); }
@@ -75,7 +75,7 @@ it('reads the public video catalog with native model metadata and no account cre
       recommendedModelId: 'vendor/video', models: [{ id: 'vendor/video', vendor: 'Vendor', sizes: ['1280x720'], durations: [5, 10],
         price: { videoUnitsPerSecond: { '720p': 30_000_000 }, estimates: { clip: { creditUnits: '150000000' } } } }]
     });
-    expect(request).toHaveBeenCalledWith('/api/v1/models/catalog', '');
+    expect(request).toHaveBeenCalledWith('/api/v1/models/catalog?sizeLabels=1', '');
   } finally { await f.service.close(); }
 });
 
@@ -92,7 +92,7 @@ it('reads public text models from the catalog without account credentials', asyn
     await expect(f.service.readPublicTextCatalog()).resolves.toMatchObject({
       recommendedModelId: 'vendor/text', models: [{ id: 'vendor/text', vendor: 'Vendor', price: { inputPerMillion: 1 } }]
     });
-    expect(request).toHaveBeenCalledWith('/api/v1/models/catalog', '');
+    expect(request).toHaveBeenCalledWith('/api/v1/models/catalog?sizeLabels=1', '');
   } finally { await f.service.close(); }
 });
 
