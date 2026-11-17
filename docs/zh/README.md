@@ -23,7 +23,7 @@
 [![AtomGit G-Star](https://img.shields.io/badge/AtomGit-G--Star-DA203E?style=flat)](https://atomgit.com/krillinai/OpenCreator)
 [![X](https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white)](https://x.com/KrillinAIJunxi)
 [![QQ Group](https://img.shields.io/badge/QQ-Join%20Group-12B7F5?logo=qq&logoColor=white)](https://qm.qq.com/q/kc2cNpQ42A)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/3GwBGsjs8)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/wnzKcJntQ)
 
 [项目特色](#项目特色) · [创作工具](#创作工具) · [Skills](#skills-技能) · [案例](#案例展示) · [快速开始](#快速开始) · [Desktop](#desktop) · [文档](#文档) · [社区](#社区)
 
