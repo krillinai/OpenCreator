@@ -843,7 +843,11 @@ describe('DashboardPage', () => {
     await waitFor(() => expect(applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
     expect(await screen.findByRole('button', { name: 'image' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('textbox', { name: '继续创作' })).toBeVisible();
+    expect(document.querySelector('.dashboard-generation-session-composer')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '创作' }));
+    expect(await screen.findByRole('form', { name: '图像生成' })).toBeInTheDocument();
   });
 
   it.each([
@@ -1489,6 +1493,35 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByRole('heading', { name: /好，创作者$/ })).toBeVisible();
     expect(document.querySelector('.dashboard-unified-workspace-page')).not.toBeInTheDocument();
+  });
+
+  it('matches the history composer to every history category and keeps it collapsible', async () => {
+    const service = withHistoryJobs(createInMemoryCreatorService(), []);
+    render(<RoutedDashboardPage service={service} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '生成记录' }));
+    const composer = document.querySelector('.dashboard-generation-session-composer') as HTMLElement;
+    expect(composer).toBeInTheDocument();
+    expect(within(composer).getByRole('textbox', { name: '继续创作' })).toBeVisible();
+    fireEvent.click(within(composer).getByRole('button', { name: '展开创作对话框' }));
+    expect(await within(composer).findByRole('form', { name: '图像生成' })).toBeVisible();
+    expect(within(composer).getByRole('tab', { name: '视频翻译' })).toBeVisible();
+
+    for (const [category, form] of [
+      ['image', '图像生成'],
+      ['video', '视频生成'],
+      ['text', '短视频脚本生成'],
+      ['audio', '文本转语音']
+    ] as const) {
+      fireEvent.click(screen.getByRole('button', { name: category }));
+      expect(screen.getByRole('button', { name: category })).toHaveAttribute('aria-pressed', 'true');
+      expect(await within(composer).findByRole('form', { name: form })).toBeVisible();
+    }
+
+    fireEvent.click(within(composer).getByRole('button', { name: '收起创作对话框' }));
+    expect(within(composer).getByRole('textbox', { name: '继续创作' })).toBeVisible();
+    fireEvent.click(within(composer).getByRole('button', { name: '展开创作对话框' }));
+    expect(await within(composer).findByRole('form', { name: '文本转语音' })).toBeVisible();
   });
 
   it('leaves the workspace when the dashboard route clears its tool', async () => {

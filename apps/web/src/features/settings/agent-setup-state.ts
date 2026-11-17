@@ -23,16 +23,28 @@ export function availableAgentMode({ readiness, provider }: AgentSetupSnapshot):
 }
 
 function confirmationValue(snapshot: AgentSetupSnapshot): string {
-  const { readiness, provider } = snapshot;
+  const { provider } = snapshot;
   return JSON.stringify([
-    readiness.codexHome, availableAgentMode(snapshot), provider.authentication,
+    availableAgentMode(snapshot), provider.authentication,
     provider.baseUrl, provider.model, provider.apiKeyConfigured
   ]);
 }
 
 export function isAgentSetupConfirmed(snapshot: AgentSetupSnapshot): boolean {
-  return availableAgentMode(snapshot) !== null
-    && readJsonFromStorage<string>(confirmationKey) === confirmationValue(snapshot);
+  if (availableAgentMode(snapshot) === null) return false;
+  const stored = readJsonFromStorage<unknown>(confirmationKey);
+  const current = confirmationValue(snapshot);
+  if (stored === current) return true;
+  if (typeof stored !== 'string') return false;
+  try {
+    const legacy = JSON.parse(stored) as unknown;
+    // Older confirmations included codexHome, which changes between runtime profiles.
+    return Array.isArray(legacy) && legacy.length === 6
+      && typeof legacy[0] === 'string'
+      && JSON.stringify(legacy.slice(1)) === current;
+  } catch {
+    return false;
+  }
 }
 
 export function hasAgentSetupConfirmation(): boolean {

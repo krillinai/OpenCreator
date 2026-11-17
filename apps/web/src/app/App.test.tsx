@@ -329,6 +329,7 @@ describe('App', () => {
 
     cleanup();
     signedIn = false;
+    window.location.hash = '#/projects';
     render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
     expect(await screen.findByRole('heading', { name: 'OpenCreator' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '本地模式' }));
@@ -691,12 +692,52 @@ describe('App', () => {
     expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument();
   });
 
+  it.each(['browser', 'desktop'] as const)(
+    'keeps generation history open in the %s host when the runtime home changes but the confirmed provider is unchanged',
+    async hostKind => {
+      window.location.hash = '#/projects';
+      const props = runtimeAppProps();
+      props.hostBridge.kind = hostKind;
+      const provider = {
+        authentication: 'api_key' as const,
+        baseUrl: 'https://model.example.test/v1',
+        model: 'test-model',
+        apiKeyConfigured: true
+      };
+      window.localStorage.setItem('opencreator.agent-setup-confirmed.v1', JSON.stringify(JSON.stringify([
+        '/Users/test/.opencreator/development/runtime/codex', 'api_key',
+        provider.authentication, provider.baseUrl, provider.model, provider.apiKeyConfigured
+      ])));
+      const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/codex/readiness')) return jsonResponse({
+          state: 'degraded', codexHome: '/Users/test/.opencreator/development-test/runtime/codex',
+          account: { status: 'not_authenticated', accountStatus: 'signed_out' },
+          binary: { status: 'ready' }, protocol: { status: 'ready' },
+          models: { status: 'ready' }, diagnostics: []
+        });
+        if (url.endsWith('/codex/provider')) return jsonResponse(provider);
+        return props.runtimeFetch(input, init);
+      };
+
+      render(<App projectNavigationMode="library" {...props} runtimeFetch={runtimeFetch} />);
+
+      expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument();
+    }
+  );
+
   it('restores generation history directly from the projects URL', async () => {
     window.location.hash = '#/projects';
     render(<App projectNavigationMode="library" {...runtimeAppProps()} />);
 
     expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('textbox', { name: '继续创作' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '展开创作对话框' }));
+    expect(await screen.findByRole('form', { name: '图像生成' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'text' }));
+    expect(await screen.findByRole('form', { name: '短视频脚本生成' })).toBeVisible();
     expect(screen.getByRole('button', { name: '生成历史' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByLabelText('Projects and conversations')).not.toBeInTheDocument();
   });

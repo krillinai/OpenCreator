@@ -138,6 +138,14 @@
   box-shadow: none;
 }
 
+:is(.creator-tool-embedded, .image-generation-workspace-page) .image-generation-submit-row .creator-tool-primary:disabled {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  opacity: 1;
+  box-shadow: none;
+}
+
 :is(.creator-tool-embedded, .image-generation-workspace-page, .video-generation-workspace-page) :is(.image-generation-submit-row, .video-generation-submit-row) .creator-tool-primary:hover:enabled {
   transform: translateY(-1px);
   filter: brightness(1.04);

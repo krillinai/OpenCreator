@@ -36,7 +36,7 @@ import DashboardGenerationComposer, {
 } from './DashboardGenerationComposer.js';
 import DashboardImageCarousel from './DashboardImageCarousel.js';
 import DashboardVideoDownloadCover from './DashboardVideoDownloadCover.js';
-import DashboardGenerationHistory, { type GenerationHistoryType } from './DashboardGenerationHistory.js';
+import type { GenerationHistoryType } from './DashboardGenerationHistory.js';
 import { generationHistoryTypeForWorkspace } from './generation-history-type.js';
 import DashboardGenerationSession from './DashboardGenerationSession.js';
 import ImageGenerationWorkspace from './ImageGenerationWorkspace.js';
@@ -255,6 +255,12 @@ export default function DashboardPage(props: {
   onCreateProject?(projectType: CreatorProjectType): boolean | void | Promise<boolean | void>;
   createProjectError?: string;
   onOpenRuntimeComponents?(): void;
+  historyView?: {
+    initialType?: GenerationHistoryType;
+    onBackCreation(): void;
+    onTypeChange?(type: GenerationHistoryType): void;
+    onOpenJob?(job: CreatorJob): void;
+  };
   onWorkspaceNavigate?(
     workspace: CreatorWorkspace | null,
     jobId?: string,
@@ -270,7 +276,7 @@ export default function DashboardPage(props: {
   const greetingText = greetingWithNickname(t(`home.greeting.${greeting}`), accountNickname);
   const launchIssues = usePageIssueState('creator-launch');
   const [activeWorkspace, setActiveWorkspace] = useState<CreatorWorkspace | null>(
-    () => props.skillLaunch?.workspace ?? props.workspace ?? null
+    () => props.skillLaunch?.workspace ?? props.workspace ?? (props.historyView ? 'image-generation' : null)
   );
   const [activePromptHint, setActivePromptHint] = useState(
     () => props.skillLaunch?.promptHint
@@ -280,7 +286,7 @@ export default function DashboardPage(props: {
   );
   const [activeJobId, setActiveJobId] = useState(props.jobId);
   const [generationResultActive, setGenerationResultActive] = useState(props.workspace === 'image-generation' && props.jobId !== undefined);
-  const [generationHistoryActive, setGenerationHistoryActive] = useState(false);
+  const [generationHistoryActive, setGenerationHistoryActive] = useState(Boolean(props.historyView));
   const [generationSessionActive, setGenerationSessionActive] = useState(false);
   const generationSessionReturnRef = useRef<{ workspace: CreatorWorkspace; jobId?: string }>();
   const historyJobRef = useRef<CreatorJob>();
@@ -291,7 +297,11 @@ export default function DashboardPage(props: {
     creationJobId?: string;
     type: GenerationHistoryType;
     visibleCount?: number;
-  }>();
+  } | undefined>(props.historyView ? {
+    workspace: 'image-generation',
+    creationWorkspace: null,
+    type: props.historyView.initialType ?? 'all'
+  } : undefined);
   const internalWorkspaceNavigationRef = useRef<CreatorWorkspace | undefined>(undefined);
   const [workspaceOrigin, setWorkspaceOrigin] = useState<'home' | 'dashboard'>(
     () => props.skillLaunch === undefined ? 'dashboard' : 'home'
@@ -332,7 +342,7 @@ export default function DashboardPage(props: {
     }
     internalWorkspaceNavigationRef.current = undefined;
     setGenerationResultActive(props.workspace === 'image-generation' && props.jobId !== undefined);
-    setGenerationHistoryActive(false);
+    setGenerationHistoryActive(Boolean(props.historyView));
     setGenerationSessionActive(false);
     if (props.skillLaunch?.workspace !== undefined) {
       setWorkspaceOrigin('home');
@@ -341,8 +351,8 @@ export default function DashboardPage(props: {
       return;
     }
     setWorkspaceOrigin('dashboard');
-    setActiveWorkspace(props.workspace ?? null);
-  }, [props.skillLaunch?.promptHint, props.skillLaunch?.workspace, props.workspace]);
+    setActiveWorkspace(props.workspace ?? (props.historyView ? 'image-generation' : null));
+  }, [props.historyView !== undefined, props.skillLaunch?.promptHint, props.skillLaunch?.workspace, props.workspace]);
 
   useEffect(() => {
     setActiveJobId(props.jobId);
@@ -518,7 +528,7 @@ export default function DashboardPage(props: {
       <ImageGenerationWorkspace
         embedded
         embeddedTabs={tabs}
-        forceComposer={generationSessionActive}
+        forceComposer={generationSessionActive || generationHistoryActive}
         onGenerated={onGenerated}
         creatorServicesService={props.creatorServicesService}
         gatewayAccountService={props.gatewayAccountService}
@@ -529,7 +539,7 @@ export default function DashboardPage(props: {
       <CoverGeneratorWorkspace
         embedded
         embeddedTabs={tabs}
-        forceComposer={generationSessionActive}
+        forceComposer={generationSessionActive || generationHistoryActive}
         onGenerated={onGenerated}
         onBack={closeWorkspace}
       />
@@ -537,7 +547,7 @@ export default function DashboardPage(props: {
       <VideoGenerationWorkspace
         embedded
         embeddedTabs={tabs}
-        forceComposer={generationSessionActive}
+        forceComposer={generationSessionActive || generationHistoryActive}
         onGenerated={onGenerated}
         creatorServicesService={props.creatorServicesService}
         gatewayAccountService={props.gatewayAccountService}
@@ -548,7 +558,7 @@ export default function DashboardPage(props: {
       <VideoTranslationWorkspace
         embedded
         embeddedTabs={tabs}
-        forceComposer={generationSessionActive}
+        forceComposer={generationSessionActive || generationHistoryActive}
         onGenerated={onGenerated}
         initialDubbing={mode === 'voiceover' ? true : mode === 'translation-subtitles' ? false : undefined}
         initialComposeVideo={mode === 'voiceover' ? true : mode === 'translation-subtitles' ? false : undefined}
@@ -564,7 +574,7 @@ export default function DashboardPage(props: {
       <SmartDubbingWorkspace
         embedded
         embeddedTabs={tabs}
-        forceComposer={generationSessionActive}
+        forceComposer={generationSessionActive || generationHistoryActive}
         onGenerated={onGenerated}
         creatorServicesService={props.creatorServicesService}
         onBack={closeWorkspace}
@@ -573,7 +583,7 @@ export default function DashboardPage(props: {
       <TranscriptionWorkspace
         embedded
         embeddedTabs={tabs}
-        forceComposer={generationSessionActive}
+        forceComposer={generationSessionActive || generationHistoryActive}
         onGenerated={onGenerated}
         creatorServicesService={props.creatorServicesService}
         onBack={closeWorkspace}
@@ -582,8 +592,8 @@ export default function DashboardPage(props: {
       <AutoClipWorkspace
         embedded
         embeddedTabs={tabs}
-        forceComposer={generationSessionActive}
-        startInResults={generationResultActive && !generationSessionActive}
+        forceComposer={generationSessionActive || generationHistoryActive}
+        startInResults={generationResultActive && !generationSessionActive && !generationHistoryActive}
         onGenerated={onGenerated}
         service={props.creatorService!}
         videoMetadataService={props.videoMetadataService}
@@ -593,7 +603,7 @@ export default function DashboardPage(props: {
       <ShortVideoScriptWorkspace
         embedded
         embeddedTabs={tabs}
-        forceComposer={generationSessionActive}
+        forceComposer={generationSessionActive || generationHistoryActive}
         onGenerated={onGenerated}
         creatorServicesService={props.creatorServicesService}
         onBack={closeWorkspace}
@@ -602,7 +612,7 @@ export default function DashboardPage(props: {
       <VideoDownloadBatchWorkspace
         embedded
         embeddedTabs={tabs}
-        forceComposer={generationSessionActive}
+        forceComposer={generationSessionActive || generationHistoryActive}
         onGenerated={onGenerated}
         service={props.creatorService!}
         runtimeDependencies={props.runtimeDependencies}
@@ -618,28 +628,6 @@ export default function DashboardPage(props: {
       }
     });
   };
-
-  if (generationHistoryActive && !generationResultActive && activeWorkspace !== null && props.projectId && props.creatorService) {
-    return <DashboardGenerationHistory
-      projectId={props.projectId}
-      service={props.creatorService}
-      initialType={generationHistoryOriginRef.current?.type}
-      initialVisibleCount={generationHistoryOriginRef.current?.visibleCount}
-      onViewChange={view => {
-        if (generationHistoryOriginRef.current) generationHistoryOriginRef.current = { ...generationHistoryOriginRef.current, ...view };
-      }}
-      onBackCreation={() => {
-        const creationWorkspace = generationHistoryOriginRef.current ? generationHistoryOriginRef.current.creationWorkspace : activeWorkspace;
-        setActiveWorkspace(creationWorkspace);
-        setGenerationResultActive(false);
-        setGenerationHistoryActive(false);
-        resetCreationSession(creationWorkspace);
-        internalWorkspaceNavigationRef.current = creationWorkspace !== null && creationWorkspace !== props.workspace ? creationWorkspace : undefined;
-        props.onWorkspaceNavigate?.(creationWorkspace);
-      }}
-      onOpenJob={job => openWorkspace(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job.id, true, job)}
-    />;
-  }
 
   const unifiedGenerationModes: Partial<Record<CreatorWorkspace, DashboardGenerationMode>> = {
     'video-translation': 'translation',
@@ -660,14 +648,29 @@ export default function DashboardPage(props: {
     : pendingGenerationMode !== undefined && dashboardGenerationWorkspace(pendingGenerationMode) === activeWorkspace
       ? pendingGenerationMode
       : unifiedGenerationModes[activeWorkspace];
-  if (generationSessionActive && initialGenerationMode !== undefined && activeWorkspace !== null && props.projectId && props.creatorService) {
+  if ((generationSessionActive || (generationHistoryActive && !generationResultActive)) && initialGenerationMode !== undefined && activeWorkspace !== null && props.projectId && props.creatorService) {
     return <DashboardGenerationSession
       history={{
         projectId: props.projectId,
         service: props.creatorService,
-        initialType: activeWorkspace === 'image-generation' ? 'image' : activeWorkspace === 'video-download' || activeWorkspace === 'video-generation' ? 'video' : undefined,
-        onBackCreation: closeWorkspace,
-        onOpenJob: job => openJobEditor(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job)
+        initialType: generationHistoryActive ? generationHistoryOriginRef.current?.type : generationHistoryTypeForWorkspace(activeWorkspace),
+        initialVisibleCount: generationHistoryActive ? generationHistoryOriginRef.current?.visibleCount : undefined,
+        onViewChange: view => {
+          if (generationHistoryOriginRef.current) generationHistoryOriginRef.current = { ...generationHistoryOriginRef.current, ...view };
+          if (generationHistoryActive && view.type !== (props.historyView?.initialType ?? 'all')) props.historyView?.onTypeChange?.(view.type);
+        },
+        onBackCreation: props.historyView ? props.historyView.onBackCreation : generationHistoryActive ? () => {
+          const creationWorkspace = generationHistoryOriginRef.current ? generationHistoryOriginRef.current.creationWorkspace : activeWorkspace;
+          setActiveWorkspace(creationWorkspace);
+          setGenerationResultActive(false);
+          setGenerationHistoryActive(false);
+          resetCreationSession(creationWorkspace);
+          internalWorkspaceNavigationRef.current = creationWorkspace !== null && creationWorkspace !== props.workspace ? creationWorkspace : undefined;
+          props.onWorkspaceNavigate?.(creationWorkspace);
+        } : closeWorkspace,
+        onOpenJob: job => props.historyView?.onOpenJob ? props.historyView.onOpenJob(job) : generationHistoryActive
+          ? openWorkspace(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job.id, true, job)
+          : openJobEditor(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job)
       }}
       composer={{
         showExtendedModes: true,

@@ -94,6 +94,24 @@ describe('StartupAgentSetup', () => {
     } })).toBeNull();
   });
 
+  it('keeps a confirmed provider across runtime homes but requires confirmation after provider changes', () => {
+    const provider: CodexProviderConfig = {
+      baseUrl: 'https://model.example.test/v1', model: 'test-model',
+      apiKeyConfigured: true, authentication: 'api_key'
+    };
+    const snapshot: AgentSetupSnapshot = { readiness: readiness('signed_out', 'degraded'), provider };
+    confirmAgentSetup(snapshot);
+
+    expect(isAgentSetupConfirmed({
+      ...snapshot,
+      readiness: { ...snapshot.readiness, codexHome: '/tmp/other-runtime/codex' }
+    })).toBe(true);
+    expect(isAgentSetupConfirmed({
+      ...snapshot,
+      provider: { ...provider, model: 'another-model' }
+    })).toBe(false);
+  });
+
   it('confirms an existing ChatGPT sign-in without a second detection or a key form', async () => {
     const service = createService();
     const provider: CodexProviderConfig = { baseUrl: '', model: 'gpt-test', apiKeyConfigured: false, authentication: 'chatgpt' };

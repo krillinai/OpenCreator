@@ -255,7 +255,6 @@ const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
 const ProjectsPage = lazy(() => import('../features/projects/ProjectsPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
 const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage.js'));
-const DashboardGenerationHistory = lazy(() => import('../features/dashboard/DashboardGenerationHistory.js'));
 const ScheduleThreadHeader = lazy(async () => {
   const module = await import('../features/schedules/ScheduleThreadHeader.js');
   return { default: module.ScheduleThreadHeader };
@@ -398,7 +397,7 @@ export function AppController(props: AppControllerProps) {
   const [homeSkillPromptHint, setHomeSkillPromptHint] = useState<string>();
   const [creatorSkillLaunch, setCreatorSkillLaunch] = useState<CreatorSkillLaunch>();
   const [activeGenerationMode, setActiveGenerationMode] = useState<DashboardGenerationMode>();
-  const projectsHistoryInitialTypeRef = useRef<'video' | undefined>();
+  const projectsHistoryInitialTypeRef = useRef<'all' | 'image' | 'video' | 'text' | 'audio' | undefined>();
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
   const [pendingRunStartsById, setPendingRunStartsById] = useState<PendingRunStartsById>({});
@@ -4502,12 +4501,40 @@ export function AppController(props: AppControllerProps) {
     <CapabilitiesPage {...props.capabilitiesView} />
   ) : state.activeView === 'projects' ? (
     creatorService && (state.currentProjectId || creatorJobs[0]?.projectId || projects[0]?.id) ? (
-      <DashboardGenerationHistory
+      <DashboardPage
+        key="generation-history"
+        onSelectPrompt={startCreatorTool}
         projectId={state.currentProjectId ?? creatorJobs[0]?.projectId ?? projects[0]?.id ?? ''}
-        service={creatorService}
-        initialType={projectsHistoryInitialTypeRef.current}
-        onBackCreation={() => openPrimaryView('dashboard')}
-        onOpenJob={openCreatorJob}
+        creatorService={creatorService}
+        runtimeDependencies={runtimeDependencies}
+        creatorServicesService={creatorServicesService}
+        gatewayState={gatewayAccountState ?? (gatewayAccountService ? null : undefined)}
+        gatewayAccountService={gatewayAccountService}
+        onGatewayStateChange={onGatewayStateChange}
+        openExternal={url => hostBridge.openExternal(url)}
+        videoMetadataService={videoMetadataService}
+        onGenerationModeChange={setActiveGenerationMode}
+        onJobCreated={rememberCreatorJob}
+        onAskIssue={askAgentAboutIssue}
+        historyView={{
+          initialType: projectsHistoryInitialTypeRef.current,
+          onBackCreation: () => openPrimaryView('dashboard'),
+          onTypeChange: type => { projectsHistoryInitialTypeRef.current = type; },
+          onOpenJob: openCreatorJob
+        }}
+        onOpenRuntimeComponents={() => {
+          settingsReturnRouteRef.current = props.route;
+          dispatch({ type: 'open_settings' });
+          navigateToRoute({ view: 'settings', tab: 'local-components' });
+        }}
+        onWorkspaceNavigate={(workspace, jobId, options) => {
+          if (workspace === null) {
+            openPrimaryView('dashboard');
+            return;
+          }
+          dispatch({ type: 'set_active_view', activeView: 'dashboard' });
+          navigateToRoute({ view: 'workbench', tool: workspace, ...(jobId ? { jobId } : {}), returnTo: 'projects' }, options);
+        }}
       />
     ) : (
       <ProjectsPage
@@ -4528,6 +4555,7 @@ export function AppController(props: AppControllerProps) {
     )
   ) : state.activeView === 'dashboard' ? (
     <DashboardPage
+      key="dashboard"
       onSelectPrompt={startCreatorTool}
       onBackToHome={() => startNewConversation({ destination: 'home' })}
       skillLaunch={creatorSkillLaunch}
@@ -4573,7 +4601,7 @@ export function AppController(props: AppControllerProps) {
           && props.route.view === 'workbench'
           && props.route.returnTo === 'projects'
         ) {
-          projectsHistoryInitialTypeRef.current = props.route.tool === 'video-generation' || props.route.tool === 'video-translation' ? 'video' : undefined;
+          projectsHistoryInitialTypeRef.current ??= props.route.tool === 'video-generation' || props.route.tool === 'video-translation' ? 'video' : 'all';
           dispatch({ type: 'set_active_view', activeView: 'projects' });
           navigateToRoute({ view: 'projects' }, options);
           return;
