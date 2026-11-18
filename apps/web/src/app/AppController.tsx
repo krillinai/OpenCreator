@@ -4808,7 +4808,8 @@ export function AppController(props: AppControllerProps) {
     <RuntimeRecoveryContext.Provider value={runtimeRecovery}><PageIssueRoutingProvider><RuntimeConnectionProvider value={{
       status: connectionState.status,
       waitingForConfig: connectionConfig === null,
-      restarting: runtimeRecovery.phase === 'restarting',
+      phase: runtimeRecovery.phase,
+      attempt: runtimeRecovery.attempt,
       restartError: runtimeRecovery.phase === 'failed' ? runtimeRecovery.message : undefined,
       retry: () => void runtimeRecovery.retry(),
       ...(runtimeRecovery.restart === undefined

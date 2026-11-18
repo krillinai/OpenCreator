@@ -1,11 +1,12 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { RefreshCw, RotateCcw, ServerOff } from 'lucide-react';
 import { useLocalizedCopy } from '../i18n/useLocalizedCopy.js';
+import { shouldShowRuntimeRecovery } from '../runtime/runtime-recovery.js';
+import type { RuntimeRecovery } from '../runtime/use-runtime-connection.js';
 
-export type RuntimeConnectionNoticeState = {
+export type RuntimeConnectionNoticeState = Pick<RuntimeRecovery, 'phase' | 'attempt'> & {
   status: 'connected' | 'disconnected' | 'invalid_token';
   waitingForConfig: boolean;
-  restarting: boolean;
   restartError?: string;
   retry(): void;
   restart?(): void;
@@ -27,7 +28,8 @@ export function RuntimeConnectionProvider(props: {
 export function RuntimeConnectionNotice() {
   const state = useContext(RuntimeConnectionContext);
   const l = useLocalizedCopy();
-  if (state === null || state.status === 'connected') return null;
+  if (state === null || state.status === 'connected' || !shouldShowRuntimeRecovery(state)) return null;
+  const restarting = state.phase === 'restarting';
 
   return (
     <div className="runtime-connection-notice" role="status" aria-live="polite">
@@ -45,11 +47,11 @@ export function RuntimeConnectionNotice() {
         <button
           type="button"
           onClick={state.restart}
-          disabled={state.restarting}
+          disabled={restarting}
           title={l('重启本地服务', 'Restart local Runtime')}
         >
           <RotateCcw size={14} aria-hidden="true" />
-          {state.restarting
+          {restarting
             ? l('正在重启', 'Restarting')
             : l('重启本地服务', 'Restart local Runtime')}
         </button>

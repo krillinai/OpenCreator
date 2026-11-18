@@ -1205,7 +1205,7 @@ function CreatorWorkspaceSession(props: {
   if (restoreIssue) {
     return (
       <main className="creator-workspace-loading">
-        <RuntimeRecoveryNotice session={restoreConnection} onRetrySession={async () => setLoadAttempt(attempt => attempt + 1)} />
+        <RuntimeRecoveryNotice blocking session={restoreConnection} onRetrySession={async () => setLoadAttempt(attempt => attempt + 1)} />
         <IssueList
           issues={pageIssues.issues}
           actions={{ retryOperations: {
@@ -1223,7 +1223,7 @@ function CreatorWorkspaceSession(props: {
     return (
       <main className="creator-workspace-loading" aria-busy="true">
         {l('正在恢复创作项目', 'Restoring creator project')}
-        <RuntimeRecoveryNotice session={restoreConnection} onRetrySession={async () => setLoadAttempt(attempt => attempt + 1)} />
+        <RuntimeRecoveryNotice blocking session={restoreConnection} onRetrySession={async () => setLoadAttempt(attempt => attempt + 1)} />
       </main>
     );
   }

@@ -548,8 +548,8 @@ describe('App', () => {
     );
   });
 
-  it.each(['browser', 'desktop'] as const)('retains Creator and composer drafts across Runtime recovery in the %s host', async hostKind => {
-    window.location.hash = '#/workbench?tool=cover-generator';
+  it.each(['browser', 'desktop'] as const)('recovers silently and retains Creator and composer drafts in the %s host', async hostKind => {
+    window.location.hash = '#/workbench?tool=stickman-video';
     const hostBridge = createHostBridge();
     hostBridge.kind = hostKind;
     let online = true;
@@ -573,20 +573,23 @@ describe('App', () => {
       throw new Error(`Unexpected request ${url}`);
     };
     render(<App fileService={createFileService()} hostBridge={hostBridge} runtimeFetch={runtimeFetch} subscribeRunEvents={async () => undefined} />);
-    const draft = await screen.findByRole('textbox', { name: '内容与补充要求' });
-    fireEvent.change(draft, { target: { value: '封面业务草稿' } });
+    const draft = await screen.findByRole('textbox', { name: 'YouTube 链接' });
+    fireEvent.change(draft, { target: { value: 'https://www.youtube.com/watch?v=draft' } });
     await waitFor(() => expect(testCreatorJobs).toHaveLength(1));
     const composer = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
     fireEvent.change(composer, { target: { value: '尚未提交的 Agent 要求' } });
+    const send = screen.getByRole('button', { name: '发送给 Agent' });
+    await waitFor(() => expect(send).toBeEnabled());
     online = false;
-    act(() => announce?.(null));
-    expect(await screen.findByText(/本地服务暂未连接，正在自动重连/)).toBeVisible();
-    expect(draft).toHaveValue('封面业务草稿');
+    await act(async () => announce?.(null));
+    expect(send).toBeDisabled();
+    expect(screen.queryByRole('status', { name: '连接恢复' })).not.toBeInTheDocument();
+    expect(draft).toHaveValue('https://www.youtube.com/watch?v=draft');
     expect(composer).toHaveValue('尚未提交的 Agent 要求');
     online = true;
-    act(() => announce?.(config));
-    await waitFor(() => expect(screen.queryByText(/本地服务暂未连接，正在自动重连/)).not.toBeInTheDocument());
-    expect(screen.getByRole('textbox', { name: '内容与补充要求' })).toHaveValue('封面业务草稿');
+    await waitFor(() => expect(send).toBeEnabled());
+    expect(screen.queryByRole('status', { name: '连接恢复' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'YouTube 链接' })).toHaveValue('https://www.youtube.com/watch?v=draft');
     expect(screen.getByRole('textbox', { name: '告诉 Agent 你的要求' })).toHaveValue('尚未提交的 Agent 要求');
     expect(testCreatorJobs).toHaveLength(1);
     expect(taskRequests).toBe(0);
