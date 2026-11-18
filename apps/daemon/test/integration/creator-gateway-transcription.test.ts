@@ -71,6 +71,23 @@ async function fixture(firstStatus: 503 | 202 | 400 = 503) {
     setOriginalState: (state: typeof originalState, billing: typeof originalBillingState = 'reconciling') => { originalState = state; originalBillingState = billing; } };
 }
 
+it('logs the gateway transcription decision for an accepted pending request', async () => {
+  const f = await fixture(202);
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    expect((await f.transcribe()).statusCode).toBe(409);
+    expect(warn).toHaveBeenCalledWith(JSON.stringify({
+      event: 'gateway_transcription_reconciliation',
+      gatewayRequestId: `ocreq_${createHash('sha256').update(`a:${f.postedKeys[0]}`).digest('hex').slice(0, 48)}`,
+      initialStatus: 202,
+      resolution: 'pending',
+      publicCode: 'accepted'
+    }));
+  } finally {
+    warn.mockRestore();
+  }
+});
+
 it.each([503, 202] as const)('keeps an uncertain transcription from HTTP %i on its original request and recovers its result', async status => {
   const f = await fixture(status);
   expect((await f.transcribe()).statusCode).toBe(409);

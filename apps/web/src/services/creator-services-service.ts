@@ -11,13 +11,21 @@ import type {
 } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
-type ClientLike = Pick<RuntimeClient, 'get' | 'patch' | 'delete' | 'rawRequest'>;
+type ClientLike = Pick<RuntimeClient, 'get' | 'post' | 'patch' | 'delete' | 'rawRequest'>;
 
-export type CreatorServicesSettingsService = Omit<ReturnType<typeof createCreatorServicesService>, 'getCodexImageStatus' | 'getCodexModelStatus' | 'getNetwork' | 'saveNetwork' | 'getLocalVideoConfig' | 'saveLocalVideoConfig'> & {
+export type NetworkTestResult =
+  | { status: 'not_configured' }
+  | { status: 'proxy_unreachable' }
+  | { status: 'proxy_auth_required' }
+  | { status: 'upstream_unreachable' }
+  | { status: 'reachable'; httpStatus: number };
+
+export type CreatorServicesSettingsService = Omit<ReturnType<typeof createCreatorServicesService>, 'getCodexImageStatus' | 'getCodexModelStatus' | 'getNetwork' | 'saveNetwork' | 'testNetwork' | 'getLocalVideoConfig' | 'saveLocalVideoConfig'> & {
   getCodexImageStatus?: () => Promise<CodexImageStatus>;
   getCodexModelStatus?: () => Promise<CodexProviderConfig>;
   getNetwork?: () => Promise<{ proxy: string }>;
   saveNetwork?: (network: { proxy: string }) => Promise<{ proxy: string }>;
+  testNetwork?: (network: { proxy: string }) => Promise<NetworkTestResult>;
   getLocalVideoConfig?: () => Promise<CreatorServicesConfigResponse>;
   saveLocalVideoConfig?: (video: CreatorServicesConfig['video'], clearCredentials?: CreatorServicesCredentialField[]) => Promise<CreatorServicesConfigResponse>;
 };
@@ -26,6 +34,7 @@ export function createCreatorServicesService(client: ClientLike) {
   return {
     getNetwork(): Promise<{ proxy: string }> { return client.get('/creator-services/network'); },
     saveNetwork(network: { proxy: string }): Promise<{ proxy: string }> { return client.patch('/creator-services/network', network); },
+    testNetwork(network: { proxy: string }): Promise<NetworkTestResult> { return client.post('/creator-services/network/test', network); },
     getCodexModelStatus(): Promise<CodexProviderConfig> {
       return client.get('/creator-services/model/codex/status');
     },

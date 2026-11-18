@@ -76,9 +76,17 @@ test('failed video translation opens recovery in the actual workbench', async ({
   } satisfies CreatorPreflightResponse }));
   await page.route('**/gateway/models/catalog*', route => route.fulfill({ json: { models: [] } }));
   await runtime.openApp(page);
+  await page.evaluate(() => localStorage.removeItem('opencreator.agent-setup-confirmed.v1'));
+  await page.route('**/codex/readiness', route => route.fulfill({ json: {
+    state: 'degraded', codexHome: '/tmp/codex',
+    account: { status: 'not_authenticated', accountStatus: 'signed_out' },
+    binary: { status: 'ready' }, protocol: { status: 'ready' }, models: { status: 'ready' }, diagnostics: []
+  } }));
+  await page.route('**/codex/provider', route => route.fulfill({ json: {
+    authentication: 'api_key', baseUrl: 'https://model.example.test/v1', model: 'test-model', apiKeyConfigured: true
+  } }));
   await page.goto(`${runtime.origin}/#/workbench?tool=video-translation&jobId=${job.id}&returnTo=projects`);
-  const dismiss = page.getByRole('button', { name: '稍后配置，进入本地模式' });
-  if (await dismiss.isVisible()) await dismiss.click();
+  await page.reload();
 
   const workspace = page.getByRole('region', { name: '视频翻译 操作区' });
   await expect(workspace.locator('.dashboard-translation-composer')).toBeVisible();

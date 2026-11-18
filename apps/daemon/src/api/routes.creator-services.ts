@@ -24,6 +24,7 @@ import {
 } from '../creator/krillin/tts-service.js';
 import { apiError } from './errors.js';
 import { gatewayCreatorBinding } from '../gateway/creator-service-source.js';
+import { probeCreatorNetwork } from '../creator-services/network-probe.js';
 
 export async function registerCreatorServicesRoutes(
   server: FastifyInstance,
@@ -43,24 +44,23 @@ export async function registerCreatorServicesRoutes(
     catch (error) { return sendStoreError(reply, error); }
   });
   server.patch<{ Body: unknown }>('/creator-services/network', async (request, reply) => {
-    const body = request.body as { proxy?: unknown } | null;
-    const proxy = typeof body?.proxy === 'string' ? body.proxy.trim() : undefined;
-    let valid = proxy !== undefined && proxy.length <= 2048;
-    if (proxy) {
-      try {
-        const url = new URL(proxy);
-        valid = valid && ['http:', 'https:'].includes(url.protocol) && !!url.hostname
-          && !url.search && !url.hash && (url.pathname === '/' || url.pathname === '');
-      } catch { valid = false; }
-    }
-    if (!valid || !body || Object.keys(body).some(key => key !== 'proxy')) {
+    const proxy = parseNetworkProxy(request.body);
+    if (proxy === undefined) {
       return reply.code(400).send(apiError('VALIDATION_FAILED', 'Enter a valid HTTP or HTTPS proxy URL'));
     }
     try {
       const current = await networkStore.read();
-      const saved = await networkStore.write({ ...current, proxy: proxy! });
+      const saved = await networkStore.write({ ...current, proxy });
       return { proxy: saved.proxy };
     } catch (error) { return sendStoreError(reply, error); }
+  });
+  server.post<{ Body: unknown }>('/creator-services/network/test', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const proxy = parseNetworkProxy(request.body);
+    if (proxy === undefined) {
+      return reply.code(400).send(apiError('VALIDATION_FAILED', 'Enter a valid HTTP or HTTPS proxy URL'));
+    }
+    return await probeCreatorNetwork(proxy);
   });
   server.get('/creator-services/capabilities', async () => readCapabilities());
   server.get('/creator-services/model/codex/status', async (_request, reply) => {
@@ -278,6 +278,21 @@ function clearOfficialAddresses(value: unknown): void {
     if (key === 'baseUrl' || key === 'apiKey' || key === 'proxy') (value as Record<string, unknown>)[key] = '';
     else clearOfficialAddresses(child);
   }
+}
+
+function parseNetworkProxy(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const body = value as Record<string, unknown>;
+  if (Object.keys(body).some(key => key !== 'proxy') || typeof body.proxy !== 'string') return undefined;
+  const proxy = body.proxy.trim();
+  if (proxy.length > 2048) return undefined;
+  if (!proxy) return proxy;
+  try {
+    const url = new URL(proxy);
+    if (['http:', 'https:'].includes(url.protocol) && url.hostname && !url.search && !url.hash
+      && (url.pathname === '/' || url.pathname === '')) return proxy;
+  } catch {}
+  return undefined;
 }
 
 function readCreatorServicesConfigUpdate(value: unknown): {

@@ -25,7 +25,6 @@ import {
   Download,
   ImagePlus,
   LoaderCircle,
-  RefreshCw,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -126,7 +125,6 @@ export default function VideoGenerationWorkspace(props: {
   const [videoConfig, setVideoConfig] = useState<CreatorServicesConfig['video'] | null>(null);
   const [configuredCredentials, setConfiguredCredentials] = useState<CreatorServicesCredentialField[]>([]);
   const [publicCatalog, setPublicCatalog] = useState<GatewayVideoCatalog | undefined>(() => props.gatewayAccountService?.getCachedVideoCatalog?.());
-  const [catalogState, setCatalogState] = useState<'loading' | 'ready' | 'error'>(() => props.gatewayAccountService?.getCachedVideoCatalog?.() ? 'ready' : 'loading');
   const catalogRequest = useRef(0);
   const catalogWork = useRef<{ service: GatewayAccountSettingsService; promise: Promise<GatewayVideoCatalog> }>();
   const [pendingModelId, setPendingModelId] = useState<string | undefined>(() => readOptionalModel(session?.state.pendingVideoModelId));
@@ -187,28 +185,24 @@ export default function VideoGenerationWorkspace(props: {
   const catalogModels = [...(localModel ? [localModel] : []), ...(official.official ? official.models : publicModels)];
   const loginRequiredModelIds = new Set(official.official ? [] : publicModels.map(item => item.id));
   const selectedCatalogId = usingOfficial ? official.selected ?? official.model?.id ?? '' : pendingModelId ?? (localConfigured ? localVideoModelId : '');
-  function loadPublicCatalog(force = false) {
+  function loadPublicCatalog() {
     const request = ++catalogRequest.current;
     const service = props.gatewayAccountService;
-    if (!service?.getVideoCatalog) { setCatalogState('error'); return; }
-    const cached = service.getCachedVideoCatalog?.();
-    if (cached) { setPublicCatalog(cached); setCatalogState('ready'); }
-    else setCatalogState('loading');
-    const promise = !force && catalogWork.current?.service === service
-      ? catalogWork.current.promise : service.getVideoCatalog({ refresh: force });
+    const cached = service?.getCachedVideoCatalog?.();
+    setPublicCatalog(cached);
+    if (!service?.getVideoCatalog) return;
+    const promise = catalogWork.current?.service === service
+      ? catalogWork.current.promise : service.getVideoCatalog();
     catalogWork.current = { service, promise };
     void promise.then(catalog => {
-      if (request === catalogRequest.current) { setPublicCatalog(catalog); setCatalogState('ready'); }
-    }).catch(() => {
-      if (request === catalogRequest.current) setCatalogState(cached ? 'ready' : 'error');
-    }).finally(() => {
+      if (request === catalogRequest.current) setPublicCatalog(catalog);
+    }).catch(() => undefined).finally(() => {
       if (catalogWork.current?.promise === promise) catalogWork.current = undefined;
     });
   }
   useEffect(() => {
-    if (!official.official) loadPublicCatalog();
     return () => { catalogRequest.current++; };
-  }, [props.gatewayAccountService, official.official]);
+  }, [props.gatewayAccountService]);
   const activeModel = usingOfficial ? official.model?.id ?? '' : model;
   const selectedModelLabel = usingOfficial && official.model ? gatewayModelDisplayName(official.model, l('官方模型', 'Official model')) : videoModelLabel(activeModel);
   const availableSizes = usingOfficial ? gatewayVideoSizes(official.model).map(videoSizeOption) : sizes;
@@ -998,16 +992,11 @@ export default function VideoGenerationWorkspace(props: {
                         title: l('配置本地视频服务', 'Configure local video service', 'Konfigurera lokal videotjänst'),
                         onConfigure: () => { window.location.hash = '#/settings?tab=ai-services&section=video'; }
                       } : undefined}
+                      onOpen={!official.official ? loadPublicCatalog : undefined}
                       onChange={selectCatalogModel}
                       models={catalogModels}
                     />
                   </label>
-                {!official.official && catalogState !== 'ready' ? <div className="video-generation-catalog-status" role="status">
-                  {catalogState === 'loading' ? l('正在加载官方视频模型…', 'Loading official video models…', 'Läser in officiella videomodeller…') : <>
-                    <span>{l('官方视频模型目录加载失败', 'Official video models could not load', 'Kunde inte läsa in officiella videomodeller')}</span>
-                    <button type="button" onClick={() => loadPublicCatalog(true)} aria-label={l('重试加载视频模型', 'Retry loading video models', 'Försök läsa in videomodeller igen')}><RefreshCw size={14} />{l('重试', 'Retry', 'Försök igen')}</button>
-                  </>}
-                </div> : null}
               </div>
               <ImageGenerationSettings
                 label={l('视频设置', 'Video settings', 'Videoinställningar')}

@@ -4,12 +4,15 @@ import type {
   CreatorActionRequest,
   CreatorArtifact,
   CreatorJob,
-  CreatorJson
+  CreatorJson,
+  GatewayAccountState
 } from '@opencreator/protocol';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import CoverGeneratorWorkspace from './CoverGeneratorWorkspace.js';
 import { CreatorSessionProvider, useOptionalCreatorSession, type CreatorSessionContextValue } from './creator-session-store.js';
+import { OfficialServicesContext } from './official-services.js';
 
 describe('CoverGeneratorWorkspace', () => {
   beforeEach(() => {
@@ -21,6 +24,107 @@ describe('CoverGeneratorWorkspace', () => {
       configurable: true,
       value: vi.fn()
     });
+  });
+
+  it.each([false, true])('selects the configured local image service and submits a cover in embedded=%s', async embedded => {
+    const fixture = createFixture();
+    const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'gemini';
+    const gatewayState: GatewayAccountState = {
+      source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null,
+      bindingVersion: null, activationError: null, selectedModels: {}, models: []
+    };
+    renderWorkspace(fixture, {
+      ...fixture.currentJob(),
+      state: { ...fixture.currentJob().state, prompt: 'Bright portrait', currentStep: embedded ? 0 : 1, furthestStep: 1 }
+    }, 'en-US', { embedded, gatewayState, creatorServicesService: {
+      getConfig: async () => ({ config, configuredCredentials: ['image.gemini.apiKey'] })
+    } });
+
+    const model = await screen.findByRole('combobox', { name: 'Model' });
+    expect(model).toHaveValue('Local image service');
+    fireEvent.click(model);
+    expect(screen.getByRole('option', { name: 'Local image service' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: 'Local image service' }));
+    fireEvent.click(screen.getAllByRole('button', { name: embedded ? 'Generate Cover' : 'Generate' })[0]!);
+    await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith(
+      'creator_job_cover_ui', expect.objectContaining({ action: 'run-stage' })
+    ));
+    expect(fixture.currentJob().state.provider).toBe('gemini');
+  });
+
+  it('submits the selected official image model for a cover', async () => {
+    const fixture = createFixture();
+    const gatewayState: GatewayAccountState = {
+      source: 'gateway', authState: 'signed_in', activationState: 'ready',
+      account: { id: 'account', email: 'test@example.com', verified: true },
+      bindingVersion: 'account:1', activationError: null,
+      selectedModels: { image: 'official/first' },
+      models: [
+        { id: 'official/first', modality: 'image', capabilities: [] },
+        { id: 'official/second', modality: 'image', capabilities: [] }
+      ]
+    };
+    renderWorkspace(fixture, {
+      ...fixture.currentJob(),
+      state: { ...fixture.currentJob().state, prompt: 'Bright portrait', currentStep: 1, furthestStep: 1 }
+    }, 'en-US', { gatewayState });
+
+    const model = screen.getByRole('combobox', { name: 'Image model' });
+    fireEvent.click(model);
+    fireEvent.click(screen.getByRole('option', { name: 'second' }));
+    await waitFor(() => expect(model).toHaveValue('second'));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Generate' })[0]!);
+    await waitFor(() => expect(fixture.applyAction).toHaveBeenCalledWith(
+      'creator_job_cover_ui', expect.objectContaining({ action: 'run-stage' })
+    ));
+    expect(fixture.currentJob().state).toMatchObject({ provider: 'openai', officialModels: { image: 'official/second' } });
+  });
+
+  it('loads public image models only when the cover model picker opens', async () => {
+    const fixture = createFixture();
+    const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'gemini';
+    const getImageCatalog = vi.fn(async () => ({ models: [
+      { id: 'openai/image-2', name: 'Image 2', modality: 'image' as const, capabilities: [] }
+    ] }));
+    renderWorkspace(fixture, fixture.currentJob(), 'en-US', {
+      embedded: true,
+      gatewayState: {
+        source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null,
+        bindingVersion: null, activationError: null, selectedModels: {}, models: []
+      },
+      creatorServicesService: { getConfig: async () => ({ config, configuredCredentials: ['image.gemini.apiKey'] }) },
+      gatewayAccountService: { getImageCatalog }
+    });
+
+    expect(getImageCatalog).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Model' }));
+    expect(await screen.findByRole('option', { name: 'Image 2' })).toBeInTheDocument();
+    expect(getImageCatalog).toHaveBeenCalledOnce();
+  });
+
+  it('limits local Codex covers to the single image supported by the Runtime', async () => {
+    const fixture = createFixture();
+    const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'codex-native';
+    const gatewayState: GatewayAccountState = {
+      source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null,
+      bindingVersion: null, activationError: null, selectedModels: {}, models: []
+    };
+    renderWorkspace(fixture, {
+      ...fixture.currentJob(),
+      state: { ...fixture.currentJob().state, prompt: 'Bright portrait', currentStep: 1, furthestStep: 1 }
+    }, 'en-US', { gatewayState, creatorServicesService: {
+      getConfig: async () => ({ config, configuredCredentials: [] }),
+      getCodexImageStatus: async () => ({ ready: true })
+    } });
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' })).toHaveValue('Local image service'));
+    expect(screen.getByRole('radiogroup', { name: 'Number of options' })).toHaveTextContent('1');
+    expect(screen.getByRole('radiogroup', { name: 'Number of options' })).not.toHaveTextContent('2');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Generate' })[0]!);
+    await waitFor(() => expect(fixture.currentJob().state.candidateCount).toBe(1));
   });
 
   it('places the reference upload before the thumbnail prompt in one row', () => {
@@ -581,7 +685,13 @@ describe('CoverGeneratorWorkspace', () => {
 function renderWorkspace(
   fixture: ReturnType<typeof createFixture>,
   initialJob = fixture.currentJob(),
-  language: 'zh-CN' | 'en-US' = 'zh-CN'
+  language: 'zh-CN' | 'en-US' = 'zh-CN',
+  options: {
+    embedded?: boolean;
+    gatewayState?: GatewayAccountState;
+    creatorServicesService?: { getConfig(): Promise<unknown>; getCodexImageStatus?(): Promise<unknown> };
+    gatewayAccountService?: { getImageCatalog(): Promise<unknown> };
+  } = {}
 ) {
   let currentSession: CreatorSessionContextValue | null = null;
   const view = render(
@@ -595,8 +705,10 @@ function renderWorkspace(
           runAgentTurn: vi.fn()
         } as never}
       >
-        <SessionObserver onSession={session => { currentSession = session; }} />
-        <CoverGeneratorWorkspace onBack={vi.fn()} />
+        <OfficialServicesContext.Provider value={options.gatewayState ?? null}>
+          <SessionObserver onSession={session => { currentSession = session; }} />
+          <CoverGeneratorWorkspace onBack={vi.fn()} embedded={options.embedded} creatorServicesService={options.creatorServicesService as never} gatewayAccountService={options.gatewayAccountService as never} />
+        </OfficialServicesContext.Provider>
       </CreatorSessionProvider>
     </LanguageProvider>
   );

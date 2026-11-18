@@ -364,10 +364,10 @@ describe('ImageGenerationWorkspace', () => {
       { id: 'bytedance/seedream', name: 'Seedream', vendor: 'ByteDance', modality: 'image', capabilities: [] }
     ] };
     renderWorkspace(fixture, fixture.currentJob(), undefined, undefined, copy.language, false, { getImageCatalog: async () => catalog });
-    await screen.findByRole('button', { name: /Seedream/ });
     const model = screen.getByRole('combobox', { name: copy.model });
     expect(model.tagName).toBe('INPUT');
     fireEvent.click(model);
+    await screen.findByRole('option', { name: 'Seedream' });
     const list = screen.getByRole('listbox', { name: copy.model });
     expect(within(list).getAllByRole('option')).toHaveLength(3);
     expect(within(list).queryByRole('group')).not.toBeInTheDocument();
@@ -395,6 +395,9 @@ describe('ImageGenerationWorkspace', () => {
       { id: 'grok-imagine-image-2.0', name: 'Grok Imagine 2', vendor: 'Others', modality: 'image', capabilities: [] }
     ] }) });
     const popular = screen.getByRole('region', { name: '图片模型' });
+    await screen.findByRole('button', { name: '选择模型 本地生图服务' });
+    expect(within(popular).getAllByRole('button')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
     await screen.findByRole('button', { name: '选择模型 Grok Imagine 2' });
     expect(within(popular).getAllByRole('button')).toHaveLength(3);
     expect(within(popular).queryByRole('group')).not.toBeInTheDocument();
@@ -413,16 +416,24 @@ describe('ImageGenerationWorkspace', () => {
     expect(fixture.applyAction.mock.calls.every(([, request]) => request.action !== 'run-stage')).toBe(true);
   });
 
-  it('keeps the local model available when the public catalog fails and recovers on retry', async () => {
+  it('loads the public catalog on model open and retries silently on the next open', async () => {
     const fixture = createFixture();
     const getImageCatalog = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({
       models: [{ id: 'vendor/image', name: 'Catalog Image', modality: 'image', capabilities: [] }]
     });
     renderWorkspace(fixture, fixture.currentJob(), undefined, undefined, 'zh-CN', false, { getImageCatalog });
-    expect(await screen.findByRole('button', { name: '重试加载图片模型' })).toBeEnabled();
-    expect(screen.getByText('官方图片模型目录加载失败').closest('[role="status"]')).not.toBeNull();
-    expect(screen.getByRole('combobox', { name: '模型' })).toHaveValue('本地生图服务');
-    fireEvent.click(screen.getByRole('button', { name: '重试加载图片模型' }));
+    await screen.findByRole('button', { name: '选择模型 本地生图服务' });
+    expect(getImageCatalog).not.toHaveBeenCalled();
+    const model = screen.getByRole('combobox', { name: '模型' });
+    fireEvent.click(model);
+    await waitFor(() => expect(getImageCatalog).toHaveBeenCalledOnce());
+    expect(model).toHaveValue('');
+    expect(within(screen.getByRole('listbox', { name: '模型' })).getAllByRole('option')).toHaveLength(1);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText('官方图片模型目录加载失败')).not.toBeInTheDocument();
+    expect(screen.queryByText('图片模型目录加载失败')).not.toBeInTheDocument();
+    fireEvent.keyDown(model, { key: 'Escape' });
+    fireEvent.click(model);
     expect(await screen.findByRole('button', { name: '选择模型 Catalog Image' })).toBeInTheDocument();
     expect(getImageCatalog).toHaveBeenCalledTimes(2);
     expect(fixture.applyAction).not.toHaveBeenCalled();
@@ -458,8 +469,9 @@ describe('ImageGenerationWorkspace', () => {
       </LanguageProvider>
     );
     const view = render(content(state));
+    fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
     await waitFor(() => expect(getImageCatalog).toHaveBeenCalledOnce());
-    expect(screen.getByText('正在加载官方图片模型…')).toBeInTheDocument();
+    expect(screen.queryByText('正在加载官方图片模型…')).not.toBeInTheDocument();
     view.rerender(content(null));
     view.rerender(content(state));
     await act(async () => { resolveCatalog({ models: [{ id: 'vendor/image', name: 'Catalog Image', modality: 'image', capabilities: [] }] }); });

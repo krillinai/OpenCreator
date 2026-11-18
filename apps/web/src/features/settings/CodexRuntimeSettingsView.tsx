@@ -5,6 +5,7 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { ConnectionService } from '../../services/connection-service.js';
 import { IssueList } from '../issues/IssuePresenter.js';
 import { usePageIssueState } from '../issues/page-issue-state.js';
+import './settings-management.css';
 
 export type CodexRuntimeSettingsService = Pick<ConnectionService,
   | 'getCodexProvider'
@@ -13,6 +14,7 @@ export type CodexRuntimeSettingsService = Pick<ConnectionService,
 export function CodexRuntimeSettingsView(props: {
   connected: boolean;
   service: CodexRuntimeSettingsService | null;
+  onSaved?(): void;
 }) {
   const l = useLocalizedCopy();
   const [provider, setProvider] = useState<CodexProviderConfig>();
@@ -79,6 +81,7 @@ export function CodexRuntimeSettingsView(props: {
       setModel(next.model);
       setApiKey('');
       pageIssues.resolveOperation('settings.codex.save');
+      props.onSaved?.();
       setNotice(l(
         'Codex Agent 配置已保存。',
         'Codex Agent configuration saved.'

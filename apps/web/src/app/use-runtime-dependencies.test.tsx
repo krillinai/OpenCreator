@@ -25,7 +25,7 @@ describe('useRuntimeDependencies', () => {
     expect(result.current.componentsStatus?.selectedProvider).toBe('openai');
   });
 
-  it('checks yt-dlp once the Runtime connects and the saved interval is due', async () => {
+  it('only reads the current status on connection even when a release check is due', async () => {
     const getYtDlpStatus = vi.fn(async () => ({
       ytDlp: status({ checkDue: true })
     }));
@@ -49,10 +49,11 @@ describe('useRuntimeDependencies', () => {
       service
     }));
 
-    await waitFor(() => expect(result.current.phase).toBe('idle'));
+    await waitFor(() => expect(result.current.ytDlpStatus).toMatchObject({ checkDue: true }));
     expect(getYtDlpStatus).toHaveBeenCalledOnce();
-    expect(checkYtDlpUpdate).toHaveBeenCalledWith(false);
-    expect(result.current.ytDlpStatus?.updateAvailable).toBe(true);
+    expect(checkYtDlpUpdate).not.toHaveBeenCalled();
+    expect(service.updateYtDlp).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe('idle');
   });
 
   it('shares the status returned by a manual update', async () => {
@@ -82,6 +83,32 @@ describe('useRuntimeDependencies', () => {
     expect(updateYtDlp).toHaveBeenCalledOnce();
     expect(result.current.ytDlpStatus?.source).toBe('managed');
     expect(result.current.ytDlpStatus?.currentVersion).toBe('2026.08.31.120000');
+  });
+
+  it('reflects an activated background update using only local status reads', async () => {
+    vi.useFakeTimers();
+    try {
+      const latestVersion = '2026.08.31.120000';
+      const getYtDlpStatus = vi.fn()
+        .mockResolvedValueOnce({ ytDlp: status() })
+        .mockResolvedValue({ ytDlp: status({ source: 'managed', currentVersion: latestVersion, latestVersion }) });
+      const service: RuntimeDependencyService = {
+        getComponentsStatus: vi.fn(async () => ({ platform: 'darwin', arch: 'arm64', selectedProvider: 'openai', selectedModel: null, components: [] })),
+        downloadComponents: vi.fn(), getYtDlpStatus, checkYtDlpUpdate: vi.fn(), updateYtDlp: vi.fn()
+      };
+      const { result } = renderHook(() => useRuntimeDependencies({ connected: true, service }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(result.current.ytDlpStatus?.source).toBe('bundled');
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(result.current.ytDlpStatus).toMatchObject({ source: 'managed', currentVersion: latestVersion });
+      expect(result.current.phase).toBe('idle');
+      expect(result.current.issues).toHaveLength(0);
+      expect(service.checkYtDlpUpdate).not.toHaveBeenCalled();
+      expect(service.updateYtDlp).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('preserves the Runtime error code used for localized update feedback', async () => {

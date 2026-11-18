@@ -1,5 +1,6 @@
 import type {
   CreatorArtifact,
+  CreatorJob,
   CreatorJson,
   CreatorStageRun,
   DownloadMediaType,
@@ -66,7 +67,7 @@ export default function VideoDownloadWorkspace(props: {
   embedded?: boolean;
   embeddedTabs?: ReactNode;
   forceComposer?: boolean;
-  onGenerated?(): void;
+  onGenerated?(job: CreatorJob): void;
   batch?: VideoDownloadBatchView;
 }) {
   const l = useLocalizedCopy();
@@ -91,8 +92,7 @@ export default function VideoDownloadWorkspace(props: {
     () => new Set()
   );
   const submittingOptionIdsRef = useRef(new Set<string>());
-  const localDownloadOptionIdsRef = useRef(new Set<string>());
-  const localDownloadingArtifactIdsRef = useRef(new Set<string>());
+  const workspaceRequestedOptionIdsRef = useRef(new Set<string>());
   const downloadSubmissionTailRef = useRef<Promise<void>>(Promise.resolve());
   const downloadControlsRef = useRef(new Set<string>());
   const [downloadControlsPending, setDownloadControlsPending] = useState<ReadonlySet<string>>(() => new Set());
@@ -102,6 +102,7 @@ export default function VideoDownloadWorkspace(props: {
   const [ytDlpRecoveryError, setYtDlpRecoveryError] = useState('');
   const [ytDlpUpdateNetworkFailure, setYtDlpUpdateNetworkFailure] = useState(false);
   const [artifactPreview, setArtifactPreview] = useState<DownloadArtifactPreview>();
+  const mountedRef = useRef(false);
   const artifactPreviewRequestRef = useRef(0);
   const artifactPreviewUrlRef = useRef<string>();
   const artifactPreviewMediaRef = useRef<HTMLMediaElement | null>(null);
@@ -251,6 +252,11 @@ export default function VideoDownloadWorkspace(props: {
     && (props.batch?.hasMultipleSources !== true || !showFailureWorkbench || ytDlpUpdateSuggested || error || ytDlpRecoveryError));
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
     const sourceUrl = readString(session?.state.sourceUrl);
     if (sourceUrl !== undefined && sourceUrl !== url) {
       setUrl(sourceUrl);
@@ -274,17 +280,8 @@ export default function VideoDownloadWorkspace(props: {
     for (const artifact of newArtifacts) {
       seenDownloadArtifactIdsRef.current.add(artifact.id);
       const optionId = readString(artifact.metadata.optionId);
-      if (optionId !== undefined && localDownloadOptionIdsRef.current.has(optionId)) {
-        localDownloadOptionIdsRef.current.delete(optionId);
-        if (!localDownloadingArtifactIdsRef.current.has(artifact.id)) {
-          localDownloadingArtifactIdsRef.current.add(artifact.id);
-          void downloadArtifact(artifact).finally(() => {
-            localDownloadingArtifactIdsRef.current.delete(artifact.id);
-          });
-        }
-      } else {
-        openOutputs = true;
-      }
+      const requestedInWorkspace = optionId !== undefined && workspaceRequestedOptionIdsRef.current.delete(optionId);
+      if (!requestedInWorkspace) openOutputs = true;
     }
     setCurrentStep(1);
     if (openOutputs) setResultTab('outputs');
@@ -358,28 +355,28 @@ export default function VideoDownloadWorkspace(props: {
     });
   }
 
-  async function analyze(): Promise<boolean> {
-    if (probing || hasActiveDownloads) return false;
+  async function analyze(): Promise<CreatorJob | undefined> {
+    if (probing || hasActiveDownloads) return;
     if (!validUrl) {
       setError(l(
         '请输入有效的 YouTube、Bilibili、X、TikTok、Instagram、抖音、Facebook、小红书、Pinterest 或 Reddit 公开视频链接',
         'Enter a valid public YouTube, Bilibili, X, TikTok, Instagram, Douyin, Facebook, Xiaohongshu, Pinterest, or Reddit video URL'
       ));
-      return false;
+      return;
     }
     if (session === null) {
       setError(l(
         '视频下载服务暂不可用，请检查 Runtime 连接',
         'Video download is unavailable. Check the Runtime connection.'
       ));
-      return false;
+      return;
     }
     clearIssue();
     setNotice('');
     session.updateDraft({ sourceUrl: url.trim(), selectedOptionId: null }, { semantic: true });
     try {
       await session.flush();
-      await session.applyAction({
+      const job = await session.applyAction({
         actor: 'user',
         action: 'run-stage',
         input: { stageId: 'probe' }
@@ -388,12 +385,12 @@ export default function VideoDownloadWorkspace(props: {
         '解析任务已提交，真实规格返回后会自动显示',
         'Analysis started. Available formats will appear automatically.'
       ));
-      return true;
+      return job;
     } catch (caught) {
       const message = formatDownloadError(caught, l);
       setLocalRecovery({ message, code: recoveryCodeFromError(caught) });
       setError(message);
-      return false;
+      return;
     }
   }
 
@@ -443,7 +440,7 @@ export default function VideoDownloadWorkspace(props: {
       return;
     }
     submittingOptionIdsRef.current.add(option.id);
-    localDownloadOptionIdsRef.current.add(option.id);
+    workspaceRequestedOptionIdsRef.current.add(option.id);
     setSubmittingOptionIds(new Set(submittingOptionIdsRef.current));
     setMediaType(option.mediaType);
     setSelectedOptionId(option.id);
@@ -466,7 +463,7 @@ export default function VideoDownloadWorkspace(props: {
         setResultTab('formats');
       })
       .catch(caught => {
-        localDownloadOptionIdsRef.current.delete(option.id);
+        workspaceRequestedOptionIdsRef.current.delete(option.id);
         const message = formatDownloadError(caught, l);
         setLocalRecovery({ message, code: recoveryCodeFromError(caught) });
         setError(message);
@@ -507,7 +504,7 @@ export default function VideoDownloadWorkspace(props: {
     }
   }
 
-  async function downloadArtifact(artifact: CreatorArtifact) {
+  async function saveArtifactLocally(artifact: CreatorArtifact) {
     try {
       const owner = artifactSession(artifact);
       const objectUrl = await createCreatorArtifactObjectUrl(
@@ -729,8 +726,8 @@ export default function VideoDownloadWorkspace(props: {
         <div className="creator-tool-stack image-generation-studio">
           <form className="image-generation-composer dashboard-download-composer" aria-label={l('视频下载', 'Video Downloader')} onSubmit={event => {
             event.preventDefault();
-            void analyze().then(succeeded => {
-              if (succeeded) props.onGenerated?.();
+            void analyze().then(job => {
+              if (job !== undefined && mountedRef.current) props.onGenerated?.(job);
             });
           }}>
             <fieldset className="image-generation-fields" disabled={probing || hasActiveDownloads}>
@@ -1255,7 +1252,7 @@ export default function VideoDownloadWorkspace(props: {
                                 </button> : null}
                                 <button
                                   type="button"
-                                  onClick={() => void downloadArtifact(artifact)}
+                                  onClick={() => void saveArtifactLocally(artifact)}
                                   aria-label={`${l('保存到本机', 'Save locally')} ${fileName}`}
                                   title={l('保存到本机', 'Save locally')}
                                 >
@@ -1358,6 +1355,13 @@ export default function VideoDownloadWorkspace(props: {
       </div>
     </CreatorToolShell>
   );
+}
+
+export function hasDownloadFormats(job: CreatorJob): boolean {
+  const sourceUrl = readString(job.state.sourceUrl);
+  if (sourceUrl === undefined) return false;
+  const artifact = latestMatchingProbe(job.artifacts, sourceUrl);
+  return artifact !== undefined && (readDownloadProbe(artifact.metadata)?.options.length ?? 0) > 0;
 }
 
 function latestMatchingProbe(

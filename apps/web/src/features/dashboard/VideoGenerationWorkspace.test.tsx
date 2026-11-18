@@ -131,9 +131,9 @@ describe('VideoGenerationWorkspace', () => {
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
     const list = screen.getByRole('listbox', { name: '模型' });
     expect(within(list).queryByRole('group')).not.toBeInTheDocument();
-    expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
+    await waitFor(() => expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
       '本地视频服务', 'Gateway Film', 'Gateway Motion'
-    ]);
+    ]));
     expect(screen.queryByRole('option', { name: 'Seedance 2.5' })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Gateway Motion' })).toHaveTextContent('Gateway Motion');
     expect(screen.getByRole('option', { name: 'Gateway Motion' })).not.toHaveTextContent(/登录后使用|1080p|时长|积分/);
@@ -144,7 +144,7 @@ describe('VideoGenerationWorkspace', () => {
       .toMatchObject({ provider: 'veo', model: config.video.veo.model });
     expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Gateway Motion' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Gateway Motion' }));
     expect(await screen.findByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('A city at dusk');
   });
@@ -200,10 +200,10 @@ describe('VideoGenerationWorkspace', () => {
   });
 
   it.each([
-    { language: 'zh-CN' as const, failure: '官方视频模型目录加载失败', local: '本地视频服务', model: '模型', retry: '重试加载视频模型' },
-    { language: 'en-US' as const, failure: 'Official video models could not load', local: 'Local video service', model: 'Model', retry: 'Retry loading video models' },
-    { language: 'sv-SE' as const, failure: 'Kunde inte läsa in officiella videomodeller', local: 'Lokal videotjänst', model: 'Modell', retry: 'Försök läsa in videomodeller igen' }
-  ])('keeps local video generation available when the public catalog fails and retries it in $language', async ({ language, failure, local, model, retry }) => {
+    { language: 'zh-CN' as const, failure: '官方视频模型目录加载失败', local: '本地视频服务', model: '模型' },
+    { language: 'en-US' as const, failure: 'Official video models could not load', local: 'Local video service', model: 'Model' },
+    { language: 'sv-SE' as const, failure: 'Kunde inte läsa in officiella videomodeller', local: 'Lokal videotjänst', model: 'Modell' }
+  ])('loads the public video catalog on model open and retries silently in $language', async ({ language, failure, local, model }) => {
     const getVideoCatalog = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ models: [
       { id: 'vendor/video', name: 'Recovered Video', vendor: 'Vendor', modality: 'video', capabilities: [] }
     ] });
@@ -211,10 +211,15 @@ describe('VideoGenerationWorkspace', () => {
       creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] }) },
       gatewayAccountService: { getVideoCatalog }, language
     });
-    expect(await screen.findByText(failure)).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: model })).toHaveValue(local);
-    fireEvent.click(screen.getByRole('button', { name: retry }));
-    fireEvent.click(screen.getByRole('combobox', { name: model }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: model })).toHaveValue(local));
+    expect(getVideoCatalog).not.toHaveBeenCalled();
+    const selector = screen.getByRole('combobox', { name: model });
+    fireEvent.click(selector);
+    await waitFor(() => expect(getVideoCatalog).toHaveBeenCalledOnce());
+    expect(screen.getByRole('option', { name: local })).toBeInTheDocument();
+    expect(screen.queryByText(failure)).not.toBeInTheDocument();
+    fireEvent.keyDown(selector, { key: 'Escape' });
+    fireEvent.click(selector);
     expect(await screen.findByRole('option', { name: 'Recovered Video' })).toBeInTheDocument();
     expect(getVideoCatalog).toHaveBeenCalledTimes(2);
   });

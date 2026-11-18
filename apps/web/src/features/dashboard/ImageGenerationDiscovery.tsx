@@ -68,7 +68,6 @@ export default function ImageGenerationDiscovery(props: {
   models: GatewayModel[];
   localModelId: string;
   selectedId: string;
-  catalogState: 'loading' | 'ready' | 'error';
   busy: boolean;
   onModelSelect(id: string): void;
   onTemplate(prompt: string, aspectRatio: string): void;
@@ -104,9 +103,6 @@ export default function ImageGenerationDiscovery(props: {
               );
             })}
           </div>
-          {!props.official.official && props.catalogState === 'loading' ? <p role="status">{l('正在加载图片模型…', 'Loading image models…')}</p> : null}
-          {!props.official.official && props.catalogState === 'error' ? <p role="status">{l('图片模型目录加载失败', 'Image model catalog is unavailable')}</p> : null}
-          {!props.official.official && props.catalogState === 'ready' && officialModels.length === 0 ? <p role="status">{l('暂无官方图片模型', 'No official image models available')}</p> : null}
         </div>
       </section>
 

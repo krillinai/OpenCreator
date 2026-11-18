@@ -14,6 +14,31 @@ describe('KrillinAI error mapping', () => {
       'downloadYouTubeSubtitle: yt-dlp timed out on a previous attempt. The provided YouTube account cookies are no longer valid.'
     ).publicFacts.kind).toBe('unknown');
   });
+  it('records a refused yt-dlp caption connection as a network failure', () => {
+    const refused = new KrillinCliError('platform_caption_access_failed',
+      'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: Unable to download API page: [Errno 61] Connection refused');
+    expect(refused.publicFacts).toMatchObject({ kind: 'connection-refused', provider: 'yt-dlp',
+      upstreamCode: 'platform_caption_access_failed' });
+    expect(new KrillinCliError('platform_caption_access_failed',
+      'downloadYouTubeSubtitle: yt-dlp connection refused earlier. The provided YouTube account cookies are no longer valid.'
+    ).publicFacts.kind).toBe('unknown');
+  });
+  it('classifies yt-dlp media preparation failures without treating expired cookies as network errors', () => {
+    const refused = new KrillinCliError('prepare_media_failed',
+      'linkToFile download audio yt-dlp error: exit status 1: ERROR: [youtube] Unable to download API page: [Errno 61] Connection refused');
+    expect(refused.publicFacts).toMatchObject({ kind: 'connection-refused', provider: 'yt-dlp' });
+    expect(normalizeKrillinFailure(refused).code).toBe('network_unavailable');
+
+    const extractor = new KrillinCliError('prepare_audio_fallback_failed',
+      'linkToFile download audio yt-dlp error: exit status 1: ERROR: [youtube] Signature extraction failed. Please update to the latest version.');
+    expect(extractor.publicFacts).toMatchObject({ kind: 'unsupported', provider: 'yt-dlp' });
+    expect(normalizeKrillinFailure(extractor).code).toBe('yt_dlp_update_recommended');
+
+    const cookies = new KrillinCliError('prepare_media_failed',
+      'yt-dlp: WARNING: connection timed out earlier. ERROR: The provided YouTube account cookies are no longer valid.');
+    expect(cookies.publicFacts.provider).toBe('krillinai');
+    expect(normalizeKrillinFailure(cookies).code).toBe('prepare_media_failed');
+  });
   it('preserves structured HTTP diagnostics without exposing raw response text to telemetry', () => {
     const requestId = `ocreq_${'b'.repeat(48)}`;
     const error = new KrillinCliError('audio_transcription_api_failed', 'private upstream body', 'retryable', true,

@@ -28,6 +28,15 @@ describe('app routes', () => {
     expect(parseRoute(formatRoute(route))).toEqual(route);
     expect(parseRoute('#/settings?tab=local-components&returnPath=https%3A%2F%2Fexample.com')).toEqual({ view: 'settings', tab: 'local-components' });
   });
+  it('returns from proxy settings to the same video download task', () => {
+    const returnPath = '#/workbench?tool=video-download&jobId=download_job&returnTo=projects';
+    const settings = parseRoute(`#/settings?${new URLSearchParams({ returnPath })}`);
+    expect(settings).toEqual({ view: 'settings', returnPath });
+    expect(formatRoute(settings)).toBe(`#/settings?${new URLSearchParams({ returnPath })}`);
+    expect(parseRoute(settings.view === 'settings' ? settings.returnPath! : '')).toEqual({
+      view: 'workbench', tool: 'video-download', jobId: 'download_job', returnTo: 'projects'
+    });
+  });
   it('decodes thread route ids', () => {
     expect(parseRoute('#/thread/thread%201')).toEqual({ view: 'thread', threadId: 'thread 1' });
   });

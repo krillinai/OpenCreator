@@ -36,7 +36,7 @@ import DashboardGenerationComposer, {
 } from './DashboardGenerationComposer.js';
 import DashboardImageCarousel from './DashboardImageCarousel.js';
 import DashboardVideoDownloadCover from './DashboardVideoDownloadCover.js';
-import type { GenerationHistoryType } from './DashboardGenerationHistory.js';
+import type { GenerationHistoryType, PendingDownloadProbe } from './DashboardGenerationHistory.js';
 import { generationHistoryTypeForWorkspace } from './generation-history-type.js';
 import DashboardGenerationSession from './DashboardGenerationSession.js';
 import ImageGenerationWorkspace from './ImageGenerationWorkspace.js';
@@ -287,6 +287,8 @@ export default function DashboardPage(props: {
   const [generationResultActive, setGenerationResultActive] = useState(props.workspace === 'image-generation' && props.jobId !== undefined);
   const [generationHistoryActive, setGenerationHistoryActive] = useState(Boolean(props.historyView));
   const [generationSessionActive, setGenerationSessionActive] = useState(false);
+  const [historySubmission, setHistorySubmission] = useState<{ type: GenerationHistoryType }>();
+  const [pendingDownloadProbe, setPendingDownloadProbe] = useState<PendingDownloadProbe>();
   const generationSessionReturnRef = useRef<{ workspace: CreatorWorkspace; jobId?: string }>();
   const historyJobRef = useRef<CreatorJob>();
   const generationHistoryOriginRef = useRef<{
@@ -340,6 +342,7 @@ export default function DashboardPage(props: {
       return;
     }
     internalWorkspaceNavigationRef.current = undefined;
+    setPendingDownloadProbe(undefined);
     setGenerationResultActive(props.workspace === 'image-generation' && props.jobId !== undefined);
     setGenerationHistoryActive(Boolean(props.historyView));
     setGenerationSessionActive(false);
@@ -386,6 +389,7 @@ export default function DashboardPage(props: {
   };
 
   const closeWorkspace = () => {
+    setPendingDownloadProbe(undefined);
     historyJobRef.current = undefined;
     const sessionReturn = generationSessionReturnRef.current;
     if (sessionReturn) {
@@ -426,6 +430,7 @@ export default function DashboardPage(props: {
   };
 
   const openWorkspace = (workspace: CreatorWorkspace, jobId?: string, generated = false, historyJob?: CreatorJob) => {
+    setPendingDownloadProbe(undefined);
     historyJobRef.current = historyJob;
     setWorkspaceOrigin('dashboard');
     setActivePromptHint(undefined);
@@ -444,6 +449,8 @@ export default function DashboardPage(props: {
   };
 
   const openGenerationHistory = () => {
+    setPendingDownloadProbe(undefined);
+    setHistorySubmission(undefined);
     const workspace = activeWorkspace ?? 'image-generation';
     const jobId = generationJobIdsRef.current[workspace];
     generationHistoryOriginRef.current = {
@@ -521,6 +528,10 @@ export default function DashboardPage(props: {
   ) => {
     const onGenerated = (jobId?: string) => {
       if (jobId) generationJobIdsRef.current[workspace] = jobId;
+      if (generationHistoryActive && !generationResultActive) {
+        setHistorySubmission({ type: generationHistoryTypeForWorkspace(workspace) });
+        return;
+      }
       openWorkspace(workspace, jobId ?? generationJobIdsRef.current[workspace], true);
     };
     return renderCreatorWorkspace(workspace, workspace === 'image-generation' ? (
@@ -540,6 +551,9 @@ export default function DashboardPage(props: {
         embeddedTabs={tabs}
         forceComposer={generationSessionActive || generationHistoryActive}
         onGenerated={onGenerated}
+        creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
         onBack={closeWorkspace}
       />
     ) : workspace === 'video-generation' ? (
@@ -612,7 +626,14 @@ export default function DashboardPage(props: {
         embedded
         embeddedTabs={tabs}
         forceComposer={generationSessionActive || generationHistoryActive}
-        onGenerated={onGenerated}
+        onGenerated={job => {
+          onGenerated(job.id);
+          if (!generationHistoryActive) setHistorySubmission({ type: 'video' });
+          const probe = job.stages.at(-1);
+          if (probe?.stageId === 'probe') {
+            setPendingDownloadProbe({ projectId: job.projectId, jobId: job.id, stageRunId: probe.id });
+          }
+        }}
         service={props.creatorService!}
         runtimeDependencies={props.runtimeDependencies}
         onBack={closeWorkspace}
@@ -648,16 +669,21 @@ export default function DashboardPage(props: {
       : unifiedGenerationModes[activeWorkspace];
   if ((generationSessionActive || (generationHistoryActive && !generationResultActive)) && initialGenerationMode !== undefined && activeWorkspace !== null && props.projectId && props.creatorService) {
     return <DashboardGenerationSession
+      onResumeCreating={() => setPendingDownloadProbe(undefined)}
       history={{
         projectId: props.projectId,
         service: props.creatorService,
         initialType: generationHistoryActive ? generationHistoryOriginRef.current?.type : generationHistoryTypeForWorkspace(activeWorkspace),
+        submittedTask: historySubmission,
+        autoOpenDownload: pendingDownloadProbe,
         initialVisibleCount: generationHistoryActive ? generationHistoryOriginRef.current?.visibleCount : undefined,
         onViewChange: view => {
           if (generationHistoryOriginRef.current) generationHistoryOriginRef.current = { ...generationHistoryOriginRef.current, ...view };
           if (generationHistoryActive && view.type !== (props.historyView?.initialType ?? 'all')) props.historyView?.onTypeChange?.(view.type);
         },
         onBackCreation: props.historyView ? props.historyView.onBackCreation : generationHistoryActive ? () => {
+          setPendingDownloadProbe(undefined);
+          setHistorySubmission(undefined);
           const creationWorkspace = generationHistoryOriginRef.current ? generationHistoryOriginRef.current.creationWorkspace : activeWorkspace;
           setActiveWorkspace(creationWorkspace);
           setGenerationResultActive(false);
@@ -666,9 +692,12 @@ export default function DashboardPage(props: {
           internalWorkspaceNavigationRef.current = creationWorkspace !== null && creationWorkspace !== props.workspace ? creationWorkspace : undefined;
           props.onWorkspaceNavigate?.(creationWorkspace);
         } : closeWorkspace,
-        onOpenJob: job => props.historyView?.onOpenJob ? props.historyView.onOpenJob(job) : generationHistoryActive
-          ? openWorkspace(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job.id, true, job)
-          : openJobEditor(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job)
+        onOpenJob: job => {
+          setPendingDownloadProbe(undefined);
+          if (props.historyView?.onOpenJob) props.historyView.onOpenJob(job);
+          else if (generationHistoryActive) openWorkspace(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job.id, true, job);
+          else openJobEditor(creatorWorkspaceForTemplate(job.templateId) ?? activeWorkspace, job);
+        }
       }}
       composer={{
         showExtendedModes: true,
@@ -834,6 +863,9 @@ export default function DashboardPage(props: {
     return renderCreatorWorkspace('cover-generator', (
       <CoverGeneratorWorkspace
         promptHint={activePromptHint}
+        creatorServicesService={props.creatorServicesService}
+        gatewayAccountService={props.gatewayAccountService}
+        onGatewayStateChange={props.onGatewayStateChange}
         onBack={closeWorkspace}
       />
     ));

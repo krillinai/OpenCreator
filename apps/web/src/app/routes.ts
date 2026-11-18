@@ -176,8 +176,9 @@ export function formatRoute(route: AppRoute): string {
     case 'capabilities':
       return '#/capabilities';
     case 'settings': {
-      if (route.tab === undefined) return '#/settings';
-      const query = new URLSearchParams({ tab: route.tab });
+      if (route.tab === undefined && route.returnPath === undefined) return '#/settings';
+      const query = new URLSearchParams();
+      if (route.tab !== undefined) query.set('tab', route.tab);
       if (route.section !== undefined) query.set('section', route.section);
       if (route.component !== undefined) query.set('component', route.component);
       if (route.from !== undefined) query.set('from', route.from);

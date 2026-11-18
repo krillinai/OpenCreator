@@ -1,11 +1,18 @@
 import {
   creatorPromptMaxLength,
+  gatewayModelIdMatches,
+  gatewayModelReady,
   readCreatorResultSnapshots,
   type CoverStyleId,
   type CoverTextLanguage,
   type CreatorArtifact,
   type CreatorJson,
-  type ImageGenerationQuality
+  type ImageGenerationQuality,
+  type CreatorServicesConfig,
+  type CreatorServicesCredentialField,
+  type GatewayAccountState,
+  type GatewayImageCatalog,
+  type GatewayModel
 } from '@opencreator/protocol';
 import { useGenerationAccess } from './DashboardGenerationAccess.js';
 import {
@@ -27,6 +34,9 @@ import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import { formatRoute, parseRoute } from '../../app/routes.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
+import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
+import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
+import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
@@ -53,6 +63,7 @@ type CoverResultVersion = {
 
 const samplePromptZh = '突出原封面的核心主体，封面文字直接有力，整体适合视频平台缩略图';
 const samplePromptEn = 'Keep the core reference subject, use direct thumbnail copy, and make the result readable at small sizes';
+const localImageModelId = '__local_image__';
 
 export default function CoverGeneratorWorkspace(props: {
   onBack(): void;
@@ -61,12 +72,64 @@ export default function CoverGeneratorWorkspace(props: {
   embeddedTabs?: ReactNode;
   forceComposer?: boolean;
   onGenerated?(): void;
+  creatorServicesService?: CreatorServicesSettingsService | null;
+  gatewayAccountService?: GatewayAccountSettingsService | null;
+  onGatewayStateChange?(state: GatewayAccountState): void;
 }) {
   const l = useLocalizedCopy();
   const requireGenerationAccess = useGenerationAccess();
   const { language: appLanguage } = useAppLanguage();
   const session = useOptionalCreatorSession();
-  const official = useOfficialServices('image');
+  const official = useOfficialServices('image', true, undefined, models => models[0]);
+  const [imageConfig, setImageConfig] = useState<CreatorServicesConfig['image'] | null>(null);
+  const [configuredCredentials, setConfiguredCredentials] = useState<CreatorServicesCredentialField[]>([]);
+  const [codexImageReady, setCodexImageReady] = useState<boolean>();
+  const [publicCatalog, setPublicCatalog] = useState<GatewayImageCatalog | undefined>(() => props.gatewayAccountService?.getCachedImageCatalog?.());
+  const catalogRequest = useRef(0);
+  const catalogWork = useRef<{ service: GatewayAccountSettingsService; promise: Promise<GatewayImageCatalog> }>();
+  const [pendingModelId, setPendingModelId] = useState<string>();
+  const pendingValidation = useRef<string>();
+  const localProvider = imageConfig?.provider;
+  const localCodexImage = !official.official && localProvider === 'codex-native';
+  const localConfigured = imageConfig !== null && (localProvider === 'codex-native' ? codexImageReady === true
+    : localProvider === 'kling' ? configuredCredentials.includes('image.kling.accessKey') && configuredCredentials.includes('image.kling.secretKey') && !!imageConfig.kling.model
+      : configuredCredentials.includes(`image.${localProvider}.apiKey` as CreatorServicesCredentialField) && !!imageConfig[localProvider!].model);
+  const localModel: GatewayModel | undefined = imageConfig ? {
+    id: localImageModelId, name: l('本地生图服务', 'Local image service'), modality: 'image', capabilities: [],
+    vendor: l('本地', 'Local'), status: localConfigured ? 'ready' : 'temporarily_unavailable'
+  } : undefined;
+  const publicModels = publicCatalog?.models ?? [];
+  const catalogModels = [...(localModel ? [localModel] : []), ...publicModels];
+  const selectedCatalogId = pendingModelId ?? (localConfigured ? localImageModelId : '');
+
+  function loadPublicCatalog() {
+    const request = ++catalogRequest.current;
+    const service = props.gatewayAccountService;
+    setPublicCatalog(service?.getCachedImageCatalog?.());
+    if (!service?.getImageCatalog) return;
+    const promise = catalogWork.current?.service === service
+      ? catalogWork.current.promise : service.getImageCatalog();
+    catalogWork.current = { service, promise };
+    void promise.then(catalog => {
+      if (request === catalogRequest.current) setPublicCatalog(catalog);
+    }).catch(() => undefined).finally(() => {
+      if (catalogWork.current?.promise === promise) catalogWork.current = undefined;
+    });
+  }
+
+  function selectCatalogModel(id: string) {
+    if (id === localImageModelId) {
+      setPendingModelId(undefined);
+      pendingValidation.current = undefined;
+      if (localProvider) session?.updateDraft({ provider: localProvider, __creatorUserSelected: true });
+      return;
+    }
+    if (!publicModels.some(model => gatewayModelIdMatches(model.id, id) && gatewayModelReady(model))) return;
+    setPendingModelId(id);
+    session?.updateDraft({ __creatorUserSelected: true }, { semantic: true });
+    pendingValidation.current = undefined;
+    requireGenerationAccess();
+  }
   const restoredResults = session?.job.artifacts.some(artifact => (
     artifact.kind === 'cover_image' && artifact.status === 'completed'
   )) === true;
@@ -88,6 +151,7 @@ export default function CoverGeneratorWorkspace(props: {
   const [candidateCount, setCandidateCount] = useState<CoverCandidateCount>(() => (
     readCandidateCount(session?.state.candidateCount)
   ));
+  const availableCandidateCounts: CoverCandidateCount[] = localCodexImage ? [1] : [1, 2, 3, 4];
   const [coverStyle, setCoverStyle] = useState<CoverStyleId>(() => (
     readCoverStyle(session?.state.coverStyle)
   ));
@@ -200,6 +264,63 @@ export default function CoverGeneratorWorkspace(props: {
   });
   const referencePreviewKey = JSON.stringify([session?.job.id, activeReferenceArtifact?.id,
     activeReferenceArtifact?.version, activeReferenceArtifact?.sha256, activeReferenceArtifact?.path]);
+
+  useEffect(() => {
+    if (official.official) return;
+    let active = true;
+    void props.creatorServicesService?.getConfig().then(response => {
+      if (active) {
+        setImageConfig(response.config.image);
+        setConfiguredCredentials(response.configuredCredentials ?? []);
+      }
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [props.creatorServicesService, official.official]);
+
+  useEffect(() => {
+    setCodexImageReady(undefined);
+    if (official.official || imageConfig?.provider !== 'codex-native') return;
+    let active = true;
+    void props.creatorServicesService?.getCodexImageStatus?.().then(status => {
+      if (active) setCodexImageReady(status.ready);
+    }).catch(() => { if (active) setCodexImageReady(false); });
+    return () => { active = false; };
+  }, [imageConfig?.provider, official.official, props.creatorServicesService]);
+
+  useEffect(() => {
+    if (localCodexImage && candidateCount !== 1) setCandidateCount(1);
+  }, [localCodexImage, candidateCount]);
+
+  useEffect(() => () => { catalogRequest.current++; }, [props.gatewayAccountService]);
+
+  useEffect(() => {
+    if (!pendingModelId || official.authState !== 'signed_in' || official.activationState !== 'ready'
+      || pendingValidation.current === pendingModelId || !props.gatewayAccountService) return;
+    pendingValidation.current = pendingModelId;
+    let active = true;
+    void props.gatewayAccountService.getState({ refreshModels: true }).then(state => {
+      if (!active) return;
+      props.onGatewayStateChange?.(state);
+      const ready = state.models.filter(model => model.modality === 'image' && gatewayModelReady(model));
+      const requested = ready.find(model => gatewayModelIdMatches(model.id, pendingModelId));
+      const recommended = ready.find(model => gatewayModelIdMatches(model.id, state.recommendedModels?.image))
+        ?? ready.find(model => model.recommended);
+      const chosen = requested ?? recommended ?? ready[0];
+      if (chosen) session?.updateDraft({ officialModels: { image: chosen.id }, __creatorUserSelected: true });
+      if (!requested) setNotice(chosen
+        ? recommended
+          ? l('所选模型当前账户不可用，已切换为推荐图片模型。', 'That model is unavailable for this account. A recommended image model is selected.')
+          : l('所选模型当前账户不可用，已切换为可用图片模型。', 'That model is unavailable for this account. An available image model is selected.')
+        : l('当前账户暂无可用的图片模型。', 'No image model is available for this account.'));
+      setPendingModelId(undefined);
+    }).catch(() => {
+      if (active) {
+        setPendingModelId(undefined);
+        setNotice(l('账户模型目录刷新失败，请重新选择模型。', 'Could not refresh your account models. Select a model again.'));
+      }
+    });
+    return () => { active = false; };
+  }, [pendingModelId, official.authState, official.activationState, props.gatewayAccountService]);
 
   useEffect(() => {
     if (latestResult !== undefined) {
@@ -320,6 +441,7 @@ export default function CoverGeneratorWorkspace(props: {
   }
 
   function updateCandidateCount(value: CoverCandidateCount) {
+    if (localCodexImage && value !== 1) return;
     setCandidateCount(value);
     session?.updateDraft({ candidateCount: value });
   }
@@ -375,7 +497,11 @@ export default function CoverGeneratorWorkspace(props: {
 
   async function generate() {
     if (submitting || generating) return;
-    if (!requireGenerationAccess()) return;
+    if (!requireGenerationAccess(!official.official && !pendingModelId)) return;
+    if (official.official && official.authState !== undefined && !official.ready) {
+      setError(l('官方图片服务暂不可用，请在账户页面检查连接状态', 'Official image service is unavailable. Check the connection in your account.'));
+      return;
+    }
     if (session === null) {
       setError(l(
         '封面生成服务暂不可用，请检查 Runtime 连接',
@@ -397,6 +523,10 @@ export default function CoverGeneratorWorkspace(props: {
       openStep(1);
       return;
     }
+    if (!official.official && !localConfigured) {
+      setError(l('请先在设置中配置可用的本地生图服务。', 'Configure a ready local image service in Settings first.'));
+      return;
+    }
     const resultVersionBeforeRun = latestResultValueRef.current;
     setSubmitting(true);
     setCurrentStep(2);
@@ -416,6 +546,7 @@ export default function CoverGeneratorWorkspace(props: {
         ratio,
         quality,
         candidateCount,
+        ...(official.official ? { ...official.draftPatch, provider: 'openai' } : { provider: localProvider! }),
         coverStyle,
         coverTextLanguage,
         resolvedCoverTextLanguage,
@@ -635,6 +766,20 @@ export default function CoverGeneratorWorkspace(props: {
       )
     }
   ];
+  const imageModelField = official.official
+    ? <OfficialModelField label={l('图片模型', 'Image model')} service={official} disabled={submitting || generating} />
+    : <label className="creator-tool-field image-generation-provider-picker">
+        <OfficialModelSelect
+          label={l('模型', 'Model')}
+          value={selectedCatalogId}
+          disabled={submitting || generating}
+          layout="grouped"
+          loginRequiredModelIds={new Set(publicModels.map(model => model.id))}
+          onOpen={loadPublicCatalog}
+          onChange={selectCatalogModel}
+          models={catalogModels}
+        />
+      </label>;
 
   if (props.embedded && currentStep !== 2) {
     const busy = submitting || generating;
@@ -647,7 +792,7 @@ export default function CoverGeneratorWorkspace(props: {
       },
       {
         id: 'count', label: l('方案数量', 'Number of options'), value: String(candidateCount),
-        options: [1, 2, 3, 4].map(value => ({ value: String(value), label: l(`${value} 个方案`, `${value} options`) })),
+        options: availableCandidateCounts.map(value => ({ value: String(value), label: l(`${value} 个方案`, `${value} options`) })),
         onChange: value => updateCandidateCount(Number(value) as CoverCandidateCount)
       },
       {
@@ -712,7 +857,7 @@ export default function CoverGeneratorWorkspace(props: {
                 {error || notice ? <p className={error ? 'dashboard-translation-message is-error' : 'dashboard-translation-message'} role={error ? 'alert' : 'status'}>{error || notice}</p> : null}
               </div>
               <div className="image-generation-action-bar">
-                <div className="image-generation-model-row"><OfficialModelField label={l('图片模型', 'Image model')} service={official} disabled={busy} /></div>
+                <div className="image-generation-model-row">{imageModelField}</div>
                 <ImageGenerationSettings
                   label={l('封面设置', 'Cover settings')}
                   summary={{ aspectRatio: ratio, count: l(`${candidateCount} 个方案`, `${candidateCount} options`), resolution: coverStyleLabel(coverStyle, l), quality: qualityLabel }}
@@ -877,7 +1022,9 @@ export default function CoverGeneratorWorkspace(props: {
                   )}</p>
                 </div>
               </div>
-              <OfficialTaskModelFields modalities={isYoutubeUrl(youtubeUrl) ? ['text', 'image'] : ['image']} disabled={submitting || generating} />
+              {official.official
+                ? <OfficialTaskModelFields modalities={isYoutubeUrl(youtubeUrl) ? ['text', 'image'] : ['image']} disabled={submitting || generating} />
+                : <div className="official-task-models">{imageModelField}</div>}
               <div className="media-generation-control">
                 <span>{l('封面风格', 'Thumbnail style')}</span>
                 <div className="cover-style-grid" role="radiogroup" aria-label={l('封面风格', 'Thumbnail style')}>
@@ -977,7 +1124,7 @@ export default function CoverGeneratorWorkspace(props: {
               <div className="media-generation-control">
                 <span>{l('生成数量', 'Number of options')}</span>
                 <div className="creator-tool-segmented" role="radiogroup" aria-label={l('生成数量', 'Number of options')}>
-                  {([1, 2, 3, 4] as const).map(value => (
+                  {availableCandidateCounts.map(value => (
                     <button
                       type="button"
                       role="radio"

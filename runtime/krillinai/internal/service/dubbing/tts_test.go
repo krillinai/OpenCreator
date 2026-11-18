@@ -11,6 +11,7 @@ import (
 
 type fakeTTS struct {
 	failures      int
+	failText      string
 	calls         int
 	texts         []string
 	writeOnReturn bool
@@ -19,7 +20,7 @@ type fakeTTS struct {
 func (f *fakeTTS) Text2Speech(text, voice, outputFile string) error {
 	f.calls++
 	f.texts = append(f.texts, text)
-	if f.calls <= f.failures {
+	if f.calls <= f.failures || (f.failText != "" && text == f.failText) {
 		return errors.New("tts failed")
 	}
 	if !f.writeOnReturn {

@@ -8,6 +8,7 @@ import './DashboardGenerationSession.css';
 export default function DashboardGenerationSession(props: {
   history: ComponentProps<typeof DashboardGenerationHistory>;
   composer: ComponentProps<typeof DashboardGenerationComposer>;
+  onResumeCreating?(): void;
 }) {
   const l = useLocalizedCopy();
   const [expanded, setExpanded] = useState(false);
@@ -23,6 +24,17 @@ export default function DashboardGenerationSession(props: {
   useEffect(() => {
     if (expanded && composerRef.current) composerRef.current.scrollTop = 0;
   }, [expanded]);
+
+  useEffect(() => {
+    if (!props.history.submittedTask) return;
+    setHistoryType(props.history.submittedTask.type);
+    setExpanded(false);
+  }, [props.history.submittedTask]);
+
+  const expandComposer = () => {
+    props.onResumeCreating?.();
+    setExpanded(true);
+  };
 
   return (
     <div className="dashboard-generation-session">
@@ -42,16 +54,16 @@ export default function DashboardGenerationSession(props: {
           </div>
         ) : (
           <div className="dashboard-generation-session-collapsed">
-            <button type="button" className="dashboard-generation-session-collapsed-plus" aria-label={expandLabel} title={expandLabel} onClick={() => setExpanded(true)}><Plus size={18} /></button>
+            <button type="button" className="dashboard-generation-session-collapsed-plus" aria-label={expandLabel} title={expandLabel} onClick={expandComposer}><Plus size={18} /></button>
             <input
               type="text"
               readOnly
               aria-label={l('继续创作', 'Continue creating')}
               placeholder={collapsedPlaceholder(initialMode, l)}
-              onFocus={() => setExpanded(true)}
-              onClick={() => setExpanded(true)}
+              onFocus={expandComposer}
+              onClick={expandComposer}
             />
-            <button type="button" className="dashboard-generation-session-expand" aria-hidden="true" tabIndex={-1} title={expandLabel} onClick={() => setExpanded(true)}>
+            <button type="button" className="dashboard-generation-session-expand" aria-hidden="true" tabIndex={-1} title={expandLabel} onClick={expandComposer}>
               <ArrowUp size={18} />
             </button>
           </div>

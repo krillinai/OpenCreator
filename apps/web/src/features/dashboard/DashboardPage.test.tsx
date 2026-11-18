@@ -84,6 +84,51 @@ function withHistoryJobs(service: CreatorWebService, jobs: CreatorJob[]): Creato
   } as CreatorWebService;
 }
 
+function pendingDownloadProbe() {
+  const service = createInMemoryCreatorService();
+  service.subscribeJobEvents = vi.fn(() => ({ close() {} }));
+  const applyAction = service.applyAction;
+  const listJobs = service.listJobs;
+  const getJob = service.getJob;
+  let probeJob: CreatorJob | undefined;
+  vi.spyOn(service, 'applyAction').mockImplementation(async (jobId, request) => {
+    const response = await applyAction(jobId, request);
+    if (probeJob?.id === jobId && request.action === 'update-settings') {
+      probeJob = { ...probeJob, revision: probeJob.revision + 1, state: response.job.state };
+      return { ...response, job: probeJob };
+    }
+    if (response.job.templateId !== 'video-download' || request.action !== 'run-stage' || request.input.stageId !== 'probe') return response;
+    const job = response.job;
+    probeJob = { ...job, status: 'running', revision: job.revision + 1, stages: [{
+      id: `${job.id}-probe`, jobId: job.id, stageId: 'probe', executor: 'download', status: 'running', dispatchStatus: 'claimed',
+      claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { phase: 'probing', percent: 20 }, errorCode: null, errorMessage: null, startedAt: job.createdAt, finishedAt: null
+    }] };
+    return { ...response, job: probeJob };
+  });
+  vi.spyOn(service, 'getJob').mockImplementation(async (jobId, options) => (
+    probeJob?.id === jobId ? { job: probeJob } : getJob(jobId, options)
+  ));
+  vi.spyOn(service, 'listJobs').mockImplementation(async (projectId, options) => ({
+    jobs: (await listJobs(projectId, options)).jobs.map(job => probeJob?.id === job.id ? probeJob : job)
+  }));
+  return {
+    service,
+    finish() {
+      if (!probeJob) throw new Error('No download probe has been started');
+      const job = probeJob;
+      const sourceUrl = job.state.sourceUrl;
+      const artifact = translationArtifact(job, { kind: 'download_probe', version: 1, fileName: 'probe.json', metadata: {
+        id: 'detected-video', title: 'Detected video', requestedUrl: sourceUrl!, url: sourceUrl!, platform: 'youtube', formats: [],
+        options: [{ id: 'video-1080', mediaType: 'video', container: 'mp4', width: 1920, height: 1080 }]
+      } });
+      probeJob = { ...job, status: 'needs_input', revision: job.revision + 1, artifacts: [artifact], stages: [{
+        ...job.stages[0]!, status: 'succeeded', progress: { phase: 'completed', percent: 100 }, finishedAt: job.updatedAt
+      }] };
+    }
+  };
+}
+
 function openBlankWorkspace(moduleName: string, _blankName: string) {
   fireEvent.click(screen.getByRole('button', {
     name: new RegExp(`^${moduleName}`)
@@ -1524,6 +1569,69 @@ describe('DashboardPage', () => {
     expect(await within(composer).findByRole('form', { name: '文本转语音' })).toBeVisible();
   });
 
+  it('keeps a submitted transcription in the video history list', async () => {
+    const baseService = createInMemoryCreatorService();
+    let runningJob: CreatorJob | undefined;
+    const service = {
+      ...baseService,
+      applyAction: async (jobId: string, request: CreatorActionRequest) => {
+        const response = await baseService.applyAction(jobId, request);
+        if (request.action !== 'run-stage' || request.input.stageId !== 'transcription') return response;
+        runningJob = { ...response.job, status: 'running' as const, stages: [{
+          id: 'stage_transcription', jobId, stageId: 'transcription', executor: 'transcription',
+          status: 'running', dispatchStatus: 'claimed', claimOwner: null, claimExpiresAt: null,
+          attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+          progress: { phase: 'transcribing', percent: 36 }, errorCode: null, errorMessage: null,
+          startedAt: response.job.createdAt, finishedAt: null
+        }] };
+        return { ...response, job: runningJob };
+      },
+      listJobs: async (projectId: string) => {
+        const response = await baseService.listJobs(projectId);
+        return { jobs: response.jobs.map(job => job.id === runningJob?.id ? runningJob : job) };
+      }
+    } as CreatorWebService;
+    const onWorkspaceNavigate = vi.fn();
+    render(<DashboardPage creatorService={service} onSelectPrompt={vi.fn()}
+      historyView={{ initialType: 'video', onBackCreation: vi.fn() }}
+      onWorkspaceNavigate={onWorkspaceNavigate} />);
+
+    expect(await screen.findByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '展开创作对话框' }));
+    fireEvent.click(await screen.findByRole('tab', { name: '视频转录' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=history-transcription' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '开始转录' }));
+
+    await waitFor(() => expect(runningJob).toBeDefined());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(await screen.findByRole('status', { name: /正在生成/ })).toHaveTextContent('36%');
+    expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+    expect(onWorkspaceNavigate).not.toHaveBeenCalled();
+  });
+
+  it('switches from All to the video list after submitting video translation in history', async () => {
+    const service = createInMemoryCreatorService();
+    const onWorkspaceNavigate = vi.fn();
+    render(<DashboardPage creatorService={service} onSelectPrompt={vi.fn()}
+      historyView={{ initialType: 'all', onBackCreation: vi.fn() }}
+      onWorkspaceNavigate={onWorkspaceNavigate} />);
+
+    expect(await screen.findByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '展开创作对话框' }));
+    fireEvent.click(await screen.findByRole('tab', { name: '视频翻译' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=history-translation' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'video' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(await screen.findByText(/目标字幕-V1\.srt/)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+    expect(onWorkspaceNavigate).not.toHaveBeenCalled();
+  });
+
   it('leaves the workspace when the dashboard route clears its tool', async () => {
     const service = createInMemoryCreatorService();
     const view = render(<DashboardPage creatorService={service} workspace="video-translation" onSelectPrompt={vi.fn()} />);
@@ -2062,6 +2170,51 @@ describe('DashboardPage', () => {
     expect(await screen.findByRole('form', { name: '视频下载' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('tab', { name: '下载规格' })).not.toBeInTheDocument();
+  });
+
+  it.each(['waits', 'starts another task'] as const)('handles format selection after a video probe when the user %s', async behavior => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const probe = pendingDownloadProbe();
+      render(<RoutedDashboardPage service={probe.service} initialWorkspace="video-download" />);
+
+      fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+        target: { value: 'https://www.youtube.com/watch?v=download-test' }
+      });
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: '获取' })));
+      expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('link', { name: /^正在生成/ })).toBeInTheDocument();
+      expect(screen.queryByRole('tab', { name: '下载规格' })).not.toBeInTheDocument();
+
+      if (behavior === 'starts another task') {
+        await act(async () => fireEvent.click(screen.getByRole('button', { name: '展开创作对话框' })));
+        await act(async () => fireEvent.click(screen.getByRole('tab', { name: '视频翻译' })));
+        fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+          target: { value: 'https://www.youtube.com/watch?v=another-task' }
+        });
+        await act(async () => fireEvent.click(screen.getByRole('button', { name: '开始翻译' })));
+        expect(vi.mocked(probe.service.applyAction).mock.calls.some(([, request]) => request.input.stageId === 'subtitle')).toBe(true);
+      }
+
+      probe.finish();
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      if (behavior === 'starts another task') {
+        expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+        expect(screen.queryByRole('tab', { name: '下载规格' })).not.toBeInTheDocument();
+        await act(async () => fireEvent.click(screen.getByRole('link', { name: '待配置 Detected video' })));
+      }
+
+      expect(await screen.findByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
+      expect(await screen.findByRole('button', { name: '下载 1080p' })).toBeEnabled();
+      expect(vi.mocked(probe.service.applyAction).mock.calls.some(([, request]) => request.input.stageId === 'download')).toBe(false);
+
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: '返回' })));
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('link', { name: '待配置 Detected video' })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('opens the runtime-backed stickman workspace from the dashboard', async () => {

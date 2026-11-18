@@ -66,6 +66,16 @@ describe('creator services API', () => {
     expect(store.write).not.toHaveBeenCalled();
   });
 
+  it('validates a draft proxy before probing without changing saved configuration', async () => {
+    const invalid = await server.inject({ method: 'POST', url: '/creator-services/network/test',
+      payload: { proxy: 'socks5://127.0.0.1:1080' } });
+    expect(invalid.statusCode).toBe(400);
+    const unset = await server.inject({ method: 'POST', url: '/creator-services/network/test', payload: { proxy: '' } });
+    expect(unset.statusCode).toBe(200);
+    expect(unset.json()).toEqual({ status: 'not_configured' });
+    expect(store.write).not.toHaveBeenCalled();
+  });
+
   it('exposes the checked authentication mode without mutating configuration', async () => {
     await server.close();
     server = Fastify({ logger: false });

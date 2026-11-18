@@ -24,11 +24,15 @@ describe('OpenCreator settings service', () => {
         defaultPermission: 'danger-full-access'
       }
     }));
+    const post = vi.fn(async () => ({ show: true }));
     const service = createOpenCreatorSettingsService({
       get: get as RuntimeClient['get'],
-      patch: patch as RuntimeClient['patch']
+      patch: patch as RuntimeClient['patch'],
+      post: post as RuntimeClient['post']
     });
 
+    await expect(service.claimAgentOnboarding(true)).resolves.toEqual({ show: true });
+    expect(post).toHaveBeenCalledWith('/settings/agent-onboarding', { offer: true });
     await service.getUiSettings();
     await service.updateUiSettings({ colorMode: 'light' });
     await service.getStorageSettings();

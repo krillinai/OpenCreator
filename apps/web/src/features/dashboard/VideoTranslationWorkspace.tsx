@@ -1786,7 +1786,6 @@ export default function VideoTranslationWorkspace(props: {
   const [textCredentialConfigured, setTextCredentialConfigured] = useState(false);
   const [codexTextReady, setCodexTextReady] = useState(false);
   const [publicTextCatalog, setPublicTextCatalog] = useState<GatewayModelCatalog | undefined>(() => props.gatewayAccountService?.getCachedTextCatalog?.());
-  const [textCatalogState, setTextCatalogState] = useState<'loading' | 'ready' | 'error'>(() => props.gatewayAccountService?.getCachedTextCatalog?.() ? 'ready' : 'loading');
   const textCatalogRequest = useRef(0);
   const textCatalogWork = useRef<{ service: GatewayAccountSettingsService; promise: Promise<GatewayModelCatalog> }>();
   const [pendingTextModelId, setPendingTextModelId] = useState<string>();
@@ -1806,28 +1805,24 @@ export default function VideoTranslationWorkspace(props: {
   const textLoginRequiredModelIds = new Set(officialText.official ? [] : publicTextModels.map(model => model.id));
   const selectedTextCatalogId = officialText.official ? officialText.selected ?? officialText.model?.id ?? ''
     : pendingTextModelId ?? (localTextReady ? localTranslationModelId : '');
-  function loadPublicTextCatalog(force = false) {
+  function loadPublicTextCatalog() {
     const request = ++textCatalogRequest.current;
     const service = props.gatewayAccountService;
-    if (!service?.getTextCatalog) { setTextCatalogState('error'); return; }
-    const cached = service.getCachedTextCatalog?.();
-    if (cached) { setPublicTextCatalog(cached); setTextCatalogState('ready'); }
-    else setTextCatalogState('loading');
-    const promise = !force && textCatalogWork.current?.service === service
-      ? textCatalogWork.current.promise : service.getTextCatalog({ refresh: force });
+    const cached = service?.getCachedTextCatalog?.();
+    setPublicTextCatalog(cached);
+    if (!service?.getTextCatalog) return;
+    const promise = textCatalogWork.current?.service === service
+      ? textCatalogWork.current.promise : service.getTextCatalog();
     textCatalogWork.current = { service, promise };
     void promise.then(catalog => {
-      if (request === textCatalogRequest.current) { setPublicTextCatalog(catalog); setTextCatalogState('ready'); }
-    }).catch(() => {
-      if (request === textCatalogRequest.current) setTextCatalogState(cached ? 'ready' : 'error');
-    }).finally(() => {
+      if (request === textCatalogRequest.current) setPublicTextCatalog(catalog);
+    }).catch(() => undefined).finally(() => {
       if (textCatalogWork.current?.promise === promise) textCatalogWork.current = undefined;
     });
   }
   useEffect(() => {
-    if (!officialText.official) loadPublicTextCatalog();
     return () => { textCatalogRequest.current++; };
-  }, [props.gatewayAccountService, officialText.official]);
+  }, [props.gatewayAccountService]);
   const refreshLocalTextModel = useCallback(async () => {
     const service = props.creatorServicesService;
     if (!service) return;
@@ -4374,6 +4369,7 @@ export default function VideoTranslationWorkspace(props: {
                     loginRequiredModelIds={textLoginRequiredModelIds}
                     disabled={submitting || activeGenerationStage !== undefined || (officialText.official && !officialText.selectable)}
                     configureModel={{ id: localTranslationModelId, title: l('打开文本模型设置', 'Open text model settings'), onConfigure: () => setLocalModelSettingsOpen(true) }}
+                    onOpen={!officialText.official ? loadPublicTextCatalog : undefined}
                     onChange={selectTextCatalogModel}
                   />
                   {!officialText.official ? <DashboardTranslationModelSettings
@@ -4384,12 +4380,6 @@ export default function VideoTranslationWorkspace(props: {
                       onRequestedOpenChange={setLocalModelSettingsOpen}
                       onClose={() => void refreshLocalTextModel()}
                     /> : null}
-                  {!officialText.official && props.gatewayAccountService && textCatalogState !== 'ready' ? <div className="dashboard-translation-catalog-status" role="status">
-                    {textCatalogState === 'loading' ? l('正在加载模型', 'Loading models') : <>
-                      <span>{l('模型列表加载失败，请重试。', 'Could not load the model list. Try again.')}</span>
-                      <button type="button" onClick={() => loadPublicTextCatalog(true)} aria-label={l('重试', 'Retry')}><RefreshCw size={14} />{l('重试', 'Retry')}</button>
-                    </>}
-                  </div> : null}
                   {textModelNotice ? <p className="dashboard-translation-model-notice" role="status" aria-label={l('翻译模型', 'Translation model')}>{textModelNotice}</p> : null}
                 </div>
                 <DashboardVideoTranslationSettings

@@ -45,6 +45,14 @@ export async function registerSettingsRoutes(
     store.readUi()
   ));
 
+  server.post<{ Body: unknown }>('/settings/agent-onboarding', async (request, reply) => {
+    const parsed = z.object({ offer: z.boolean() }).strict().safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send(apiError('VALIDATION_FAILED', 'Agent onboarding request is invalid'));
+    }
+    return { show: store.claimAgentOnboarding(parsed.data.offer) };
+  });
+
   server.patch<{ Body: unknown }>(
     '/settings/ui',
     async (request, reply) => {

@@ -8,7 +8,7 @@ import type { GatewayAccountSettingsService } from '../../services/gateway-accou
 import {
   StartupAgentSetup, type AgentSetupService
 } from './StartupAgentSetup.js';
-import { availableAgentMode, confirmAgentSetup, isAgentSetupConfirmed, type AgentSetupSnapshot } from './agent-setup-state.js';
+import { availableAgentMode, hasLegacyAgentSetupConfirmation, type AgentSetupSnapshot } from './agent-setup-state.js';
 
 function readiness(accountStatus: 'signed_out' | 'signed_in' | 'expired', state: 'ready' | 'degraded' | 'blocked' = 'ready'): CodexRuntimeReadiness {
   return {
@@ -94,22 +94,12 @@ describe('StartupAgentSetup', () => {
     } })).toBeNull();
   });
 
-  it('keeps a confirmed provider across runtime homes but requires confirmation after provider changes', () => {
-    const provider: CodexProviderConfig = {
-      baseUrl: 'https://model.example.test/v1', model: 'test-model',
-      apiKeyConfigured: true, authentication: 'api_key'
-    };
-    const snapshot: AgentSetupSnapshot = { readiness: readiness('signed_out', 'degraded'), provider };
-    confirmAgentSetup(snapshot);
-
-    expect(isAgentSetupConfirmed({
-      ...snapshot,
-      readiness: { ...snapshot.readiness, codexHome: '/tmp/other-runtime/codex' }
-    })).toBe(true);
-    expect(isAgentSetupConfirmed({
-      ...snapshot,
-      provider: { ...provider, model: 'another-model' }
-    })).toBe(false);
+  it('recognizes legacy confirmation as prior use without consulting live credentials', () => {
+    expect(hasLegacyAgentSetupConfirmation()).toBe(false);
+    window.localStorage.setItem('opencreator.agent-setup-confirmed.v1', JSON.stringify(JSON.stringify([
+      '/tmp/old-runtime/codex', 'api_key', 'api_key', 'https://model.example.test/v1', 'old-model', true
+    ])));
+    expect(hasLegacyAgentSetupConfirmation()).toBe(true);
   });
 
   it('confirms an existing ChatGPT sign-in without a second detection or a key form', async () => {
@@ -117,7 +107,6 @@ describe('StartupAgentSetup', () => {
     const provider: CodexProviderConfig = { baseUrl: '', model: 'gpt-test', apiKeyConfigured: false, authentication: 'chatgpt' };
     const snapshot = { readiness: readiness('signed_in'), provider };
     const { onReady } = mount(service, snapshot);
-    expect(isAgentSetupConfirmed(snapshot)).toBe(false);
     await userEvent.setup().click(screen.getByRole('button', { name: '本地模式' }));
     expect(screen.getByText('已找到本机 Codex')).toBeInTheDocument();
     expect(screen.getByText(/ChatGPT 登录 · gpt-test/)).toBeInTheDocument();
@@ -163,9 +152,6 @@ describe('StartupAgentSetup', () => {
     expect(service.getCodexReadiness).not.toHaveBeenCalled();
     expect(service.getCodexProvider).not.toHaveBeenCalled();
     expect(service.updateCodexProvider).not.toHaveBeenCalled();
-    confirmAgentSetup(snapshot);
-    expect(isAgentSetupConfirmed(snapshot)).toBe(true);
-    expect(isAgentSetupConfirmed({ ...snapshot, provider: { ...provider, apiKeyConfigured: false } })).toBe(false);
   });
 
   it('shows provider configuration only after choosing local mode', async () => {

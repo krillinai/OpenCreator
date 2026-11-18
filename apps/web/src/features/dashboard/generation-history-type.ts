@@ -8,7 +8,7 @@ const workspaceTypes: Record<CreatorWorkspace, Exclude<GenerationHistoryType, 'a
   'stickman-video': 'video',
   'auto-clips': 'video',
   'smart-dubbing': 'audio',
-  transcription: 'text',
+  transcription: 'video',
   'xiaohongshu-post': 'text',
   'short-video-script': 'text',
   'wechat-article': 'text',

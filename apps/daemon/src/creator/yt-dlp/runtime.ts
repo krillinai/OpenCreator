@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,19 @@ export type YtDlpRuntime = {
   env: NodeJS.ProcessEnv;
   script?: string;
 };
+
+export function createYtDlpRuntimeScope(resolveCurrent: () => YtDlpRuntime | undefined) {
+  const scope = new AsyncLocalStorage<{ runtime: YtDlpRuntime | undefined }>();
+  return {
+    getRuntime() {
+      const current = scope.getStore();
+      return current === undefined ? resolveCurrent() : current.runtime;
+    },
+    run<Result>(operation: () => Result): Result {
+      return scope.getStore() === undefined ? scope.run({ runtime: resolveCurrent() }, operation) : operation();
+    }
+  };
+}
 
 export function resolveYtDlpRuntime(input: {
   resourceRoot: string;

@@ -314,34 +314,46 @@ describe('VideoDownloadWorkspace', () => {
     expect(screen.queryByText('链接解析完成，请选择下载规格')).not.toBeInTheDocument();
   });
 
-  it('downloads a selected format locally as soon as it completes and shows OK', async () => {
+  it('keeps a completed format in the project until the user explicitly saves it locally', async () => {
     const initial = job({
       state: { sourceUrl: 'https://www.youtube.com/watch?v=demo' },
       artifacts: [probeArtifact()]
     });
     let applySnapshot: ((next: CreatorJob) => void) | undefined;
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
-    createObjectURL.mockReturnValue('blob:direct-download');
+    const applyAction = vi.fn(async () => ({ job: initial }));
+    const openArtifact = vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' })));
+    createObjectURL.mockReturnValue('blob:local-save');
     renderWorkspace(initial, {
-      applyAction: vi.fn(async () => ({ job: initial })),
-      openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))),
+      applyAction,
+      openArtifact,
       onSnapshot: callback => { applySnapshot = callback; }
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '下载 1080p' }));
-    act(() => applySnapshot?.(job({
-      ...initial,
-      revision: 1,
-      artifacts: [probeArtifact(), videoArtifact()],
-      stages: [downloadStage('download_1080', 'video-1080-1', 'succeeded', 100)]
-    })));
+    try {
+      fireEvent.click(await screen.findByRole('button', { name: '下载 1080p' }));
+      await waitFor(() => expect(applyAction).toHaveBeenCalledOnce());
+      await act(async () => applySnapshot?.(job({
+        ...initial,
+        revision: 1,
+        artifacts: [probeArtifact(), videoArtifact()],
+        stages: [downloadStage('download_1080', 'video-1080-1', 'succeeded', 100)]
+      })));
 
-    await waitFor(() => expect(click).toHaveBeenCalledOnce());
-    expect(click.mock.instances[0]).toHaveProperty('download', 'Creator Download.mp4');
-    expect(screen.getByLabelText('OK 1080p')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: '作品' })).toHaveAttribute('aria-selected', 'false');
-    click.mockRestore();
+      expect(screen.getByLabelText('OK 1080p')).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
+      expect(click).not.toHaveBeenCalled();
+      expect(openArtifact).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('tab', { name: '作品' }));
+      expect(screen.getByText('Creator Download.mp4')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '保存到本机 Creator Download.mp4' }));
+      await waitFor(() => expect(click).toHaveBeenCalledOnce());
+      expect(openArtifact).toHaveBeenCalledExactlyOnceWith(initial.id, 'video_artifact');
+      expect(click.mock.instances[0]).toHaveProperty('download', 'Creator Download.mp4');
+    } finally {
+      click.mockRestore();
+    }
   });
 
   it('marks downloaded formats complete and only offers saving project files locally', async () => {

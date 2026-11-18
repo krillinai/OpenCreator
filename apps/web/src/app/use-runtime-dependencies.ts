@@ -34,6 +34,7 @@ export function useRuntimeDependencies(input: {
   const componentsRef = useRef<CreatorRuntimeComponentsResponse>();
   const componentDownloadActive = componentsStatus?.components.some(component => ['downloading', 'verifying', 'extracting'].includes(component.state)) ?? false;
   const [phase, setPhase] = useState<RuntimeDependencyPhase>('idle');
+  const ytDlpOperation = useRef({ revision: 0, pending: 0 });
   const pageIssues = usePageIssueState('runtime');
   const refreshComponents = useCallback(async () => {
     if (!input.connected || !input.service?.getComponentsStatus) return;
@@ -74,8 +75,10 @@ export function useRuntimeDependencies(input: {
 
   useEffect(() => {
     let active = true;
-    let operationId = 'runtime.load-yt-dlp';
-    if (!input.connected || input.service === null) {
+    let loaded = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const service = input.service;
+    if (!input.connected || service === null) {
       setYtDlpStatus(undefined);
       setPhase('idle');
       pageIssues.clearIssues();
@@ -85,36 +88,38 @@ export function useRuntimeDependencies(input: {
     }
 
     setPhase('loading');
-    void input.service.getYtDlpStatus()
-      .then(async response => {
-        if (!active) return;
-        setYtDlpStatus(response.ytDlp);
-        pageIssues.resolveOperation('runtime.load-yt-dlp');
-        if (!response.ytDlp.checkDue) return;
-        operationId = 'runtime.auto-check-yt-dlp';
-        setPhase('checking');
-        const checked = await input.service?.checkYtDlpUpdate(false);
-        if (active && checked !== undefined) {
-          setYtDlpStatus(checked.ytDlp);
-          pageIssues.resolveOperation('runtime.auto-check-yt-dlp');
+    const poll = async () => {
+      const operation = ytDlpOperation.current;
+      const revision = operation.revision;
+      try {
+        const { ytDlp } = await service.getYtDlpStatus();
+        if (active && revision === operation.revision && operation.pending === 0) {
+          setYtDlpStatus(current => current !== undefined
+            && (Object.keys(ytDlp) as Array<keyof CreatorYtDlpStatus>).every(key => current[key] === ytDlp[key]) ? current : ytDlp);
+          if (!loaded) pageIssues.resolveOperation('runtime.load-yt-dlp');
+          loaded = true;
         }
-      })
-      .catch(caught => {
-        if (active) {
+      } catch (caught) {
+        if (active && !loaded && revision === operation.revision && operation.pending === 0) {
           pageIssues.captureOperationFailure(
-            operationId,
+            'runtime.load-yt-dlp',
             caught,
             'Could not read or check Runtime components. Connect the local Runtime and try again.',
             { retryable: true }
           );
         }
-      })
-      .finally(() => {
-        if (active) setPhase('idle');
-      });
+      } finally {
+        if (active) {
+          setPhase(current => current === 'loading' ? 'idle' : current);
+          timer = setTimeout(() => { void poll(); }, 15_000);
+        }
+      }
+    };
+    void poll();
 
     return () => {
       active = false;
+      clearTimeout(timer);
     };
   }, [
     input.connected,
@@ -128,12 +133,13 @@ export function useRuntimeDependencies(input: {
     if (!input.connected || input.service === null) {
       throw new Error('runtime_dependency_unavailable');
     }
+    ytDlpOperation.current.pending += 1;
+    ytDlpOperation.current.revision += 1;
     setPhase('checking');
     try {
       const response = await input.service.checkYtDlpUpdate(force);
       setYtDlpStatus(response.ytDlp);
       pageIssues.resolveOperation('runtime.check-yt-dlp');
-      pageIssues.resolveOperation('runtime.auto-check-yt-dlp');
       pageIssues.resolveOperation('runtime.load-yt-dlp');
       return response.ytDlp;
     } catch (caught) {
@@ -145,6 +151,8 @@ export function useRuntimeDependencies(input: {
       );
       throw caught;
     } finally {
+      ytDlpOperation.current.pending -= 1;
+      ytDlpOperation.current.revision += 1;
       setPhase('idle');
     }
   }, [input.connected, input.service, pageIssues.captureOperationFailure, pageIssues.resolveOperation]);
@@ -153,6 +161,8 @@ export function useRuntimeDependencies(input: {
     if (!input.connected || input.service === null) {
       throw new Error('runtime_dependency_unavailable');
     }
+    ytDlpOperation.current.pending += 1;
+    ytDlpOperation.current.revision += 1;
     setPhase('updating');
     try {
       const response = await input.service.updateYtDlp();
@@ -168,6 +178,8 @@ export function useRuntimeDependencies(input: {
       );
       throw caught;
     } finally {
+      ytDlpOperation.current.pending -= 1;
+      ytDlpOperation.current.revision += 1;
       setPhase('idle');
     }
   }, [input.connected, input.service, pageIssues.captureOperationFailure, pageIssues.resolveOperation]);

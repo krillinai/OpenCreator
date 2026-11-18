@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +7,7 @@ import {
   createYtDlpUpdateManager,
   type YtDlpUpdateManager
 } from '../../src/creator/yt-dlp/update-manager.js';
-import type { YtDlpRuntime } from '../../src/creator/yt-dlp/runtime.js';
+import { createYtDlpRuntimeScope, type YtDlpRuntime } from '../../src/creator/yt-dlp/runtime.js';
 
 const BUNDLED_VERSION = '2026.08.29.232711';
 const LATEST_VERSION = '2026.08.31.120000';
@@ -99,6 +99,36 @@ describe('yt-dlp update manager', () => {
     );
     expect(restored.getRuntime().prefixArgs.slice(1)).toEqual(['--plugin-dirs', join(root, 'plugins')]);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not remove the managed script already selected by a task, even after activating another version', async () => {
+    root = await mkdtemp(join(tmpdir(), 'creator-yt-dlp-update-'));
+    const updatesRoot = join(root, 'updates');
+    const bundled = await createBundledRuntime(root);
+    const first = releaseFixture(LATEST_VERSION);
+    const second = releaseFixture('2026.09.01.120000');
+    let upstream = releaseFetch(first);
+    const fetchImpl: typeof fetch = (...args) => upstream(...args);
+    const manager = await createManager(updatesRoot, bundled, fetchImpl);
+    await manager.update();
+    const scope = createYtDlpRuntimeScope(() => manager.getRuntime());
+    const oldScript = manager.getRuntime().script!;
+    upstream = releaseFetch(second);
+
+    await scope.run(async () => {
+      const runningTask = scope.getRuntime();
+      await manager.update();
+      expect(scope.getRuntime()).toBe(runningTask);
+      expect(await readFile(oldScript)).toEqual(first.content);
+    });
+
+    expect(scope.run(() => scope.getRuntime()?.version)).toBe(second.version);
+    manager.close();
+
+    const restarted = await createManager(updatesRoot, bundled, fetchImpl);
+    expect(restarted.getRuntime().version).toBe(second.version);
+    await expect(stat(oldScript)).rejects.toMatchObject({ code: 'ENOENT' });
+    restarted.close();
   });
 
   it.each([

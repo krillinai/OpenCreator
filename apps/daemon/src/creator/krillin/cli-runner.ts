@@ -13,6 +13,7 @@ import { publicErrorKindForCode, sanitizePublicErrorFacts, type PublicErrorFacts
 import { spawnCreatorProcess } from '../process-tree.js';
 import { attachFailureDiagnostic, processFailureDiagnostic } from '../../telemetry/diagnostic.js';
 import { createKrillinConfigToml } from './config-bridge.js';
+import { dubbingSegmentCacheDir } from './dubbing-resume.js';
 import { gatewayCreatorBinding } from '../../gateway/creator-service-source.js';
 import { isYouTubeSource } from './execution-plan.js';
 import {
@@ -21,6 +22,7 @@ import {
 } from './manifest.js';
 import { normalizeSimplifiedChineseSubtitleOutputs } from './subtitle-script.js';
 import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
+import { embeddedYtDlpFailure } from '../yt-dlp/failure.js';
 
 export type MaterializedKrillinArtifact = {
   id: string;
@@ -101,14 +103,11 @@ export class KrillinCliError extends Error {
     const status = sessionRequired || signatureRequired ? /http error\s+(\d{3})\b/i.exec(message) : null;
     const outputRejected = /\bstatus code:\s*400\b/i.test(message)
       && /Requested output exceeds the gateway limit of \d+ tokens/.test(message);
-    const captionTimeout = code === 'platform_caption_access_failed'
-      && /(?:downloadYouTubeSubtitle|yt-dlp subtitle metadata)/i.test(message)
-      && /(?:timed out|etimedout)/i.test(message)
-      && !/cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message);
+    const ytDlpFailure = embeddedYtDlpFailure(code, message);
     this.publicFacts = sanitizePublicErrorFacts({
-      kind: captionTimeout ? 'timeout' : outputRejected ? 'http-rejected' : signatureRequired ? 'unsupported' : sessionRequired ? 'unauthorized' : /^prepare_(?:media|audio_fallback)_failed$/.test(code)
+      kind: ytDlpFailure?.publicFacts?.kind ?? (outputRejected ? 'http-rejected' : signatureRequired ? 'unsupported' : sessionRequired ? 'unauthorized' : /^prepare_(?:media|audio_fallback)_failed$/.test(code)
         && /bilibili risk control (?:rejected the media request|blocked media extraction)/i.test(message)
-        ? 'http-rejected' : publicErrorKindForCode(code) ?? 'unknown', provider: captionTimeout ? 'yt-dlp' : 'krillinai',
+        ? 'http-rejected' : publicErrorKindForCode(code) ?? 'unknown'), provider: ytDlpFailure ? 'yt-dlp' : 'krillinai',
       upstreamCode: diagnostic?.upstream_code ?? (outputRejected ? 'output_too_large' : code), upstreamMessage: message,
       ...(diagnostic?.request_id === undefined ? {} : { requestId: diagnostic.request_id }),
       ...(diagnostic?.http_status !== undefined ? { httpStatus: diagnostic.http_status }
@@ -158,6 +157,9 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
   });
   const cliConfig = stageConfig(input.config, krillinCliStageId(input.stage.stageRun.stageId), input.options);
   const officialBinding = gatewayCreatorBinding(input.config);
+  const dubbingCacheDir = dubbingSegmentCacheDir({
+    stage: input.stage, config: cliConfig, options: input.options, artifacts: input.artifacts, binding: officialBinding
+  });
   const officialTextModel = officialBinding?.catalog?.find(model => (
     model.modality === 'text' && gatewayModelIdMatches(model.id, cliConfig.llm.model)
   ));
@@ -262,6 +264,7 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
         dependencyBin,
         ytDlpRuntime: input.ytDlpRuntime,
         nlpPython: resolveKrillinNlpPython(input.resourceRoot, input.manifest),
+        dubbingCacheDir,
         reportProgress: progress => input.stage.reportProgress(progress),
         signal: input.stage.signal
       });
@@ -489,6 +492,7 @@ function executeCli(input: {
   dependencyBin: string;
   ytDlpRuntime?: YtDlpRuntime;
   nlpPython?: string;
+  dubbingCacheDir?: string;
   reportProgress(progress: Record<string, CreatorJson>): void;
   signal: AbortSignal;
 }): Promise<KrillinCliResponse> {
@@ -496,14 +500,11 @@ function executeCli(input: {
     const reportProgress = createMonotonicProgressReporter(input.reportProgress);
     const child = spawnCreatorProcess(input.executable, input.args, {
       cwd: input.cwd,
-      env: createKrillinCliEnvironment(
-        process.env,
-        input.runtimeBin,
-        input.resourceRoot,
-        input.dependencyBin,
-        input.ytDlpRuntime,
-        input.nlpPython
-      ),
+      env: {
+        ...createKrillinCliEnvironment(process.env, input.runtimeBin, input.resourceRoot,
+          input.dependencyBin, input.ytDlpRuntime, input.nlpPython),
+        OPENCREATOR_KRILLIN_DUBBING_CACHE: input.dubbingCacheDir
+      },
       stdio: ['ignore', 'pipe', 'pipe']
     }, input.signal);
     let stdout = '';

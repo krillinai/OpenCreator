@@ -418,28 +418,6 @@
   font-weight: 550;
 }
 
-.image-generation-catalog-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.image-generation-catalog-status button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent-strong);
-  font: inherit;
-  cursor: pointer;
-}
-
 .image-generation-submit-row {
   display: flex;
   justify-content: flex-end;

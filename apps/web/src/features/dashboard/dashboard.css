@@ -14241,26 +14241,26 @@
   font-size: 12px;
 }
 
-.opencreator-shell:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-failure-page)) {
+.opencreator-shell:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-workspace-page)) {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.opencreator-shell:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-failure-page)) > :is(.opencreator-sidebar-pane, .opencreator-detail-pane, .mobile-navigation-backdrop),
-.opencreator-main-pane:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-failure-page)) > .mobile-navigation-toolbar,
-.dashboard-unified-workspace-page:has(:is(.video-translation-failure-page, .video-download-failure-page)) .dashboard-generation-history-trigger {
+.opencreator-shell:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-workspace-page)) > :is(.opencreator-sidebar-pane, .opencreator-detail-pane, .mobile-navigation-backdrop),
+.opencreator-main-pane:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-workspace-page)) > .mobile-navigation-toolbar,
+.dashboard-unified-workspace-page:has(:is(.video-translation-failure-page, .video-download-workspace-page)) .dashboard-generation-history-trigger {
   display: none;
 }
 
-.opencreator-main-pane:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-failure-page)) > .opencreator-main-content {
+.opencreator-main-pane:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-workspace-page)) > .opencreator-main-content {
   grid-row: -2;
 }
 
-.dashboard-unified-workspace-page:has(:is(.video-translation-failure-page, .video-download-failure-page)) {
+.dashboard-unified-workspace-page:has(:is(.video-translation-failure-page, .video-download-workspace-page)) {
   overflow: hidden;
   scrollbar-gutter: auto;
 }
 
-.dashboard-unified-workspace-page:has(:is(.video-translation-failure-page, .video-download-failure-page)) :is(.dashboard-unified-workspace-content, .dashboard-generation) {
+.dashboard-unified-workspace-page:has(:is(.video-translation-failure-page, .video-download-workspace-page)) :is(.dashboard-unified-workspace-content, .dashboard-generation) {
   width: 100%;
   height: 100%;
   padding: 0;

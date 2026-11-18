@@ -30,6 +30,7 @@ import { preflightKrillinDependencies } from './dependency-preflight.js';
 import { createKrillinCliExecutionPlan, isYouTubeSource } from './execution-plan.js';
 import { readKrillinRuntimeManifest, resolveInside } from './manifest.js';
 import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
+import { embeddedYtDlpFailure } from '../yt-dlp/failure.js';
 import { assessKrillinTranscription } from './transcription-language.js';
 import { translationResumeStage } from './translation-resume.js';
 
@@ -265,6 +266,10 @@ export function normalizeKrillinFailure(error: { code?: string; kind?: string; m
   if (/^prepare_(?:media|audio_fallback)_failed$/.test(error?.code ?? '') && /\[Douyin(?:\+[^\]]+)?\]/i.test(message)) {
     if (/Douyin request signature is required/i.test(message)) return { code: 'platform_request_signature_required', message };
     if (/fresh cookies|Douyin browser identity was rejected/i.test(message)) return { code: 'platform_session_required', message };
+  }
+  if (error?.code && /^prepare_(?:media|audio_fallback)_failed$/.test(error.code)) {
+    const ytDlpFailure = embeddedYtDlpFailure(error.code, message);
+    if (ytDlpFailure) return { code: ytDlpFailure.code, message };
   }
   if (error?.code !== undefined && [
     'audio_no_speech', 'audio_transcription_empty', 'audio_transcription_invalid_response',

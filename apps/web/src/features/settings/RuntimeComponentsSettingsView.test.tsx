@@ -7,6 +7,20 @@ import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { RuntimeComponentsSettingsView } from './RuntimeComponentsSettingsView.js';
 
 describe('RuntimeComponentsSettingsView', () => {
+  it.each([
+    ['zh-CN', '已就绪', '上次检查版本', '检查更新'],
+    ['en-US', 'Ready', 'Last checked version', 'Check for updates']
+  ] as const)('keeps the usable version visible without a startup check or warning in %s', (language, ready, cachedVersion, check) => {
+    const checkYtDlpUpdate = vi.fn(async () => status());
+    renderView({ ytDlpStatus: status({ latestVersion: '2026.08.28.000000',
+      lastCheckedAt: '2026-08-29T00:00:00Z', lastCheckAttemptAt: '2026-08-30T00:00:00Z' }), checkYtDlpUpdate }, language);
+
+    expect(checkYtDlpUpdate).not.toHaveBeenCalled();
+    expect(screen.getByText(ready)).toHaveAttribute('data-status', 'current');
+    expect(screen.getByText(cachedVersion)).toBeVisible();
+    expect(screen.getByRole('button', { name: check })).toBeEnabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
   it('keeps yt-dlp visible with a retry action when its status cannot be loaded', async () => {
     const checkYtDlpUpdate = vi.fn(async () => status());
     renderView({
@@ -73,7 +87,7 @@ describe('RuntimeComponentsSettingsView', () => {
     await waitFor(() => expect(screen.getByText('有可用更新')).toBeInTheDocument());
   });
 
-  it('checks live before claiming that a cached version is current', async () => {
+  it('marks a version as current only after a successful manual check', async () => {
     let resolveCheck!: (value: CreatorYtDlpStatus) => void;
     const checkYtDlpUpdate = vi.fn(() => new Promise<CreatorYtDlpStatus>(resolve => {
       resolveCheck = resolve;
@@ -86,9 +100,10 @@ describe('RuntimeComponentsSettingsView', () => {
       checkYtDlpUpdate
     });
 
-    expect(screen.getAllByText('正在检查')).not.toHaveLength(0);
     expect(screen.queryByText('已是最新')).not.toBeInTheDocument();
     expect(screen.getByText('上次检查版本')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+    expect(screen.getAllByText('正在检查')).not.toHaveLength(0);
     expect(checkYtDlpUpdate).toHaveBeenCalledWith(true);
 
     resolveCheck(status({
@@ -98,7 +113,7 @@ describe('RuntimeComponentsSettingsView', () => {
     await waitFor(() => expect(screen.queryByText('正在检查')).not.toBeInTheDocument());
   });
 
-  it('marks cached release information as stale when the live check fails', async () => {
+  it('marks cached release information as stale when a manual check fails', async () => {
     const checkYtDlpUpdate = vi.fn(async () => {
       throw new Error('network unavailable');
     });
@@ -107,6 +122,7 @@ describe('RuntimeComponentsSettingsView', () => {
       checkYtDlpUpdate
     });
 
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
     await waitFor(() => expect(screen.getByText('失败')).toHaveAttribute('data-status', 'failed'));
     expect(screen.getByText('检查失败').closest('.runtime-component-details')).not.toBeNull();
     expect(screen.getByText('上次检查版本')).toBeInTheDocument();
@@ -130,6 +146,7 @@ describe('RuntimeComponentsSettingsView', () => {
       .mockResolvedValue(status());
     renderView({ checkYtDlpUpdate });
 
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
     await waitFor(() => expect(screen.getByText('失败')).toHaveAttribute('data-status', 'failed'));
     fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
 
@@ -141,13 +158,15 @@ describe('RuntimeComponentsSettingsView', () => {
   it('shows readiness in the main badge and the latest status next to the version', async () => {
     renderView({ ytDlpStatus: status({ latestVersion: '2026.08.29.232711' }) });
 
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+    await screen.findByText('已是最新');
     await waitFor(() => expect(screen.getByText('已就绪')).toHaveAttribute('data-status', 'current'));
     expect(screen.getByText('已是最新').closest('.runtime-component-details')).not.toBeNull();
     expect(screen.getByText('已是最新').closest('.runtime-component-title')).toBeNull();
   });
 });
 
-function renderView(patch: Partial<RuntimeDependenciesController>) {
+function renderView(patch: Partial<RuntimeDependenciesController>, language: 'zh-CN' | 'en-US' = 'zh-CN') {
   const controller = {
     ytDlpStatus: status(),
     phase: 'idle',
@@ -156,7 +175,7 @@ function renderView(patch: Partial<RuntimeDependenciesController>) {
     ...patch
   } as RuntimeDependenciesController;
   return render(
-    <LanguageProvider initialPreference="zh-CN">
+    <LanguageProvider initialPreference={language}>
       <RuntimeComponentsSettingsView connected controller={controller} />
     </LanguageProvider>
   );

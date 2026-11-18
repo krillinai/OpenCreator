@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import type { PlatformConnectionState, YouTubeConnectionState } from '@opencreator/protocol';
+import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { PlatformConnectionsSettingsView } from './PlatformConnectionsSettingsView.js';
 
 const windowsState: YouTubeConnectionState = { platform: 'youtube', status: 'disconnected', connectionMethod: 'browser-login' };
@@ -27,6 +28,23 @@ function api(initial: YouTubeConnectionState['status'] = 'disconnected') {
     finish: () => { state = { platform: 'youtube', status: 'connected' }; }
   };
 }
+
+it.each([
+  ['zh-CN', '抖音', '重新连接', '断开'],
+  ['en-US', 'Douyin', 'Reconnect', 'Disconnect']
+] as const)('keeps the manual connection actions without an auto-reconnect switch in %s', async (language, douyinLabel, reconnect, disconnect) => {
+  const service = api();
+  const saved = { status: 'connected', profileId: 'b'.repeat(24), autoReconnect: false } as const;
+  service.getYouTube.mockResolvedValue({ platform: 'youtube', ...saved });
+  service.getDouyin.mockResolvedValue({ platform: 'douyin', ...saved });
+  render(<LanguageProvider initialPreference={language}><PlatformConnectionsSettingsView connected service={service} /></LanguageProvider>);
+  for (const platform of ['YouTube', douyinLabel]) {
+    const row = within(screen.getByRole('group', { name: platform }));
+    expect(await row.findByRole('button', { name: reconnect })).toBeEnabled();
+    expect(row.getByRole('button', { name: disconnect })).toBeEnabled();
+    expect(row.queryByRole('switch')).not.toBeInTheDocument();
+  }
+});
 
 it('connects with one click, polls automatic completion, and allows disconnect', async () => {
   const service = api(); const user = userEvent.setup();

@@ -34,7 +34,6 @@ import {
 } from './AppController.js';
 import { PROJECTS_STORAGE_KEY } from '../features/projects/project-model.js';
 import type { OpenCreatorProject } from '../features/projects/project-model.js';
-import { confirmAgentSetup } from '../features/settings/agent-setup-state.js';
 import type { HostBridge } from '../host/bridge.js';
 import type { SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
@@ -106,21 +105,13 @@ function navigateToTestRoute(hash: string) {
 describe('App', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '#/chat');
-    confirmAgentSetup({
-      readiness: {
-        state: 'ready', mode: 'bundled', version: 'test', commit: null,
-        binaryPath: '/codex', codexHome: '/tmp/codex', checkedAt: new Date(0).toISOString(),
-        account: { status: 'ready', accountStatus: 'signed_in' },
-        binary: { status: 'ready' }, protocol: { status: 'ready' }, models: { status: 'ready' },
-        skills: { status: 'ready' }, toolServer: { status: 'ready' }, diagnostics: []
-      },
-      provider: { baseUrl: '', model: 'gpt-test', apiKeyConfigured: true, authentication: 'api_key' }
-    });
+    window.localStorage.setItem('opencreator.agent-setup-confirmed.v1', '1');
   });
 
   it.each(['browser', 'desktop'] as const)(
-    'guides unauthenticated users in the %s host and restores Agent input after configuration',
+    'offers first-run setup once in the %s host and restores Agent input from settings',
     async hostKind => {
+    window.localStorage.removeItem('opencreator.agent-setup-confirmed.v1');
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.kind = hostKind;
@@ -128,8 +119,14 @@ describe('App', () => {
       baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token'
     });
     let authenticated = false;
+    let onboardingConsumed = false;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith('/settings/agent-onboarding') && init?.method === 'POST') {
+        const show = !onboardingConsumed && readRequestBody(init).offer === true;
+        onboardingConsumed = true;
+        return jsonResponse({ show });
+      }
       const projectResponse = handleDefaultProjectApiRequest(url, init);
       if (projectResponse !== undefined) return projectResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
@@ -157,23 +154,27 @@ describe('App', () => {
     expect(screen.queryByLabelText('OpenCreator 导航')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '稍后配置，进入本地模式' }));
     expect(await screen.findByText('Agent 尚未配置，暂时无法发送任务。')).toBeInTheDocument();
+    cleanup();
+    window.localStorage.removeItem('opencreator.navigation.v3');
+    render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
+    expect(await screen.findByText('Agent 尚未配置，暂时无法发送任务。')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '开始使用 Agent' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '配置 Agent' }));
-    await user.click(screen.getByRole('button', { name: '本地模式' }));
-    expect(await screen.findByRole('combobox', { name: '供应商' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '使用 ChatGPT 登录' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '稍后配置，进入本地模式' }));
+    expect(await screen.findByRole('textbox', { name: 'Model' })).toHaveValue('gpt-test');
+    expect(screen.queryByRole('region', { name: '开始使用 Agent' })).not.toBeInTheDocument();
+    expect(window.location.hash).toBe('#/chat');
     await user.click(screen.getByRole('button', { name: '设置' }));
     await user.click(await screen.findByRole('button', { name: /AI 服务/ }));
     await user.click(await screen.findByRole('button', { name: '配置 Agent' }));
-    await user.click(screen.getByRole('button', { name: '本地模式' }));
-    selectOption(await screen.findByRole('combobox', { name: '供应商' }), 'openai');
-    expect(screen.getByLabelText('模型名称')).toHaveValue('gpt-test');
+    await screen.findByLabelText('API Key');
+    await user.type(screen.getByLabelText('Base URL'), 'https://api.openai.com/v1');
     await user.type(screen.getByLabelText('API Key'), 'secret');
-    await user.click(screen.getByRole('button', { name: '保存并开始使用' }));
-    await waitFor(() => {
-      expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument();
-      expect(window.location.hash).toBe('#/workbench');
-    });
+    await user.click(within(screen.getByRole('region', { name: 'Codex Agent' })).getByRole('button', { name: '保存' }));
+    expect(await screen.findByText('Codex Agent 配置已保存。')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '开始使用 Agent' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '返回应用' }));
+    expect(window.location.hash).toBe('#/chat');
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled());
     expect(screen.queryByText('Agent 尚未配置，暂时无法发送任务。')).not.toBeInTheDocument();
 
     cleanup();
@@ -242,6 +243,7 @@ describe('App', () => {
     let gateway: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith('/settings/agent-onboarding') && init?.method === 'POST') return jsonResponse({ show: readRequestBody(init).offer === true });
       const projectResponse = handleDefaultProjectApiRequest(url, init);
       if (projectResponse !== undefined) return projectResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
@@ -289,15 +291,21 @@ describe('App', () => {
     }
   });
 
-  it('asks to confirm an existing ChatGPT login on first run, then remembers that choice while it remains valid', async () => {
+  it('offers an existing ChatGPT login on first run without reopening setup after credentials expire', async () => {
     window.localStorage.clear();
     window.localStorage.setItem('opencreator.preferences.language', 'zh-CN');
     const user = userEvent.setup();
     let signedIn = true;
+    let onboardingConsumed = false;
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith('/settings/agent-onboarding') && init?.method === 'POST') {
+        const show = !onboardingConsumed && readRequestBody(init).offer === true;
+        onboardingConsumed = true;
+        return jsonResponse({ show });
+      }
       const projectResponse = handleDefaultProjectApiRequest(url, init);
       if (projectResponse !== undefined) return projectResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
@@ -329,11 +337,11 @@ describe('App', () => {
 
     cleanup();
     signedIn = false;
-    window.location.hash = '#/projects';
-    render(<App hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
-    expect(await screen.findByRole('heading', { name: 'OpenCreator' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '本地模式' }));
-    expect(screen.getByRole('combobox', { name: '供应商' })).toBeInTheDocument();
+    testRuntimeProjects = [createTestProject('/Users/test/Documents/OpenCreator/Existing Project')];
+    window.history.replaceState(null, '', '#/projects');
+    render(<App projectNavigationMode="library" hostBridge={hostBridge} runtimeFetch={runtimeFetch} />);
+    expect(await screen.findByRole('tab', { name: '生成记录' }, { timeout: 5_000 })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('region', { name: '开始使用 Agent' })).not.toBeInTheDocument();
   });
 
   it('maps valid skills and configured MCP servers into Composer commands', () => {
@@ -644,6 +652,59 @@ describe('App', () => {
     expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('A sunlit studio portrait');
     expect(screen.queryByRole('main', { name: '个人中心' })).not.toBeInTheDocument();
   });
+
+  it.each(['browser', 'desktop'] as const)(
+    'keeps the %s conversation and draft when a background Agent check requires setup',
+    async hostKind => {
+      const props = runtimeAppProps();
+      props.hostBridge.kind = hostKind;
+      const user = userEvent.setup();
+      window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({ currentProjectId: 'content-design' }));
+      const manual: GatewayAccountState = {
+        source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null,
+        bindingVersion: null, models: [], activationError: null
+      };
+      let gateway: GatewayAccountState = {
+        ...manual, source: 'gateway', authState: 'signed_in', activationState: 'ready',
+        account: { id: 'creator-1', email: 'creator@example.test', verified: true }
+      };
+      let providerSaved = false;
+      const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/gateway/account') || url.endsWith('/gateway/auth/check')) return jsonResponse(gateway);
+        if (url.endsWith('/codex/provider')) {
+          if (init?.method === 'PATCH') providerSaved = true;
+          return jsonResponse(providerSaved
+            ? { authentication: 'api_key', baseUrl: 'https://model.example.test/v1', model: 'test-model', apiKeyConfigured: true }
+            : { authentication: 'none', baseUrl: '', model: '', apiKeyConfigured: false });
+        }
+        return props.runtimeFetch(input, init);
+      };
+      render(<App {...props} runtimeFetch={runtimeFetch} />);
+
+      const composer = await screen.findByRole('textbox', { name: '输入任务' });
+      await waitFor(() => expect(composer).toBeEnabled());
+      fireEvent.change(composer, { target: { value: '保留这段未提交的草稿' } });
+      gateway = manual;
+      await act(async () => window.dispatchEvent(new Event('focus')));
+
+      expect(await screen.findByText('Agent 尚未配置，暂时无法发送任务。')).toBeVisible();
+      expect(composer).toHaveValue('保留这段未提交的草稿');
+      expect(composer).toBeDisabled();
+      expect(window.location.hash).toBe('#/chat');
+      expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: '配置 Agent' }));
+      const settings = await screen.findByRole('region', { name: 'Codex Agent' });
+      await user.type(within(settings).getByLabelText('Model'), 'test-model');
+      await user.type(within(settings).getByLabelText('Base URL'), 'https://model.example.test/v1');
+      await user.type(within(settings).getByLabelText('API Key'), 'test-key');
+      await user.click(within(settings).getByRole('button', { name: '保存' }));
+      await waitFor(() => expect(composer).toBeEnabled());
+      expect(composer).toHaveValue('保留这段未提交的草稿');
+      expect(screen.queryByRole('region', { name: '开始使用 Agent' })).not.toBeInTheDocument();
+      expect(window.location.hash).toBe('#/chat');
+    }
+  );
 
   it('keeps generation history open when Agent readiness briefly fails after setup was confirmed', async () => {
     window.location.hash = '#/projects';
@@ -7139,6 +7200,8 @@ describe('App', () => {
       .toBeInTheDocument();
     expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
       .toBeInTheDocument();
+    expect(readCachedModelCatalog()?.models[0]?.displayName).toBe('Cached GPT');
+    await userEvent.setup().click(screen.getByRole('button', { name: '选择模型 Cached GPT' }));
 
     modelResponse.resolve(jsonResponse(liveCatalog));
 
@@ -7186,27 +7249,31 @@ describe('App', () => {
     });
     await user.click(modelButton);
 
-    expect(await screen.findByText('模型目录刷新失败，当前使用本地缓存'))
-      .toBeInTheDocument();
+    expect(screen.queryByText('模型目录刷新失败，当前使用本地缓存'))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: /Cached GPT/ })).toBeInTheDocument();
     expect(screen.queryByText('暂无可用模型')).not.toBeInTheDocument();
   });
 
-  it('shows a clear model error when refresh fails without a cache', async () => {
+  it('loads models on menu open and treats an unavailable catalog as an empty list', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    let modelRequests = 0;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const projectApiResponse = handleDefaultProjectApiRequest(url, init);
       if (projectApiResponse !== undefined) return projectApiResponse;
-      fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/codex/models')) throw new Error('model catalog unavailable');
+      if (url.endsWith('/codex/models')) {
+        modelRequests++;
+        if (modelRequests === 1) throw new Error('model catalog unavailable');
+        return jsonResponse(createCodexModelListResponse());
+      }
       if (url.endsWith('/threads?status=active&limit=50')) {
         return jsonResponse({ threads: [] });
       }
@@ -7230,26 +7297,18 @@ describe('App', () => {
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
       .toBeInTheDocument();
-    await user.click(await screen.findByRole('button', {
+    expect(modelRequests).toBe(0);
+    const modelButton = await screen.findByRole('button', {
       name: '选择模型 默认模型'
-    }));
-
-    const modelsIssue = await findIssueByDescription('无法加载模型列表，请重试。');
-    expect(modelsIssue).toHaveTextContent('无法加载模型列表，请重试。');
-    expect(modelsIssue).not.toHaveTextContent(/诊断编号：OC-/);
-    expect(modelsIssue).not.toHaveTextContent('model catalog unavailable');
-    expect(screen.queryByText('暂无可用模型')).not.toBeInTheDocument();
-
-    fireEvent.click(within(modelsIssue).getByRole('button', { name: '询问这条问题' }));
-    fireEvent.change(screen.getByRole('textbox', { name: '询问错误原因或修复办法' }), {
-      target: { value: '为什么模型列表失败？' }
     });
-    fireEvent.click(screen.getByRole('button', { name: '发送问题' }));
-    await waitFor(() => expect(findPostCall(fetchCalls, '/runs')).toBeDefined());
-    const request = JSON.parse(String(findPostCall(fetchCalls, '/runs')?.init?.body)) as { prompt: string };
-    expect(request.prompt).toContain('无法加载模型列表，请重试。');
-    expect(request.prompt).toContain('为什么模型列表失败？');
-    expect(request.prompt).not.toContain('model catalog unavailable');
+    await user.click(modelButton);
+    await waitFor(() => expect(modelRequests).toBe(1));
+    expect(await screen.findByText('暂无可用模型')).toBeInTheDocument();
+    expect(screen.queryByText('无法加载模型列表，请重试。')).not.toBeInTheDocument();
+    await user.click(modelButton);
+    await user.click(modelButton);
+    await waitFor(() => expect(modelRequests).toBe(2));
+    expect(await screen.findByRole('menuitemradio', { name: /GPT-5.6 Sol/ })).toBeInTheDocument();
   });
 
   it.each(['browser', 'desktop'] as const)(
@@ -7452,10 +7511,11 @@ describe('App', () => {
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
       .toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '选择模型 GPT-5.5' }))
-      .toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '选择模型 GPT-5.5' }));
-    expect(screen.getByRole('menuitemradio', { name: /^超高 / }))
+    const modelButton = await screen.findByRole('button', { name: /选择模型.*gpt-5\.5/ });
+    expect(modelButton).not.toHaveTextContent('不可用');
+    await user.click(modelButton);
+    await waitFor(() => expect(modelButton).toHaveAccessibleName('选择模型 GPT-5.5'));
+    expect(await screen.findByRole('menuitemradio', { name: /^超高 / }))
       .toHaveAttribute('aria-checked', 'true');
   });
 
@@ -7498,10 +7558,11 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('button', { name: '选择模型 GPT-5.6 Sol' }))
-      .toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '选择模型 GPT-5.6 Sol' }));
-    expect(screen.getByRole('menuitemradio', { name: /^中 / }))
+    const modelButton = await screen.findByRole('button', { name: /选择模型.*gpt-5\.6-sol/ });
+    expect(modelButton).not.toHaveTextContent('不可用');
+    await user.click(modelButton);
+    await waitFor(() => expect(modelButton).toHaveAccessibleName('选择模型 GPT-5.6 Sol'));
+    expect(await screen.findByRole('menuitemradio', { name: /^中 / }))
       .toHaveAttribute('aria-checked', 'true');
   });
 
@@ -7654,10 +7715,8 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
     await user.click(screen.getByRole('button', { name: '开启' }));
-    await user.click(await screen.findByRole('button', {
-      name: '选择模型 GPT-5.6 Sol'
-    }));
-    await user.click(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }));
+    await user.click(await screen.findByRole('button', { name: '选择模型 默认模型' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: /GPT-5.5/ }));
     await user.click(screen.getByRole('menuitemradio', { name: /^超高 / }));
     expect(readRecentModelConfig()).toEqual({
       model: 'gpt-5.5',
@@ -7735,10 +7794,8 @@ describe('App', () => {
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /已有会话/ }));
-    await user.click(await screen.findByRole('button', {
-      name: '选择模型 GPT-5.6 Sol'
-    }));
-    await user.click(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }));
+    await user.click(await screen.findByRole('button', { name: /选择模型.*gpt-5\.6-sol/ }));
+    await user.click(await screen.findByRole('menuitemradio', { name: /GPT-5.5/ }));
     await user.click(screen.getByRole('menuitemradio', { name: /^超高 / }));
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
     await user.click(screen.getByRole('button', { name: '发送' }));

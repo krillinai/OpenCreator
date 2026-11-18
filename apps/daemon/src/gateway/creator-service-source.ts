@@ -479,6 +479,9 @@ export function createGatewayCreatorSource(input: {
                   if (receipt && input.ledger && ['submitting', 'waiting_remote', 'unknown_remote_acceptance'].includes(receipt.status)) receipt = input.ledger.markWaitingRemote(receipt.id, id);
                   await response.body?.cancel();
                   const status = await transcriptionStatus(id);
+                  console.warn(JSON.stringify({ event: 'gateway_transcription_reconciliation', gatewayRequestId: id,
+                    initialStatus: response.status, resolution: status instanceof Response ? 'succeeded' : status,
+                    publicCode: error?.error?.code ?? (response.status === 202 ? 'accepted' : 'unknown') }));
                   response = status instanceof Response ? status : pendingTranscription(id);
                 }
               }

@@ -459,7 +459,7 @@ test('@package-smoke 授权回调保留图像生成工作台和草稿，模型�
   }
 });
 
-test('@package-smoke 全新账号启动时引导配置 Agent，跳过后可重新配置', async () => {
+test('@package-smoke 全新资料首次展示引导，跳过后只在常规设置配置 Agent', async () => {
   const fixture = await launchPackagedDesktop('success', { signedOut: true });
   try {
     await waitForRuntimeReady(fixture.page, false);
@@ -471,7 +471,8 @@ test('@package-smoke 全新账号启动时引导配置 Agent，跳过后可重�
     await fixture.page.getByRole('button', { name: /AI 服务/ }).click();
     await expect(fixture.page.getByText('Agent 尚未配置，无法发送任务。')).toBeVisible();
     await fixture.page.getByRole('button', { name: '配置 Agent' }).click();
-    await expect(fixture.page.getByRole('region', { name: '开始使用 Agent' })).toBeVisible();
+    await expect(fixture.page.getByRole('region', { name: 'Codex Agent' }).getByLabel('API Key')).toBeVisible();
+    await expect(fixture.page.getByRole('region', { name: '开始使用 Agent' })).toHaveCount(0);
   } finally {
     await closeFixture(fixture);
   }

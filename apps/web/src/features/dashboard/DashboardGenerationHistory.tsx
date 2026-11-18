@@ -8,13 +8,16 @@ import { createRequestDeadline } from '../../runtime/request-deadline.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { isMeaningfulCreatorJob, ProjectCoverImage, projectCover, youtubeThumbnailUrls } from '../projects/ProjectsPage.js';
-import { isYtDlpCaptionTimeout, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
+import { isYtDlpCaptionConnectionRefused, isYtDlpCaptionTimeout, isYtDlpPreviewConnectionRefused, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
 import { generationHistoryTypeForWorkspace, type GenerationHistoryType } from './generation-history-type.js';
 import { creatorWorkspaceForTemplate } from './creator-workspace.js';
 import { creatorPanelAdapterFor } from './creator-panel-adapters.js';
+import { hasDownloadFormats } from './VideoDownloadWorkspace.js';
 import './DashboardGenerationHistory.css';
 
 export type { GenerationHistoryType } from './generation-history-type.js';
+
+export type PendingDownloadProbe = { projectId: string; jobId: string; stageRunId: string };
 
 const outputKinds = new Set([
   'source_video', 'source_audio', 'source_subtitle', 'target_subtitle', 'bilingual_subtitle',
@@ -52,6 +55,8 @@ export default function DashboardGenerationHistory(props: {
   onBackCreation(): void;
   onOpenJob(job: CreatorJob): void;
   initialType?: GenerationHistoryType;
+  submittedTask?: { type: GenerationHistoryType };
+  autoOpenDownload?: PendingDownloadProbe;
   initialVisibleCount?: number;
   onViewChange?(view: { type: GenerationHistoryType; visibleCount: number }): void;
 }) {
@@ -69,6 +74,8 @@ export default function DashboardGenerationHistory(props: {
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const loadControllerRef = useRef<AbortController>();
+  const handledSubmissionRef = useRef<typeof props.submittedTask>(undefined);
+  const openedDownloadRef = useRef<PendingDownloadProbe>();
   const load = useCallback(async () => {
     if (loadControllerRef.current !== undefined) return;
     const controller = new AbortController();
@@ -107,8 +114,27 @@ export default function DashboardGenerationHistory(props: {
   }, [load]);
 
   useEffect(() => {
+    if (!props.submittedTask || handledSubmissionRef.current === props.submittedTask) return;
+    handledSubmissionRef.current = props.submittedTask;
+    setType(props.submittedTask.type);
+    setVisibleCount(pageSize);
+    void load();
+  }, [props.submittedTask, load]);
+
+  useEffect(() => {
     props.onViewChange?.({ type, visibleCount });
   }, [type, visibleCount, props.onViewChange]);
+
+  useEffect(() => {
+    const pending = props.autoOpenDownload;
+    if (!pending || pending === openedDownloadRef.current || pending.projectId !== props.projectId) return;
+    const job = jobs.find(candidate => candidate.id === pending.jobId
+      && candidate.projectId === pending.projectId && candidate.templateId === 'video-download');
+    const stage = job?.stages.at(-1);
+    if (!job || stage?.id !== pending.stageRunId || stage.status !== 'succeeded' || !hasDownloadFormats(job)) return;
+    openedDownloadRef.current = pending;
+    props.onOpenJob(job);
+  }, [jobs, props.autoOpenDownload, props.onOpenJob, props.projectId]);
 
   const outputs = useMemo(() => jobs
     .flatMap(job => {
@@ -232,20 +258,44 @@ export default function DashboardGenerationHistory(props: {
                 if (item.kind === 'process') {
                 const job = item.job;
                 const stage = processStageForJob(job)!;
+                const translationAdapter = job.templateId === 'video-translation'
+                  ? creatorPanelAdapterFor(job.templateId) : undefined;
+                const backgroundSourceActive = job.stages.some(run => run.progress.backgroundSourceDownload === true
+                  && (run.status === 'queued' || run.status === 'running'));
+                const translationWorkflow = translationAdapter?.taskProgress?.(job, l);
+                const translationStageProgress = translationAdapter?.readStageProgress(stage, l);
+                const translationWaitingForSource = translationAdapter !== undefined && backgroundSourceActive
+                  && stage.progress.backgroundSourceDownload !== true && stage.status === 'succeeded'
+                  && translationWorkflow?.waitingForNext !== true;
+                const translationWaitingForNext = translationAdapter !== undefined && backgroundSourceActive
+                  && stage.status === 'succeeded' && translationWorkflow?.waitingForNext === true;
                 const failed = stage.status === 'failed';
                 const pending = !failed && (job.status === 'draft' || job.status === 'needs_input');
                 const openable = failed || pending || (job.templateId === 'video-download'
                   && (stage.status === 'queued' || stage.status === 'running'));
-                const percent = job.templateId === 'image-generation'
+                const percent = translationAdapter !== undefined
+                  ? translationWaitingForSource ? 99 : Math.min(backgroundSourceActive ? 99 : 100,
+                    translationWorkflow?.stage.id === stage.id && translationWorkflow.taskPercent !== null
+                      ? translationWorkflow.taskPercent
+                      : typeof stage.progress.percent === 'number' ? Math.round(stage.progress.percent) : 0)
+                  : job.templateId === 'image-generation'
                   ? creatorPanelAdapterFor(job.templateId).readStageProgress(stage, l).percent
                   : typeof stage.progress.percent === 'number' ? Math.round(stage.progress.percent) : 0;
-                const translationTimeout = failed ? videoTranslationTimeoutMessage(job, stage, l) : undefined;
+                const translationConnectionFailure = failed ? videoTranslationConnectionFailureMessage(job, stage, l) : undefined;
                 const message = pending
                   ? job.templateId === 'video-download'
                     ? l('请选择下载格式并继续创作', 'Choose a download format to continue')
                     : l('继续配置这个创作项目', 'Continue configuring this project')
                   : failed
-                    ? translationTimeout ?? stage.errorMessage ?? (typeof stage.progress.message === 'string' ? stage.progress.message : stage.stageId)
+                    ? translationConnectionFailure ?? stage.errorMessage ?? (typeof stage.progress.message === 'string' ? stage.progress.message : stage.stageId)
+                    : translationWaitingForSource
+                      ? l('视频翻译已完成，正在等待原视频', 'Translation complete; waiting for the source video', 'Översättningen är klar; väntar på originalvideon')
+                    : translationWaitingForNext
+                      ? l('当前阶段已完成，正在等待原视频以继续', 'Current stage complete; waiting for the source video to continue', 'Aktuellt steg är klart; väntar på originalvideon för att fortsätta')
+                    : translationAdapter !== undefined
+                      ? (translationStageProgress?.showMessage ? translationStageProgress.message : null)
+                        ?? (typeof stage.progress.phase === 'string' ? translationAdapter.phaseLabel(stage.progress.phase, l) : null)
+                        ?? translationAdapter.stageLabel(stage.stageId, l)
                     : typeof stage.progress.message === 'string' ? stage.progress.message
                       : job.templateId === 'image-generation' && stage.progress.phase === 'generating_candidates'
                         ? l('正在生成图片', 'Generating image', 'Skapar bild') : stage.stageId;
@@ -484,6 +534,15 @@ function isPreviewableOutput(output: HistoryOutput): boolean {
 
 function processStageForJob(job: CreatorJob): CreatorJob['stages'][number] | undefined {
   const activeStage = job.stages.filter(stage => stage.status === 'queued' || stage.status === 'running' || stage.status === 'failed').at(-1);
+  if (job.templateId === 'video-translation') {
+    const foreground = job.stages.filter(stage => stage.progress.backgroundSourceDownload !== true
+      && (stage.status === 'queued' || stage.status === 'running' || stage.status === 'failed')).at(-1);
+    if (foreground && !(job.status === 'completed' && foreground.status === 'failed')) return foreground;
+    const background = job.stages.filter(stage => stage.progress.backgroundSourceDownload === true
+      && (stage.status === 'queued' || stage.status === 'running')).at(-1);
+    if (background) return [...job.stages].reverse().find(stage => stage.progress.backgroundSourceDownload !== true
+      && stage.status === 'succeeded') ?? background;
+  }
   if (job.status === 'completed' && activeStage?.status === 'failed') return undefined;
   if (activeStage) return activeStage;
   if (job.status !== 'draft' && job.status !== 'needs_input') return undefined;
@@ -494,7 +553,7 @@ function processStageForJob(job: CreatorJob): CreatorJob['stages'][number] | und
   };
 }
 
-function videoTranslationTimeoutMessage(job: CreatorJob, selected: CreatorJob['stages'][number], l: LocalizeCopy): string | undefined {
+function videoTranslationConnectionFailureMessage(job: CreatorJob, selected: CreatorJob['stages'][number], l: LocalizeCopy): string | undefined {
   if (job.templateId !== 'video-translation' || !['subtitle', 'preview-source-video'].includes(selected.stageId)) return undefined;
   const subtitle = [...job.stages].reverse().find(stage => stage.stageId === 'subtitle');
   const preview = [...job.stages].reverse().find(stage => stage.stageId === 'preview-source-video');
@@ -502,6 +561,10 @@ function videoTranslationTimeoutMessage(job: CreatorJob, selected: CreatorJob['s
     && isYtDlpCaptionTimeout(subtitle.errorCode, subtitle.errorMessage);
   const previewTimedOut = preview?.status === 'failed'
     && isYtDlpPreviewTimeout(preview.errorCode, preview.errorMessage);
+  const captionsRefused = subtitle?.status === 'failed'
+    && isYtDlpCaptionConnectionRefused(subtitle.errorCode, subtitle.errorMessage);
+  const previewRefused = preview?.status === 'failed'
+    && isYtDlpPreviewConnectionRefused(preview.errorCode, preview.errorMessage);
   if (captionsTimedOut && previewTimedOut) return l(
     '视频平台连接超时，字幕读取和原视频预览未完成',
     'The video platform connection timed out; captions and source video preview could not be prepared.',
@@ -516,6 +579,21 @@ function videoTranslationTimeoutMessage(job: CreatorJob, selected: CreatorJob['s
     '视频平台连接超时，原视频预览未完成',
     'The video platform connection timed out; source video preview could not be prepared.',
     'Anslutningen till videoplattformen tog för lång tid; förhandsvisningen kunde inte förberedas.'
+  );
+  if (captionsRefused && previewRefused) return l(
+    '视频平台连接被拒绝，字幕读取和原视频预览未完成',
+    'The video platform connection was refused; captions and source video preview could not be prepared.',
+    'Anslutningen till videoplattformen nekades; undertexter och förhandsvisning kunde inte förberedas.'
+  );
+  if (captionsRefused && selected.stageId === 'subtitle') return l(
+    '视频平台连接被拒绝，字幕读取未完成',
+    'The video platform connection was refused; captions could not be read.',
+    'Anslutningen till videoplattformen nekades; undertexterna kunde inte läsas.'
+  );
+  if (previewRefused && selected.stageId === 'preview-source-video') return l(
+    '视频平台连接被拒绝，原视频预览未完成',
+    'The video platform connection was refused; source video preview could not be prepared.',
+    'Anslutningen till videoplattformen nekades; förhandsvisningen kunde inte förberedas.'
   );
   return undefined;
 }
