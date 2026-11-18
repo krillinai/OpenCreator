@@ -106,10 +106,10 @@ export function createCreatorService(client: ClientLike) {
     createJob(request: CreateCreatorJobRequest): Promise<{ job: CreatorJob }> {
       return client.post('/creator/jobs', request) as Promise<{ job: CreatorJob }>;
     },
-    listJobs(projectId?: string): Promise<CreatorJobListResponse> {
+    listJobs(projectId?: string, options?: { signal?: AbortSignal }): Promise<CreatorJobListResponse> {
       return client.get(projectId === undefined
         ? '/creator/jobs'
-        : `/creator/jobs?projectId=${encodeURIComponent(projectId)}`) as Promise<CreatorJobListResponse>;
+        : `/creator/jobs?projectId=${encodeURIComponent(projectId)}`, options) as Promise<CreatorJobListResponse>;
     },
     getJob(jobId: string, options?: { signal?: AbortSignal }): Promise<{ job: CreatorJob }> {
       return client.get(`/creator/jobs/${encodeURIComponent(jobId)}`, options) as Promise<{ job: CreatorJob }>;

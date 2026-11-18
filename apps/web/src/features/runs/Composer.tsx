@@ -131,8 +131,7 @@ export function Composer(props: {
   reasoning: ReasoningEffort | null;
   models?: readonly CodexModelResponse[];
   modelsLoading?: boolean;
-  modelsError?: string;
-  modelsNotice?: string;
+  onLoadModels?(): void;
   slashCommands?: ComposerSlashCommand[];
   slashCommandsLoading?: boolean;
   slashCommandsError?: string;
@@ -236,25 +235,9 @@ export function Composer(props: {
     resolvedSelectedModel,
     selectedModel,
     props.modelsLoading === true,
+    availableModels.length > 0,
     t
   );
-
-  useEffect(() => {
-    if (props.modelsError === undefined) {
-      pageIssues.resolveOperation('composer.load-models');
-    } else {
-      pageIssues.captureOperationFailure(
-        'composer.load-models',
-        new Error(props.modelsError),
-        t('composer.model.loadFailed')
-      );
-    }
-  }, [
-    pageIssues.captureOperationFailure,
-    pageIssues.resolveOperation,
-    props.modelsError,
-    t
-  ]);
 
   useEffect(() => {
     if (props.slashCommandsError === undefined) {
@@ -1607,6 +1590,7 @@ export function Composer(props: {
               aria-expanded={openMenu === 'model'}
               onClick={() => {
                 setSlashTrigger(null);
+                if (openMenu !== 'model') props.onLoadModels?.();
                 setOpenMenu(openMenu === 'model' ? null : 'model');
               }}
             >
@@ -1629,17 +1613,11 @@ export function Composer(props: {
                       {t('composer.model.loading')}
                     </div>
                   ) : null}
-                  {props.modelsNotice !== undefined && availableModels.length > 0 ? (
-                    <div className="composer-model-status" role="status">
-                      {props.modelsNotice}
-                    </div>
-                  ) : null}
                   {availableModels.length === 0
-                    && props.modelsLoading !== true
-                    && props.modelsError === undefined ? (
+                    && props.modelsLoading !== true ? (
                     <div className="composer-model-status">{t('composer.model.none')}</div>
                   ) : null}
-                  {selectedModel !== null && resolvedSelectedModel === undefined ? (
+                  {selectedModel !== null && availableModels.length > 0 && resolvedSelectedModel === undefined ? (
                     <button
                       className="composer-menu-item"
                       type="button"
@@ -1860,10 +1838,11 @@ function modelSelectionLabel(
   resolvedModel: CodexModelResponse | undefined,
   selectedModel: string | null,
   loading: boolean,
+  hasAvailableModels: boolean,
   t: Translate
 ): string {
   if (resolvedModel !== undefined) return resolvedModel.displayName;
-  if (selectedModel !== null) return t('composer.model.unavailable', { model: selectedModel });
+  if (selectedModel !== null) return hasAvailableModels ? t('composer.model.unavailable', { model: selectedModel }) : selectedModel;
   return loading ? t('composer.model.loading') : t('composer.model.default');
 }
 

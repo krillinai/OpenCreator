@@ -54,6 +54,7 @@ function PlatformConnectionRow(props: { connected: boolean; service?: PlatformCo
   const disabled = !props.connected || !service || !state || busy;
   const connecting = state?.status === 'connecting';
   const connected = state?.status === 'connected';
+  const canDisconnect = connected || state?.status === 'expired' || (state?.status === 'error' && Boolean(state.connectedAt));
   const managed = state?.connectionMethod === 'browser-login';
   const profiles = managed ? [] : state?.profiles ?? [];
   const profileId = profiles.some(profile => profile.id === selectedProfile) ? selectedProfile
@@ -86,7 +87,7 @@ function PlatformConnectionRow(props: { connected: boolean; service?: PlatformCo
           : <button type="button" disabled={disabled} onClick={() => service && void act(() => youtube ? service.connectYouTube(profileId) : service.connectDouyin(profileId))}>
             {connected || state?.status === 'expired' ? <RefreshCw size={16} /> : <Link2 size={16} />}
             {connected || state?.status === 'expired' ? l('重新连接', 'Reconnect') : l('连接', 'Connect')}</button>}
-        {connected || state?.status === 'expired' ? <button type="button" disabled={disabled} onClick={() => service && void act(youtube ? service.disconnectYouTube : service.disconnectDouyin)}><Unlink size={16} />{l('断开', 'Disconnect')}</button> : null}
+        {canDisconnect ? <button type="button" disabled={disabled} onClick={() => service && void act(youtube ? service.disconnectYouTube : service.disconnectDouyin)}><Unlink size={16} />{l('断开', 'Disconnect')}</button> : null}
         {!connecting ? <button type="button" disabled={disabled} aria-label={l('导入 Cookie 文件', 'Import cookie file')} title={l('导入 Cookie 文件', 'Import cookie file')} onClick={() => fileInput.current?.click()}><Upload size={16} /></button> : null}
       </div>
     </div>

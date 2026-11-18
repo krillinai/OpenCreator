@@ -18,7 +18,7 @@ import { openRuntimeDatabase } from '../../src/storage/database.js';
 
 const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aC1sAAAAASUVORK5CYII=', 'base64');
 
-async function fixture(prefix: 'ocreq' | 'ocdir', invalidReceipt = false, canonical = false) {
+async function fixture(prefix: 'ocreq' | 'ocdir', invalidReceipt = false, canonical = false, rejected = false) {
   const root = await mkdtemp(join(tmpdir(), 'creator-gateway-image-'));
   const db = openRuntimeDatabase(join(root, 'runtime.sqlite'));
   const model: GatewayModel = { id: 'gpt-image-2', modality: 'image', capabilities: ['generate', 'edit'],
@@ -55,8 +55,11 @@ async function fixture(prefix: 'ocreq' | 'ocdir', invalidReceipt = false, canoni
       return Response.json({ requestId: invalidReceipt ? `${prefix}_${'b'.repeat(48)}` : requestId, state: 'submitting' },
         { status: 202, headers: { 'X-Request-ID': requestId } });
     }
-    if (String(url).endsWith('/result')) return Response.json({ data: [{ b64_json: image.toString('base64') }] });
-    return Response.json({ requestId, state: 'succeeded', billingState: 'settled' });
+    if (String(url).endsWith('/result')) return rejected
+      ? Response.json({ error: { code: 'upstream_rejected', message: '图片未通过内容安全审核', requestId } }, { status: 400, headers: { 'X-Request-ID': requestId } })
+      : Response.json({ data: [{ b64_json: image.toString('base64') }] });
+    return Response.json({ requestId, state: rejected ? 'failed' : 'succeeded', billingState: rejected ? 'released' : 'settled',
+      ...(rejected ? { errorCode: 'upstream_rejected' } : {}) });
   });
   let origin = '';
   const manual = createDefaultCreatorServicesConfig();
@@ -102,6 +105,23 @@ it.each(['ocreq', 'ocdir'] as const)('saves a complete Creator image result from
     expect(f.repository.listIssues(result.id).filter(i => i.status !== 'resolved')).toEqual([]);
     expect(f.identities).toHaveLength(1);
     expect(f.fetcher.mock.calls.some(([url]) => String(url).endsWith('/result'))).toBe(true);
+  } finally { await f.close(); }
+});
+
+it('preserves the gateway reason for a rejected asynchronous image', async () => {
+  const f = await fixture('ocreq', false, false, true);
+  try {
+    const command = f.dispatcher.dispatch(f.job.id, { action: 'run-stage', expectedRevision: f.job.revision,
+      idempotencyKey: 'rejected-generate', input: { stageId: 'generate' } }, 'user');
+    await f.runner.runStageRun(command.commandReceipt.stageRunId!);
+    const result = f.repository.getJob(f.job.id)!;
+    expect(result.stages[0]).toMatchObject({ status: 'failed' });
+    expect(f.repository.listIssues(result.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ publicFacts: expect.objectContaining({ httpStatus: 400,
+        upstreamCode: 'upstream_rejected', upstreamMessage: '图片未通过内容安全审核' }) })
+    ]));
+    expect(f.fetcher.mock.calls.some(([url]) => String(url).endsWith('/result'))).toBe(true);
+    expect(f.identities).toHaveLength(1);
   } finally { await f.close(); }
 });
 

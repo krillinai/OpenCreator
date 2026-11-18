@@ -5,9 +5,72 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestRunResumesDubbingSegmentsAfterFailure(t *testing.T) {
+	for _, scenario := range []struct {
+		name, firstText, voice string
+		corrupt                bool
+		want                   []string
+	}{
+		{name: "unchanged", firstText: "First", voice: "voice", want: []string{"Second", "Third"}},
+		{name: "edited", firstText: "Edited", voice: "voice", want: []string{"Edited", "Second", "Third"}},
+		{name: "different voice", firstText: "First", voice: "other", want: []string{"First", "Second", "Third"}},
+		{name: "corrupt", firstText: "First", voice: "voice", corrupt: true, want: []string{"First", "Second", "Third"}},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			cache := filepath.Join(t.TempDir(), "checkpoints")
+			t.Setenv("OPENCREATOR_KRILLIN_DUBBING_CACHE", cache)
+			run := func(tts *fakeTTS, firstText, voice string) (Result, [][2]int, error) {
+				dir := t.TempDir()
+				input := filepath.Join(dir, "input.srt")
+				text := "1\n00:00:00,000 --> 00:00:01,000\n" + firstText + "\n\n2\n00:00:01,000 --> 00:00:02,000\nSecond\n\n3\n00:00:02,000 --> 00:00:03,000\nThird\n\n"
+				if err := os.WriteFile(input, []byte(text), 0600); err != nil {
+					t.Fatal(err)
+				}
+				var progress [][2]int
+				result, err := NewRunner(Dependencies{
+					TTS: tts, Language: "en", Voice: voice, Workdir: dir, InputSRT: input, AudioOnly: true,
+					FFmpeg: fakeRunnerWritingOutputs(dir), Duration: func(string) (float64, error) { return 0.8, nil },
+					ReportProgress: func(completed, total int) { progress = append(progress, [2]int{completed, total}) },
+				}).Run(context.Background())
+				return result, progress, err
+			}
+			first := &fakeTTS{writeOnReturn: true, failText: "Second"}
+			result, _, err := run(first, "First", "voice")
+			if err == nil || !strings.Contains(err.Error(), "tts segment 2 failed") || result.Audio != "" ||
+				!slices.Equal(first.texts, []string{"First", "Second", "Second", "Second"}) {
+				t.Fatalf("first result = %+v, TTS = %v, error = %v", result, first.texts, err)
+			}
+			if scenario.corrupt {
+				files, err := os.ReadDir(cache)
+				if err != nil || len(files) != 1 {
+					t.Fatalf("checkpoints = %v, error = %v, want one completed segment", files, err)
+				}
+				path := filepath.Join(cache, files[0].Name())
+				data, err := os.ReadFile(path)
+				if err != nil || len(data) == 0 {
+					t.Fatalf("read checkpoint: %v", err)
+				}
+				data[len(data)-1] ^= 1
+				if err := os.WriteFile(path, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			retry := &fakeTTS{writeOnReturn: true}
+			result, progress, err := run(retry, scenario.firstText, scenario.voice)
+			if err != nil || result.Audio == "" || len(result.Plan) != 3 || !slices.Equal(retry.texts, scenario.want) {
+				t.Fatalf("retry plan length = %d, audio = %q, TTS = %v, want %v, error = %v", len(result.Plan), result.Audio, retry.texts, scenario.want, err)
+			}
+			if !slices.Equal(progress, [][2]int{{0, 3}, {1, 3}, {2, 3}, {3, 3}}) {
+				t.Fatalf("retry progress = %v", progress)
+			}
+		})
+	}
+}
 
 func fakeRunnerWritingOutputs(dir string) CommandRunner {
 	return func(args []string) error {

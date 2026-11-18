@@ -30,7 +30,8 @@ import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer.js'
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { formatRoute, parseRoute } from '../../app/routes.js';
-import { isYtDlpCaptionTimeout, isYtDlpPreviewTimeout, issueConversationText, issueDiagnosticText } from '../issues/issue-catalog.js';
+import { issueConversationText, issueDiagnosticText, ytDlpRecoveryTarget } from '../issues/issue-catalog.js';
+import { creatorWorkspaceForTemplate } from './creator-workspace.js';
 import { OriginalErrorDetails } from '../issues/OriginalErrorDetails.js';
 import { creatorPreflightMessage } from './creator-preflight-copy.js';
 import ToolAgentComposer, { type ToolAgentPermission } from './ToolAgentComposer.js';
@@ -328,7 +329,7 @@ export default function CreatorCollaborationPanel(props: {
                         && (item.issue.stageId === 'preview-source-video'
                           || run.stageId === 'preview-source-video' && run.progress.backgroundSourceDownload !== true))}
                     youtubeSessionIssue={isYouTubeSessionIssue(item.issue, session.job)}
-                    proxySettingsHref={translationProxySettingsHref(item.issue, session.job)}
+                    ytDlpSettingsLink={ytDlpSettingsLink(item.issue, session.job)}
                     onRetry={() => session.repairIssue(item.issue)}
                     onFocus={() => {
                       session.focusIssue(item.issue);
@@ -433,7 +434,7 @@ function CollaborationIssueView(props: {
   retryLabel?: string;
   retryBlocked?: boolean;
   youtubeSessionIssue?: boolean;
-  proxySettingsHref?: string;
+  ytDlpSettingsLink?: { href: string; target: 'network' | 'components' };
   onRetry(): Promise<void>;
   onFocus(): void;
 }) {
@@ -469,8 +470,10 @@ function CollaborationIssueView(props: {
           {props.youtubeSessionIssue ? <a className="creator-collaboration-login-action" href="#/settings?tab=platform-connections">
             <Link2 size={15} aria-hidden="true" />{l('去平台连接', 'Open platform connections')}
           </a> : null}
-          {props.proxySettingsHref ? <a className="creator-collaboration-login-action" href={props.proxySettingsHref}>
-            <Link2 size={15} aria-hidden="true" />{l('检查代理设置', 'Check proxy settings', 'Kontrollera proxyinställningar')}
+          {props.ytDlpSettingsLink ? <a className="creator-collaboration-login-action" href={props.ytDlpSettingsLink.href}>
+            <Link2 size={15} aria-hidden="true" />{props.ytDlpSettingsLink.target === 'network'
+              ? l('检查代理设置', 'Check proxy settings', 'Kontrollera proxyinställningar')
+              : l('检查 yt-dlp 更新', 'Check yt-dlp updates', 'Kontrollera yt-dlp-uppdateringar')}
           </a> : null}
           <button type="button" onClick={props.onFocus} title={l('询问这个问题', 'Ask about this issue')} aria-label={l('询问这个问题', 'Ask about this issue')}>
             <MessageSquareText size={15} aria-hidden="true" />
@@ -498,19 +501,20 @@ function isYouTubeSessionIssue(issue: OpenCreatorIssue, job: CreatorJob): boolea
     );
 }
 
-function translationProxySettingsHref(issue: OpenCreatorIssue, job: CreatorJob): string | undefined {
-  if (job.templateId !== 'video-translation') return undefined;
-  const message = issue.publicFacts?.upstreamMessage ?? issue.technicalDetail;
-  const timedOut = issue.stageId === 'subtitle'
-    ? isYtDlpCaptionTimeout(issue.code, message, issue.publicFacts)
-    : issue.stageId === 'preview-source-video'
-      && isYtDlpPreviewTimeout(issue.code, message, issue.publicFacts);
-  if (!timedOut) return undefined;
+function ytDlpSettingsLink(issue: OpenCreatorIssue, job: CreatorJob): { href: string; target: 'network' | 'components' } | undefined {
+  const target = ytDlpRecoveryTarget(issue);
+  if (!target) return undefined;
   const currentRoute = parseRoute(window.location.hash);
-  const returnPath = formatRoute({ view: 'workbench', tool: 'video-translation', jobId: job.id,
-    ...(currentRoute.view === 'workbench' && currentRoute.tool === 'video-translation'
-      && currentRoute.jobId === job.id && currentRoute.returnTo ? { returnTo: currentRoute.returnTo } : {}) });
-  return `#/settings?${new URLSearchParams({ from: 'video-translation', returnPath })}`;
+  const tool = creatorWorkspaceForTemplate(job.templateId);
+  if (!tool) return undefined;
+  const returnPath = formatRoute(currentRoute.view === 'workbench' && currentRoute.tool === tool
+    && currentRoute.jobId === job.id ? currentRoute : { view: 'workbench', tool, jobId: job.id });
+  const params = new URLSearchParams({
+    ...(target === 'components' ? { tab: 'local-components' } : {}),
+    ...(job.templateId === 'video-translation' ? { from: 'video-translation' } : {}),
+    returnPath
+  });
+  return { href: `#/settings?${params}`, target };
 }
 
 function CollaborationMessageView(props: { message: CollaborationMessage }) {

@@ -14,28 +14,35 @@
 }
 
 .dashboard-generation-session-composer.is-expanded {
-  height: auto;
-  max-height: 80%;
+  max-height: min(72dvh, 640px);
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-top: 1px solid var(--border-hairline);
-  box-shadow: 0 -12px 28px #0004;
+  box-shadow: 0 -8px 24px #0003;
 }
 
 .dashboard-generation-session-composer-inner {
   position: relative;
-  max-width: 1120px;
+  width: min(1120px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 12px 24px 16px;
+  padding: 12px 0 20px;
 }
 
-.dashboard-generation-session-composer-inner.dashboard-unified-workspace-content,
-.dashboard-generation-session-composer-inner .dashboard-unified-workspace-content {
+.dashboard-generation-session-toolbar {
+  height: 32px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.dashboard-generation-session-composer .dashboard-generation {
   padding-top: 0;
 }
 
 .dashboard-generation-session-collapsed {
-  width: min(960px, calc(100% - 48px));
+  width: min(1120px, calc(100% - 48px));
   height: 58px;
   box-sizing: border-box;
   display: flex;
@@ -44,9 +51,9 @@
   margin: 0 auto;
   padding: 7px 8px 7px 10px;
   border: 1px solid var(--border-hairline);
-  border-radius: 18px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--surface-2)), color-mix(in srgb, var(--accent) 3%, var(--surface)));
-  box-shadow: 0 14px 36px #0007, inset 0 1px 0 #ffffff0b;
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: 0 6px 20px #0003;
 }
 
 .dashboard-generation-session-collapsed:focus-within {
@@ -108,12 +115,8 @@
 }
 
 .dashboard-generation-session-collapse {
-  position: absolute;
-  z-index: 3;
-  top: 12px;
-  right: 24px;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
   border: 1px solid var(--border-hairline);
@@ -128,21 +131,18 @@
   color: var(--text);
 }
 
-.dashboard-generation-session-composer.is-expanded .dashboard-generation-history-trigger {
-  right: 40px;
-}
-
 .dashboard-generation-session-collapsed {
   margin-bottom: 16px;
 }
 
 @media (max-width: 700px) {
   .dashboard-generation-session-composer.is-expanded {
-    max-height: 85%;
+    max-height: min(72dvh, 600px);
   }
 
   .dashboard-generation-session-composer-inner {
-    padding: 10px 12px 12px;
+    width: calc(100% - 24px);
+    padding: 10px 0 12px;
   }
 
   .dashboard-generation-session-collapsed {
@@ -150,7 +150,4 @@
     margin-bottom: 12px;
   }
 
-  .dashboard-generation-session-collapse {
-    right: 12px;
-  }
 }

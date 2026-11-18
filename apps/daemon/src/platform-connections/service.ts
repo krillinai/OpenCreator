@@ -13,6 +13,8 @@ import { filterPlatformCookies, hasPlatformSession, parsePlatformCookies,
 type Credential = { version: 1; cookies: PlatformCookie[]; connectedAt: string;
   browser?: 'chrome' | 'edge'; profileId?: string; invalidated?: boolean };
 type ConnectionAttempt = { controller: AbortController; work: Promise<void>; completeLogin?: () => void };
+const AUTO_RECONNECT_TIMEOUT_MS = 5_000;
+const AUTO_RECONNECT_COOLDOWN_MS = 60_000;
 
 type ConnectionState<P extends ConnectionPlatform> = PlatformConnectionState & { platform: P };
 export type PlatformConnectionOptions = {
@@ -32,6 +34,7 @@ export class PlatformConnectionService<P extends ConnectionPlatform = Connection
   private attempt?: ConnectionAttempt;
   private context = new AsyncLocalStorage<{ path: string; credential: Credential }>();
   private mutations: Promise<unknown> = Promise.resolve();
+  private lastAutoReconnect?: { connectedAt: string; time: number };
   private readonly credentialFile: string;
   constructor(private input: PlatformConnectionOptions & { platform?: P }) {
     this.platform = (input.platform ?? 'youtube') as P;
@@ -58,6 +61,29 @@ export class PlatformConnectionService<P extends ConnectionPlatform = Connection
   async hasAuthentication(): Promise<boolean> {
     const credential = await this.readCredential();
     return !!credential && !credential.invalidated && hasPlatformSession(filterPlatformCookies(credential.cookies, this.platform), this.platform);
+  }
+  async refreshBrowserSession(): Promise<void> {
+    if (this.managedLogin || this.attempt) return;
+    await this.serialize(async () => {
+      if (this.attempt) return;
+      const credential = await this.readCredential();
+      if (!credential?.profileId || !credential.browser) return;
+      const savedCookies = filterPlatformCookies(credential.cookies, this.platform);
+      if (!credential.invalidated && hasPlatformSession(savedCookies, this.platform)) return;
+      if (this.lastAutoReconnect?.connectedAt === credential.connectedAt
+        && Date.now() - this.lastAutoReconnect.time < AUTO_RECONNECT_COOLDOWN_MS) return;
+      this.lastAutoReconnect = { connectedAt: credential.connectedAt, time: Date.now() };
+      const signal = AbortSignal.timeout(AUTO_RECONNECT_TIMEOUT_MS);
+      try {
+        const profiles = await (this.input.listProfiles ?? listBrowserProfiles)();
+        const profile = profiles.find(item => item.id === credential.profileId && item.browser === credential.browser);
+        if (!profile) return;
+        const cookies = await this.readProfileCookies(profile, signal);
+        if (!hasPlatformSession(cookies, this.platform)) return;
+        if (credential.invalidated && cookieSnapshot(cookies, this.platform) === cookieSnapshot(savedCookies, this.platform)) return;
+        await this.saveProfileCookies(profile, cookies);
+      } catch { return; }
+    });
   }
   connect(profileId?: string): Promise<ConnectionState<P>> {
     return this.serialize(async () => {
@@ -127,8 +153,6 @@ export class PlatformConnectionService<P extends ConnectionPlatform = Connection
   }
   async withCookies<T>(operation: () => Promise<T>): Promise<T> {
     if (this.context.getStore()) return operation();
-    // Browser reads can prompt for keychain access. Only explicit connections
-    // refresh the saved credential; background requests and tasks use snapshots.
     const credential = await this.readCredential();
     const cookies = filterPlatformCookies(credential?.cookies, this.platform);
     if (!credential || credential.invalidated || !hasPlatformSession(cookies, this.platform)) return operation();
@@ -180,21 +204,13 @@ export class PlatformConnectionService<P extends ConnectionPlatform = Connection
       }
       attempt.controller.signal.throwIfAborted();
       if (!profile) throw new PublicPlatformConnectionError('No browser profile was found. Connect again.');
-      const cookies = filterPlatformCookies(await (this.input.readBrowserCookies ?? readBrowserPlatformCookies)({
-        profile, runtime: this.input.getRuntime(), signal: attempt.controller.signal,
-        ...(this.platform === 'douyin' ? { platform: 'douyin' as const } : {})
-      }), this.platform);
-      attempt.controller.signal.throwIfAborted();
+      const cookies = await this.readProfileCookies(profile, attempt.controller.signal);
       if (!hasPlatformSession(cookies, this.platform)) throw new PublicPlatformConnectionError(managed
         ? 'YouTube sign-in is incomplete. Reconnect and finish signing in in the sign-in window.'
         : this.platform === 'youtube'
         ? 'This browser profile is signed out of YouTube or its session expired. Sign in with this profile and reconnect.'
         : 'This browser profile has no valid Douyin session. Open the video, complete website verification, and reconnect.');
-      const connectedAt = new Date().toISOString();
-      await writePrivateJsonFile(this.credentialFile, {
-        version: 1, cookies, connectedAt, browser: profile.browser, profileId: profile.id
-      } satisfies Credential);
-      this.state = { platform: this.platform, status: 'connected', connectedAt, browser: profile.browser, profileId: profile.id };
+      await this.saveProfileCookies(profile, cookies);
     } catch (error) {
       this.state = { platform: this.platform, status: 'error', browser: profile?.browser, profileId: profile?.id,
         message: attempt.controller.signal.aborted ? 'The connection was canceled or timed out. Connect again.' : publicConnectionError(error) };
@@ -236,6 +252,22 @@ export class PlatformConnectionService<P extends ConnectionPlatform = Connection
     if (value.version !== 1 || !Array.isArray(value.cookies) || typeof value.connectedAt !== 'string') return undefined;
     return value as Credential;
   }
+  private async readProfileCookies(profile: BrowserProfile, signal: AbortSignal): Promise<PlatformCookie[]> {
+    signal.throwIfAborted();
+    const cookies = await (this.input.readBrowserCookies ?? readBrowserPlatformCookies)({
+      profile, runtime: this.input.getRuntime(), signal,
+      ...(this.platform === 'douyin' ? { platform: 'douyin' as const } : {})
+    });
+    signal.throwIfAborted();
+    return filterPlatformCookies(cookies, this.platform);
+  }
+  private async saveProfileCookies(profile: BrowserProfile, cookies: PlatformCookie[]): Promise<void> {
+    const connectedAt = new Date().toISOString();
+    await writePrivateJsonFile(this.credentialFile, {
+      version: 1, cookies, connectedAt, browser: profile.browser, profileId: profile.id
+    } satisfies Credential);
+    this.state = { platform: this.platform, status: 'connected', connectedAt, browser: profile.browser, profileId: profile.id };
+  }
   private async refreshState(): Promise<void> {
     const credential = await this.readCredential();
     this.state = credential ? {
@@ -246,13 +278,19 @@ export class PlatformConnectionService<P extends ConnectionPlatform = Connection
   private async publicState(): Promise<ConnectionState<P>> {
     if (this.managedLogin) return { ...this.state, connectionMethod: 'browser-login' };
     const profiles = await (this.input.listProfiles ?? listBrowserProfiles)();
-    return { ...this.state, profiles: profiles.map(({ id, browser, label }) => ({ id, browser, label })) };
+    const saved = this.state.status === 'error' ? await this.readCredential() : undefined;
+    return { ...this.state,
+      ...(saved?.browser && saved.profileId ? { browser: saved.browser, profileId: saved.profileId, connectedAt: saved.connectedAt } : {}),
+      profiles: profiles.map(({ id, browser, label }) => ({ id, browser, label })) };
   }
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
     const work = this.mutations.then(operation);
     this.mutations = work.catch(() => undefined);
     return work;
   }
+}
+function cookieSnapshot(cookies: PlatformCookie[], platform: ConnectionPlatform): string {
+  return serializePlatformCookies(cookies, platform).split('\n').sort().join('\n');
 }
 function publicConnectionError(error: unknown): string {
   const message = error instanceof Error ? error.message : '';

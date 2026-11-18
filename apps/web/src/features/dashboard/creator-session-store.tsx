@@ -689,7 +689,10 @@ export function CreatorSessionProvider(props: {
     const inputResultVersion = failedStage?.progress.inputResultVersion;
     await applyAction({
       action: 'run-stage',
-      input: { stageId: issue.stageId, ...(typeof inputResultVersion === 'number' ? { inputResultVersion } : {}) },
+      input: { stageId: issue.stageId,
+        ...(confirmedRef.current.templateId === 'video-translation' && issue.stageId === 'subtitle' && failedStage
+          ? { resumedFromStageRunId: failedStage.id } : {}),
+        ...(typeof inputResultVersion === 'number' ? { inputResultVersion } : {}) },
       repairIssueId: issue.id
     });
   }, [applyAction]);

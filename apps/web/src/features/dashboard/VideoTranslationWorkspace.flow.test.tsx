@@ -88,7 +88,7 @@ describe('video translation two-step flow', () => {
     fireEvent.click(selector);
     const list = screen.getByRole('listbox', { name: '翻译模型' });
     expect(within(list).getByRole('option', { name: '本机 Codex' })).toBeInTheDocument();
-    expect(within(list).getByRole('option', { name: 'Text One' })).toBeInTheDocument();
+    expect(await within(list).findByRole('option', { name: 'Text One' })).toBeInTheDocument();
     expect(stageCalls(session.applyAction)).toHaveLength(0);
     fireEvent.click(within(list).getByRole('option', { name: '本机 Codex' }));
     session.updateGateway(signedOut);
@@ -109,7 +109,7 @@ describe('video translation two-step flow', () => {
     fireEvent.click(model);
     const list = screen.getByRole('listbox', { name: '翻译模型' });
     expect(within(list).queryByRole('group')).not.toBeInTheDocument();
-    expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual(['本机 Codex', 'Text One']);
+    await waitFor(() => expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual(['本机 Codex', 'Text One']));
     expect(within(list).getByRole('option', { name: 'Text One' })).toHaveTextContent('积分');
     fireEvent.click(within(list).getByRole('option', { name: 'Text One' }));
     expect(screen.getByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
@@ -157,18 +157,22 @@ describe('video translation two-step flow', () => {
     await waitFor(() => expect(model).toHaveValue('本机 Codex'));
   });
 
-  it('keeps the local option and retries a failed public text catalog', async () => {
+  it('loads the public text catalog on model open and retries silently on the next open', async () => {
     const model = { id: 'vendor/text', name: 'Text One', vendor: 'Vendor', modality: 'text' as const, capabilities: ['chat', 'responses'] };
     const getTextCatalog = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ models: [model] });
     const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
     mount(initialJob({}, []), undefined, configuredSpeech(), signedOut, { getTextCatalog }, true);
-    expect(await screen.findByText('模型列表加载失败，请重试。')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('combobox', { name: '翻译模型' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '翻译模型' })).toHaveValue('本机 Codex'));
+    expect(getTextCatalog).not.toHaveBeenCalled();
+    const selector = screen.getByRole('combobox', { name: '翻译模型' });
+    fireEvent.click(selector);
+    await waitFor(() => expect(getTextCatalog).toHaveBeenCalledOnce());
     expect(screen.getByRole('option', { name: '本机 Codex' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '重试' }));
-    await waitFor(() => expect(getTextCatalog).toHaveBeenCalledTimes(2));
-    fireEvent.click(screen.getByRole('combobox', { name: '翻译模型' }));
-    expect(screen.getByRole('option', { name: 'Text One' })).toBeInTheDocument();
+    expect(screen.queryByText('模型列表加载失败，请重试。')).not.toBeInTheDocument();
+    fireEvent.keyDown(selector, { key: 'Escape' });
+    fireEvent.click(selector);
+    expect(await screen.findByRole('option', { name: 'Text One' })).toBeInTheDocument();
+    expect(getTextCatalog).toHaveBeenCalledTimes(2);
   });
 
   it('switches to the account recommendation when a requested public model is unavailable', async () => {

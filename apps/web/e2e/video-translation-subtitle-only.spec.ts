@@ -12,7 +12,7 @@ test('standalone SRT uses two steps and opens an editable result without video',
     localStorage.setItem('opencreator.navigation.v3', JSON.stringify({ currentProjectId: projectId, selectedThreadId: threadId }));
   }, { projectId: runtime.projectId, threadId: runtime.ordinaryThreadId });
   await page.goto(`${runtime.origin}/#/workbench?tool=video-translation&jobId=${encodeURIComponent(job.id)}`);
-  await page.getByRole('button', { name: '稍后配置，进入本地模式' }).click();
+  await expect(page.getByRole('region', { name: '开始使用 Agent' })).toHaveCount(0);
   const creatorTab = page.getByRole('tab', { name: '创作', exact: true });
   if (await creatorTab.isVisible()) await creatorTab.click();
   const workspace = page.getByRole('region', { name: '视频翻译操作区' });
@@ -34,7 +34,7 @@ test('standalone SRT uses two steps and opens an editable result without video',
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('subtitle-only-settings.png'), fullPage: true, animations: 'disabled' });
   await page.reload();
-  await page.getByRole('button', { name: '稍后配置，进入本地模式' }).click();
+  await expect(page.getByRole('region', { name: '开始使用 Agent' })).toHaveCount(0);
   if (await creatorTab.isVisible()) await creatorTab.click();
   await expect(workspace.getByRole('button', { name: '开始翻译', exact: true })).toBeVisible();
   const saved = (await runtime.api<{ job: CreatorJob }>('GET', `/creator/jobs/${job.id}`)).job;
@@ -61,7 +61,7 @@ test('standalone SRT uses two steps and opens an editable result without video',
     contentType: 'application/x-subrip', body: '1\n00:00:02,250 --> 00:00:04,750\n欢迎使用 OpenCreator。\n'
   }));
   await page.reload();
-  await page.getByRole('button', { name: '稍后配置，进入本地模式' }).click();
+  await expect(page.getByRole('region', { name: '开始使用 Agent' })).toHaveCount(0);
   if (await creatorTab.isVisible()) await creatorTab.click();
   await expect(workspace.getByRole('tab', { name: '字幕', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(workspace.getByRole('textbox', { name: '字幕原文 1', exact: true })).toHaveValue('Welcome to OpenCreator.');

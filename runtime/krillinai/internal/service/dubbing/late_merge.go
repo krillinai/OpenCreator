@@ -89,7 +89,7 @@ func (r *Runner) mergeStubbornSegments(ctx context.Context, plan []PlanItem, est
 			}
 			candidateDir := filepath.Join(segmentsDir, "merge_candidates")
 			candidatePath := filepath.Join(candidateDir, "raw", fmt.Sprintf("%d.wav", combined.Index))
-			if err := regenerateRawSegment(ctx, r.deps.TTS, &combined, r.deps.Voice, candidateDir, r.deps.FFmpeg, r.deps.Duration); err != nil {
+			if err := generateRawSegment(ctx, r.deps.TTS, &combined, r.deps.Voice, candidateDir, r.deps.FFmpeg, r.deps.Duration, r.cache); err != nil {
 				_ = os.Remove(candidatePath)
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return nil, ctxErr

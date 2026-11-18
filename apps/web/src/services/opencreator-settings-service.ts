@@ -6,10 +6,13 @@ import type {
 } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
-type ClientLike = Pick<RuntimeClient, 'get' | 'patch'>;
+type ClientLike = Pick<RuntimeClient, 'get' | 'patch' | 'post'>;
 
 export function createOpenCreatorSettingsService(client: ClientLike) {
   return {
+    claimAgentOnboarding(offer: boolean): Promise<{ show: boolean }> {
+      return client.post('/settings/agent-onboarding', { offer });
+    },
     getUiSettings(): Promise<OpenCreatorUiSettingsResponse> {
       return client.get('/settings/ui');
     },

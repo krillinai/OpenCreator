@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Socket } from 'node:net';
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 
 let phase = 'initialization';
 const report = result => writeFileSync(process.env.OPENCREATOR_DESKTOP_NETWORK_TEST_RESULT, `${JSON.stringify({ phase, ...result }, null, 2)}\n`);
@@ -17,6 +18,8 @@ void (async () => {
   globalThis.fetch = () => {
     throw new Error('Built-in Undici fetch must not handle Desktop requests');
   };
+  const { installProtocolHandler, registerPrivilegedSchemes } = await import(process.env.OPENCREATOR_DESKTOP_PROTOCOL_TEST_MODULE);
+  registerPrivilegedSchemes();
   await app.whenReady();
   phase = 'load network module';
   const { fetchDesktopRequest } = await import(process.env.OPENCREATOR_DESKTOP_NETWORK_TEST_MODULE);
@@ -78,6 +81,47 @@ void (async () => {
   const pending = fetchDesktopRequest(`${origin}/wait`, { signal: cancellation.signal });
   setTimeout(() => cancellation.abort(), 50);
   await assert.rejects(pending, { name: 'AbortError' });
+  phase = 'protocol streaming cancellation';
+  const webRoot = process.env.OPENCREATOR_DESKTOP_NETWORK_TEST_USER_DATA;
+  writeFileSync(join(webRoot, 'index.html'), '<!doctype html><html><body>Protocol cancellation regression</body></html>');
+  const protocol = await installProtocolHandler({
+    webRoot,
+    bootstrapRoot: webRoot,
+    getConnection: () => ({ address: origin, token: 'test' }),
+    logger: { info() {}, warn() {}, warnRateLimited() {} }
+  });
+  const window = new BrowserWindow({
+    show: false,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false }
+  });
+  await window.loadURL('opencreator-app://app/index.html');
+  for (const cancelReader of [false, true]) {
+    const outcome = await window.webContents.executeJavaScript(`(async () => {
+      const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const prefix = 'opencreator-app://app/.opencreator/runtime';
+      for (let i = 0; i < 20; i++) {
+        const controller = new AbortController();
+        const response = await fetch(prefix + '/persistent-events', { signal: controller.signal });
+        const reader = response.body.getReader();
+        await reader.read();
+        if (${cancelReader}) await reader.cancel();
+        controller.abort();
+        // Check before the next request so a leak reports the actual failure,
+        // rather than timing out when the seventh SSE request cannot start.
+        const health = await Promise.race([
+          fetch(prefix + '/healthz').then(response => response.json()).then(() => 'ok'),
+          pause(1_500).then(() => 'blocked')
+        ]);
+        if (health !== 'ok') return { health, streams: i + 1 };
+      }
+      return { health: 'ok', streams: 20 };
+    })()`);
+    assert.deepEqual(outcome, { health: 'ok', streams: 20 });
+  }
+  const streamStatus = await fetchDesktopRequest(`${origin}/stream-status`);
+  assert.deepEqual(await streamStatus.json(), { activeStreams: 0, closedStreams: 40 });
+  window.destroy();
+  protocol.suspendRuntime();
   phase = 'complete';
   report({ ok: true });
   console.log('DESKTOP_NETWORK_QOS_REGRESSION_PASSED');

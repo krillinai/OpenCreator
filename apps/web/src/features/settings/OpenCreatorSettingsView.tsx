@@ -25,7 +25,7 @@ import { DiagnosticsSettingsView } from './DiagnosticsSettingsView.js';
 import { readTranslationContinuation } from '../dashboard/video-translation-continuation.js';
 import type { CreatorServicesSection } from './CreatorServicesSettingsView.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
-import type { CodexRuntimeSettingsService } from './CodexRuntimeSettingsView.js';
+import { CodexRuntimeSettingsView, type CodexRuntimeSettingsService } from './CodexRuntimeSettingsView.js';
 import {
   MemorySettingsView,
   type MemoryScopeOption,
@@ -97,7 +97,7 @@ export type OpenCreatorSettingsViewProps = {
   openExternal?(url: string): Promise<void> | void;
   codexRuntimeService?: CodexRuntimeSettingsService | null;
   agentSetupNeeded?: boolean;
-  onOpenAgentSetup?(): void;
+  onAgentProviderSaved?(): void;
   memoryService?: MemorySettingsService | null;
   memoryProjects?: MemoryScopeOption[];
   memoryThreads?: MemoryScopeOption[];
@@ -127,6 +127,7 @@ type SettingsTab =
 
 export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => props.initialTab ?? 'general');
+  const [agentSettingsExpanded, setAgentSettingsExpanded] = useState(false);
   const [gatewayState, setGatewayState] = useState<GatewayAccountState>();
   const { t } = useAppLanguage();
   const l = useLocalizedCopy();
@@ -251,19 +252,19 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
                 modelService={props.codexRuntimeService ?? null}
                 initialSection={props.initialSection}
                 onReturnToTranslation={props.returnToTranslation && readTranslationContinuation()?.returnPath === props.translationReturnPath ? props.onBack : undefined}
-                modeControls={<>
-                  {modeControls}
-                  {props.agentSetupNeeded && props.onOpenAgentSetup !== undefined ? (
-                    <div className="settings-inline-warning" role="status">
-                      {l('Agent 尚未配置，无法发送任务。', 'Agent is not configured; tasks cannot be sent.')}
-                      {' '}
-                      <button className="settings-secondary-button" type="button" onClick={props.onOpenAgentSetup}>
-                        {l('配置 Agent', 'Set up Agent')}
-                      </button>
-                    </div>
-                  ) : null}
-                </>}
+                modeControls={modeControls}
               /> : null}
+              {!officialMode && (props.agentSetupNeeded || agentSettingsExpanded) && props.codexRuntimeService && (!props.gatewayAccountService || gatewayState !== undefined) ? (
+                <>
+                  <div className="settings-inline-warning">
+                    {props.agentSetupNeeded ? <span role="status">{l('Agent 尚未配置，无法发送任务。', 'Agent is not configured; tasks cannot be sent.')}{' '}</span> : null}
+                    <button className="settings-secondary-button" type="button" aria-expanded={agentSettingsExpanded} onClick={() => setAgentSettingsExpanded(expanded => !expanded)}>
+                      {agentSettingsExpanded ? l('关闭', 'Close') : l('配置 Agent', 'Set up Agent')}
+                    </button>
+                  </div>
+                  {agentSettingsExpanded ? <CodexRuntimeSettingsView connected={props.runtimeStatus.connected} service={props.codexRuntimeService} onSaved={props.onAgentProviderSaved} /> : null}
+                </>
+              ) : null}
             </Suspense>
           </>
         ) : null}

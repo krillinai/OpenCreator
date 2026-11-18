@@ -59,6 +59,7 @@ export async function installProtocolHandler(input: {
         input.logger,
         AbortSignal.any([request.signal, controller.signal]),
         () => activeRequests.delete(controller),
+        () => controller.abort(),
         input.onTransportFailure
       );
     }
@@ -89,6 +90,7 @@ async function proxyRuntimeRequest(
   logger: DesktopLogger,
   signal: AbortSignal,
   onComplete: () => void,
+  abortUpstream: () => void,
   onTransportFailure?: (connection: DaemonConnection) => void
 ): Promise<Response> {
   if (connection === undefined) {
@@ -131,6 +133,7 @@ async function proxyRuntimeRequest(
       daemonPort,
       startedAt,
       connection,
+      abortUpstream,
       onTransportFailure
     });
   } catch (error) {
@@ -165,6 +168,7 @@ function relayRuntimeResponse(
     daemonPort: string;
     startedAt: number;
     connection: DaemonConnection;
+    abortUpstream(): void;
     onTransportFailure?: (connection: DaemonConnection) => void;
   }
 ): Response {
@@ -227,6 +231,8 @@ function relayRuntimeResponse(
       }
     },
     async cancel(reason) {
+      // Cancelling Chromium's response reader alone leaves its SSE connection open.
+      context.abortUpstream();
       const cancellation = reader.cancel(reason);
       release();
       await cancellation.catch(() => undefined);

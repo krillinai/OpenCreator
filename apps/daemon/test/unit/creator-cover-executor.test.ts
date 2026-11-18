@@ -42,7 +42,9 @@ process.exit(1);
     });
 
     await expect(executor.run(stageInput(tempDir, reportProgress)))
-      .rejects.toMatchObject({ code: 'network_unavailable' });
+      .rejects.toMatchObject({ code: 'network_unavailable', publicFacts: {
+        kind: 'timeout', provider: 'yt-dlp'
+      } });
 
     expect(JSON.parse(await readFile(argsPath, 'utf8'))).toEqual([
       '--proxy',
@@ -63,6 +65,20 @@ process.exit(1);
       retryAttempt: 2,
       retryTotal: 3
     });
+  });
+
+  it('reports an extractor update suggestion with yt-dlp facts', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'creator-cover-executor-'));
+    const scriptPath = join(tempDir, 'fake-yt-dlp.mjs');
+    await writeFile(scriptPath, `process.stderr.write('ERROR: [youtube] Signature extraction failed. Please update to the latest version.\\n'); process.exit(1);`);
+    const config = createDefaultCreatorServicesConfig();
+    config.llm.apiKey = 'text-key';
+    const executor = createCoverAnalysisExecutor({ configStore: { read: async () => config },
+      ytDlpPath: process.execPath, ytDlpPrefixArgs: [scriptPath] });
+    await expect(executor.run(stageInput(tempDir, vi.fn())))
+      .rejects.toMatchObject({ code: 'yt_dlp_update_recommended', publicFacts: {
+        kind: 'unsupported', provider: 'yt-dlp'
+      } });
   });
 });
 

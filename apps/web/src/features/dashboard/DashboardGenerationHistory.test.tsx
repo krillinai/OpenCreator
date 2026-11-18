@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CreatorArtifact, CreatorJob } from '@opencreator/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
@@ -19,13 +19,104 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   if (createObjectURLDescriptor) Object.defineProperty(URL, 'createObjectURL', createObjectURLDescriptor);
   if (revokeObjectURLDescriptor) Object.defineProperty(URL, 'revokeObjectURL', revokeObjectURLDescriptor);
 });
 
 describe('DashboardGenerationHistory', () => {
+  it.each([
+    ['zh-CN', '生成记录加载失败，请稍后重试。', '重试'],
+    ['en-US', 'Could not load generation history. Try again later.', 'Retry']
+  ] as const)('times out a stalled history request and allows retry in %s', async (language, error, retry) => {
+    vi.useFakeTimers();
+    const listJobs = vi.fn((_projectId?: string, options?: { signal?: AbortSignal }) =>
+      new Promise<{ jobs: CreatorJob[] }>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+      }));
+    const view = render(<LanguageProvider initialPreference={language}><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs, openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(listJobs).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(5_000); });
+    expect(listJobs.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(screen.getByRole('alert')).toHaveTextContent(error);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    listJobs.mockResolvedValueOnce({ jobs: [] });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: retry })); });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    view.unmount();
+  });
+
+  it('cancels the previous project request and ignores its late response', async () => {
+    let finishPrevious!: (response: { jobs: CreatorJob[] }) => void;
+    const listJobs = vi.fn((_projectId?: string, _options?: { signal?: AbortSignal }) =>
+      Promise.resolve({ jobs: [generationJobs()[1]!] }))
+      .mockImplementationOnce(() => new Promise(resolve => { finishPrevious = resolve; }));
+    const service = { listJobs, openArtifact: vi.fn(async () => new Response(new Blob(['video']))) };
+    const view = render(<DashboardGenerationHistory
+      projectId="project_1" service={service} onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    />);
+
+    view.rerender(<DashboardGenerationHistory
+      projectId="project_2" service={service} onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    />);
+    expect(await screen.findByText(/city\.mp4/)).toBeInTheDocument();
+    await act(async () => { finishPrevious({ jobs: [generationJobs()[0]!] }); });
+
+    expect(listJobs.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(screen.getByText(/city\.mp4/)).toBeInTheDocument();
+    expect(screen.queryByText(/product\.png/)).not.toBeInTheDocument();
+    const currentSignal = listJobs.mock.calls[1]?.[1]?.signal;
+    expect(currentSignal?.aborted).toBe(false);
+    view.unmount();
+    expect(currentSignal?.aborted).toBe(false);
+  });
+
+  it('aborts an in-flight history request on unmount', () => {
+    const listJobs = vi.fn((_projectId?: string, options?: { signal?: AbortSignal }) =>
+      new Promise<{ jobs: CreatorJob[] }>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+      }));
+    const view = render(<DashboardGenerationHistory
+      projectId="project_1" service={{ listJobs, openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    />);
+
+    view.unmount();
+
+    expect(listJobs.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  it('keeps loaded history visible when a background refresh fails', async () => {
+    vi.useFakeTimers();
+    const listJobs = vi.fn(async () => ({ jobs: generationJobs() }))
+      .mockResolvedValueOnce({ jobs: generationJobs() }).mockRejectedValue(new Error('offline'));
+    const view = render(<DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs, openArtifact: vi.fn(async () => new Response(new Blob(['media']))) }}
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    />);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(screen.getByText(/product\.png/)).toBeInTheDocument();
+
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('生成记录加载失败，请稍后重试。');
+    expect(screen.getByText(/product\.png/)).toBeInTheDocument();
+    expect(screen.getByText(/city\.mp4/)).toBeInTheDocument();
+    view.unmount();
+  });
+
   it('maps creator entries to their generation type and defaults to all', () => {
     expect(generationHistoryTypeForWorkspace('video-translation')).toBe('video');
+    expect(generationHistoryTypeForWorkspace('transcription')).toBe('video');
     expect(generationHistoryTypeForWorkspace('image-generation')).toBe('image');
     expect(generationHistoryTypeForWorkspace('short-video-script')).toBe('text');
     expect(generationHistoryTypeForWorkspace('smart-dubbing')).toBe('audio');
@@ -106,6 +197,106 @@ describe('DashboardGenerationHistory', () => {
     expect(dates).toEqual(['2026年11月7日', '2026年11月6日']);
     fireEvent.click(screen.getByRole('button', { name: 'video' }));
     expect(document.querySelector('.dashboard-generation-running-card')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['zh-CN', '视频翻译已完成，正在等待原视频'],
+    ['en-US', 'Translation complete; waiting for the source video'],
+    ['sv-SE', 'Översättningen är klar; väntar på originalvideon']
+  ] as const)('shows translation progress instead of parallel source download progress in %s', async (language, waitingMessage) => {
+    const translation = job('job_parallel_translation', 'video-translation', []);
+    translation.status = 'running';
+    translation.state = { sourceType: 'url', sourceUrl: 'https://youtu.be/parallel', dubbing: false, composeVideo: false };
+    const subtitle: CreatorJob['stages'][number] = {
+      id: 'subtitle_parallel', jobId: translation.id, stageId: 'subtitle', executor: 'krillinai',
+      status: 'running', dispatchStatus: 'claimed', claimOwner: null, claimExpiresAt: null,
+      attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { workflow: true, phase: 'translating_subtitles', percent: 72 },
+      errorCode: null, errorMessage: null, startedAt: '2026-11-15T11:00:00.000Z', finishedAt: null
+    };
+    const source: CreatorJob['stages'][number] = {
+      ...subtitle, id: 'source_parallel', stageId: 'preview-source-video', executor: 'download',
+      progress: { backgroundSourceDownload: true, workflowParentStageRunId: subtitle.id,
+        phase: 'normalizing_media', percent: 99 }
+    };
+    translation.stages = [subtitle, source];
+    const service = { listJobs: vi.fn(async () => ({ jobs: [translation] })), openArtifact: vi.fn() };
+    const view = render(<LanguageProvider initialPreference={language}><DashboardGenerationHistory
+      projectId="project_1" service={service} initialType="video"
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    const card = (await screen.findByText('72%')).closest('.dashboard-generation-running-card');
+    expect(card).not.toBeNull();
+    expect(card).toHaveTextContent('72%');
+    expect(card).not.toHaveTextContent('99%');
+
+    const completedTranslation = { ...translation, status: 'completed' as const, stages: [
+      { ...subtitle, status: 'succeeded' as const, progress: { ...subtitle.progress, percent: 100 } }, source
+    ] };
+    view.rerender(<LanguageProvider initialPreference={language}><DashboardGenerationHistory
+      projectId="project_1" service={{ ...service, listJobs: vi.fn(async () => ({ jobs: [completedTranslation] })) }}
+      initialType="video" onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+    await waitFor(() => expect(card).toHaveTextContent('99%'));
+    expect(card).toHaveTextContent(waitingMessage);
+  });
+
+  it('continues to show translation progress when the source video finishes first', async () => {
+    const translation = job('job_source_finished_first', 'video-translation', []);
+    translation.status = 'running';
+    translation.state = { sourceType: 'url', dubbing: false, composeVideo: false };
+    const subtitle: CreatorJob['stages'][number] = {
+      id: 'subtitle_running', jobId: translation.id, stageId: 'subtitle', executor: 'krillinai',
+      status: 'running', dispatchStatus: 'claimed', claimOwner: null, claimExpiresAt: null,
+      attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { workflow: true, phase: 'translating_subtitles', percent: 72 },
+      errorCode: null, errorMessage: null, startedAt: '2026-11-15T11:00:00.000Z', finishedAt: null
+    };
+    translation.stages = [subtitle, {
+      ...subtitle, id: 'source_done', stageId: 'preview-source-video', executor: 'download',
+      status: 'succeeded', dispatchStatus: 'finished', finishedAt: '2026-11-15T11:04:00.000Z',
+      progress: { backgroundSourceDownload: true, workflowParentStageRunId: subtitle.id,
+        phase: 'completed', percent: 100 }
+    }];
+    render(<LanguageProvider initialPreference="en-US"><DashboardGenerationHistory
+      projectId="project_1" initialType="video"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [translation] })), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    const card = await screen.findByRole('status', { name: 'Generating Video Translation' });
+    expect(card).toHaveTextContent('72%');
+    expect(card).not.toHaveTextContent('100%');
+  });
+
+  it('keeps the workflow percentage while later translation stages wait for the source video', async () => {
+    const translation = job('job_translation_waiting_for_source', 'video-translation', []);
+    translation.status = 'running';
+    translation.state = { sourceType: 'url', dubbing: true, composeVideo: true, videoFormat: 'horizontal' };
+    const subtitle: CreatorJob['stages'][number] = {
+      id: 'subtitle_done', jobId: translation.id, stageId: 'subtitle', executor: 'krillinai',
+      status: 'succeeded', dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null,
+      attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { workflow: true, phase: 'completed', percent: 100 },
+      errorCode: null, errorMessage: null, startedAt: '2026-11-15T11:00:00.000Z',
+      finishedAt: '2026-11-15T11:05:00.000Z'
+    };
+    translation.stages = [subtitle, {
+      ...subtitle, id: 'source_running', stageId: 'preview-source-video', executor: 'download',
+      status: 'running', dispatchStatus: 'claimed', finishedAt: null,
+      progress: { backgroundSourceDownload: true, workflowParentStageRunId: subtitle.id,
+        phase: 'normalizing_media', percent: 99 }
+    }];
+    render(<LanguageProvider initialPreference="en-US"><DashboardGenerationHistory
+      projectId="project_1" initialType="video"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [translation] })), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    const card = await screen.findByRole('status', { name: 'Generating Video Translation' });
+    expect(card).toHaveTextContent('33%');
+    expect(card).not.toHaveTextContent('Translation complete; waiting for the source video');
   });
 
   it.each([
@@ -320,6 +511,31 @@ describe('DashboardGenerationHistory', () => {
     expect(card).not.toHaveTextContent(/yt-dlp|network_unavailable|Operation timed out/);
   });
 
+  it('summarizes refused caption and preview connections without raw yt-dlp output', async () => {
+    const failedJob = job('job_translation_refused', 'video-translation', []);
+    failedJob.status = 'failed';
+    failedJob.state.sourceUrl = 'https://www.youtube.com/watch?v=refused';
+    const stage = {
+      id: 'subtitle_refused', jobId: failedJob.id, stageId: 'subtitle', executor: 'krillinai', status: 'failed' as const,
+      dispatchStatus: 'finished' as const, claimOwner: null, claimExpiresAt: null, attempt: 1,
+      idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: { phase: 'failed', percent: 1 },
+      errorCode: 'platform_caption_access_failed',
+      errorMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 61] Connection refused',
+      startedAt: '2026-11-14T01:00:00.000Z', finishedAt: '2026-11-14T01:01:00.000Z'
+    };
+    failedJob.stages = [stage, { ...stage, id: 'preview_refused', stageId: 'preview-source-video', executor: 'download',
+      errorCode: 'network_unavailable', errorMessage: 'yt-dlp could not connect: the connection was refused.' }];
+    render(<LanguageProvider initialPreference="zh-CN"><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [failedJob] })), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    const card = await screen.findByRole('link', { name: '生成失败 youtube.com' });
+    expect(card).toHaveTextContent('视频平台连接被拒绝，字幕读取和原视频预览未完成');
+    expect(card).not.toHaveTextContent(/yt-dlp|Errno 61|network_unavailable/);
+  });
+
   it('shows failure instead of stale submission progress for a rejected video', async () => {
     const failedJob = job('job_rejected_video', 'video-generation', []);
     failedJob.status = 'failed';
@@ -468,7 +684,7 @@ describe('DashboardGenerationHistory', () => {
     click.mockRestore();
   });
 
-  it('filters text and audio jobs by task type', async () => {
+  it('filters transcription with video jobs, not text or audio jobs', async () => {
     const jobs = [
       job('job_script', 'short-video-script', [artifact('job_script', 'artifact_script', 'short_video_script', 'script.md', '2026-11-07T10:00:00.000Z')]),
       job('job_subtitle', 'transcription', [artifact('job_subtitle', 'artifact_subtitle', 'target_subtitle', 'subtitle.srt', '2026-11-07T09:00:00.000Z')]),
@@ -483,8 +699,11 @@ describe('DashboardGenerationHistory', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'text' }));
     expect(screen.getByText(/script\.md/)).toBeInTheDocument();
-    expect(screen.getByText(/subtitle\.srt/)).toBeInTheDocument();
+    expect(screen.queryByText(/subtitle\.srt/)).not.toBeInTheDocument();
     expect(screen.queryByText(/voice\.mp3/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'video' }));
+    expect(screen.getByText(/subtitle\.srt/)).toBeInTheDocument();
+    expect(screen.queryByText(/script\.md/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'audio' }));
     expect(screen.queryByText(/script\.md/)).not.toBeInTheDocument();
     expect(screen.queryByText(/subtitle\.srt/)).not.toBeInTheDocument();

@@ -18,6 +18,18 @@ import { CreatorServicesSettingsView } from './CreatorServicesSettingsView.js';
 afterEach(() => sessionStorage.clear());
 
 describe('CreatorServicesSettingsView', () => {
+  it.each([
+    { language: 'en-US', heading: 'AI Services', badge: 'Local configuration file' },
+    { language: 'zh-CN', heading: 'AI 服务', badge: '本地配置文件' }
+  ] as const)('omits the static configuration file badge ($language)', async ({ language, heading, badge }) => {
+    render(<LanguageProvider initialPreference={language}>
+      <CreatorServicesSettingsView connected service={createService()} modelService={createModelService()} />
+    </LanguageProvider>);
+
+    expect(await screen.findByRole('heading', { name: heading })).toBeVisible();
+    expect(screen.queryByText(badge)).not.toBeInTheDocument();
+  });
+
   it.each(['valid', 'missing', 'failed'] as const)('returns to the pending composition only after a valid save (%s)', async outcome => {
     saveTranslationContinuation({ jobId: 'pending', version: 2, type: 'voice', status: 'configure',
       createdAt: Date.now(), returnPath: '#/workbench?tool=video-translation&jobId=pending' });

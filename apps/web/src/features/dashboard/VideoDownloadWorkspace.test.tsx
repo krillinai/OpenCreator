@@ -314,34 +314,46 @@ describe('VideoDownloadWorkspace', () => {
     expect(screen.queryByText('链接解析完成，请选择下载规格')).not.toBeInTheDocument();
   });
 
-  it('downloads a selected format locally as soon as it completes and shows OK', async () => {
+  it('keeps a completed format in the project until the user explicitly saves it locally', async () => {
     const initial = job({
       state: { sourceUrl: 'https://www.youtube.com/watch?v=demo' },
       artifacts: [probeArtifact()]
     });
     let applySnapshot: ((next: CreatorJob) => void) | undefined;
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
-    createObjectURL.mockReturnValue('blob:direct-download');
+    const applyAction = vi.fn(async () => ({ job: initial }));
+    const openArtifact = vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' })));
+    createObjectURL.mockReturnValue('blob:local-save');
     renderWorkspace(initial, {
-      applyAction: vi.fn(async () => ({ job: initial })),
-      openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))),
+      applyAction,
+      openArtifact,
       onSnapshot: callback => { applySnapshot = callback; }
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: '下载 1080p' }));
-    act(() => applySnapshot?.(job({
-      ...initial,
-      revision: 1,
-      artifacts: [probeArtifact(), videoArtifact()],
-      stages: [downloadStage('download_1080', 'video-1080-1', 'succeeded', 100)]
-    })));
+    try {
+      fireEvent.click(await screen.findByRole('button', { name: '下载 1080p' }));
+      await waitFor(() => expect(applyAction).toHaveBeenCalledOnce());
+      await act(async () => applySnapshot?.(job({
+        ...initial,
+        revision: 1,
+        artifacts: [probeArtifact(), videoArtifact()],
+        stages: [downloadStage('download_1080', 'video-1080-1', 'succeeded', 100)]
+      })));
 
-    await waitFor(() => expect(click).toHaveBeenCalledOnce());
-    expect(click.mock.instances[0]).toHaveProperty('download', 'Creator Download.mp4');
-    expect(screen.getByLabelText('OK 1080p')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: '作品' })).toHaveAttribute('aria-selected', 'false');
-    click.mockRestore();
+      expect(screen.getByLabelText('OK 1080p')).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
+      expect(click).not.toHaveBeenCalled();
+      expect(openArtifact).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('tab', { name: '作品' }));
+      expect(screen.getByText('Creator Download.mp4')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '保存到本机 Creator Download.mp4' }));
+      await waitFor(() => expect(click).toHaveBeenCalledOnce());
+      expect(openArtifact).toHaveBeenCalledExactlyOnceWith(initial.id, 'video_artifact');
+      expect(click.mock.instances[0]).toHaveProperty('download', 'Creator Download.mp4');
+    } finally {
+      click.mockRestore();
+    }
   });
 
   it('marks downloaded formats complete and only offers saving project files locally', async () => {
@@ -996,7 +1008,10 @@ describe('VideoDownloadWorkspace', () => {
       .toHaveValue('https://www.youtube.com/watch?v=demo');
   });
 
-  it('shows an actionable message for a failed network probe', () => {
+  it.each([
+    ['zh-CN', '视频解析失败', '无法连接视频平台，请检查网络或代理设置后重试', '解析链接', '检查代理设置'],
+    ['fr-FR', 'Analyser les informations vidéo · Échoué', 'Impossible de se connecter à la plateforme vidéo.', 'Analyser', 'Mandataire réseau']
+  ] as const)('shows an actionable message for a failed network probe in %s', async (language, title, message, analyze, proxy) => {
     const createdAt = '2026-08-30T00:00:00.000Z';
     renderWorkspace(job({
       status: 'failed',
@@ -1026,11 +1041,18 @@ describe('VideoDownloadWorkspace', () => {
         finishedAt: createdAt
       }]
     }), {
-      applyAction: vi.fn()
+      applyAction: vi.fn(), language
     });
 
-    expect(screen.getByText('无法连接视频平台，请检查网络或代理设置后重试'))
-      .toBeInTheDocument();
+    const failureNotice = within(await screen.findByRole('alert'));
+    const settings = await failureNotice.findByRole('link', { name: proxy });
+    expect(failureNotice.getByText(title, { selector: 'strong' })).toBeVisible();
+    expect(failureNotice.getByText(message, { exact: false })).toBeInTheDocument();
+    expect(failureNotice.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: analyze })).toBeEnabled();
+    expect(settings).toHaveAttribute('href', expect.stringContaining('#/settings?'));
+    expect(new URLSearchParams(settings.getAttribute('href')?.split('?')[1]).get('returnPath'))
+      .toBe('#/workbench?tool=video-download&jobId=download_job');
   });
 
   it('keeps routine yt-dlp version management out of the download workspace', () => {
@@ -1048,6 +1070,19 @@ describe('VideoDownloadWorkspace', () => {
     expect(screen.queryByText('yt-dlp 2026.08.29.232711')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '检查 yt-dlp 更新' }))
       .not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['network_unavailable: proxy connection refused', '检查代理设置'],
+    ['yt_dlp_update_recommended: extractor outdated', '第三方组件']
+  ])('links an immediate %s analysis failure to %s', async (code, label) => {
+    renderWorkspace(job(), { applyAction: vi.fn().mockRejectedValue(new Error(code)) });
+    fireEvent.change(screen.getByRole('textbox', { name: '待下载视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=demo' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
+
+    expect(await screen.findByRole('link', { name: label })).toBeVisible();
   });
 
   it('updates yt-dlp and retries the failed download with the original stage input', async () => {
@@ -1087,18 +1122,18 @@ describe('VideoDownloadWorkspace', () => {
       latestVersion: '2026.08.31.120000',
       installedAt: '2026-08-31T00:00:00.000Z'
     }));
-    const onOpenRuntimeComponents = vi.fn();
     renderWorkspace(current, {
       applyAction,
       runtimeDependencies: {
         ytDlpStatus: ytDlpStatus(),
         updateYtDlp
-      },
-      onOpenRuntimeComponents
+      }
     });
 
-    expect(await screen.findByRole('button', { name: '前往第三方组件' }))
-      .toBeInTheDocument();
+    const settings = await screen.findByRole('link', { name: '第三方组件' });
+    expect(settings.getAttribute('href')).toContain('tab=local-components');
+    expect(new URLSearchParams(settings.getAttribute('href')?.split('?')[1]).get('returnPath'))
+      .toBe('#/workbench?tool=video-download&jobId=download_job');
     fireEvent.click(await screen.findByRole('button', { name: '更新并重试' }));
 
     await waitFor(() => expect(updateYtDlp).toHaveBeenCalledOnce());
@@ -1118,6 +1153,31 @@ describe('VideoDownloadWorkspace', () => {
       'yt-dlp 已更新到 2026.08.31.120000，任务已重新提交'
     )).toBeInTheDocument();
   });
+
+  it('shows proxy settings when a yt-dlp update cannot be downloaded', async () => {
+    const failed = job({ status: 'failed', stages: [{
+      ...downloadStage('stage_failed', 'video-720-2', 'failed', 37),
+      errorCode: 'yt_dlp_update_recommended',
+      errorMessage: 'The extractor may be outdated'
+    }] });
+    renderWorkspace(failed, {
+      applyAction: vi.fn(),
+      runtimeDependencies: {
+        updateYtDlp: vi.fn().mockRejectedValue(new Error('creator_yt_dlp_update_download_failed'))
+      }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '更新并重试' }));
+    const workspace = within(screen.getByRole('region', { name: '视频下载 操作区' }));
+    expect(await workspace.findByText('无法下载 yt-dlp 更新，请检查网络或代理设置')).toBeVisible();
+    expect(workspace.getByRole('link', { name: '检查代理设置' })).toBeVisible();
+
+    fireEvent.change(screen.getByRole('textbox', { name: '待下载视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=another' }
+    });
+    expect(workspace.queryByText('无法下载 yt-dlp 更新，请检查网络或代理设置')).not.toBeInTheDocument();
+    expect(workspace.queryByRole('link', { name: '检查代理设置' })).not.toBeInTheDocument();
+  });
 });
 
 function renderWorkspace(
@@ -1128,7 +1188,6 @@ function renderWorkspace(
     openDownloadThumbnail?: ReturnType<typeof vi.fn>;
     controlDownload?: ReturnType<typeof vi.fn>;
     runtimeDependencies?: Partial<RuntimeDependenciesController>;
-    onOpenRuntimeComponents?: () => void;
     embedded?: boolean;
     onGenerated?: () => void;
     onSnapshot?: (callback: (next: CreatorJob) => void) => void;
@@ -1161,7 +1220,6 @@ function renderWorkspace(
         <VideoDownloadWorkspace
           onBack={vi.fn()}
           runtimeDependencies={runtimeDependencies}
-          onOpenRuntimeComponents={input.onOpenRuntimeComponents}
           embedded={input.embedded}
           onGenerated={input.onGenerated}
         />

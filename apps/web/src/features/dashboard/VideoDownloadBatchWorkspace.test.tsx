@@ -177,15 +177,21 @@ describe('video download link batches', () => {
     harness.service.applyAction.mockImplementation(async (id, request) => {
       if (id === 'child-1' && request.input.stageId === 'probe' && !failed) {
         failed = true;
-        throw new Error('analysis unavailable');
+        throw new Error('network_unavailable: proxy connection refused');
       }
       return apply(id, request);
     });
     await addLinks(secondUrl);
     await addLinks(thirdUrl);
-    await screen.findByRole('button', { name: `重试 ${secondUrl}` });
+    const list = await screen.findByRole('list', { name: '视频链接列表' });
+    const issue = within(list).getByRole('alert');
+    expect(issue).toHaveTextContent('视频解析失败');
+    expect(issue).toHaveTextContent('无法连接视频平台，请检查网络或代理设置后重试');
+    expect(within(issue).queryByRole('button')).not.toBeInTheDocument();
+    const retry = within(list).getByRole('button', { name: `重试 ${secondUrl}` });
+    expect(retry).toHaveClass('video-download-source-action');
     expect(screen.getByRole('button', { name: /^Video third/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: `重试 ${secondUrl}` }));
+    fireEvent.click(retry);
     await screen.findByRole('button', { name: /^Video second/ });
     expect(harness.probes().filter(([id]) => id === 'child-2')).toHaveLength(1);
     expect(harness.service.createJob).toHaveBeenCalledTimes(2);

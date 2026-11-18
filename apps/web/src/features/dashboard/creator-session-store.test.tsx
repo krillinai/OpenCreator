@@ -1286,12 +1286,13 @@ describe('CreatorSessionStore', () => {
         risk: 'normal'
       }]
     });
-    const initialJob = { ...job(0, {}), issues: [openIssue], stages: stageId === 'prepare-source-video'
-      ? [{ id: 'failed-stage', jobId: 'job_1', stageId, executor: 'download', status: 'failed',
+    const initialJob = { ...job(0, {}), issues: [openIssue], stages:
+      [{ id: 'failed-stage', jobId: 'job_1', stageId, executor: stageId === 'subtitle' ? 'krillin' : 'download', status: 'failed',
         dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null, attempt: 1,
-        idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: { inputResultVersion: 1 },
+        idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+        progress: (stageId === 'subtitle' ? {} : { inputResultVersion: 1 }) as CreatorStageRun['progress'],
         errorCode: 'network_unavailable', errorMessage: 'Download failed', startedAt: null, finishedAt: null
-      } satisfies CreatorJob['stages'][number]] : [] };
+      } satisfies CreatorJob['stages'][number]] };
     const applyAction = vi.fn(async () => ({ job: initialJob }));
     const startAgentTurn = vi.fn(async () => ({ turn: undefined as never }));
     render(
@@ -1306,7 +1307,7 @@ describe('CreatorSessionStore', () => {
     await act(async () => session!.repairIssue(openIssue));
     expect(applyAction).toHaveBeenCalledWith('job_1', expect.objectContaining({
       action: 'run-stage',
-      input: { stageId, ...(stageId === 'prepare-source-video' ? { inputResultVersion: 1 } : {}) },
+      input: { stageId, ...(stageId === 'subtitle' ? { resumedFromStageRunId: 'failed-stage' } : { inputResultVersion: 1 }) },
       repairIssueId: openIssue.id
     }));
     expect(session!.issues[0]!.status).toBe('open');

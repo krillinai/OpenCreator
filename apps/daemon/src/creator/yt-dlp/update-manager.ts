@@ -90,12 +90,13 @@ export async function createYtDlpUpdateManager(input: {
   fetchImpl?: typeof fetch;
   now?: () => Date;
   checkIntervalMs?: number;
+  restoreInBackground?: boolean;
 }): Promise<YtDlpUpdateManager> {
   if (input.bundledRuntime.script === undefined) {
     throw new Error('yt-dlp updates require the portable Python runtime');
   }
   const manager = new DefaultYtDlpUpdateManager(input);
-  await manager.initialize();
+  if (!input.restoreInBackground) await manager.initialize();
   return manager;
 }
 
@@ -106,6 +107,7 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
   private readonly now: () => Date;
   private readonly checkIntervalMs: number;
   private readonly lifecycleController = new AbortController();
+  private initialization: Promise<void> | undefined;
   private state: UpdateState = { version: 1 };
   private activeRuntime: YtDlpRuntime | undefined;
   private checkPending: Promise<CreatorYtDlpStatus> | undefined;
@@ -126,25 +128,30 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
     this.checkIntervalMs = input.checkIntervalMs ?? CHECK_INTERVAL_MS;
   }
 
-  async initialize(): Promise<void> {
+  initialize(): Promise<void> {
+    return this.initialization ??= this.restoreRuntime();
+  }
+
+  private async restoreRuntime(): Promise<void> {
     this.state = parseState(await readPrivateJsonFile(this.statePath).catch(() => undefined));
     const active = this.state.active;
-    if (
-      active === undefined
-      || compareVersions(active.version, this.input.bundledRuntime.version) <= 0
-    ) return;
-    const path = this.versionPath(active.version);
-    try {
-      if (await hashFile(path) !== active.sha256) {
-        throw new Error('managed yt-dlp hash mismatch');
+    const signal = this.lifecycleController.signal;
+    if (active !== undefined && compareVersions(active.version, this.input.bundledRuntime.version) > 0) {
+      const path = this.versionPath(active.version);
+      try {
+        if (await hashFile(path) !== active.sha256) {
+          throw new Error('managed yt-dlp hash mismatch');
+        }
+        const runtime = runtimeWithScript(this.input.bundledRuntime, path, active.version);
+        await verifyRuntime(runtime, active.version, signal);
+        this.activeRuntime = runtime;
+      } catch {
+        if (signal.aborted) return;
+        this.state = { ...this.state, active: undefined };
+        await this.persistState().catch(() => undefined);
       }
-      const runtime = runtimeWithScript(this.input.bundledRuntime, path, active.version);
-      await verifyRuntime(runtime, active.version);
-      this.activeRuntime = runtime;
-    } catch {
-      this.state = { ...this.state, active: undefined };
-      await this.persistState().catch(() => undefined);
     }
+    if (!signal.aborted) await this.removeInactiveVersions(this.activeRuntime?.version).catch(() => undefined);
   }
 
   getRuntime(): YtDlpRuntime {
@@ -175,8 +182,14 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
   }
 
   check(input: { force?: boolean } = {}): Promise<CreatorYtDlpStatus> {
+    return this.updatePending ?? this.checkRelease(input);
+  }
+
+  private async checkRelease(input: { force?: boolean }): Promise<CreatorYtDlpStatus> {
+    await this.initialize();
+    if (this.checkPending !== undefined) return this.checkPending;
     if (!input.force && !this.status().checkDue) {
-      return Promise.resolve(this.status());
+      return this.status();
     }
     this.checkPending ??= this.performCheck().finally(() => {
       this.checkPending = undefined;
@@ -226,7 +239,7 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
   }
 
   private async performUpdate(): Promise<CreatorYtDlpStatus> {
-    await this.check({ force: true });
+    await this.checkRelease({ force: true });
     const latest = this.state.latest;
     if (
       latest === undefined
@@ -251,8 +264,10 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
       await writeFile(stagedScript, content, { mode: 0o600 });
       await verifyRuntime(
         runtimeWithScript(this.input.bundledRuntime, stagedScript, latest.version),
-        latest.version
+        latest.version,
+        this.lifecycleController.signal
       );
+      this.lifecycleController.signal.throwIfAborted();
 
       const versionRoot = join(this.versionsRoot, latest.version);
       await rm(versionRoot, { recursive: true, force: true });
@@ -271,7 +286,6 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
         latest.version
       );
       uncommittedVersionRoot = undefined;
-      await this.removeInactiveVersions(latest.version).catch(() => undefined);
       return this.status();
     } catch (error) {
       if (uncommittedVersionRoot !== undefined) {
@@ -362,11 +376,12 @@ class DefaultYtDlpUpdateManager implements YtDlpUpdateManager {
     }
   }
 
-  private async removeInactiveVersions(activeVersion: string): Promise<void> {
+  private async removeInactiveVersions(activeVersion: string | undefined): Promise<void> {
     const entries = await readdir(this.versionsRoot, { withFileTypes: true })
       .catch(() => []);
     await Promise.all(entries
-      .filter(entry => entry.isDirectory() && entry.name !== activeVersion)
+      .filter(entry => entry.isDirectory() && entry.name !== activeVersion
+        && (NIGHTLY_VERSION.test(entry.name) || entry.name.startsWith('.update-')))
       .map(entry => rm(join(this.versionsRoot, entry.name), {
         recursive: true,
         force: true
@@ -396,13 +411,14 @@ function runtimeWithScript(
   };
 }
 
-function verifyRuntime(runtime: YtDlpRuntime, expectedVersion: string): Promise<void> {
+function verifyRuntime(runtime: YtDlpRuntime, expectedVersion: string, signal: AbortSignal): Promise<void> {
   return new Promise((resolveVerification, rejectVerification) => {
     execFile(
       runtime.executable,
       [...runtime.prefixArgs, '--version'],
       {
         env: { ...process.env, ...runtime.env },
+        signal,
         encoding: 'utf8',
         timeout: 20_000,
         windowsHide: true
@@ -446,6 +462,7 @@ async function fetchWithLimit(input: {
       headers: input.headers,
       proxy: input.proxy,
       signal,
+      redirect: 'manual',
       maxResponseBytes: input.maxBytes,
       fetchImpl: input.fetchImpl
     });

@@ -304,7 +304,7 @@ func TestGenerateSubtitlesPreservesPlatformAndAudioFallbackErrors(t *testing.T) 
 }
 
 func TestGenerateSubtitlesPreservesTranscriptionClassification(t *testing.T) {
-	for _, code := range []string{"audio_no_speech", "audio_transcription_empty", "audio_transcription_invalid_response", "audio_transcription_timestamps_missing", "audio_transcription_api_failed"} {
+	for _, code := range []string{"audio_no_speech", "audio_transcription_empty", "audio_transcription_invalid_response", "audio_transcription_timestamps_missing", "audio_transcription_api_failed", "audio_transcription_pending"} {
 		for _, fallback := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/fallback=%v", code, fallback), func(t *testing.T) {
 				classified := &whisper.TranscriptionError{Code: code, Message: "fixture reason"}
@@ -315,7 +315,8 @@ func TestGenerateSubtitlesPreservesTranscriptionClassification(t *testing.T) {
 					fake.downloadErr = errors.New("no captions")
 				}
 				response, err := GenerateSubtitles(context.Background(), fake, req)
-				if !errors.Is(err, classified) || response.Error == nil || response.Error.Code != code || response.Error.Retryable != classified.Retryable() {
+				wantRetryable := classified.Retryable() || code == "audio_transcription_pending"
+				if !errors.Is(err, classified) || response.Error == nil || response.Error.Code != code || response.Error.Retryable != wantRetryable {
 					t.Fatalf("response = %+v, error = %v", response.Error, err)
 				}
 			})

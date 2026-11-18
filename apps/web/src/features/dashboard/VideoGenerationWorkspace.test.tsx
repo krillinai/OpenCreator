@@ -131,9 +131,9 @@ describe('VideoGenerationWorkspace', () => {
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
     const list = screen.getByRole('listbox', { name: '模型' });
     expect(within(list).queryByRole('group')).not.toBeInTheDocument();
-    expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
+    await waitFor(() => expect(within(list).getAllByRole('option').map(option => option.getAttribute('aria-label'))).toEqual([
       '本地视频服务', 'Gateway Film', 'Gateway Motion'
-    ]);
+    ]));
     expect(screen.queryByRole('option', { name: 'Seedance 2.5' })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Gateway Motion' })).toHaveTextContent('Gateway Motion');
     expect(screen.getByRole('option', { name: 'Gateway Motion' })).not.toHaveTextContent(/登录后使用|1080p|时长|积分/);
@@ -144,7 +144,7 @@ describe('VideoGenerationWorkspace', () => {
       .toMatchObject({ provider: 'veo', model: config.video.veo.model });
     expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Gateway Motion' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Gateway Motion' }));
     expect(await screen.findByRole('dialog', { name: '登录后继续创作' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '提示词' })).toHaveValue('A city at dusk');
   });
@@ -200,10 +200,10 @@ describe('VideoGenerationWorkspace', () => {
   });
 
   it.each([
-    { language: 'zh-CN' as const, failure: '官方视频模型目录加载失败', local: '本地视频服务', model: '模型', retry: '重试加载视频模型' },
-    { language: 'en-US' as const, failure: 'Official video models could not load', local: 'Local video service', model: 'Model', retry: 'Retry loading video models' },
-    { language: 'sv-SE' as const, failure: 'Kunde inte läsa in officiella videomodeller', local: 'Lokal videotjänst', model: 'Modell', retry: 'Försök läsa in videomodeller igen' }
-  ])('keeps local video generation available when the public catalog fails and retries it in $language', async ({ language, failure, local, model, retry }) => {
+    { language: 'zh-CN' as const, failure: '官方视频模型目录加载失败', local: '本地视频服务', model: '模型' },
+    { language: 'en-US' as const, failure: 'Official video models could not load', local: 'Local video service', model: 'Model' },
+    { language: 'sv-SE' as const, failure: 'Kunde inte läsa in officiella videomodeller', local: 'Lokal videotjänst', model: 'Modell' }
+  ])('loads the public video catalog on model open and retries silently in $language', async ({ language, failure, local, model }) => {
     const getVideoCatalog = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ models: [
       { id: 'vendor/video', name: 'Recovered Video', vendor: 'Vendor', modality: 'video', capabilities: [] }
     ] });
@@ -211,10 +211,15 @@ describe('VideoGenerationWorkspace', () => {
       creatorServicesService: { getConfig: async () => ({ config: createVideoConfig(), configuredCredentials: ['video.seedance.apiKey'] }) },
       gatewayAccountService: { getVideoCatalog }, language
     });
-    expect(await screen.findByText(failure)).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: model })).toHaveValue(local);
-    fireEvent.click(screen.getByRole('button', { name: retry }));
-    fireEvent.click(screen.getByRole('combobox', { name: model }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: model })).toHaveValue(local));
+    expect(getVideoCatalog).not.toHaveBeenCalled();
+    const selector = screen.getByRole('combobox', { name: model });
+    fireEvent.click(selector);
+    await waitFor(() => expect(getVideoCatalog).toHaveBeenCalledOnce());
+    expect(screen.getByRole('option', { name: local })).toBeInTheDocument();
+    expect(screen.queryByText(failure)).not.toBeInTheDocument();
+    fireEvent.keyDown(selector, { key: 'Escape' });
+    fireEvent.click(selector);
     expect(await screen.findByRole('option', { name: 'Recovered Video' })).toBeInTheDocument();
     expect(getVideoCatalog).toHaveBeenCalledTimes(2);
   });
@@ -607,6 +612,43 @@ describe('VideoGenerationWorkspace', () => {
     expect(panel).toHaveTextContent('provider-request-123');
     expect(panel).not.toHaveTextContent('检查模型服务配置和网络');
     expect(panel).not.toHaveTextContent('尚未确认更细的原因');
+  });
+
+  it.each([
+    ['zh-CN', '内容安全审核未通过'],
+    ['en-US', 'content safety review'],
+    ['sv-SE', 'innehållsgranskningen']
+  ] as const)('explains an official content rejection in %s', (language, reason) => {
+    const failed = failedVideoRequestJob('failed');
+    failed.issues = [{ ...normalizePageIssue('runtime', 'creator.retry-stage', new Error('Rejected'), 'Video generation failed'),
+      scope: { kind: 'creator-job', jobId: failed.id }, stageRunId: failed.stages[0]!.id,
+      code: 'creator_video_generation_failed', publicFacts: {
+        kind: 'http-rejected', provider: 'opencreator-gateway-video', httpStatus: 400,
+        upstreamCode: 'upstream_rejected', upstreamMessage: '图片未通过内容安全审核', requestId: 'ocreq_content_rejected'
+      }
+    }];
+    renderWorkspace(failed, { language });
+    const panel = screen.getByRole('complementary', { name: 'OpenCreator' });
+    expect(panel).toHaveTextContent(reason);
+    expect(panel).toHaveTextContent('ocreq_content_rejected');
+    expect(panel).not.toHaveTextContent('当前模型不支持这些参数');
+  });
+
+  it.each([
+    ['zh-CN', '内容安全审核未通过'],
+    ['en-US', 'content safety review'],
+    ['sv-SE', 'innehållsgranskningen']
+  ] as const)('explains an official video content-policy code in %s', (language, reason) => {
+    const failed = failedVideoRequestJob('failed');
+    failed.issues = [{ ...normalizePageIssue('runtime', 'creator.retry-stage', new Error('Rejected'), 'Video generation failed'),
+      scope: { kind: 'creator-job', jobId: failed.id }, stageRunId: failed.stages[0]!.id,
+      code: 'creator_video_generation_failed', publicFacts: {
+        kind: 'http-rejected', provider: 'opencreator-gateway-video', httpStatus: 400,
+        upstreamCode: 'content_policy_violation', upstreamMessage: 'Video failed content safety check', requestId: 'ocreq_video_rejected'
+      }
+    }];
+    renderWorkspace(failed, { language });
+    expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent(reason);
   });
 
   beforeEach(() => {
@@ -1002,7 +1044,7 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.queryByRole('button', { name: /项目 V/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '重新生成' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent('视频生成未完成，请检查模型服务配置后重试');
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('视频生成未完成，请检查模型服务配置后重试');
     expect(screen.queryByText('The provider rejected the prompt')).not.toBeInTheDocument();
   });
 
@@ -1053,7 +1095,7 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent(
       '当前账号未开通 Seedance 2.5，请切换模型版本或前往方舟控制台开通'
     );
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('当前账号未开通 Seedance 2.5，请切换模型版本或前往方舟控制台开通');
   });
 
   it('automatically continues an existing upstream task after a refresh failure', async () => {
@@ -1235,8 +1277,7 @@ describe('VideoGenerationWorkspace', () => {
     delete job.stages[0]!.progress.videoGenerationResultId;
     const view = renderWorkspace(job, { queryRequestStatus: 'succeeded' });
 
-    await waitFor(() => expect(document.querySelector('.creator-tool-error'))
-      .toHaveTextContent('原视频已生成，但无法读取结果'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('原视频已生成，但无法读取结果'));
     expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
     expect(screen.getByRole('button', { name: '重新生成' })).toBeEnabled();
     expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent('原视频已生成，但无法读取结果');
@@ -1315,10 +1356,10 @@ describe('VideoGenerationWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: language === 'zh-CN' ? '生成' : language === 'sv-SE' ? 'Generera' : 'Generate' }));
     await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
-    await waitFor(() => expect(document.querySelector('.creator-tool-error')).toHaveTextContent(
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
       language === 'zh-CN' ? '积分不足' : language === 'sv-SE' ? 'Krediterna räcker inte' : 'Insufficient credits'
     ));
-    expect(document.querySelector('.creator-tool-error')).not.toHaveTextContent(/sk-private-value|Bearer|Authorization/);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/sk-private-value|Bearer|Authorization/);
   });
 
   it('queries a non-unknown request even when a price-change issue is present', async () => {

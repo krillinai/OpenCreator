@@ -36,7 +36,6 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 		if errors.As(err, &classified) {
 			return nil, err
 		}
-		log.GetLogger().Error("openai create transcription failed", zap.Error(err))
 		classified = &TranscriptionError{Code: "audio_transcription_api_failed", Message: fmt.Sprintf("transcription service request failed: %v", err), Cause: err, RequestID: requestID.value}
 		var apiError *openai.APIError
 		if errors.As(err, &apiError) {
@@ -47,6 +46,10 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 			if classified.UpstreamCode == "" {
 				classified.UpstreamCode = safeDiagnosticCode(apiError.Type)
 			}
+			if classified.UpstreamCode == "request_outcome_unknown" {
+				classified.Code = "audio_transcription_pending"
+				classified.Message = "transcription request is pending verification; retry this stage later"
+			}
 		} else {
 			var networkError net.Error
 			if errors.As(err, &networkError) && networkError.Timeout() {
@@ -55,6 +58,10 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 				classified.UpstreamCode = "network_error"
 			}
 		}
+		log.GetLogger().Error("openai create transcription failed", zap.Error(err),
+			zap.String("code", classified.Code), zap.Int("http_status", classified.HTTPStatus),
+			zap.String("upstream_code", classified.UpstreamCode), zap.String("request_id", classified.RequestID),
+			zap.Bool("retryable", classified.Retryable()))
 		return nil, classified
 	}
 

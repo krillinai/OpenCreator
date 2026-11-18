@@ -459,7 +459,7 @@ test('@package-smoke 授权回调保留图像生成工作台和草稿，模型�
   }
 });
 
-test('@package-smoke 全新账号启动时引导配置 Agent，跳过后可重新配置', async () => {
+test('@package-smoke 全新资料首次展示引导，跳过后只在常规设置配置 Agent', async () => {
   const fixture = await launchPackagedDesktop('success', { signedOut: true });
   try {
     await waitForRuntimeReady(fixture.page, false);
@@ -471,7 +471,8 @@ test('@package-smoke 全新账号启动时引导配置 Agent，跳过后可重�
     await fixture.page.getByRole('button', { name: /AI 服务/ }).click();
     await expect(fixture.page.getByText('Agent 尚未配置，无法发送任务。')).toBeVisible();
     await fixture.page.getByRole('button', { name: '配置 Agent' }).click();
-    await expect(fixture.page.getByRole('region', { name: '开始使用 Agent' })).toBeVisible();
+    await expect(fixture.page.getByRole('region', { name: 'Codex Agent' }).getByLabel('API Key')).toBeVisible();
+    await expect(fixture.page.getByRole('region', { name: '开始使用 Agent' })).toHaveCount(0);
   } finally {
     await closeFixture(fixture);
   }
@@ -1623,6 +1624,56 @@ test('@package-smoke 关闭后隐藏保留本地服务，重新打开后可以�
     await requestPackagedAppQuit(fixture);
     expect(await waitForProcessExit(fixture.process, 3_000)).toBe(true);
     expect(fixture.process.exitCode).toBe(0);
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
+test('@package-smoke 无代理的视频下载事件流反复取消后仍能加载生成历史', async () => {
+  const fixture = await launchPlatformProbeDesktop('success');
+  try {
+    await waitForWorkspace(fixture.page);
+    const projects = await runtimeRequest<{ projects: Array<{ id: string; name: string }> }>(
+      fixture.page, 'GET', '/projects?status=all'
+    );
+    const projectId = projects.body.projects.find(project => project.name === 'Default project')!.id;
+    const created = await runtimeRequest<{ job: { id: string } }>(fixture.page, 'POST', '/creator/jobs', {
+      projectId,
+      templateId: 'video-download',
+      state: { sourceUrl: 'https://www.youtube.com/watch?v=bzLvyhNnpeo' }
+    });
+    expect(created.status).toBe(201);
+    // A draft is sufficient: the reported hang happens before a download stage
+    // starts, and local history must stay usable regardless of source connectivity.
+    for (const cancelReader of [false, true]) {
+      const completed = await fixture.page.evaluate(async ({ jobId, cancelReader }) => {
+        for (let i = 0; i < 20; i++) {
+          const controller = new AbortController();
+          const response = await fetch(`/.opencreator/runtime/creator/jobs/${jobId}/events`, {
+            signal: controller.signal
+          });
+          const reader = response.body!.getReader();
+          await reader.read();
+          if (cancelReader) await reader.cancel();
+          controller.abort();
+          const health = await fetch('/.opencreator/runtime/healthz', { signal: AbortSignal.timeout(2_000) });
+          if (!health.ok) throw new Error('Runtime health failed after cancelling SSE');
+          await health.json();
+        }
+        return 20;
+      }, { jobId: created.body.job.id, cancelReader });
+      expect(completed).toBe(20);
+    }
+    const history = await runtimeRequest<{ jobs: Array<{ id: string }> }>(
+      fixture.page, 'GET', `/creator/jobs?projectId=${encodeURIComponent(projectId)}`
+    );
+    expect(history.status).toBe(200);
+    expect(history.body.jobs.some(job => job.id === created.body.job.id)).toBe(true);
+    await navigateToAppRoute(fixture.page, '#/projects');
+    const historyPage = fixture.page.locator('.dashboard-generation-history-page');
+    await expect(historyPage).toBeVisible();
+    await expect(historyPage.getByText('正在加载生成记录', { exact: true })).toHaveCount(0);
+    await expect(historyPage.getByRole('alert')).toHaveCount(0);
   } finally {
     await closeFixture(fixture);
   }

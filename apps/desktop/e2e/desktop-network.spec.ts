@@ -15,7 +15,25 @@ const electronExecutable = createRequire(import.meta.url)('electron') as string;
 
 test('@package-smoke Desktop 网络在 Socket QoS 抛出 EINVAL 时仍可请求、上传和取消', async ({}, testInfo) => {
   const userData = mkdtempSync(join(tmpdir(), 'opencreator-desktop-network-'));
+  let activeStreams = 0;
+  let closedStreams = 0;
   const server = createServer((request, response) => {
+    if (request.url === '/stream-status') {
+      response.end(JSON.stringify({ activeStreams, closedStreams }));
+      return;
+    }
+    if (request.url === '/persistent-events') {
+      activeStreams += 1;
+      response.setHeader('Content-Type', 'text/event-stream');
+      response.write('data: ready\n\n');
+      const heartbeat = setInterval(() => response.write(': heartbeat\n\n'), 100);
+      response.on('close', () => {
+        clearInterval(heartbeat);
+        activeStreams -= 1;
+        closedStreams += 1;
+      });
+      return;
+    }
     if (request.url === '/wait') return;
     if (request.url === '/binary') {
       response.end(Buffer.from([0, 255, 17, 23]));
@@ -46,6 +64,7 @@ test('@package-smoke Desktop 网络在 Socket QoS 抛出 EINVAL 时仍可请求�
       OPENCREATOR_DESKTOP_NETWORK_TEST_USER_DATA: userData,
       OPENCREATOR_DESKTOP_NETWORK_TEST_MODULE: pathToFileURL(resolve(e2eDir, '../dist/main/desktop-network.js')).href,
       OPENCREATOR_DESKTOP_BOOTSTRAP_TEST_MODULE: pathToFileURL(resolve(e2eDir, '../dist/main/bootstrap-controller.js')).href,
+      OPENCREATOR_DESKTOP_PROTOCOL_TEST_MODULE: pathToFileURL(resolve(e2eDir, '../dist/main/protocol-handler.js')).href,
       OPENCREATOR_DESKTOP_NETWORK_TEST_ORIGIN: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
       ELECTRON_ENABLE_LOGGING: '1',
       ELECTRON_LOG_FILE: electronLogPath
@@ -71,6 +90,8 @@ test('@package-smoke Desktop 网络在 Socket QoS 抛出 EINVAL 时仍可请求�
     expect(existsSync(resultPath), report).toBe(true);
     expect(JSON.parse(report)).toMatchObject({ ok: true, phase: 'complete' });
     expect(stderr).not.toContain('setTypeOfService EINVAL');
+    await expect.poll(() => activeStreams).toBe(0);
+    expect(closedStreams).toBe(40);
   } finally {
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));

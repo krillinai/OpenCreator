@@ -271,7 +271,7 @@ it('reuses saved browser cookies for polling, concurrent tasks, nested requests 
   expect(read).toHaveBeenCalledTimes(1);
 });
 
-it('requires an explicit reconnect to refresh expired browser cookies without automatic keychain prompts', async () => {
+it('refreshes expired browser cookies on use without refreshing during status polling', async () => {
   const read = vi.fn(async () => cookies);
   const { service } = await setup(read);
   await service.connect();
@@ -284,8 +284,8 @@ it('requires an explicit reconnect to refresh expired browser cookies without au
   expect(read).toHaveBeenCalledTimes(1);
 
   read.mockResolvedValue(cookies.map(cookie => ({ ...cookie, value: `fresh-${cookie.name}` })));
-  await service.connect(profile.id);
-  await vi.waitFor(async () => expect((await service.getState()).status).toBe('connected'));
+  await service.refreshBrowserSession();
+  expect(await service.getState()).toMatchObject({ status: 'connected', profileId: profile.id });
   await service.withCookies(async () => {
     const path = service.authenticatedRuntime(runtime)!.prefixArgs.at(-1)!;
     expect(await readFile(path, 'utf8')).toContain('fresh-SID');

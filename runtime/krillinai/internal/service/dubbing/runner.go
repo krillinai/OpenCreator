@@ -22,7 +22,8 @@ type Result struct {
 }
 
 type Runner struct {
-	deps Dependencies
+	deps  Dependencies
+	cache segmentCache
 }
 
 func NewRunner(deps Dependencies) *Runner {
@@ -58,7 +59,7 @@ func NewRunner(deps Dependencies) *Runner {
 	if deps.OutputVideo == "" && deps.Workdir != "" {
 		deps.OutputVideo = filepath.Join(deps.Workdir, types.SubtitleTaskVideoWithTtsFileName)
 	}
-	return &Runner{deps: deps}
+	return &Runner{deps: deps, cache: segmentCache(os.Getenv("OPENCREATOR_KRILLIN_DUBBING_CACHE"))}
 }
 
 func (r *Runner) Run(ctx context.Context) (Result, error) {
@@ -102,7 +103,7 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 	}
 
 	r.reportPhase("generating_voice")
-	plan, err = GenerateRawSegmentsWithProgress(
+	plan, err = generateRawSegmentsWithProgress(
 		ctx,
 		r.deps.TTS,
 		plan,
@@ -111,6 +112,7 @@ func (r *Runner) Run(ctx context.Context) (Result, error) {
 		r.deps.FFmpeg,
 		r.deps.Duration,
 		r.deps.ReportProgress,
+		r.cache,
 	)
 	if err != nil {
 		return Result{}, err
@@ -284,7 +286,7 @@ func (r *Runner) rewriteOverlongSegments(ctx context.Context, plan []PlanItem, e
 				item.EstimatedDuration = estimate
 				item.EstimateConfidence = confidence
 			}
-			if err := regenerateRawSegment(ctx, r.deps.TTS, item, r.deps.Voice, segmentsDir, r.deps.FFmpeg, r.deps.Duration); err != nil {
+			if err := generateRawSegment(ctx, r.deps.TTS, item, r.deps.Voice, segmentsDir, r.deps.FFmpeg, r.deps.Duration, r.cache); err != nil {
 				return nil, err
 			}
 		}

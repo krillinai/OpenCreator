@@ -6,7 +6,7 @@ import type {
 } from '@opencreator/protocol';
 import type { LocalizeCopy } from '../../i18n/localized-copy.js';
 import { localComponentPreparationMessage } from '../settings/local-component-copy.js';
-import { isYtDlpCaptionTimeout, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
+import { isYtDlpCaptionConnectionRefused, isYtDlpCaptionTimeout, isYtDlpPreviewConnectionRefused, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
 
 export type CreatorPanelLocalize = LocalizeCopy;
 
@@ -117,10 +117,20 @@ export const videoTranslationPanelAdapter: CreatorPanelAdapter = {
       'The video platform connection timed out, so captions could not be read. Check the network or proxy settings and retry.',
       'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
     );
+    if (stage.stageId === 'subtitle' && isYtDlpCaptionConnectionRefused(stage.errorCode, stage.errorMessage)) return l(
+      '视频平台连接被拒绝，字幕读取未完成。请检查网络或代理设置后重试。',
+      'The video platform connection was refused, so captions could not be read. Check the network or proxy settings and retry.',
+      'Anslutningen till videoplattformen nekades, så undertexterna kunde inte läsas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
+    );
     if (stage.stageId === 'preview-source-video' && isYtDlpPreviewTimeout(stage.errorCode, stage.errorMessage)) return l(
       '视频平台连接超时，原视频预览未完成。请检查网络或代理设置后重试。',
       'The video platform connection timed out, so source video preview could not be prepared. Check the network or proxy settings and retry.',
       'Anslutningen till videoplattformen tog för lång tid, så förhandsvisningen kunde inte förberedas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
+    );
+    if (stage.stageId === 'preview-source-video' && isYtDlpPreviewConnectionRefused(stage.errorCode, stage.errorMessage)) return l(
+      '视频平台连接被拒绝，原视频预览未完成。请检查网络或代理设置后重试。',
+      'The video platform connection was refused, so source video preview could not be prepared. Check the network or proxy settings and retry.',
+      'Anslutningen till videoplattformen nekades, så förhandsvisningen kunde inte förberedas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
     );
     if (stage.stageId === 'subtitle' && stage.errorCode === 'platform_caption_access_failed'
       && /cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(stage.errorMessage ?? '')) {
@@ -1663,6 +1673,11 @@ export function creatorSystemIssueText(
     creator_transcription_config_missing: l(
       '请先配置语音转录服务',
       'Configure speech transcription to continue'
+    ),
+    audio_transcription_pending: l(
+      '语音转录请求正在核对中，请稍后重试当前阶段',
+      'The transcription request is being verified. Retry this stage later.',
+      'Transkriptionsbegäran kontrolleras. Försök igen med det här steget senare.'
     ),
     creator_tts_config_missing: l(
       '请先配置配音服务',

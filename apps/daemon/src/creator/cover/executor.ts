@@ -14,6 +14,7 @@ import { publicFactsFromFailure, publicFactsFromHttpResponse } from '../public-e
 import { spawnCreatorProcess } from '../process-tree.js';
 import { validateImageFile } from '../validators/image.js';
 import { withYtDlpProxy } from '../yt-dlp/args.js';
+import { classifyYtDlpFailure } from '../yt-dlp/failure.js';
 import type { YtDlpRuntime } from '../yt-dlp/runtime.js';
 import {
   generateCoverBrief,
@@ -220,10 +221,7 @@ function runYtDlp(
         resolve(stdout);
         return;
       }
-      reject(new CreatorExecutorError(
-        classifyYtDlpError(stderr),
-        stderr.trim().slice(-2000) || 'Unable to read YouTube metadata'
-      ));
+      reject(classifyYtDlpFailure(stderr, code, 'cover_source_analysis_failed'));
     });
   });
 }
@@ -282,36 +280,6 @@ function extensionForMime(mimeType: 'image/png' | 'image/jpeg' | 'image/webp') {
   if (mimeType === 'image/jpeg') return 'jpg';
   if (mimeType === 'image/webp') return 'webp';
   return 'png';
-}
-
-function classifyYtDlpError(stderr: string): string {
-  const text = stderr.toLowerCase();
-  if (text.includes('sign in') || text.includes('login')) return 'login_required';
-  if (text.includes('private video')) return 'source_private';
-  if (
-    text.includes('operation timed out')
-    || text.includes('connection timed out')
-    || text.includes('network is unreachable')
-    || text.includes('connection refused')
-    || text.includes('unable to connect')
-    || text.includes('temporary failure in name resolution')
-  ) {
-    return 'network_unavailable';
-  }
-  if (text.includes('copyright') || text.includes('not available')) {
-    return 'region_or_copyright_restricted';
-  }
-  if (
-    text.includes('please update')
-    || text.includes('confirm you are on the latest version')
-    || text.includes('signature extraction failed')
-    || text.includes('nsig extraction failed')
-    || text.includes('unable to extract')
-    || text.includes('extractor error')
-  ) {
-    return 'yt_dlp_update_recommended';
-  }
-  return 'cover_source_analysis_failed';
 }
 
 function reportYtDlpRetry(line: string, stage: CreatorExecutorInput): void {

@@ -38,6 +38,56 @@ afterEach(() => {
 });
 
 describe('KrillinAI CLI runner', () => {
+  it.skipIf(process.platform === 'win32')('shares dubbing checkpoints only across compatible unsuccessful attempts', async () => {
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), 'creator-krillin-dubbing-')));
+    const resourceRoot = join(tempDir, 'runtime');
+    const jobsRoot = join(tempDir, 'jobs');
+    const dependencyRoot = join(tempDir, 'dependencies');
+    const cli = join(resourceRoot, 'bin', 'krillinai-cli');
+    const subtitle = join(tempDir, 'target.srt');
+    mkdirSync(dirname(cli), { recursive: true });
+    writeFileSync(cli, `#!${process.execPath}\n${FAKE_CLI}`);
+    chmodSync(cli, 0o755);
+    writeFileSync(subtitle, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+    const manifest: KrillinRuntimeManifest = { version: 1, platform: process.platform, arch: process.arch,
+      resources: [{ path: 'bin/krillinai-cli', sha256: 'a'.repeat(64), kind: 'executable' }] };
+    const config = createDefaultCreatorServicesConfig();
+    const stages: CreatorExecutorInput['job']['stages'] = [];
+    const attempt = async (id: string, { voiceCode = 'voice-a', ttsModel = 'model-a', subtitleId = 'target', ttsProvider = 'openai', fail = true } = {}) => {
+      const workdir = join(jobsRoot, 'job', id);
+      mkdirSync(workdir, { recursive: true });
+      if (fail) writeFileSync(join(workdir, 'fail-dubbing'), '');
+      const stage = {
+        stageRun: { id, stageId: 'tts', status: 'running', progress: {} },
+        job: { id: 'job', templateId: 'video-translation', templateVersion: 1, state: {}, stages: [...stages] },
+        inputArtifacts: [], workdir, signal: new AbortController().signal,
+        reportProgress(progress: Record<string, unknown>) { Object.assign(stage.stageRun.progress, progress); }
+      } as unknown as CreatorExecutorInput;
+      const output = runKrillinCli({ resourceRoot, jobsRoot, dependencyRoot, manifest, config, stage,
+        artifacts: [{ id: subtitleId, kind: 'target_subtitle', path: subtitle }],
+        options: { audioOnly: true, targetLanguage: 'en', voiceCode, ttsProvider, ttsModel } });
+      if (fail) {
+        await expect(output).rejects.toMatchObject({ code: 'generate_speech_failed' });
+        stage.stageRun.status = 'failed';
+      } else {
+        expect(await output).toContainEqual(expect.objectContaining({ kind: 'dubbed_audio', relativePath: `job/${id}/dubbed_audio.wav` }));
+        stage.stageRun.status = 'succeeded';
+      }
+      stages.push(stage.stageRun);
+      return readFileSync(join(workdir, 'observed-dubbing-cache.txt'), 'utf8');
+    };
+
+    const original = await attempt('first');
+    expect(original).toContain(join(jobsRoot, 'job', 'first'));
+    expect(await attempt('retry')).toBe(original);
+    expect(await attempt('new-model', { ttsModel: 'model-b' })).not.toBe(original);
+    expect(await attempt('new-subtitle', { subtitleId: 'edited' })).not.toBe(original);
+    expect(await attempt('new-provider', { ttsProvider: 'minimax' })).not.toBe(original);
+    expect(await attempt('new-voice', { voiceCode: 'voice-b' })).not.toBe(original);
+    expect(await attempt('success', { fail: false })).toBe(original);
+    expect(await attempt('regenerate', { fail: false })).not.toBe(original);
+  });
+
   it.skipIf(process.platform === 'win32')('registers every clip listed by the KrillinAI result index', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-clips-'));
     const resourceRoot = join(tempDir, 'runtime');
@@ -751,7 +801,8 @@ writeFileSync(
   readFileSync(join(process.cwd(), 'config', 'config.toml'))
 );
 const voiceIndex = args.indexOf('--voice');
-const shouldFail = args[0] === 'tts' && voiceIndex >= 0 && args[voiceIndex + 1] === 'FAIL';
+if (args[0] === 'tts') writeFileSync(join(workdir, 'observed-dubbing-cache.txt'), process.env.OPENCREATOR_KRILLIN_DUBBING_CACHE || '');
+const shouldFail = args[0] === 'tts' && (existsSync(join(workdir, 'fail-dubbing')) || (voiceIndex >= 0 && args[voiceIndex + 1] === 'FAIL'));
 if (shouldFail) {
   process.stdout.write(JSON.stringify({
     type: 'progress',

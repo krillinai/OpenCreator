@@ -11,11 +11,11 @@ import { IssueList } from '../issues/IssuePresenter.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { AppLanguage } from '../../i18n/language.js';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { RuntimeManagedComponents } from './RuntimeManagedComponents.js';
 import './runtime-components-settings.css';
 
-type LiveCheckState = 'pending' | 'checking' | 'ready' | 'failed';
+type LiveCheckState = 'idle' | 'checking' | 'ready' | 'failed';
 
 export function RuntimeComponentsSettingsView(props: {
   connected: boolean;
@@ -29,29 +29,8 @@ export function RuntimeComponentsSettingsView(props: {
   const busy = props.controller.phase !== 'idle';
   const issues = props.controller.issues ?? [];
   const [checkNotice, setCheckNotice] = useState<string>();
-  const [liveCheckState, setLiveCheckState] = useState<LiveCheckState>('pending');
-  const liveCheckStarted = useRef(false);
+  const [liveCheckState, setLiveCheckState] = useState<LiveCheckState>('idle');
   const hasIssue = issues.length > 0;
-
-  useEffect(() => {
-    if (
-      !props.connected
-      || status === undefined
-      || props.controller.phase !== 'idle'
-      || liveCheckStarted.current
-    ) return;
-
-    liveCheckStarted.current = true;
-    setLiveCheckState('checking');
-    void Promise.resolve(props.controller.checkYtDlpUpdate(true))
-      .then(() => setLiveCheckState('ready'))
-      .catch(() => setLiveCheckState('failed'));
-  }, [
-    props.connected,
-    props.controller,
-    props.controller.phase,
-    status
-  ]);
 
   if (!props.connected) {
     return (
@@ -99,7 +78,6 @@ export function RuntimeComponentsSettingsView(props: {
             issues={issues}
             actions={{ retryOperations: {
               'runtime.load-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
-              'runtime.auto-check-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
               'runtime.check-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
               'runtime.update-yt-dlp': async () => { await props.controller.updateYtDlp(); }
             } }}
@@ -111,7 +89,7 @@ export function RuntimeComponentsSettingsView(props: {
     );
   }
 
-  const checking = liveCheckState === 'pending' || liveCheckState === 'checking';
+  const checking = liveCheckState === 'checking';
   const fresh = liveCheckState === 'ready';
   const statusLabel = checking
     ? t('settings.runtimeComponents.checking')
@@ -187,7 +165,7 @@ export function RuntimeComponentsSettingsView(props: {
                 : <RefreshCw size={15} aria-hidden="true" />}
               {t('settings.runtimeComponents.check')}
             </button>
-            {fresh && status.updateAvailable && status.latestVersion !== null ? (
+            {status.updateAvailable && status.latestVersion !== null ? (
               <button
                 className="settings-primary-button"
                 data-status="update"
@@ -210,10 +188,7 @@ export function RuntimeComponentsSettingsView(props: {
 
         <details className="local-component-details">
           <summary><ChevronDown size={15} aria-hidden="true" />{localize('组件详情', 'Component details', 'Komponentinformation')}</summary>
-          <div className="runtime-component-notes">
-            <p>{t('settings.runtimeComponents.autoCheck')}</p>
-            {!hasIssue ? <p>{t('settings.runtimeComponents.fallback')}</p> : null}
-          </div>
+          {!hasIssue ? <div className="runtime-component-notes"><p>{t('settings.runtimeComponents.fallback')}</p></div> : null}
           <dl className="runtime-component-details">
             <div>
               <dt>{t('settings.runtimeComponents.lastChecked')}</dt>
@@ -230,7 +205,6 @@ export function RuntimeComponentsSettingsView(props: {
           issues={issues}
           actions={{ retryOperations: {
             'runtime.load-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
-            'runtime.auto-check-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
             'runtime.check-yt-dlp': async () => { await props.controller.checkYtDlpUpdate(true); },
             'runtime.update-yt-dlp': async () => { await props.controller.updateYtDlp(); }
           } }}

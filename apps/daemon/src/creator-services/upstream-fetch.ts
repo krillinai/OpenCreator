@@ -10,6 +10,7 @@ export async function fetchCreatorService(input: {
   body?: string | Buffer;
   proxy?: string;
   signal: AbortSignal;
+  redirect?: 'manual';
   maxResponseBytes: number;
   fetchImpl?: typeof fetch;
 }): Promise<Response> {
@@ -22,7 +23,8 @@ export async function fetchCreatorService(input: {
         : typeof input.body === 'string'
           ? input.body
           : new Uint8Array(input.body),
-      signal: input.signal
+      signal: input.signal,
+      ...(input.redirect === undefined ? {} : { redirect: input.redirect })
     });
   }
 

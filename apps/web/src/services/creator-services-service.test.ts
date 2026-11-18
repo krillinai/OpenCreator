@@ -7,6 +7,7 @@ describe('creator services service', () => {
     const config = createDefaultCreatorServicesConfig();
     const get = vi.fn();
     const patch = vi.fn();
+    const post = vi.fn();
     const remove = vi.fn();
     const rawRequest = vi.fn(async () => new Response(Buffer.from('preview')));
     const client = {
@@ -23,6 +24,10 @@ describe('creator services service', () => {
       patch<T>(_path: string, _body: unknown): Promise<T> {
         patch(_path, _body);
         return Promise.resolve({ config } as T);
+      },
+      post<T>(_path: string, _body: unknown): Promise<T> {
+        post(_path, _body);
+        return Promise.resolve({ status: 'not_configured' } as T);
       },
       delete<T>(_path: string): Promise<T> {
         remove(_path);
@@ -51,6 +56,7 @@ describe('creator services service', () => {
     await service.getTtsVoices('aliyun', 'qwen3-tts-flash');
     await service.getCodexImageStatus();
     await service.getCodexModelStatus();
+    await service.testNetwork({ proxy: '' });
     await service.previewTtsVoice({
       provider: 'aliyun',
       model: 'qwen3-tts-flash',
@@ -60,6 +66,7 @@ describe('creator services service', () => {
     expect(get).toHaveBeenNthCalledWith(1, '/creator-services/capabilities');
     expect(get).toHaveBeenNthCalledWith(2, '/creator-services/config');
     expect(patch).toHaveBeenCalledWith('/creator-services/config', config);
+    expect(post).toHaveBeenCalledWith('/creator-services/network/test', { proxy: '' });
     expect(remove).toHaveBeenCalledWith('/creator-services/config');
     expect(get).toHaveBeenNthCalledWith(
       3,

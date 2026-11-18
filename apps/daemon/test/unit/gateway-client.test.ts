@@ -27,7 +27,7 @@ it('协商稳定密钥策略并拒绝仍会自动轮换的响应', async () => {
   const fetcher = vi.fn<typeof fetch>(async () => Response.json(value));
   const client = createGatewayClient('https://gateway.example', fetcher);
   expect((await client.bootstrap('device-access', { rotate: false, modelUsePolicy: 'cached-key-v1' })).modelUsePolicy).toBe('cached-key-v1');
-  expect(fetcher.mock.calls[0]?.[0]).toBe('https://gateway.example/api/v1/client/bootstrap?protocolVersion=3&catalogSchema=2&publicMetadata=1&rotate=0&modelUsePolicy=cached-key-v1');
+  expect(fetcher.mock.calls[0]?.[0]).toBe('https://gateway.example/api/v1/client/bootstrap?protocolVersion=3&catalogSchema=2&publicMetadata=1&sizeLabels=1&rotate=0&modelUsePolicy=cached-key-v1');
   value.keyRotation = true;
   await expect(client.bootstrap('device-access')).rejects.toThrow();
 });

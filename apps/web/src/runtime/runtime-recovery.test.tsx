@@ -6,10 +6,36 @@ import { LanguageProvider } from '../i18n/LanguageProvider.js';
 import { LanguageSwitchControls } from '../test/LanguageSwitchControls.js';
 
 describe('Runtime recovery controls', () => {
+  it('keeps a brief Creator session retry quiet but shows persistent connection problems', () => {
+    const view = render(<RuntimeRecoveryNotice session={{ status: 'reconnecting', attempt: 3 }} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    view.rerender(<RuntimeRecoveryNotice session={{ status: 'reconnecting', attempt: 4 }} />);
+    expect(screen.getByText('正在恢复项目会话与任务状态…')).toBeVisible();
+  });
+
+  it('reports background Codex status errors only in diagnostics', () => {
+    const recovery: RuntimeRecovery = {
+      state: { status: 'connected', codexStatusError: 'status request failed' },
+      phase: 'connected', attempt: 0, epoch: 1, message: 'status request failed', retry: vi.fn()
+    };
+    function notice(diagnostics: boolean) {
+      return <RuntimeRecoveryContext.Provider value={recovery}>
+        <RuntimeRecoveryNotice diagnostics={diagnostics} />
+      </RuntimeRecoveryContext.Provider>;
+    }
+    const view = render(notice(false));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    view.rerender(notice(true));
+    expect(screen.getByText('本地服务已连接，Codex 状态暂时不可用，正在重新检查。')).toBeVisible();
+    expect(screen.getByText('status request failed')).toBeVisible();
+  });
+
   it('updates recovery copy without reconnecting or restarting when the language changes', () => {
     const retry = vi.fn(async () => undefined);
     const restart = vi.fn(async () => undefined);
-    const recovery: RuntimeRecovery = { state: { status: 'disconnected', message: '后台原文：服务断开' }, phase: 'reconnecting', attempt: 2, epoch: 1, retry, restart };
+    const recovery: RuntimeRecovery = { state: { status: 'disconnected', message: '后台原文：服务断开' }, phase: 'reconnecting', attempt: 4, epoch: 1, retry, restart };
     render(<LanguageProvider initialPreference="zh-CN"><LanguageSwitchControls /><RuntimeRecoveryContext.Provider value={recovery}><RuntimeRecoveryNotice /></RuntimeRecoveryContext.Provider></LanguageProvider>);
     expect(screen.getByText(/正在自动重连/)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'en-US' }));
@@ -28,7 +54,7 @@ describe('Runtime recovery controls', () => {
     const retry = vi.fn(async () => undefined);
     const restart = vi.fn(async () => undefined);
     const recovery: RuntimeRecovery = {
-      state: { status: 'disconnected', message: 'offline' }, phase: 'reconnecting', attempt: 2, epoch: 1, retry, restart
+      state: { status: 'disconnected', message: 'offline' }, phase: 'reconnecting', attempt: 4, epoch: 1, retry, restart
     };
     const view = render(<RuntimeRecoveryContext.Provider value={recovery}><RuntimeRecoveryNotice /></RuntimeRecoveryContext.Provider>);
     expect(screen.getByText(/正在自动重连/)).toBeVisible();

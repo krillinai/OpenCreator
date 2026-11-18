@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
+	"go.uber.org/zap"
+	"krillin-ai/log"
 )
 
 type TranscriptionError struct {
@@ -71,7 +73,9 @@ func (c *audioResponseClient) Do(request *http.Request) (*http.Response, error) 
 		return nil, err
 	}
 	invalid := func(reason string) (*http.Response, error) {
-		return nil, &TranscriptionError{Code: "audio_transcription_invalid_response", Message: fmt.Sprintf("transcription service returned HTTP %d but %s", response.StatusCode, reason), HTTPStatus: response.StatusCode, RequestID: safeGatewayRequestID(response.Header.Get("X-Request-ID"))}
+		requestID := safeGatewayRequestID(response.Header.Get("X-Request-ID"))
+		log.GetLogger().Warn("Transcription response rejected", zap.Int("http_status", response.StatusCode), zap.String("reason", reason), zap.String("request_id", requestID))
+		return nil, &TranscriptionError{Code: "audio_transcription_invalid_response", Message: fmt.Sprintf("transcription service returned HTTP %d but %s", response.StatusCode, reason), HTTPStatus: response.StatusCode, RequestID: requestID}
 	}
 	if len(body) > maxResponseSize {
 		return invalid("the response exceeded the size limit")

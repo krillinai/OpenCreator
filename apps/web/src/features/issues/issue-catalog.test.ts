@@ -1,11 +1,47 @@
 import { describe, expect, it } from 'vitest';
-import { buildIssueAgentPrompt, issueConversationText, issueDiagnosticText, presentIssue } from './issue-catalog.js';
+import { buildIssueAgentPrompt, issueConversationText, issueDiagnosticText, presentIssue, publicErrorReason, ytDlpRecoveryTarget } from './issue-catalog.js';
 import { normalizePageIssue } from './page-issue-state.js';
 
 const raw = '后台原文：操作无法完成';
 const issue = normalizePageIssue('runtime', 'creator.prepare', new Error(raw), raw);
 
 describe('localized issue copy', () => {
+  it.each(['zh-CN', 'en-US', 'sv-SE'] as const)('routes confirmed yt-dlp network and extractor failures without guessing from unrelated provider errors in %s', language => {
+    const network = { ...issue, code: 'network_unavailable', source: 'stage' as const,
+      publicFacts: { kind: 'connection-refused' as const, provider: 'yt-dlp' } };
+    const extractor = { ...issue, code: 'yt_dlp_update_recommended', source: 'stage' as const,
+      publicFacts: { kind: 'unsupported' as const, provider: 'yt-dlp' } };
+    expect(ytDlpRecoveryTarget(network)).toBe('network');
+    expect(ytDlpRecoveryTarget(extractor)).toBe('components');
+    expect(issueConversationText(network, language).nextStep).toMatch(/代理|proxy|proxyn/);
+    expect(issueConversationText(extractor, language).nextStep).toMatch(/yt-dlp/);
+    expect(ytDlpRecoveryTarget({ ...network, publicFacts: { kind: 'connection-refused', provider: 'openai' } })).toBeUndefined();
+  });
+
+  it('recognizes the yt-dlp extractor error in a historical KrillinAI caption issue', () => {
+    const historical = { ...issue, source: 'stage' as const, code: 'platform_caption_access_failed',
+      stageId: 'subtitle', publicFacts: { kind: 'unknown' as const, provider: 'krillinai',
+        upstreamMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: ERROR: [youtube] Signature extraction failed. Please update to the latest version.' } };
+    expect(ytDlpRecoveryTarget(historical)).toBe('components');
+  });
+  it('uses the final caption extractor error after an earlier timeout retry', () => {
+    const next = { ...issue, source: 'stage' as const, code: 'platform_caption_access_failed', stageId: 'subtitle',
+      publicFacts: { kind: 'unsupported' as const, provider: 'yt-dlp',
+        upstreamMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: WARNING: [youtube] Operation timed out. Retrying (1/3)...\nERROR: [youtube] Signature extraction failed. Please update.' } };
+    expect(ytDlpRecoveryTarget(next)).toBe('components');
+    expect(presentIssue(next, 'zh-CN').description).toContain('解析器可能需要更新');
+    expect(presentIssue(next, 'zh-CN').description).not.toContain('连接超时');
+  });
+  it.each([
+    ['zh-CN', '内容安全审核未通过'],
+    ['en-US', 'content safety review'],
+    ['sv-SE', 'innehållsgranskningen']
+  ] as const)('localizes a confirmed image moderation rejection in %s', (language, reason) => {
+    const message = publicErrorReason({ kind: 'http-rejected', provider: 'opencreator-gateway-image',
+      httpStatus: 400, upstreamCode: 'upstream_rejected', upstreamMessage: '图片未通过内容安全审核' }, language);
+    expect(message).toContain(reason);
+    if (language !== 'zh-CN') expect(message).not.toContain('图片未通过内容安全审核');
+  });
   it.each(['zh-CN', 'en-US', 'sv-SE'] as const)('describes uncertain acceptance without reporting a final failure in %s', language => {
     const pending = { ...issue, code: 'creator_provider_resolution_required', summaryKey: 'issue.provider',
       source: 'provider' as const, publicFacts: { kind: 'unknown' as const, provider: 'opencreator-gateway-chat/completions' } };
@@ -91,6 +127,26 @@ describe('localized issue copy', () => {
     expect(text.nextStep).not.toMatch(/更新 yt-dlp|重新连接 YouTube/);
   });
 
+  it.each([
+    ['zh-CN', '视频平台连接被拒绝，字幕读取未完成', '网络或代理设置'],
+    ['en-US', 'The video platform connection was refused, so captions could not be read', 'network or proxy settings'],
+    ['sv-SE', 'Anslutningen till videoplattformen nekades, så undertexterna kunde inte läsas', 'nätverket eller proxyinställningarna']
+  ] as const)('explains a recorded yt-dlp caption connection refusal in %s without raw output', (language, reason, action) => {
+    const next = { ...issue, code: 'platform_caption_access_failed', stageId: 'subtitle', publicFacts: {
+      kind: 'unknown' as const, provider: 'krillinai',
+      upstreamMessage: "downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 61] Connection refused"
+    } };
+    const text = issueConversationText(next, language);
+    expect(text.message).toContain(reason);
+    expect(text.message).not.toMatch(/downloadYouTubeSubtitle|Errno 61|No more specific cause/);
+    expect(text.nextStep).toContain(action);
+    const structured = issueConversationText({ ...next, publicFacts: {
+      kind: 'connection-refused', provider: 'yt-dlp'
+    } }, language);
+    expect(structured.message).toContain(reason);
+    expect(structured.nextStep).toContain(action);
+  });
+
   it('keeps the expired-cookie recovery when earlier yt-dlp attempts timed out', () => {
     const next = { ...issue, code: 'platform_caption_access_failed', stageId: 'subtitle', publicFacts: {
       kind: 'unknown' as const, provider: 'krillinai',
@@ -128,6 +184,7 @@ describe('localized issue copy', () => {
     ['audio_no_speech', '音频为静音或音量过低', '检查原音频和音量'],
     ['audio_transcription_empty', '尚不能确认音频是否含有语音', '换一个语音识别模型核验'],
     ['audio_transcription_invalid_response', '返回了无效结果', '检查服务返回的错误'],
+    ['audio_transcription_pending', '正在核对', '稍后重试'],
     ['audio_transcription_timestamps_missing', '未提供可用的字幕时间戳', '支持字幕时间戳'],
     ['audio_transcription_api_failed', '语音识别服务调用失败', '检查连接、模型权限或配额']
   ])('explains %s using the classified evidence', (code, summary, guidance) => {

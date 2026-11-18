@@ -13,6 +13,7 @@ import { requireAuth } from '../../src/api/auth.js';
 const cookie = { name: 's_v_web_id', value: 'private-verification-session', domain: '.douyin.com',
   path: '/', secure: true, httpOnly: true, expires: 0 };
 const profile: BrowserProfile = { id: 'b'.repeat(24), browser: 'chrome', label: 'Chrome Test', directory: '/private/profile', preferred: true };
+const otherProfile: BrowserProfile = { ...profile, id: 'c'.repeat(24), directory: '/private/other-profile' };
 const runtime = { executable: '/yt-dlp', prefixArgs: ['--plugin-dirs', '/plugins'], version: 'test', env: {} };
 const roots: string[] = [];
 const services: PlatformConnectionService[] = [];
@@ -25,7 +26,7 @@ async function setup(readBrowserCookies?: typeof readBrowserPlatformCookies, pla
   const root = await mkdtemp(join(tmpdir(), 'douyin-connection-'));
   roots.push(root);
   const service = new PlatformConnectionService({ root, platform, getRuntime: () => runtime,
-    listProfiles: async () => [profile], readBrowserCookies });
+    listProfiles: async () => [otherProfile, profile], readBrowserCookies });
   services.push(service);
   await service.initialize();
   return { root, service };
@@ -105,6 +106,75 @@ it('cancels a browser read, preserves the saved session, and requires explicit r
   await service.withCookies(async () => expect(service.authenticatedRuntime(runtime)).toBe(runtime));
   await service.disconnect();
   expect((await service.getState()).status).toBe('disconnected');
+});
+
+it.each([false, undefined])('refreshes the saved profile on use with legacy reconnect preference %s, until disconnected', async legacyPreference => {
+  const read = vi.fn(async () => [cookie]);
+  const { root, service } = await setup(read);
+  await service.refreshBrowserSession();
+  expect(read).not.toHaveBeenCalled();
+  await service.connect(profile.id);
+  await vi.waitFor(async () => expect((await service.getState()).status).toBe('connected'));
+  await expect(service.withCookies(async () => { throw new Error('The cookies are no longer valid'); })).rejects.toThrow('no longer valid');
+  expect((await service.getState()).status).toBe('expired');
+  expect(read).toHaveBeenCalledTimes(1);
+  const credentialFile = join(root, 'credentials.json');
+  const credentials = JSON.parse(await readFile(credentialFile, 'utf8'));
+  await writeFile(credentialFile, JSON.stringify({ ...credentials, autoReconnect: legacyPreference }));
+
+  read.mockResolvedValue([{ ...cookie, value: 'refreshed-session' }]);
+  const restarted = new PlatformConnectionService({ root, platform: 'douyin', getRuntime: () => runtime,
+    listProfiles: async () => [otherProfile, profile], readBrowserCookies: read });
+  services.push(restarted);
+  await restarted.initialize();
+  expect(read).toHaveBeenCalledTimes(1);
+  await Promise.all(Array.from({ length: 3 }, () => restarted.refreshBrowserSession()));
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(read).toHaveBeenLastCalledWith(expect.objectContaining({ profile, platform: 'douyin' }));
+  expect(await restarted.getState()).toMatchObject({ status: 'connected', profileId: profile.id });
+  await restarted.withCookies(async () => {
+    const path = restarted.authenticatedRuntime(runtime)!.prefixArgs.at(-1)!;
+    expect(await readFile(path, 'utf8')).toContain('refreshed-session');
+  });
+
+  await restarted.disconnect();
+  await restarted.refreshBrowserSession();
+  expect(await restarted.getState()).toMatchObject({ status: 'disconnected' });
+  expect(read).toHaveBeenCalledTimes(2);
+});
+
+it('keeps a rejected snapshot expired, throttles unsuccessful reads, and never refreshes a file import', async () => {
+  const read = vi.fn(async () => [cookie]);
+  const { service } = await setup(read);
+  await service.connect(profile.id);
+  await vi.waitFor(async () => expect((await service.getState()).status).toBe('connected'));
+  await expect(service.withCookies(async () => { throw new Error('The cookies are no longer valid'); })).rejects.toThrow('no longer valid');
+  await service.refreshBrowserSession();
+  await service.refreshBrowserSession();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect((await service.getState()).status).toBe('expired');
+
+  await service.importCookies(serializePlatformCookies([cookie], 'douyin'));
+  await expect(service.withCookies(async () => { throw new Error('The cookies are no longer valid'); })).rejects.toThrow('no longer valid');
+  await service.refreshBrowserSession();
+  expect(await service.getState()).toMatchObject({ status: 'expired', profileId: undefined });
+  expect(read).toHaveBeenCalledTimes(2);
+});
+
+it('retains the saved connection for disconnect after a manual reconnection fails', async () => {
+  const read = vi.fn(async () => [cookie]);
+  const { service } = await setup(read);
+  await service.connect(profile.id);
+  await vi.waitFor(async () => expect((await service.getState()).status).toBe('connected'));
+  const { connectedAt } = await service.getState();
+  await expect(service.withCookies(async () => { throw new Error('The cookies are no longer valid'); })).rejects.toThrow('no longer valid');
+  read.mockRejectedValueOnce(new PublicPlatformConnectionError('Browser is unavailable.'));
+  await service.connect(otherProfile.id);
+  await vi.waitFor(async () => expect((await service.getState()).status).toBe('error'));
+  expect(await service.getState()).toMatchObject({ status: 'error', profileId: profile.id, connectedAt });
+  expect(await service.disconnect()).toMatchObject({ status: 'disconnected' });
+  await service.refreshBrowserSession();
+  expect(read).toHaveBeenCalledTimes(2);
 });
 
 it('protects the Douyin API, rejects foreign cookies and invalid profiles, and disconnects only Douyin', async () => {

@@ -2,6 +2,7 @@ import type { CreatorJob } from '@opencreator/protocol';
 import { CheckCircle2, FileVideo, Link2, LoaderCircle, Plus, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { IssueNotice } from '../issues/IssuePresenter.js';
 import { useGenerationAccess } from './DashboardGenerationAccess.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
 import {
@@ -9,7 +10,8 @@ import {
   useCreatorSession,
   type CreatorSessionContextValue
 } from './creator-session-store.js';
-import VideoDownloadWorkspace from './VideoDownloadWorkspace.js';
+import VideoDownloadWorkspace, { formatDownloadError } from './VideoDownloadWorkspace.js';
+import { useCreatorRecoveryCopy } from './creator-recovery-copy.js';
 import SupportedVideoSources from './SupportedVideoSources.js';
 import VideoDownloadThumbnail from './VideoDownloadThumbnail.js';
 import {
@@ -25,6 +27,7 @@ import {
 export type VideoDownloadBatchView = {
   jobs: CreatorJob[];
   hasSelectedSource: boolean;
+  hasMultipleSources: boolean;
   toolbarActions: ReactNode;
   editor: ReactNode;
   sourceList: ReactNode;
@@ -38,6 +41,7 @@ export default function VideoDownloadBatchWorkspace(props: ComponentProps<typeof
 }) {
   const root = useCreatorSession();
   const l = useLocalizedCopy();
+  const recoveryCopy = useCreatorRecoveryCopy();
   const requireGenerationAccess = useGenerationAccess();
   const [jobs, setJobs] = useState<CreatorJob[]>([]);
   const [selectedId, setSelectedId] = useState(ROOT);
@@ -256,7 +260,10 @@ export default function VideoDownloadBatchWorkspace(props: ComponentProps<typeof
     <ul className="video-download-source-list" aria-label={l('视频链接列表', 'Video links')}>
       {sources.map(source => {
         const active = source.status === 'analyzing' || source.status === 'downloading' || retryingIds.has(source.id);
-        const failed = source.status === 'failed' || jobErrors[source.id] !== undefined;
+        const sourceError = jobErrors[source.id];
+        const failed = source.status === 'failed' || sourceError !== undefined;
+        const showRowIssue = failed && sources.length > 1;
+        const failedStage = source.job.stages.at(-1)?.status === 'failed' ? source.job.stages.at(-1) : undefined;
         const status = failed ? l('失败', 'Failed') : {
           waiting: l('待解析', 'Waiting'), analyzing: l('解析中', 'Analyzing'), ready: l('可下载', 'Ready'),
           downloading: l('下载中', 'Downloading'), completed: l('已完成', 'Completed'), failed: l('失败', 'Failed'), canceled: l('已停止', 'Stopped')
@@ -276,6 +283,12 @@ export default function VideoDownloadBatchWorkspace(props: ComponentProps<typeof
             onClick={() => void removeSource(source)} aria-label={`${l('移除链接', 'Remove link')} ${source.title}`} title={l('移除链接', 'Remove link')}>
             <X size={15} aria-hidden="true" />
           </button>
+          {showRowIssue ? <div className="video-download-source-issue">
+            <IssueNotice compact
+              title={failedStage?.stageId === 'download' ? recoveryCopy.downloadFailed : recoveryCopy.analysisFailed}
+              description={formatDownloadError(sourceError ?? `${failedStage?.errorCode ?? ''}: ${failedStage?.errorMessage ?? ''}`, l)}
+            />
+          </div> : null}
         </li>;
       })}
     </ul>
@@ -318,6 +331,7 @@ export default function VideoDownloadBatchWorkspace(props: ComponentProps<typeof
   </>;
   const batch: VideoDownloadBatchView = {
     jobs: allJobs, hasSelectedSource: sources.some(source => source.id === activeJobId), sourceList, editor,
+    hasMultipleSources: sources.length > 1,
     resolveSession,
     toolbarActions: hasAnalyzedVideo ? <button type="button" className="video-download-add-button" disabled={busy} onClick={() => setEditorOpen(value => !value)} aria-expanded={editorOpen} aria-controls={editorOpen ? 'video-download-add-links' : undefined}><Plus size={16} aria-hidden="true" />{l('添加链接', 'Add link')}</button> : null
   };

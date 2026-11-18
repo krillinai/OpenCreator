@@ -1,6 +1,7 @@
 import type { CreatorRepairAction, OpenCreatorIssue } from '@opencreator/protocol';
 import {
   AlertCircle,
+  ArrowRight,
   CheckCircle2,
   CircleDot,
   LocateFixed,
@@ -39,29 +40,16 @@ export function IssuePresenter(props: {
   const { language } = useAppLanguage();
   const localize = useLocalizedCopy();
   const copy = presentIssue(props.issue, language);
-  const StatusIcon = props.issue.status === 'resolved'
-    ? CheckCircle2
-    : props.issue.status === 'resolving'
-      ? CircleDot
-      : AlertCircle;
-
-  return (
-    <section
-      className={`issue-presenter issue-presenter-${props.issue.status}${props.compact ? ' issue-presenter-compact' : ''}`}
-      role={props.issue.status === 'open' ? 'alert' : 'status'}
-      data-issue-id={props.issue.id}
-    >
-      <StatusIcon aria-hidden="true" size={18} />
-      <div className="issue-presenter-body">
-        <div className="issue-presenter-heading">
-          <strong>{copy.title}</strong>
-          <span>{copy.statusLabel}</span>
-        </div>
-        <p>{copy.description}</p>
-        <OriginalErrorDetails detail={issueDiagnosticText(props.issue, language)} />
-        <IssueActionButtons issue={props.issue} actions={props.actions} />
-      </div>
-      {props.onDismiss !== undefined ? (
+  return <IssueNotice
+    id={props.issue.id}
+    status={props.issue.status}
+    statusLabel={copy.statusLabel}
+    title={copy.title}
+    description={copy.description}
+    compact={props.compact}
+    detail={issueDiagnosticText(props.issue, language)}
+    actions={<IssueActionButtons issue={props.issue} actions={props.actions} />}
+    dismiss={props.onDismiss !== undefined ? (
         <button
           type="button"
           className="issue-presenter-dismiss"
@@ -71,7 +59,50 @@ export function IssuePresenter(props: {
         >
           <X aria-hidden="true" size={16} />
         </button>
-      ) : null}
+    ) : null}
+  />;
+}
+
+export type IssueNoticeProps = {
+  title: string;
+  description?: string;
+  nextStep?: string;
+  detail?: string;
+  compact?: boolean;
+  settingsLink?: { href: string; label: string };
+  actions?: ReactNode;
+};
+
+export function IssueNotice({ status = 'open', ...props }: IssueNoticeProps & {
+  id?: string;
+  status?: OpenCreatorIssue['status'];
+  statusLabel?: string;
+  dismiss?: ReactNode;
+}) {
+  const StatusIcon = status === 'resolved' ? CheckCircle2 : status === 'resolving' ? CircleDot : AlertCircle;
+  return (
+    <section
+      className={`issue-presenter issue-presenter-${status}${props.compact ? ' issue-presenter-compact' : ''}`}
+      role={status === 'open' ? 'alert' : 'status'}
+      data-issue-id={props.id}
+    >
+      <StatusIcon aria-hidden="true" size={18} />
+      <div className="issue-presenter-body">
+        <div className="issue-presenter-heading">
+          <strong>{props.title}</strong>
+          {props.statusLabel ? <span>{props.statusLabel}</span> : null}
+        </div>
+        {props.description ? <p>{props.description}</p> : null}
+        {props.nextStep ? <p>{props.nextStep}</p> : null}
+        <OriginalErrorDetails detail={props.detail} />
+        {props.settingsLink ? <div className="issue-presenter-actions">
+          <a href={props.settingsLink.href}>
+            {props.settingsLink.label}<ArrowRight size={14} aria-hidden="true" />
+          </a>
+        </div> : null}
+        {props.actions}
+      </div>
+      {props.dismiss}
     </section>
   );
 }

@@ -10,9 +10,75 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"krillin-ai/internal/storage"
 	"krillin-ai/log"
 )
+
+func TestInvalidTranscriptionResponseLogsSafeReason(t *testing.T) {
+	core, recorded := observer.New(zap.WarnLevel)
+	previous := log.Logger
+	log.Logger = zap.New(core)
+	t.Cleanup(func() { log.Logger = previous })
+	requestID := "ocreq_" + strings.Repeat("a", 48)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Request-ID", requestID)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"requestId":"pending","state":"outcome_unknown"}`))
+	}))
+	defer server.Close()
+	audio := filepath.Join(t.TempDir(), "audio.wav")
+	if err := os.WriteFile(audio, []byte("audio"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewOfficialClient(server.URL, "test", "", "chosen-asr").Transcription(audio, "en", t.TempDir())
+	var classified *TranscriptionError
+	if !errors.As(err, &classified) || classified.Code != "audio_transcription_invalid_response" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	entries := recorded.FilterMessage("Transcription response rejected").All()
+	if len(entries) != 1 {
+		t.Fatalf("expected one rejection log, got %d", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if fields["http_status"] != int64(202) || fields["reason"] != "the required text field was missing" || fields["request_id"] != requestID {
+		t.Fatalf("unexpected safe diagnostics: %#v", fields)
+	}
+}
+
+func TestTranscriptionServiceFailureLogsRequestStatus(t *testing.T) {
+	core, recorded := observer.New(zap.WarnLevel)
+	previous := log.Logger
+	log.Logger = zap.New(core)
+	t.Cleanup(func() { log.Logger = previous })
+	requestID := "ocreq_" + strings.Repeat("b", 48)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Request-ID", requestID)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"private detail","code":"request_outcome_unknown"}}`))
+	}))
+	defer server.Close()
+	audio := filepath.Join(t.TempDir(), "audio.wav")
+	if err := os.WriteFile(audio, []byte("audio"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewOfficialClient(server.URL, "test", "", "chosen-asr").Transcription(audio, "en", t.TempDir())
+	var classified *TranscriptionError
+	if !errors.As(err, &classified) || classified.Code != "audio_transcription_pending" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	entries := recorded.FilterMessage("openai create transcription failed").All()
+	if len(entries) != 1 {
+		t.Fatalf("expected one service failure log, got %d", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if fields["code"] != "audio_transcription_pending" || fields["http_status"] != int64(503) || fields["request_id"] != requestID || fields["retryable"] != false {
+		t.Fatalf("unexpected safe diagnostics: %#v", fields)
+	}
+}
 
 func TestTranscriptionResponseClassification(t *testing.T) {
 	log.InitLogger()
@@ -37,6 +103,7 @@ func TestTranscriptionResponseClassification(t *testing.T) {
 		{"wrong_segments_type", 200, `{"text":"Hello","segments":"bad"}`, "audio_transcription_invalid_response", false},
 		{"malformed_json", 200, `<html>upstream error</html>`, "audio_transcription_invalid_response", false},
 		{"http_error", 503, `{"error":{"message":"unavailable","type":"server_error"}}`, "audio_transcription_api_failed", true},
+		{"pending_gateway_request", 409, `{"error":{"message":"pending verification","code":"request_outcome_unknown"}}`, "audio_transcription_pending", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

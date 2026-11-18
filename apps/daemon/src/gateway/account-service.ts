@@ -429,7 +429,7 @@ export function createGatewayAccountService(input: {
       await refresh();
       if (closing || accessPaused) return;
       const original = assertSignedIn(); const expected = generation;
-      const catalog = catalogSchema.parse(await withAccountAccess(() => input.client.request('/api/v1/client/models' + (original.transport === 'gateway' ? '?catalogSchema=2&publicMetadata=1' : ''), original.accessToken)));
+      const catalog = catalogSchema.parse(await withAccountAccess(() => input.client.request('/api/v1/client/models' + (original.transport === 'gateway' ? '?catalogSchema=2&publicMetadata=1&sizeLabels=1' : ''), original.accessToken)));
       if (original.transport === 'gateway') {
         await serialize(async()=>{
           if (closing || accessPaused || generation!==expected || credentials?.account?.id!==original.account?.id || state.authState!=='signed_in') return;
@@ -770,7 +770,7 @@ export function createGatewayAccountService(input: {
       ...catalogSchema.shape,
       updatedAt: z.string().optional(),
       refreshState: z.enum(['ready', 'stale', 'unavailable']).optional()
-    }).safeParse(await input.client.request('/api/v1/models/catalog', ''));
+    }).safeParse(await input.client.request('/api/v1/models/catalog?sizeLabels=1', ''));
     if (!response.success) throw new GatewayError('invalid_gateway_response');
     return {
       models: response.data.models.filter(model => model.modality === modality),

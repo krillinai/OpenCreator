@@ -333,13 +333,7 @@ export const test = base.extend<TestFixtures>({
           });
           await page.goto(`${origin}/#/thread/${encodeURIComponent(selectedThreadId)}`);
           await expect(page.getByRole('status', { name: '本地运行内核正常' })).toBeVisible();
-          if (await page.evaluate(() => localStorage.getItem('opencreator.agent-setup-confirmed.v1') === null)) {
-            const setup = page.getByRole('region', { name: '开始使用 Agent' });
-            await expect(setup).toBeVisible();
-            await setup.getByRole('button', { name: '本地模式', exact: true }).click();
-            await setup.getByRole('button', { name: '使用本机 Codex，继续' }).click();
-            await expect(setup).not.toBeVisible();
-          }
+          await expect(page.getByRole('region', { name: '开始使用 Agent' })).toHaveCount(0);
         },
         api,
         apiResult,

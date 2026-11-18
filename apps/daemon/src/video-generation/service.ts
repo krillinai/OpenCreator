@@ -147,11 +147,25 @@ export function createVideoGenerationService(input: {
     options.onGatewayRequest?.(payload.requestId);
     const completed = payload.state === 'succeeded';
     const failed = ['failed','canceled'].includes(payload.state ?? '');
+    let failureFacts: PublicErrorFacts | undefined;
+    if (payload.state === 'failed' && payload.errorCode === 'video_submit_rejected') {
+      try {
+        await gatewayCall(source, `requests/${encodeURIComponent(stored.upstreamId)}/result`, options);
+      } catch (error) {
+        if (!(error instanceof VideoGenerationError)) throw error;
+        if (error.statusCode !== 409 && error.statusCode !== 410) {
+          if (error.publicFacts?.requestId !== stored.upstreamId) throw error;
+          failureFacts = error.publicFacts;
+        }
+      }
+    }
     const progressKnown = typeof payload.progress === 'number' && Number.isFinite(payload.progress) && payload.progress >= 0 && payload.progress <= 100;
     const phase = completed || payload.phase === 'downloading' ? 'downloading' : payload.state === 'outcome_unknown' ? 'reconciling' : payload.status === 'queued' ? 'queued' : payload.phase === 'preparing' ? 'preparing' : 'generating';
     stored.result = { ...stored.result, status: failed ? 'failed' : phase === 'queued' || phase === 'preparing' ? 'queued' : 'in_progress',
       phase, progress: completed ? 90 : progressKnown ? Math.min(payload.progress!, 90) : 0, progressKnown: completed || progressKnown,
-      ...(failed ? { error: payload.errorCode === 'video_reconciliation_expired' ? 'The video task could not be confirmed; reserved credits have been released' : 'The official video service could not complete this task' } : {}), updatedAt: now().toISOString() };
+      ...(failed ? { error: payload.errorCode === 'video_reconciliation_expired' ? 'The video task could not be confirmed; reserved credits have been released' : 'The official video service could not complete this task',
+        publicFacts: failureFacts ?? { kind: 'provider-failed', provider: 'opencreator-gateway-video',
+          ...(payload.errorCode ? { upstreamCode: payload.errorCode } : {}), requestId: stored.upstreamId } } : {}), updatedAt: now().toISOString() };
     await writeStored(stored);
     if (completed) {
       options.onDownloadStart?.();

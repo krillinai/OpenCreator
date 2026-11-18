@@ -29,6 +29,7 @@ export default function OfficialModelSelect(props: {
   disabled?: boolean; layout?: 'list' | 'catalog' | 'grouped'; loginRequiredModelIds?: ReadonlySet<string>;
   compactOptions?: boolean;
   configureModel?: { id: string; title: string; onConfigure(): void };
+  onOpen?(): void;
   onChange(value: string): void;
 }) {
   const l = useLocalizedCopy();
@@ -37,6 +38,7 @@ export default function OfficialModelSelect(props: {
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const openRef = useRef(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [position, setPosition] = useState<{ left: number; top: number; width: number; maxHeight: number; above: boolean }>();
@@ -75,10 +77,12 @@ export default function OfficialModelSelect(props: {
   const currentIndex = Math.min(activeIndex, visible.length - 1);
   const optionId = (index: number) => `${id}-option-${index}`;
 
-  function close() { setOpen(false); setQuery(''); setActiveIndex(0); }
+  function close() { openRef.current = false; setOpen(false); setQuery(''); setActiveIndex(0); }
   function show() {
-    if (props.disabled || open) return;
+    if (props.disabled || openRef.current) return;
+    openRef.current = true;
     setQuery(''); setActiveIndex(Math.max(0, choices.findIndex(choice => choice.value === selectionValue))); setOpen(true);
+    props.onOpen?.();
   }
   function select(value: string) {
     if (props.configureModel?.id === value && !props.models.some(model => model.id === value && gatewayModelReady(model))) {
@@ -205,7 +209,7 @@ export default function OfficialModelSelect(props: {
         placeholder={l('搜索模型', 'Search models', 'Sök modeller')} title={expanded ? undefined : selectedLabel}
         onFocus={show} onClick={show} onKeyDown={onKeyDown}
         onBlur={event => { if (!rootRef.current?.contains(event.relatedTarget) && !menuRef.current?.contains(event.relatedTarget)) close(); }}
-        onChange={event => { setQuery(event.target.value); setActiveIndex(0); setOpen(true); }} />
+        onChange={event => { if (!openRef.current) show(); setQuery(event.target.value); setActiveIndex(0); setOpen(true); }} />
       {expanded && query ? <button className="official-model-clear" type="button" tabIndex={-1}
         aria-label={l('清空模型搜索', 'Clear model search', 'Rensa modellsökning')} title={l('清空搜索', 'Clear search', 'Rensa sökning')}
         onMouseDown={event => event.preventDefault()} onClick={() => { setQuery(''); setActiveIndex(0); inputRef.current?.focus(); }}>

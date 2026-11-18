@@ -6,21 +6,33 @@ import './runtime-recovery.css';
 
 export const RuntimeRecoveryContext = createContext<RuntimeRecovery | null>(null);
 
+const visibleRecoveryAttempt = 4;
+
 export function useRuntimeRecovery() {
   return useContext(RuntimeRecoveryContext);
+}
+
+export function shouldShowRuntimeRecovery({ phase, attempt }: Pick<RuntimeRecovery, 'phase' | 'attempt'>) {
+  return phase === 'failed' || phase === 'restarting' || (phase === 'reconnecting' && attempt >= visibleRecoveryAttempt);
 }
 
 export function RuntimeRecoveryNotice(props: {
   session?: CreatorConnectionState;
   onRetrySession?: () => Promise<void>;
+  blocking?: boolean;
   diagnostics?: boolean;
 }) {
   const recovery = useRuntimeRecovery();
   const l = useLocalizedCopy();
   const runtimeUnavailable = recovery !== null && recovery.phase !== 'connected';
   const sessionUnavailable = props.session !== undefined && props.session.status !== 'connected';
+  const showRuntimeRecovery = recovery !== null && shouldShowRuntimeRecovery(recovery);
+  const showSessionRecovery = props.session?.status === 'failed'
+    || (props.session?.status === 'reconnecting' && props.session.attempt >= visibleRecoveryAttempt);
+  const showBlockingRecovery = props.blocking && (runtimeUnavailable || sessionUnavailable);
+  if (!props.diagnostics && !showRuntimeRecovery && !showSessionRecovery && !showBlockingRecovery) return null;
+
   const codexError = recovery?.state.status === 'connected' ? recovery.state.codexStatusError : undefined;
-  if (!runtimeUnavailable && !sessionUnavailable && !props.diagnostics && codexError === undefined) return null;
   const message = runtimeUnavailable
     ? recovery.phase === 'failed'
       ? l('本地服务恢复失败，请重连或查看诊断。', 'Runtime recovery failed. Reconnect or check diagnostics.')

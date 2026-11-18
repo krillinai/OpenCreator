@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"krillin-ai/internal/types"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,10 @@ func GenerateRawSegments(ctx context.Context, tts types.Ttser, plan []PlanItem, 
 // GenerateRawSegmentsWithProgress creates one natural-speed audio file per cue
 // and measures each waveform immediately after synthesis.
 func GenerateRawSegmentsWithProgress(ctx context.Context, tts types.Ttser, plan []PlanItem, voice, dir string, run CommandRunner, duration DurationProbe, reportProgress func(completed, total int)) ([]PlanItem, error) {
+	return generateRawSegmentsWithProgress(ctx, tts, plan, voice, dir, run, duration, reportProgress, "")
+}
+
+func generateRawSegmentsWithProgress(ctx context.Context, tts types.Ttser, plan []PlanItem, voice, dir string, run CommandRunner, duration DurationProbe, reportProgress func(completed, total int), cache segmentCache) ([]PlanItem, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -40,7 +45,7 @@ func GenerateRawSegmentsWithProgress(ctx context.Context, tts types.Ttser, plan 
 			return nil, err
 		}
 
-		if err := generateRawSegment(ctx, tts, &plan[i], voice, dir, run, duration); err != nil {
+		if err := generateRawSegment(ctx, tts, &plan[i], voice, dir, run, duration, cache); err != nil {
 			return nil, err
 		}
 		if reportProgress != nil {
@@ -51,7 +56,7 @@ func GenerateRawSegmentsWithProgress(ctx context.Context, tts types.Ttser, plan 
 	return plan, nil
 }
 
-func generateRawSegment(ctx context.Context, tts types.Ttser, item *PlanItem, voice, dir string, run CommandRunner, duration DurationProbe) error {
+func generateRawSegment(ctx context.Context, tts types.Ttser, item *PlanItem, voice, dir string, run CommandRunner, duration DurationProbe, cache segmentCache) error {
 	if item == nil {
 		return errors.New("plan item is required")
 	}
@@ -73,11 +78,19 @@ func generateRawSegment(ctx context.Context, tts types.Ttser, item *PlanItem, vo
 		return err
 	}
 	output := filepath.Join(rawDir, fmt.Sprintf("%d.wav", item.Index))
+	var checkpoint string
 	if IsSilenceOnlyText(item.SpokenText) {
 		if err := WriteTinySilence(output, run); err != nil {
 			return fmt.Errorf("write silence segment %d failed: %w", item.Index, err)
 		}
 	} else {
+		checkpoint = cache.path(item, voice)
+		if restoreSegment(checkpoint, output) {
+			if measured, err := duration(output); err == nil && measured > 0 && !math.IsInf(measured, 0) {
+				item.ActualDuration = measured
+				return nil
+			}
+		}
 		if tts == nil {
 			return errors.New("tts is required for non-silence text")
 		}
@@ -91,11 +104,10 @@ func generateRawSegment(ctx context.Context, tts types.Ttser, item *PlanItem, vo
 		return fmt.Errorf("measure segment %d duration failed for %s: %w", item.Index, output, err)
 	}
 	item.ActualDuration = dur
+	if dur > 0 && !math.IsInf(dur, 0) {
+		saveSegment(checkpoint, output)
+	}
 	return nil
-}
-
-func regenerateRawSegment(ctx context.Context, tts types.Ttser, item *PlanItem, voice, dir string, run CommandRunner, duration DurationProbe) error {
-	return generateRawSegment(ctx, tts, item, voice, dir, run, duration)
 }
 
 func GenerateRawChunkSegments(

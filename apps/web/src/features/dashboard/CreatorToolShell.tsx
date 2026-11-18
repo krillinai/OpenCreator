@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { IssueNotice, type IssueNoticeProps } from '../issues/IssuePresenter.js';
 import CreatorCollaborationPanel, {
   type CreatorPanelQuickAction
 } from './CreatorCollaborationPanel.js';
@@ -22,6 +23,7 @@ export default function CreatorToolShell(props: {
   contentClassName?: string;
   stepLabel?: string;
   currentIssue?: string;
+  workspaceIssue?: IssueNoticeProps;
   quickActions?: CreatorPanelQuickAction[];
   onCancelTask?(): void;
   onResumeTask?(): void;
@@ -35,6 +37,9 @@ export default function CreatorToolShell(props: {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
   const adapter = creatorPanelAdapterFor(session?.job.templateId ?? '');
+  const workspaceIssue = props.workspaceIssue ?? (props.showAgentPanel === false && props.currentIssue
+    ? { title: props.currentIssue }
+    : undefined);
   const quickActions = props.quickActions ?? props.suggestions.map((suggestion, index) => ({
     id: `suggestion-${index}`,
     label: suggestion,
@@ -42,7 +47,8 @@ export default function CreatorToolShell(props: {
     prompt: suggestion
   }));
 
-  if (props.embedded) return <div className="creator-tool-embedded">{props.children}</div>;
+  const notice = workspaceIssue ? <IssueNotice {...workspaceIssue} /> : null;
+  if (props.embedded) return <div className="creator-tool-embedded">{notice}{props.children}</div>;
 
   const workspace = <section className="creator-workspace-main" aria-label={`${props.title} ${l('操作区', 'workspace')}`}>
     <header className={`creator-workspace-header${props.titleIcon === undefined ? '' : ' has-title-icon'}${props.headerActions === undefined ? '' : ' has-actions'}`}>
@@ -58,10 +64,7 @@ export default function CreatorToolShell(props: {
       </div>
       {props.headerActions === undefined ? null : <div className="creator-workspace-header-actions">{props.headerActions}</div>}
     </header>
-    {props.showAgentPanel === false && props.currentIssue ? <div className="creator-workspace-local-issue creator-collaboration-issue">
-      <p>{props.currentIssue}</p>
-      {props.quickActions?.filter(action => action.kind === 'action').map(action => <button type="button" key={action.id} disabled={action.disabled} onClick={action.onAction}>{action.label}</button>)}
-    </div> : null}
+    {notice ? <div className="creator-workspace-local-issue">{notice}</div> : null}
     <div className={`creator-workspace-content${props.contentClassName ? ` ${props.contentClassName}` : ''}`}>{props.children}</div>
   </section>;
 

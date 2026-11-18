@@ -390,6 +390,19 @@ it('sorts image models without company groups and keeps the xAI icon after filte
   expect(within(list).getAllByRole('option')).toHaveLength(2);
 });
 
+it('notifies when the model list opens once per opening', async () => {
+  const onOpen = vi.fn();
+  render(<OfficialModelSelect label="模型" models={[]} value="" onOpen={onOpen} onChange={vi.fn()} />);
+  const input = screen.getByRole('combobox', { name: '模型' });
+  const user = userEvent.setup();
+  await user.click(input);
+  expect(onOpen).toHaveBeenCalledOnce();
+  await user.click(screen.getByRole('button', { name: '收起模型列表' }));
+  expect(onOpen).toHaveBeenCalledOnce();
+  await user.click(screen.getByRole('button', { name: '展开模型列表' }));
+  expect(onOpen).toHaveBeenCalledTimes(2);
+});
+
 it.each([
   { language: 'zh-CN' as const, price: '约 21 积分/张', quality: '按 low 质量档位估算' },
   { language: 'en-US' as const, price: 'About 21 credits / image', quality: 'Estimated for the low quality setting' },

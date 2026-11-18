@@ -27,6 +27,7 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
+import { IssueNotice } from '../issues/IssuePresenter.js';
 import DashboardVideoTranslationSettings from './DashboardVideoTranslationSettings.js';
 import TranscriptionSubtitleEditor from './TranscriptionSubtitleEditor.js';
 import VideoSourceInput from './VideoSourceInput.js';
@@ -612,10 +613,10 @@ export default function TranscriptionWorkspace(props: {
             ) : result ? <div className="transcription-result-pending" role="status">{l('转录文本为空', 'The transcript is empty')}</div> : null}
           </section>
         ) : null}
-        {visibleError ? <div className="creator-tool-error transcription-error" role="alert">
-          <span>{visibleError}</span>
-          <a href="#/settings?tab=ai-services&section=transcription">{l('打开转录服务设置', 'Open transcription settings')}</a>
-        </div> : null}
+        {visibleError ? <IssueNotice title={`${l('转录', 'Transcription')} · ${l('失败', 'Failed')}`}
+          description={visibleError}
+          settingsLink={{ href: '#/settings?tab=ai-services&section=transcription', label: l('打开转录服务设置', 'Open transcription settings') }}
+        /> : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
       </div>}
     </CreatorToolShell>

@@ -28,7 +28,6 @@ import {
   ImagePlus,
   Images,
   LoaderCircle,
-  RefreshCw,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -115,7 +114,6 @@ export default function ImageGenerationWorkspace(props: {
   const [configuredCredentials, setConfiguredCredentials] = useState<CreatorServicesCredentialField[]>([]);
   const [codexImageReady, setCodexImageReady] = useState<boolean>();
   const [publicCatalog, setPublicCatalog] = useState<GatewayImageCatalog | undefined>(() => props.gatewayAccountService?.getCachedImageCatalog?.());
-  const [catalogState, setCatalogState] = useState<'loading' | 'ready' | 'error'>(() => props.gatewayAccountService?.getCachedImageCatalog?.() ? 'ready' : 'loading');
   const catalogRequest = useRef(0);
   const catalogWork = useRef<{ service: GatewayAccountSettingsService; promise: Promise<GatewayImageCatalog> }>();
   const [pendingModelId, setPendingModelId] = useState<string>();
@@ -132,28 +130,24 @@ export default function ImageGenerationWorkspace(props: {
   const catalogModels = official.official ? official.models : [...(localModel ? [localModel] : []), ...publicModels];
   const loginRequiredModelIds = new Set(official.official ? [] : publicModels.map(model => model.id));
   const selectedCatalogId = official.official ? official.selected ?? official.model?.id ?? '' : pendingModelId ?? (localConfigured ? localImageModelId : '');
-  function loadPublicCatalog(force = false) {
+  function loadPublicCatalog() {
     const request = ++catalogRequest.current;
     const service = props.gatewayAccountService;
-    if (!service?.getImageCatalog) { setCatalogState('error'); return; }
-    const cached = service.getCachedImageCatalog?.();
-    if (cached) { setPublicCatalog(cached); setCatalogState('ready'); }
-    else setCatalogState('loading');
-    const promise = !force && catalogWork.current?.service === service
-      ? catalogWork.current.promise : service.getImageCatalog({ refresh: force });
+    const cached = service?.getCachedImageCatalog?.();
+    setPublicCatalog(cached);
+    if (!service?.getImageCatalog) return;
+    const promise = catalogWork.current?.service === service
+      ? catalogWork.current.promise : service.getImageCatalog();
     catalogWork.current = { service, promise };
     void promise.then(catalog => {
-      if (request === catalogRequest.current) { setPublicCatalog(catalog); setCatalogState('ready'); }
-    }).catch(() => {
-      if (request === catalogRequest.current) setCatalogState(cached ? 'ready' : 'error');
-    }).finally(() => {
+      if (request === catalogRequest.current) setPublicCatalog(catalog);
+    }).catch(() => undefined).finally(() => {
       if (catalogWork.current?.promise === promise) catalogWork.current = undefined;
     });
   }
   useEffect(() => {
-    if (!official.official) loadPublicCatalog();
     return () => { catalogRequest.current++; };
-  }, [props.gatewayAccountService, official.official]);
+  }, [props.gatewayAccountService]);
   const configuredModel = localProvider === 'codex-native' ? '' : (imageConfig ?? defaultImageConfig)[localProvider].model;
   const imageOptions = useMemo(() => official.official
     ? official.model?.imageOptions ?? {}
@@ -747,6 +741,10 @@ export default function ImageGenerationWorkspace(props: {
         ? l('描述你想生成的画面，我会帮你整理画幅、质量和输出数量。', 'Describe the image you want, then set its format, quality, and output count.')
         : l('请描述画面主体、环境、风格、光线和构图。', 'Describe the subject, setting, style, lighting, and composition.')}
       currentIssue={visibleError || undefined}
+      workspaceIssue={!props.embedded && visibleError ? {
+        title: `${l('图片生成', 'Image generation')} · ${l('失败', 'Failed')}`,
+        description: visibleError
+      } : undefined}
       suggestions={[l('填入示例提示词', 'Use a sample prompt'), ...(showsImageFormat ? [l('生成横向图片', 'Create a landscape image')] : [])]}
       placeholder={props.promptHint ?? l('描述需要生成的图片', 'Describe the image to generate')}
       onBack={props.onBack}
@@ -816,17 +814,12 @@ export default function ImageGenerationWorkspace(props: {
                       disabled={busy}
                       layout="grouped"
                       loginRequiredModelIds={loginRequiredModelIds}
+                      onOpen={loadPublicCatalog}
                       onChange={selectCatalogModel}
                       models={catalogModels}
                     />
                   </label>
                 )}
-                {!official.official && catalogState !== 'ready' ? <div className="image-generation-catalog-status" role="status">
-                  {catalogState === 'loading' ? l('正在加载官方图片模型…', 'Loading official image models…') : <>
-                    <span>{l('官方图片模型目录加载失败', 'Official image models could not load')}</span>
-                    <button type="button" onClick={() => loadPublicCatalog(true)} aria-label={l('重试加载图片模型', 'Retry loading image models')}><RefreshCw size={14} />{l('重试', 'Retry')}</button>
-                  </>}
-                </div> : null}
               </div>
               <ImageGenerationSettings
                 label={l('图片设置', 'Image settings', 'Bildinställningar')}
@@ -904,7 +897,7 @@ export default function ImageGenerationWorkspace(props: {
             )}
           </section>
         ) : null}
-        {visibleError ? <p className="creator-tool-error" role="alert">{visibleError}</p> : null}
+        {props.embedded && visibleError ? <p className="creator-tool-error" role="alert">{visibleError}</p> : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
         {!props.embedded ? (
           <ImageGenerationDiscovery
@@ -912,7 +905,6 @@ export default function ImageGenerationWorkspace(props: {
             models={catalogModels}
             localModelId={localImageModelId}
             selectedId={selectedCatalogId}
-            catalogState={catalogState}
             busy={busy}
             onModelSelect={selectCatalogModel}
             onTemplate={applyTemplate}

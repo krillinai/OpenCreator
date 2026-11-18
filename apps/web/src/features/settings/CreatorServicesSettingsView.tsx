@@ -29,7 +29,6 @@ import {
   Cloud,
   Eye,
   EyeOff,
-  FileKey2,
   HardDriveDownload,
   Image,
   Languages,
@@ -393,10 +392,6 @@ export function CreatorServicesSettingsView(props: {
             'Configure the model services used for text, speech, image, and video generation.'
           )}</p>
         </div>
-        <span className="creator-services-security">
-          <FileKey2 size={16} aria-hidden="true" />
-          {l('本地配置文件', 'Local configuration file')}
-        </span>
       </header>
 
       {props.modeControls}

@@ -12,20 +12,53 @@ export type IssuePresentation = {
 
 export function isYtDlpCaptionTimeout(code: string | null | undefined, message: string | null | undefined,
   facts?: Pick<PublicErrorFacts, 'kind' | 'provider'>): boolean {
+  const finalError = finalYtDlpError(message);
   return code === 'platform_caption_access_failed'
     && !/cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message ?? '') && (
     facts?.kind === 'timeout' && facts.provider === 'yt-dlp'
     || /(?:downloadYouTubeSubtitle|yt-dlp subtitle metadata)/i.test(message ?? '')
-      && /(?:timed out|etimedout)/i.test(message ?? '')
+      && /(?:timed out|etimedout)/i.test(finalError)
   );
+}
+
+export function isYtDlpCaptionConnectionRefused(code: string | null | undefined, message: string | null | undefined,
+  facts?: Pick<PublicErrorFacts, 'kind' | 'provider'>): boolean {
+  const finalError = finalYtDlpError(message);
+  return code === 'platform_caption_access_failed'
+    && !/cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message ?? '') && (
+    facts?.kind === 'connection-refused' && facts.provider === 'yt-dlp'
+    || /(?:downloadYouTubeSubtitle|yt-dlp subtitle metadata)/i.test(message ?? '')
+      && /connection refused|econnrefused/i.test(finalError)
+  );
+}
+
+export function isYtDlpCaptionExtractorFailure(code: string | null | undefined, message: string | null | undefined): boolean {
+  const detail = message ?? '';
+  const lastError = finalYtDlpError(message);
+  return code === 'platform_caption_access_failed'
+    && /(?:yt-dlp|downloadYouTubeSubtitle)/i.test(detail)
+    && !/cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(detail)
+    && /please update|confirm you are on the latest version|signature extraction failed|nsig extraction failed|unable to extract|extractor error/i.test(lastError);
 }
 
 export function isYtDlpPreviewTimeout(code: string | null | undefined, message: string | null | undefined,
   facts?: Pick<PublicErrorFacts, 'kind' | 'provider'>): boolean {
   return code === 'network_unavailable' && (
     facts?.kind === 'timeout' && facts.provider === 'yt-dlp'
-    || /yt-dlp[^\n]*timed out/i.test(message ?? '')
+    || /yt-dlp/i.test(message ?? '') && /timed out|etimedout/i.test(finalYtDlpError(message))
   );
+}
+
+export function isYtDlpPreviewConnectionRefused(code: string | null | undefined, message: string | null | undefined,
+  facts?: Pick<PublicErrorFacts, 'kind' | 'provider'>): boolean {
+  return code === 'network_unavailable' && (
+    facts?.kind === 'connection-refused' && facts.provider === 'yt-dlp'
+    || /yt-dlp/i.test(message ?? '') && /connection (?:was )?refused|econnrefused/i.test(finalYtDlpError(message))
+  );
+}
+
+function finalYtDlpError(message: string | null | undefined): string {
+  return message?.match(/ERROR:[^\r\n]*/gi)?.at(-1) ?? message ?? '';
 }
 
 function isCaptionTimeoutIssue(issue: OpenCreatorIssue): boolean {
@@ -33,8 +66,18 @@ function isCaptionTimeoutIssue(issue: OpenCreatorIssue): boolean {
     issue.publicFacts?.upstreamMessage ?? issue.technicalDetail, issue.publicFacts);
 }
 
+function isCaptionConnectionRefusedIssue(issue: OpenCreatorIssue): boolean {
+  return issue.stageId === 'subtitle' && isYtDlpCaptionConnectionRefused(issue.code,
+    issue.publicFacts?.upstreamMessage ?? issue.technicalDetail, issue.publicFacts);
+}
+
 function isPreviewTimeoutIssue(issue: OpenCreatorIssue): boolean {
   return issue.stageId === 'preview-source-video' && isYtDlpPreviewTimeout(issue.code,
+    issue.publicFacts?.upstreamMessage ?? issue.technicalDetail, issue.publicFacts);
+}
+
+function isPreviewConnectionRefusedIssue(issue: OpenCreatorIssue): boolean {
+  return issue.stageId === 'preview-source-video' && isYtDlpPreviewConnectionRefused(issue.code,
     issue.publicFacts?.upstreamMessage ?? issue.technicalDetail, issue.publicFacts);
 }
 
@@ -77,10 +120,20 @@ function issueDescription(issue: OpenCreatorIssue, language: AppLanguage): strin
     'The video platform connection timed out, so captions could not be read.',
     'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas.'
   );
+  if (isCaptionConnectionRefusedIssue(issue)) return localize(
+    '视频平台连接被拒绝，字幕读取未完成。',
+    'The video platform connection was refused, so captions could not be read.',
+    'Anslutningen till videoplattformen nekades, så undertexterna kunde inte läsas.'
+  );
   if (isPreviewTimeoutIssue(issue)) return localize(
     '视频平台连接超时，原视频预览未完成。',
     'The video platform connection timed out, so the source video preview could not be prepared.',
     'Anslutningen till videoplattformen tog för lång tid, så förhandsvisningen av originalvideon kunde inte förberedas.'
+  );
+  if (isPreviewConnectionRefusedIssue(issue)) return localize(
+    '视频平台连接被拒绝，原视频预览未完成。',
+    'The video platform connection was refused, so the source video preview could not be prepared.',
+    'Anslutningen till videoplattformen nekades, så förhandsvisningen av originalvideon kunde inte förberedas.'
   );
   if (isYouTubeCaptionSessionIssue(issue)) return localize(
     'YouTube 登录态已失效，无法读取平台字幕。错误码：platform_caption_access_failed。',
@@ -122,12 +175,33 @@ function issuePublicFacts(issue: OpenCreatorIssue): PublicErrorFacts | undefined
   return facts;
 }
 
+export function ytDlpRecoveryTarget(issue: OpenCreatorIssue): 'network' | 'components' | undefined {
+  const facts = issuePublicFacts(issue);
+  const message = facts?.upstreamMessage ?? issue.technicalDetail ?? '';
+  const ytDlp = facts?.provider === 'yt-dlp' || /(?:yt-dlp|downloadYouTubeSubtitle)/i.test(message);
+  if (!ytDlp || /cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message)) return undefined;
+  const lastError = finalYtDlpError(message);
+  if (issue.code === 'yt_dlp_update_recommended'
+    || /please update|confirm you are on the latest version|signature extraction failed|nsig extraction failed|unable to extract|extractor error/i.test(lastError)) {
+    return 'components';
+  }
+  if ((facts?.provider === 'yt-dlp' && ['timeout', 'dns', 'connection-refused', 'connection-reset', 'unavailable'].includes(facts.kind))
+    || issue.code === 'network_unavailable'
+    || /proxyerror|proxy connection|connection refused|econnrefused|timed out|etimedout|network is unreachable|unable to connect|temporary failure in name resolution/i.test(lastError)) {
+    return 'network';
+  }
+  return undefined;
+}
+
 function localizedIssueSummary(issue: OpenCreatorIssue, localize: LocalizeCopy): string {
   if (isOpenCreatorAuthIssue(issue.code)) return localize('OpenCreator 登录已过期。', 'OpenCreator sign-in has expired.', 'OpenCreator-inloggningen har gått ut.');
   if (issue.code === 'creator_codex_config_resynced') return localize('已重新同步本机 Codex 配置，请重试本次操作。', 'Local Codex configuration has been re-synchronized. Retry this operation.', 'Konfigurationen för lokala Codex har synkroniserats igen. Försök igen.');
   if (issue.code === 'creator_codex_config_check_failed') return localize('本机 Codex 配置检查失败，请检查配置文件和登录信息。', 'Local Codex configuration could not be checked. Check the configuration files and sign-in details.', 'Konfigurationen för lokala Codex kunde inte kontrolleras. Kontrollera konfigurationsfilerna och inloggningsuppgifterna.');
   if (issue.code === 'platform_request_signature_required') return localize('当前下载器尚未兼容抖音的请求签名校验。', 'The current downloader does not support Douyin request signature verification.', 'Den nuvarande nedladdaren stöder inte Douyins verifiering av begäranssignaturer.');
   if (issue.code === 'platform_session_required') return localize('视频平台未接受浏览器会话或需要网页验证。', 'The video platform did not accept the browser session or requires website verification.', 'Videoplattformen accepterade inte webbläsarsessionen eller kräver webbplatsverifiering.');
+  if (ytDlpRecoveryTarget(issue) === 'components') return localize('视频解析失败，yt-dlp 解析器可能需要更新。',
+    'Video extraction failed; the yt-dlp extractor may need an update.',
+    'Videoextraheringen misslyckades. yt-dlp-extraktorn kan behöva uppdateras.');
   const transcription = transcriptionIssueCopy(issue.code, localize) ?? transcriptionIssueCopy(issue.publicFacts?.upstreamCode, localize);
   if (transcription !== undefined) return transcription.message;
   if (issue.code === 'ERR_FS_FILE_TOO_LARGE' || issue.publicFacts?.upstreamCode === 'ERR_FS_FILE_TOO_LARGE') return localize('本地文件读取超过大小限制。', 'The local file exceeded the read-size limit.', 'Den lokala filen överskred storleksgränsen för läsning.');
@@ -163,6 +237,11 @@ function transcriptionIssueCopy(code: string | undefined, localize: LocalizeCopy
       return {
         message: localize('语音识别服务返回了无效结果。', 'The speech recognition service returned an invalid response.', 'Taligenkänningstjänsten returnerade ett ogiltigt svar.'),
         nextStep: localize('请检查服务返回的错误，或更换语音识别模型后重试。', 'Review the provider error, or choose another speech recognition model and retry.', 'Kontrollera leverantörens fel, eller välj en annan taligenkänningsmodell och försök igen.')
+      };
+    case 'audio_transcription_pending':
+      return {
+        message: localize('语音转录请求正在核对，结果尚未确定。', 'The transcription request is being verified; its result is not yet known.', 'Transkriptionsbegäran kontrolleras; resultatet är ännu okänt.'),
+        nextStep: localize('请稍后重试当前阶段，客户端会先查询原请求。', 'Retry this stage later. The app will check the original request first.', 'Försök igen med det här steget senare. Appen kontrollerar först den ursprungliga begäran.')
       };
     case 'creator_transcription_timestamps_unavailable':
     case 'audio_transcription_timestamps_missing':
@@ -218,11 +297,11 @@ export function publicErrorReason(input: PublicErrorFacts, language: AppLanguage
   }
   if (facts.upstreamMessage !== undefined) {
     const size = /\bFile size \((\d+)\) is greater than 2 GiB\b/.exec(facts.upstreamMessage);
-    const message = size === null ? facts.upstreamMessage : localize(
+    const message = mediaContentSafetyReason(facts, localize) ?? (size === null ? facts.upstreamMessage : localize(
       `文件为 ${size[1]} 字节（约 ${(Number(size[1]) / 1024 ** 3).toFixed(2)} GiB），超过本地单次读取的 2 GiB 限制`,
       `The file is ${size[1]} bytes (about ${(Number(size[1]) / 1024 ** 3).toFixed(2)} GiB), exceeding the local 2 GiB limit for a single read`,
       `Filen är ${size[1]} byte (cirka ${(Number(size[1]) / 1024 ** 3).toFixed(2)} GiB) och överskrider den lokala gränsen på 2 GiB för en enskild läsning`
-    );
+    ));
     parts.push(localize(`服务说明：${message}`, `Provider message: ${message}`, `Leverantörens meddelande: ${message}`));
   }
   if (facts.requestId !== undefined) {
@@ -238,6 +317,15 @@ export function publicErrorReason(input: PublicErrorFacts, language: AppLanguage
   return localize(`已确认信息：${parts.join('，')}。`, `Confirmed information: ${parts.join(', ')}.`, `Bekräftad information: ${parts.join(', ')}.`);
 }
 
+export function mediaContentSafetyReason(facts: PublicErrorFacts, localize: LocalizeCopy): string | undefined {
+  if (facts.upstreamCode !== 'content_policy_violation' && !facts.upstreamMessage?.includes('图片未通过内容安全审核')) return undefined;
+  return localize(
+    '内容安全审核未通过，请调整提示词或参考素材后重试',
+    'The request did not pass content safety review. Adjust the prompt or reference media and try again.',
+    'Begäran klarade inte innehållsgranskningen. Ändra prompten eller referensmaterialet och försök igen.'
+  );
+}
+
 function safeIdentifier(value: string): string {
   return value.replace(/[^a-zA-Z0-9._:/-]/g, '').slice(0, 160);
 }
@@ -251,18 +339,27 @@ export function issueConversationText(
   if (recoveredProviderIssue(issue)) return { message: detail, nextStep: '' };
   const facts = issuePublicFacts(issue);
   const transcription = transcriptionIssueCopy(issue.code, localize) ?? transcriptionIssueCopy(facts?.upstreamCode, localize);
+  const ytDlpTarget = ytDlpRecoveryTarget(issue);
   const nextStep = issue.code === 'creator_provider_resolution_required'
     ? localize('确认原请求结果前请勿重新提交，避免重复扣费。', 'Do not resubmit until the original request outcome is confirmed, to avoid duplicate charges.', 'Skicka inte igen innan resultatet av den ursprungliga begäran har bekräftats, för att undvika dubbla avgifter.')
     : transcription !== undefined ? transcription.nextStep
     : isYouTubeCaptionSessionIssue(issue)
     ? localize('请在设置的“平台连接”中重新连接 YouTube，再重试字幕翻译；更换代理节点不会更新登录态。',
       'Reconnect YouTube in Settings > Platform connections, then retry subtitle translation. Changing proxy nodes does not refresh the session.')
-    : isCaptionTimeoutIssue(issue)
+    : ytDlpTarget === 'components'
+    ? localize('请在第三方组件中检查 yt-dlp 版本和可用更新，然后返回任务重试。',
+      'Check the yt-dlp version and available updates in Third-party components, then return to the task and retry.',
+      'Kontrollera yt-dlp-versionen och tillgängliga uppdateringar under Tredjepartskomponenter. Återgå sedan till uppgiften och försök igen.')
+    : isCaptionTimeoutIssue(issue) || isCaptionConnectionRefusedIssue(issue)
     ? localize('请检查网络或代理设置，再重试字幕读取。', 'Check the network or proxy settings, then retry reading captions.',
       'Kontrollera nätverket eller proxyinställningarna och försök sedan läsa undertexterna igen.')
-    : isPreviewTimeoutIssue(issue)
+    : isPreviewTimeoutIssue(issue) || isPreviewConnectionRefusedIssue(issue)
     ? localize('请检查网络或代理设置，再重试原视频预览。', 'Check the network or proxy settings, then retry the source video preview.',
       'Kontrollera nätverket eller proxyinställningarna och försök sedan förbereda förhandsvisningen igen.')
+    : ytDlpTarget === 'network'
+    ? localize('请在网络代理设置中检测连接，并确认视频链接可访问后重试。',
+      'Test the connection in Network proxy settings and confirm that the video URL is accessible before retrying.',
+      'Testa anslutningen under Nätverksproxy och kontrollera att videolänken kan nås innan du försöker igen.')
     : issue.code === 'platform_request_signature_required'
     ? localize('请使用本地视频文件继续；当前平台要求下载器尚不支持的请求签名，重新连接 Cookie 或修改模型权限无法解决。', 'Use a local video file to continue. The platform requires a request signature that the downloader does not yet support; reconnecting cookies or changing model permissions will not resolve it.', 'Använd en lokal videofil för att fortsätta. Plattformen kräver en begäranssignatur som nedladdaren ännu inte stöder. Att ansluta kakor igen eller ändra modellbehörigheter löser inte problemet.')
     : issue.code === 'platform_session_required'

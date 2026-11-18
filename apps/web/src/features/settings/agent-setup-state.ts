@@ -1,5 +1,5 @@
 import type { CodexProviderConfig, CodexRuntimeReadiness } from '@opencreator/protocol';
-import { readJsonFromStorage, writeJsonToStorage } from '../../storage/browser-storage.js';
+import { readJsonFromStorage } from '../../storage/browser-storage.js';
 
 export type AgentSetupSnapshot = { readiness: CodexRuntimeReadiness; provider: CodexProviderConfig };
 const confirmationKey = 'opencreator.agent-setup-confirmed.v1';
@@ -22,25 +22,6 @@ export function availableAgentMode({ readiness, provider }: AgentSetupSnapshot):
   return null;
 }
 
-function confirmationValue(snapshot: AgentSetupSnapshot): string {
-  const { readiness, provider } = snapshot;
-  return JSON.stringify([
-    readiness.codexHome, availableAgentMode(snapshot), provider.authentication,
-    provider.baseUrl, provider.model, provider.apiKeyConfigured
-  ]);
-}
-
-export function isAgentSetupConfirmed(snapshot: AgentSetupSnapshot): boolean {
-  return availableAgentMode(snapshot) !== null
-    && readJsonFromStorage<string>(confirmationKey) === confirmationValue(snapshot);
-}
-
-export function hasAgentSetupConfirmation(): boolean {
-  return readJsonFromStorage<string>(confirmationKey) !== null;
-}
-
-export function confirmAgentSetup(snapshot: AgentSetupSnapshot): void {
-  try {
-    writeJsonToStorage(confirmationKey, confirmationValue(snapshot));
-  } catch {}
+export function hasLegacyAgentSetupConfirmation(): boolean {
+  return readJsonFromStorage<unknown>(confirmationKey) !== null;
 }

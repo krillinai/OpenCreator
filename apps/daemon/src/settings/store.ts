@@ -5,6 +5,8 @@ import {
   updateOpenCreatorStorageSettings,
   updateOpenCreatorUiSettings
 } from '@opencreator/config';
+import { closeSync, mkdirSync, openSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type {
   OpenCreatorStorageSettings,
   OpenCreatorStorageSettingsResponse,
@@ -17,9 +19,21 @@ export type OpenCreatorSettingsStore = ReturnType<typeof createOpenCreatorSettin
 
 export function createOpenCreatorSettingsStore(
   configFile: string,
-  storageDefaults: OpenCreatorStorageSettings
+  storageDefaults: OpenCreatorStorageSettings,
+  existingProfile = false
 ) {
   return {
+    claimAgentOnboarding(offer: boolean): boolean {
+      const directory = dirname(configFile);
+      try {
+        mkdirSync(directory, { recursive: true });
+        closeSync(openSync(join(directory, 'agent-onboarding-v1'), 'wx', 0o600));
+        return offer && !existingProfile;
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === 'EEXIST') return false;
+        throw cause;
+      }
+    },
     readUi(): OpenCreatorUiSettingsResponse {
       const snapshot = readOpenCreatorConfig(configFile);
       return {

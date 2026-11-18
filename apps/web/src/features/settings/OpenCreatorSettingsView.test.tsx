@@ -24,6 +24,24 @@ const runtimeStatus = {
 };
 
 describe('OpenCreatorSettingsView', () => {
+  it.each([
+    { language: 'en-US', heading: 'AI Services', setup: 'Set up Agent' },
+    { language: 'zh-CN', heading: 'AI 服务', setup: '配置 Agent' }
+  ] as const)('omits the Agent setup row when Agent is configured ($language)', async ({ language, heading, setup }) => {
+    const codexRuntimeService = {
+      getCodexProvider: vi.fn(async () => ({ baseUrl: '', model: 'local-model', apiKeyConfigured: false, authentication: 'chatgpt' as const })),
+      updateCodexProvider: vi.fn()
+    };
+    const { container } = render(<LanguageProvider initialPreference={language}>
+      <OpenCreatorSettingsView runtimeStatus={runtimeStatus} initialTab="ai-services"
+        codexRuntimeService={codexRuntimeService} agentSetupNeeded={false} onBack={vi.fn()} />
+    </LanguageProvider>);
+
+    expect(await screen.findByRole('heading', { name: heading })).toBeVisible();
+    expect(screen.queryByRole('button', { name: setup })).not.toBeInTheDocument();
+    expect(container.querySelector('.settings-inline-warning')).not.toBeInTheDocument();
+  });
+
   it('shows connection diagnostics and reconnects official services without a model probe', async () => {
     const blocked: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'blocked', account: { id: 'a', email: 'a@test', verified: true }, bindingVersion: null,
       models: [{ id: 'vendor/text', modality: 'text', capabilities: ['responses'] }], activationError: { code: 'gateway_unavailable', message: 'Unavailable', stage: 'usage', request: { path: '/api/v1/client/usage', reason: 'http', httpStatus: 503 } } };
