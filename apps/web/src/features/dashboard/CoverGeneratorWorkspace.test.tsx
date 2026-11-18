@@ -559,6 +559,23 @@ describe('CoverGeneratorWorkspace', () => {
     expect(screen.getAllByText('读取视频信息超时，正在重试 2/3').length)
       .toBeGreaterThanOrEqual(2);
   });
+
+  it('offers the yt-dlp component page for a failed YouTube extractor', () => {
+    const fixture = createFixture();
+    const current = fixture.currentJob();
+    const failed: CreatorJob = { ...current, status: 'failed', revision: 2,
+      state: { ...current.state, sourceType: 'youtube', sourceUrl: 'https://www.youtube.com/watch?v=cover-test',
+        currentStep: 2, workspacePhase: 'result' },
+      stages: [{ id: 'cover_extract_failed', jobId: current.id, stageId: 'analyze-source', executor: 'cover-analysis',
+        status: 'failed', dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null, attempt: 1,
+        idempotencyKey: 'cover-extract-failed', scopeKey: null, inputFingerprint: null,
+        progress: { workflow: true, phase: 'failed' }, errorCode: 'yt_dlp_update_recommended',
+        errorMessage: 'yt-dlp extractor may be outdated', startedAt: current.createdAt, finishedAt: current.updatedAt }] };
+    renderWorkspace(fixture, failed);
+    expect(within(screen.getByRole('region', { name: '封面生成 操作区' })).getByRole('alert'))
+      .toHaveTextContent('视频解析失败，yt-dlp 可能需要更新');
+    expect(within(screen.getByRole('complementary', { name: 'OpenCreator' })).getByRole('button', { name: '检查 yt-dlp 更新' })).toBeVisible();
+  });
 });
 
 function renderWorkspace(

@@ -19,7 +19,6 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
-  CircleAlert,
   Captions,
   FileAudio,
   FileVideo,
@@ -44,12 +43,13 @@ import OfficialModelSelect from '../../components/forms/OfficialModelSelect.js';
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
 import { LocalTranscriptionNotice } from './LocalTranscriptionNotice.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
+import { useCreatorRecoveryCopy } from './creator-recovery-copy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import { CreatorTaskProgressBar, CreatorTaskProgressNotice, useCreatorTaskProgress } from './CreatorCollaborationPanel.js';
 import { creatorStageProgressPercent } from './creator-panel-adapters.js';
-import { isYtDlpCaptionTimeout } from '../issues/issue-catalog.js';
+import { isYtDlpCaptionConnectionRefused, isYtDlpCaptionExtractorFailure, isYtDlpCaptionTimeout } from '../issues/issue-catalog.js';
 import { clearTranslationContinuation, readTranslationContinuation, saveTranslationContinuation, ttsServiceConfigured, type TranslationEditorContext } from './video-translation-continuation.js';
 import VideoTranslationAgentPanel from './VideoTranslationAgentPanel.js';
 import CreatorToolShell from './CreatorToolShell.js';
@@ -1773,6 +1773,7 @@ export default function VideoTranslationWorkspace(props: {
   runtimeDependencies?: RuntimeDependenciesController;
 }) {
   const l = useLocalizedCopy();
+  const recoveryCopy = useCreatorRecoveryCopy();
   const requireGenerationAccess = useGenerationAccess();
   const translationStartedNotice = l(
     '翻译任务已开始，进度会实时同步到创作动态',
@@ -2558,6 +2559,8 @@ export default function VideoTranslationWorkspace(props: {
   const failureRecovery = failedWithoutResult ? translationFailureRecovery(
     stageFailure?.errorCode ?? taskProgress?.stage?.errorCode ?? null,
     stageFailure?.errorMessage ?? taskProgress?.stage?.errorMessage ?? null,
+    sourceType === 'url',
+    recoveryCopy.checkProxy,
     l
   ) : undefined;
   const failureSettingsHref = failureRecovery?.settingsTab === undefined ? undefined
@@ -4245,20 +4248,13 @@ export default function VideoTranslationWorkspace(props: {
           : l('请确认链接有效，并选择要翻译的分集后开始', 'Check the link and choose a part before starting')
       : resultNotice;
     const linkPreviewFallback = <span><Link2 size={23} strokeWidth={1.5} /><strong>{l('链接预览', 'Link preview')}</strong><small>{l('已添加链接', 'Link added')}</small></span>;
+    const retryDisabled = submitting || taskProgress?.retryPending || taskProgress?.retryBlocked;
     const composer = (
         <div className="creator-tool-stack image-generation-studio">
-          {failedWithoutResult && failureRecovery ? <div className="video-translation-failure-notice" role="alert">
-            <CircleAlert size={18} aria-hidden="true" />
-            <div>
-              <strong>{failureRecovery.title}</strong>
-              <p>{failureRecovery.reason}</p>
-              <p>{failureRecovery.nextStep}</p>
-            </div>
-          </div> : null}
           <form className="image-generation-composer dashboard-translation-composer" aria-label={l('视频翻译', 'Video Translation')} onSubmit={event => {
             event.preventDefault();
             if (failedWithoutResult) {
-              if (taskProgress) void taskProgress.retry().then(started => { if (started) props.onBack(); });
+              if (taskProgress && !retryDisabled) void taskProgress.retry().then(started => { if (started) props.onBack(); });
             } else void submit();
           }}>
             <fieldset className="image-generation-fields" disabled={submitting}>
@@ -4438,11 +4434,10 @@ export default function VideoTranslationWorkspace(props: {
                   ) : null}
                 </DashboardVideoTranslationSettings>
                 <div className="image-generation-submit-row">
-                  {failedWithoutResult && failureSettingsHref ? <a className="video-translation-failure-secondary" href={failureSettingsHref}>{failureRecovery?.settingsLabel}<ArrowRight size={15} aria-hidden="true" /></a> : null}
-                  <button className="creator-tool-primary" type="submit" disabled={submitting || (failedWithoutResult && (taskProgress?.retryPending || taskProgress?.retryBlocked))}>
+                  <button className="creator-tool-primary" type="submit" disabled={failedWithoutResult ? retryDisabled : submitting}>
                     {failedWithoutResult ? <RefreshCw size={16} aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
                     {failedWithoutResult
-                      ? taskProgress?.retryPending ? l('正在重试…', 'Retrying…') : l('重试当前阶段', 'Retry stage')
+                      ? taskProgress?.retryPending ? l('正在重试…', 'Retrying…') : recoveryCopy.retryStage
                       : submitting
                         ? submissionPhase === 'uploading' ? l('正在上传...', 'Uploading...') : l('正在启动...', 'Starting...')
                         : l('开始翻译', 'Translate')}
@@ -4462,6 +4457,13 @@ export default function VideoTranslationWorkspace(props: {
       subtitle={l('创建字幕、配音与多画幅成片', 'Create subtitles, dubbing, and videos in multiple formats')}
       context={failureRecovery?.title ?? ''}
       currentIssue={failureRecovery?.title}
+      workspaceIssue={failureRecovery ? {
+        title: failureRecovery.title,
+        description: failureRecovery.reason,
+        nextStep: failureRecovery.nextStep,
+        settingsLink: failureSettingsHref && failureRecovery.settingsLabel
+          ? { href: failureSettingsHref, label: failureRecovery.settingsLabel } : undefined
+      } : undefined}
       taskSummary={<CreatorTaskSummary
         sourceIcon={subtitleOnly ? Captions : FileVideo}
         sourceLabel={subtitleOnly ? l('字幕文件', 'Subtitle file') : l('视频来源', 'Video source')}
@@ -5158,6 +5160,16 @@ function stageErrorMessage(code: string | null, message: string | null, l: Local
     'The video platform connection timed out, so captions could not be read. Check the network or proxy settings and retry.',
     'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
   );
+  if (isYtDlpCaptionConnectionRefused(code, message)) return l(
+    '视频平台连接被拒绝，字幕读取未完成。请检查网络或代理设置后重试。',
+    'The video platform connection was refused, so captions could not be read. Check the network or proxy settings and retry.',
+    'Anslutningen till videoplattformen nekades, så undertexterna kunde inte läsas. Kontrollera nätverket eller proxyinställningarna och försök igen.'
+  );
+  if (isYtDlpCaptionExtractorFailure(code, message)) return l(
+    'yt-dlp 未能解析平台字幕，请检查第三方组件中的更新后重试。',
+    'yt-dlp could not extract the platform captions. Check for an update in Third-party components and retry.',
+    'yt-dlp kunde inte läsa plattformens undertexter. Sök efter en uppdatering under Tredjepartskomponenter och försök igen.'
+  );
   const configurationCode = normalizeStageConfigurationError(code, message);
   if (configurationCode !== null) return creatorErrorMessage({ code: configurationCode }, l);
   if (code === 'dependency_not_packaged') {
@@ -5166,7 +5178,7 @@ function stageErrorMessage(code: string | null, message: string | null, l: Local
   return l('翻译阶段执行失败，请在 Agent 区域查看诊断和服务配置。', 'The translation stage failed. Review the diagnosis in the Agent panel and service configuration.');
 }
 
-function translationFailureRecovery(code: string | null, message: string | null, l: LocalizeCopy): {
+function translationFailureRecovery(code: string | null, message: string | null, urlSource: boolean, checkProxyLabel: string, l: LocalizeCopy): {
   title: string;
   reason: string;
   nextStep: string;
@@ -5183,7 +5195,29 @@ function translationFailureRecovery(code: string | null, message: string | null,
     title: l('字幕读取失败', 'Caption retrieval failed', 'Det gick inte att läsa undertexter'),
     reason: l('视频平台连接超时，字幕读取未完成。', 'The video platform connection timed out, so captions could not be read.', 'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas.'),
     nextStep: l('检查网络代理和视频链接是否可访问，然后重试当前阶段。', 'Check the network proxy and video link, then retry this stage.', 'Kontrollera nätverksproxyn och videolänken och försök sedan igen med steget.'),
-    settingsTab: 'general', settingsLabel: l('检查网络代理', 'Check network proxy', 'Kontrollera nätverksproxy')
+    settingsTab: 'general', settingsLabel: checkProxyLabel
+  };
+  if (isYtDlpCaptionConnectionRefused(code, message)) return {
+    title: l('字幕读取失败', 'Caption retrieval failed', 'Det gick inte att läsa undertexter'),
+    reason: l('视频平台连接被拒绝，字幕读取未完成。', 'The video platform connection was refused, so captions could not be read.', 'Anslutningen till videoplattformen nekades, så undertexterna kunde inte läsas.'),
+    nextStep: l('检查网络代理和视频链接是否可访问，然后重试当前阶段。', 'Check the network proxy and video link, then retry this stage.', 'Kontrollera nätverksproxyn och videolänken och försök sedan igen med steget.'),
+    settingsTab: 'general', settingsLabel: checkProxyLabel
+  };
+  if (isYtDlpCaptionExtractorFailure(code, message)) return {
+    title: l('视频解析失败', 'Video extraction failed', 'Videoextraheringen misslyckades'),
+    reason: l('yt-dlp 未能解析平台字幕，解析器可能需要更新。',
+      'yt-dlp could not extract the platform captions; the extractor may need an update.',
+      'yt-dlp kunde inte läsa plattformens undertexter. Extraktorn kan behöva uppdateras.'),
+    nextStep: l('在第三方组件中检查 yt-dlp 版本和可用更新，然后重试。',
+      'Check the yt-dlp version and available updates in Third-party components, then retry.',
+      'Kontrollera yt-dlp-versionen och tillgängliga uppdateringar under Tredjepartskomponenter. Försök sedan igen.'),
+    settingsTab: 'local-components', settingsLabel: l('第三方组件', 'Third-party Components')
+  };
+  if (urlSource && code === 'network_unavailable') return {
+    title: l('连接失败', 'Connection failed'),
+    reason: l('无法连接视频平台，请检查网络或代理设置后重试', 'Unable to connect to the video platform. Check the network or proxy settings and try again.'),
+    nextStep: '',
+    settingsTab: 'general', settingsLabel: checkProxyLabel
   };
   if (code === 'platform_session_required' || code === 'platform_caption_access_failed'
     && /cookies? (?:are )?no longer valid|cookies? (?:have |has )?expired/i.test(message ?? '')) return {
@@ -5196,7 +5230,7 @@ function translationFailureRecovery(code: string | null, message: string | null,
     title: l('视频解析失败', 'Video extraction failed', 'Videoextraheringen misslyckades'),
     reason: l('当前下载器可能不支持此平台的最新解析方式。', 'The downloader may not support the platform\'s current extraction method.', 'Nedladdaren kanske inte stöder plattformens nuvarande extraheringsmetod.'),
     nextStep: l('检查第三方组件中的 yt-dlp 更新，然后返回此任务重试。', 'Check for a yt-dlp update in Third-party components, then return and retry.', 'Sök efter en uppdatering av yt-dlp under Tredjepartskomponenter. Återgå sedan och försök igen.'),
-    settingsTab: 'local-components', settingsLabel: l('检查第三方组件', 'Check third-party components', 'Kontrollera tredjepartskomponenter')
+    settingsTab: 'local-components', settingsLabel: l('第三方组件', 'Third-party Components')
   };
   if (code === 'platform_request_signature_required') return {
     title: l('视频解析失败', 'Video extraction failed', 'Videoextraheringen misslyckades'),

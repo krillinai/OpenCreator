@@ -51,8 +51,10 @@ describe('VideoTranslationWorkspace task controls', () => {
     expect(within(workspace).getByRole('alert')).toHaveTextContent('字幕读取失败');
     expect(within(workspace).getByRole('alert')).toHaveTextContent('视频平台连接超时，字幕读取未完成。');
     expect(screen.getByRole('complementary', { name: 'OpenCreator' }).querySelector('.creator-collaboration-context')).not.toBeNull();
-    const settings = within(workspace).getByRole('link', { name: '检查网络代理' });
+    const failureNotice = within(workspace).getByRole('alert');
+    const settings = within(failureNotice).getByRole('link', { name: '检查代理设置' });
     expect(settings.getAttribute('href')).toContain('tab=general');
+    expect(workspace.querySelector('.image-generation-submit-row a')).toBeNull();
     expect(new URLSearchParams(settings.getAttribute('href')?.split('?')[1]).get('returnPath'))
       .toBe('#/workbench?tool=video-translation&jobId=job_control&returnTo=projects');
     expect(within(workspace).queryByRole('region', { name: '视频翻译项目产出' })).not.toBeInTheDocument();
@@ -61,7 +63,12 @@ describe('VideoTranslationWorkspace task controls', () => {
 
     expect(within(workspace).queryByRole('button', { name: '查看任务诊断' })).not.toBeInTheDocument();
 
-    fireEvent.click(within(workspace).getByRole('button', { name: '重试当前阶段' }));
+    expect(within(failureNotice).queryByRole('button', { name: '重试当前阶段' })).not.toBeInTheDocument();
+    const form = within(workspace).getByRole('form', { name: '视频翻译' });
+    const retry = within(form).getByRole('button', { name: '重试当前阶段' });
+    expect(retry).toHaveAttribute('type', 'submit');
+    expect(retry.closest('.image-generation-submit-row')).not.toBeNull();
+    fireEvent.click(retry);
     await waitFor(() => expect(applyAction).toHaveBeenCalledWith('job_control', expect.objectContaining({
       action: 'run-stage', input: expect.objectContaining({ stageId: 'subtitle', resumedFromStageRunId: 'subtitle_timeout' })
     })));
@@ -209,7 +216,7 @@ describe('VideoTranslationWorkspace task controls', () => {
 
   it.each([
     ['platform_session_required', 'Website verification required', '平台连接需要处理', '检查平台连接', 'platform-connections'],
-    ['yt_dlp_update_recommended', 'Extractor outdated', '视频解析失败', '检查第三方组件', 'local-components'],
+    ['yt_dlp_update_recommended', 'Extractor outdated', '视频解析失败', '第三方组件', 'local-components'],
     ['platform_request_signature_required', 'Douyin request signature is required', '视频解析失败', null, null]
   ])('gives a specific recovery path for %s', async (code, message, title, action, tab) => {
     const failed = job({ status: 'failed', revision: 1, state: { workspacePhase: 'result' }, stages: [{
@@ -226,9 +233,57 @@ describe('VideoTranslationWorkspace task controls', () => {
     else expect(within(workspace).queryByRole('link')).not.toBeInTheDocument();
   });
 
+  it('links a failed URL download network error to proxy settings and returns to the task', async () => {
+    const failed = job({ status: 'failed', revision: 1, state: { workspacePhase: 'result' }, stages: [{
+      ...stage({ id: 'network_failure', status: 'failed', dispatchStatus: 'finished', progress: { phase: 'failed', workflow: true } }),
+      errorCode: 'network_unavailable', errorMessage: 'yt-dlp proxy connection was refused'
+    }] });
+    render(<LanguageProvider initialPreference="en-US"><CreatorSessionProvider initialJob={failed}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+
+    const workspace = await screen.findByRole('region', { name: 'Video Translation workspace' });
+    const settings = within(workspace).getByRole('link', { name: 'Check proxy settings' });
+    expect(new URLSearchParams(settings.getAttribute('href')?.split('?')[1]).get('returnPath'))
+      .toBe('#/workbench?tool=video-translation&jobId=job_control');
+  });
+
+  it('explains a caption extractor failure and opens the yt-dlp component settings', async () => {
+    const failed = job({ status: 'failed', revision: 1, state: { workspacePhase: 'result' }, stages: [{
+      ...stage({ id: 'caption_extractor', status: 'failed', dispatchStatus: 'finished', progress: { phase: 'failed', workflow: true } }),
+      errorCode: 'platform_caption_access_failed',
+      errorMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: WARNING: [youtube] Operation timed out. Retrying (1/3)...\nERROR: [youtube] Signature extraction failed. Please update to the latest version.'
+    }] });
+    render(<LanguageProvider initialPreference="en-US"><CreatorSessionProvider initialJob={failed}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+    const notice = screen.getByRole('alert');
+    expect(notice).toHaveTextContent('Video extraction failed');
+    expect(notice).toHaveTextContent('yt-dlp');
+    expect(screen.getByRole('link', { name: 'Third-party Components' }).getAttribute('href')).toContain('tab=local-components');
+  });
+
+  it('does not offer proxy settings for an unrelated file-source failure', async () => {
+    const failed = job({ status: 'failed', revision: 1, state: {
+      sourceType: 'file', sourceUrl: '', workspacePhase: 'result'
+    }, stages: [{
+      ...stage({ id: 'file_failure', status: 'failed', dispatchStatus: 'finished', progress: { phase: 'failed', workflow: true } }),
+      errorCode: 'network_unavailable', errorMessage: 'An unrelated service could not connect'
+    }] });
+    render(<LanguageProvider initialPreference="en-US"><CreatorSessionProvider initialJob={failed}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+
+    expect(await screen.findByRole('region', { name: 'Video Translation workspace' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Check proxy settings' })).not.toBeInTheDocument();
+  });
+
   it.each([
-    ['en-US', 'Caption retrieval failed', 'The video platform connection timed out, so captions could not be read.', 'Check network proxy'],
-    ['sv-SE', 'Det gick inte att läsa undertexter', 'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas.', 'Kontrollera nätverksproxy']
+    ['en-US', 'Caption retrieval failed', 'The video platform connection timed out, so captions could not be read.', 'Check proxy settings'],
+    ['sv-SE', 'Det gick inte att läsa undertexter', 'Anslutningen till videoplattformen tog för lång tid, så undertexterna kunde inte läsas.', 'Kontrollera proxyinställningar']
   ] as const)('localizes the failed translation view in %s', async (language, title, reason, action) => {
     const failed = job({ status: 'failed', revision: 1, state: { workspacePhase: 'result' }, stages: [{
       ...stage({ id: 'caption_timeout', status: 'failed', dispatchStatus: 'finished', progress: { phase: 'failed', workflow: true } }),
@@ -240,9 +295,37 @@ describe('VideoTranslationWorkspace task controls', () => {
     </CreatorSessionProvider></LanguageProvider>);
     expect(await screen.findByText(title, { selector: '.creator-collaboration-context strong' })).toBeVisible();
     expect(document.querySelector('.creator-collaboration-stage')).toHaveTextContent(reason);
-    expect(document.querySelector('.video-translation-failure-notice')).toHaveTextContent(title);
-    expect(document.querySelector('.video-translation-failure-notice')).toHaveTextContent(reason);
+    expect(screen.getByRole('alert')).toHaveTextContent(title);
+    expect(screen.getByRole('alert')).toHaveTextContent(reason);
     expect(screen.getByRole('link', { name: action })).toBeVisible();
+  });
+
+  it.each([
+    ['zh-CN', '字幕读取失败', '视频平台连接被拒绝，字幕读取未完成', '视频平台连接被拒绝', '检查代理设置'],
+    ['en-US', 'Caption retrieval failed', 'The video platform connection was refused, so captions could not be read', 'The video platform connection was refused', 'Check proxy settings'],
+    ['sv-SE', 'Det gick inte att läsa undertexter', 'Anslutningen till videoplattformen nekades, så undertexterna kunde inte läsas', 'Anslutningen till videoplattformen nekades', 'Kontrollera proxyinställningar']
+  ] as const)('explains a refused yt-dlp caption connection in %s alongside a failed source preview', async (language, title, reason, stageReason, action) => {
+    const failed = job({ status: 'failed', revision: 1, state: { workspacePhase: 'result' }, stages: [
+      { ...stage({ id: 'preview_refused', status: 'failed', dispatchStatus: 'finished',
+        progress: { phase: 'failed', backgroundSourceDownload: true } }),
+        stageId: 'preview-source-video', executor: 'download', errorCode: 'network_unavailable',
+        errorMessage: 'yt-dlp could not connect to the video platform: the connection was refused.' },
+      { ...stage({ id: 'caption_refused', status: 'failed', dispatchStatus: 'finished',
+        progress: { phase: 'failed', workflow: true } }),
+        errorCode: 'platform_caption_access_failed',
+        errorMessage: "downloadYouTubeSubtitle: yt-dlp subtitle metadata error: Unable to download API page: [Errno 61] Connection refused" }
+    ] });
+    render(<LanguageProvider initialPreference={language}><CreatorSessionProvider initialJob={failed}
+      service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+      <VideoTranslationWorkspace embedded onBack={vi.fn()} />
+    </CreatorSessionProvider></LanguageProvider>);
+
+    expect(await screen.findByText(title, { selector: '.creator-collaboration-context strong' })).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent(title);
+    expect(screen.getByRole('alert')).toHaveTextContent(reason);
+    expect(document.querySelector('.creator-collaboration-stage')).toHaveTextContent(stageReason);
+    const settings = screen.getByRole('link', { name: action });
+    expect(settings.getAttribute('href')).toContain('tab=general');
   });
 
   it('keeps embedded video, subtitle and URL sources mutually exclusive and clears them before choosing another', async () => {

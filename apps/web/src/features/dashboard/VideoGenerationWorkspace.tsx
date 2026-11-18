@@ -45,6 +45,7 @@ import ImageGenerationSettings, { type ImageGenerationSettingSection } from './I
 import { CreatorTaskProgressNotice } from './CreatorCollaborationPanel.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
+import { IssueNotice } from '../issues/IssuePresenter.js';
 import {
   captureCreatorClientFailure,
   createCreatorArtifactObjectUrl,
@@ -889,6 +890,10 @@ export default function VideoGenerationWorkspace(props: {
       pageClassName="video-generation-workspace-page"
       contentClassName="media-generation-workspace-content"
       currentIssue={visibleError || undefined}
+      workspaceIssue={!error && visibleError && visibleError !== previewError ? {
+        title: `${l('视频生成', 'Video generation')} · ${l('失败', 'Failed')}`,
+        description: visibleError
+      } : undefined}
       onCancelTask={generating ? () => void cancelTask() : undefined}
       taskControlPending={taskControlPending}
       embedded={props.embedded && !selectedResult}
@@ -1085,17 +1090,10 @@ export default function VideoGenerationWorkspace(props: {
             ) : null}
           </section>
         ) : null}
-        {error ? (
-          <p className="creator-tool-error" role="alert">
-            {error}
-            {settingsDeepLink ? (
-              <>
-                {' '}
-                <a href={settingsDeepLink}>{l('打开 AI 服务设置', 'Open AI service settings')}</a>
-              </>
-            ) : null}
-          </p>
-        ) : null}
+        {error ? <IssueNotice title={`${l('视频生成', 'Video generation')} · ${l('失败', 'Failed')}`}
+          description={error}
+          settingsLink={settingsDeepLink ? { href: settingsDeepLink, label: l('打开 AI 服务设置', 'Open AI service settings') } : undefined}
+        /> : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
       </div>
     </CreatorToolShell>

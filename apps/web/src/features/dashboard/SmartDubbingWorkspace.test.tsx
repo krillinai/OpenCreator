@@ -141,8 +141,10 @@ it('shows provider failures on the same page with a settings recovery link', asy
   const fixture = createFixture({ text: 'Saved script' });
   const job = fixture.currentJob();
   await renderWorkspace(fixture, { ...job, status: 'failed', stages: [{ id: 'stage', jobId: job.id, stageId: 'tts', executor: 'smart-dubbing', status: 'failed', dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: {}, errorCode: 'creator_tts_config_missing', errorMessage: 'Missing API key', startedAt: job.createdAt, finishedAt: job.createdAt }] });
-  expect(document.querySelector('.smart-dubbing-error')).toHaveTextContent('请先在设置的配音服务中配置当前服务商的 API Key');
-  expect(within(document.querySelector('.smart-dubbing-error') as HTMLElement).getByRole('link')).toHaveAttribute('href', '#/settings?tab=ai-services&section=tts');
+  const notice = screen.getByRole('alert');
+  expect(notice).toHaveTextContent('文本转语音 · 失败');
+  expect(notice).toHaveTextContent('请先在设置的配音服务中配置当前服务商的 API Key');
+  expect(within(notice).getByRole('link')).toHaveAttribute('href', '#/settings?tab=ai-services&section=tts');
   expect(screen.getByRole('textbox', { name: '配音文案内容' })).toHaveValue('Saved script');
   expect(screen.getByRole('button', { name: '开始生成' })).toBeEnabled();
 });

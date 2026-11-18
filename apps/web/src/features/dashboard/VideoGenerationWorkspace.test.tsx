@@ -1039,7 +1039,7 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.queryByRole('button', { name: /项目 V/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '重新生成' })).toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent('视频生成未完成，请检查模型服务配置后重试');
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('视频生成未完成，请检查模型服务配置后重试');
     expect(screen.queryByText('The provider rejected the prompt')).not.toBeInTheDocument();
   });
 
@@ -1090,7 +1090,7 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent(
       '当前账号未开通 Seedance 2.5，请切换模型版本或前往方舟控制台开通'
     );
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('当前账号未开通 Seedance 2.5，请切换模型版本或前往方舟控制台开通');
   });
 
   it('automatically continues an existing upstream task after a refresh failure', async () => {
@@ -1272,8 +1272,7 @@ describe('VideoGenerationWorkspace', () => {
     delete job.stages[0]!.progress.videoGenerationResultId;
     const view = renderWorkspace(job, { queryRequestStatus: 'succeeded' });
 
-    await waitFor(() => expect(document.querySelector('.creator-tool-error'))
-      .toHaveTextContent('原视频已生成，但无法读取结果'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('原视频已生成，但无法读取结果'));
     expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
     expect(screen.getByRole('button', { name: '重新生成' })).toBeEnabled();
     expect(screen.getByRole('complementary', { name: 'OpenCreator' })).toHaveTextContent('原视频已生成，但无法读取结果');
@@ -1352,10 +1351,10 @@ describe('VideoGenerationWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: language === 'zh-CN' ? '生成' : language === 'sv-SE' ? 'Generera' : 'Generate' }));
     await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
-    await waitFor(() => expect(document.querySelector('.creator-tool-error')).toHaveTextContent(
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
       language === 'zh-CN' ? '积分不足' : language === 'sv-SE' ? 'Krediterna räcker inte' : 'Insufficient credits'
     ));
-    expect(document.querySelector('.creator-tool-error')).not.toHaveTextContent(/sk-private-value|Bearer|Authorization/);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/sk-private-value|Bearer|Authorization/);
   });
 
   it('queries a non-unknown request even when a price-change issue is present', async () => {

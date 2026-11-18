@@ -220,7 +220,6 @@
 
 .smart-dubbing-output-panel { min-width: 0; padding-top: 20px; border-top: 1px solid var(--border-hairline); }
 .smart-dubbing-preview-pending { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 100px; color: var(--muted); font-size: 13px; }
-.smart-dubbing-workspace-page .smart-dubbing-error { margin: 0; flex-wrap: wrap; }
 
 @container smart-dubbing (max-width: 760px) {
   .smart-dubbing-fields { grid-template-columns: minmax(0, 1fr); }

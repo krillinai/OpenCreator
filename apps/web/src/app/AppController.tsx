@@ -4522,11 +4522,6 @@ export function AppController(props: AppControllerProps) {
           onTypeChange: type => { projectsHistoryInitialTypeRef.current = type; },
           onOpenJob: openCreatorJob
         }}
-        onOpenRuntimeComponents={() => {
-          settingsReturnRouteRef.current = props.route;
-          dispatch({ type: 'open_settings' });
-          navigateToRoute({ view: 'settings', tab: 'local-components' });
-        }}
         onWorkspaceNavigate={(workspace, jobId, options) => {
           if (workspace === null) {
             openPrimaryView('dashboard');
@@ -4581,11 +4576,6 @@ export function AppController(props: AppControllerProps) {
           : projectType => createProject(projectType)
       }
       createProjectError={createProjectError}
-      onOpenRuntimeComponents={() => {
-        settingsReturnRouteRef.current = props.route;
-        dispatch({ type: 'open_settings' });
-        navigateToRoute({ view: 'settings', tab: 'local-components' });
-      }}
       onWorkspaceNavigate={(workspace, jobId, options) => {
         if (
           workspace === null

@@ -28,6 +28,7 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
+import { IssueNotice } from '../issues/IssuePresenter.js';
 import DashboardVideoTranslationSettings from './DashboardVideoTranslationSettings.js';
 import { OfficialModelField, useOfficialServices } from './official-services.js';
 import {
@@ -602,14 +603,10 @@ export default function SmartDubbingWorkspace(props: {
             )}
           </section>
         ) : null}
-        {visibleError ? (
-          <div className="creator-tool-error smart-dubbing-error" role="alert">
-            <span>{visibleError}</span>
-            {settingsHref ? (
-              <a href={settingsHref}>{l('打开配音服务设置', 'Open voice service settings')}</a>
-            ) : null}
-          </div>
-        ) : null}
+        {visibleError ? <IssueNotice title={`${l('文本转语音', 'Text to Speech')} · ${l('失败', 'Failed')}`}
+          description={visibleError}
+          settingsLink={settingsHref ? { href: settingsHref, label: l('打开配音服务设置', 'Open voice service settings') } : undefined}
+        /> : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
       </div>
     </CreatorToolShell>

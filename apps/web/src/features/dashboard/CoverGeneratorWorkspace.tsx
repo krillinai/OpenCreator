@@ -25,6 +25,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { formatRoute, parseRoute } from '../../app/routes.js';
 import NativeSelect from '../../components/forms/NativeSelect.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
@@ -182,7 +183,7 @@ export default function CoverGeneratorWorkspace(props: {
       : l('未使用', 'Not used');
   const issue = readIssue(session, latestStage, l);
   const canContinue = prompt.trim().length > 0 || isYoutubeUrl(youtubeUrl);
-  const showRunNotice = Boolean(error || (currentStep !== 2 && notice && !issue.message));
+  const showRunNotice = Boolean(!error && currentStep !== 2 && notice && !issue.message);
   const currentReferenceName = referenceFile?.name
     ?? readArtifactString(activeReferenceArtifact, 'fileName');
   const resolvedCoverTextLanguage = coverTextLanguage;
@@ -584,8 +585,8 @@ export default function CoverGeneratorWorkspace(props: {
           : l('确定封面内容', 'Define thumbnail content');
   const panelQuickActions = [
     ...(issue.deepLink ? [{
-      id: 'cover-open-ai-services',
-      label: l('打开 AI 服务设置', 'Open AI service settings'),
+      id: 'cover-open-recovery-settings',
+      label: issue.actionLabel ?? l('打开 AI 服务设置', 'Open AI service settings'),
       kind: 'action' as const,
       onAction: () => { window.location.hash = issue.deepLink; }
     }] : []),
@@ -751,6 +752,10 @@ export default function CoverGeneratorWorkspace(props: {
       placeholder={props.promptHint ?? l('描述封面画面', 'Describe the thumbnail')}
       stepLabel={panelStepLabel}
       currentIssue={error || issue.message || undefined}
+      workspaceIssue={error || issue.message ? {
+        title: `${l('封面生成', 'Thumbnail Generator')} · ${l('失败', 'Failed')}`,
+        description: error || issue.message
+      } : undefined}
       quickActions={panelQuickActions}
       onCancelTask={cancelTask}
       onResumeTask={resumeTask}
@@ -1252,8 +1257,8 @@ export default function CoverGeneratorWorkspace(props: {
           ) : null}
 
           {showRunNotice ? (
-            <div className={`video-translation-run-notice${error ? ' is-error' : ''}`} role={error ? 'alert' : 'status'}>
-              <span>{error || notice}</span>
+            <div className="video-translation-run-notice" role="status">
+              <span>{notice}</span>
             </div>
           ) : null}
         </div>
@@ -1365,7 +1370,7 @@ function readIssue(
   session: ReturnType<typeof useOptionalCreatorSession>,
   latestStage: ReturnType<NonNullable<ReturnType<typeof useOptionalCreatorSession>>['job']['stages']['at']>,
   l: (zh: string, en: string) => string
-): { message: string; deepLink: string } {
+): { message: string; deepLink: string; actionLabel?: string } {
   const needsInput = session?.state.needsInput;
   if (needsInput !== null && typeof needsInput === 'object' && !Array.isArray(needsInput)) {
     return {
@@ -1376,16 +1381,26 @@ function readIssue(
     };
   }
   if (latestStage?.status === 'failed') {
+    const recovery = latestStage.errorCode === 'network_unavailable' ? 'network'
+      : latestStage.errorCode === 'yt_dlp_update_recommended' ? 'components' : undefined;
+    const currentRoute = parseRoute(window.location.hash);
+    const returnPath = formatRoute(currentRoute.view === 'workbench' && currentRoute.tool === 'cover-generator'
+      && currentRoute.jobId === session?.job.id
+      ? currentRoute : { view: 'workbench', tool: 'cover-generator', jobId: session?.job.id });
     return {
       message: formatCoverError({
         code: latestStage.errorCode,
         message: latestStage.errorMessage
       }, l),
-      deepLink: latestStage.errorCode === 'creator_image_config_missing'
+      deepLink: recovery
+        ? `#/settings?${new URLSearchParams({ ...(recovery === 'components' ? { tab: 'local-components' } : {}), returnPath })}`
+        : latestStage.errorCode === 'creator_image_config_missing'
         ? '#/settings?tab=ai-services&section=image'
         : latestStage.errorCode === 'creator_llm_config_missing'
           ? '#/settings?tab=ai-services&section=text'
-          : ''
+          : '',
+      actionLabel: recovery === 'network' ? l('检查代理设置', 'Check proxy settings')
+        : recovery === 'components' ? l('检查 yt-dlp 更新', 'Check yt-dlp updates') : undefined
     };
   }
   if (session?.error) return { message: formatCoverError(session.error, l), deepLink: '' };
@@ -1421,6 +1436,9 @@ function formatCoverError(error: unknown, l: (zh: string, en: string) => string)
       '无法连接 YouTube，请检查网络或代理设置后重试',
       'Unable to connect to YouTube. Check the network or proxy settings and try again.'
     );
+  }
+  if (code === 'yt_dlp_update_recommended') {
+    return l('视频解析失败，yt-dlp 可能需要更新', 'Video extraction failed; yt-dlp may need an update');
   }
   if (code === 'image_generation_failed') {
     return l('封面生成失败，请检查图像服务和网络后重试', 'Thumbnail generation failed. Check the provider and network, then retry.');

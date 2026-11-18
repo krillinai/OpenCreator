@@ -254,7 +254,6 @@ export default function DashboardPage(props: {
   onAskIssue?(issue: OpenCreatorIssue, question: string): void;
   onCreateProject?(projectType: CreatorProjectType): boolean | void | Promise<boolean | void>;
   createProjectError?: string;
-  onOpenRuntimeComponents?(): void;
   historyView?: {
     initialType?: GenerationHistoryType;
     onBackCreation(): void;
@@ -616,7 +615,6 @@ export default function DashboardPage(props: {
         onGenerated={onGenerated}
         service={props.creatorService!}
         runtimeDependencies={props.runtimeDependencies}
-        onOpenRuntimeComponents={props.onOpenRuntimeComponents}
         onBack={closeWorkspace}
       />
     ), {
@@ -721,7 +719,6 @@ export default function DashboardPage(props: {
         service={props.creatorService!}
         promptHint={activePromptHint}
         runtimeDependencies={props.runtimeDependencies}
-        onOpenRuntimeComponents={props.onOpenRuntimeComponents}
         onBack={closeWorkspace}
       />
     ));

@@ -747,6 +747,10 @@ export default function ImageGenerationWorkspace(props: {
         ? l('描述你想生成的画面，我会帮你整理画幅、质量和输出数量。', 'Describe the image you want, then set its format, quality, and output count.')
         : l('请描述画面主体、环境、风格、光线和构图。', 'Describe the subject, setting, style, lighting, and composition.')}
       currentIssue={visibleError || undefined}
+      workspaceIssue={!props.embedded && visibleError ? {
+        title: `${l('图片生成', 'Image generation')} · ${l('失败', 'Failed')}`,
+        description: visibleError
+      } : undefined}
       suggestions={[l('填入示例提示词', 'Use a sample prompt'), ...(showsImageFormat ? [l('生成横向图片', 'Create a landscape image')] : [])]}
       placeholder={props.promptHint ?? l('描述需要生成的图片', 'Describe the image to generate')}
       onBack={props.onBack}
@@ -904,7 +908,7 @@ export default function ImageGenerationWorkspace(props: {
             )}
           </section>
         ) : null}
-        {visibleError ? <p className="creator-tool-error" role="alert">{visibleError}</p> : null}
+        {props.embedded && visibleError ? <p className="creator-tool-error" role="alert">{visibleError}</p> : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
         {!props.embedded ? (
           <ImageGenerationDiscovery

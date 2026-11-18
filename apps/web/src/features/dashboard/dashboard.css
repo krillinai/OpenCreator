@@ -2729,11 +2729,11 @@
   height: 52px;
 }
 
-.video-download-workspace-page .creator-workspace-content {
+:is(.video-download-workspace-page, .video-translation-failure-page) .creator-workspace-content {
   padding: 16px 20px;
 }
 
-.video-download-workspace-page .creator-tool-stack {
+:is(.video-download-workspace-page, .video-translation-failure-page) .creator-tool-stack {
   width: 100%;
 }
 
@@ -2742,28 +2742,13 @@
 }
 
 .creator-workspace-local-issue {
-  margin: 12px 24px 0;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--destructive) 30%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--destructive) 7%, transparent);
-  color: var(--destructive);
-  font-size: 12px;
+  min-width: 0;
+  margin: 12px 20px 0;
 }
 
-.creator-workspace-local-issue > p {
-  margin: 0;
-}
-
-.creator-workspace-local-issue > button {
-  margin: 8px 8px 0 0;
-  padding: 5px 9px;
-  border: 1px solid currentColor;
-  border-radius: 5px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
+:is(.video-download-workspace-page, .video-translation-failure-page) .creator-workspace-local-issue {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .creator-workspace-header {
@@ -7782,31 +7767,6 @@
   color: var(--on-accent);
 }
 
-.smart-dubbing-error {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 10px 0 0;
-  padding: 8px 11px;
-  border-inline-start: 2px solid #c94b4b;
-  background: color-mix(in srgb, #c94b4b 7%, var(--surface));
-  color: #b33d3d;
-  font-size: 12px;
-}
-
-.smart-dubbing-error a {
-  flex: 0 0 auto;
-  color: var(--accent);
-  font-weight: 620;
-  text-decoration: none;
-}
-
-.smart-dubbing-error a:hover {
-  text-decoration: underline;
-}
-
 .xiaohongshu-post-fields,
 .short-video-script-fields,
 .xiaohongshu-post-control-group {
@@ -8575,11 +8535,18 @@
 
 .video-download-source-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   min-width: 0;
   padding: 4px;
   border: 1px solid transparent;
   border-radius: 6px;
+}
+
+.video-download-source-issue {
+  flex: 0 0 100%;
+  min-width: 0;
+  margin-top: 4px;
 }
 
 .video-download-source-list li[data-selected='true'] {
@@ -14268,61 +14235,49 @@
   min-width: 0;
 }
 
-.video-translation-failure-secondary {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-}
-
-.video-translation-failure-secondary:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-2);
-}
-
 .video-translation-failure-error {
   margin: 0;
   color: var(--danger);
   font-size: 12px;
 }
 
-.video-translation-failure-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border-inline-start: 3px solid var(--destructive);
-  background: color-mix(in srgb, var(--destructive) 7%, var(--surface));
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.5;
+.opencreator-shell:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-failure-page)) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.video-translation-failure-notice > svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: var(--destructive);
+.opencreator-shell:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-failure-page)) > :is(.opencreator-sidebar-pane, .opencreator-detail-pane, .mobile-navigation-backdrop),
+.opencreator-main-pane:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-failure-page)) > .mobile-navigation-toolbar,
+.dashboard-unified-workspace-page:has(:is(.video-translation-failure-page, .video-download-failure-page)) .dashboard-generation-history-trigger {
+  display: none;
 }
 
-.video-translation-failure-notice strong {
-  font-size: 13px;
+.opencreator-main-pane:has(.dashboard-unified-workspace-page :is(.video-translation-failure-page, .video-download-failure-page)) > .opencreator-main-content {
+  grid-row: -2;
 }
 
-.video-translation-failure-notice p {
-  margin: 3px 0 0;
+.dashboard-unified-workspace-page:has(:is(.video-translation-failure-page, .video-download-failure-page)) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
 }
 
-.video-translation-failure-notice p:last-child {
-  color: var(--muted);
+.dashboard-unified-workspace-page:has(:is(.video-translation-failure-page, .video-download-failure-page)) :is(.dashboard-unified-workspace-content, .dashboard-generation) {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.video-translation-failure-page .media-generation-workspace-content {
+  overflow-y: auto;
 }
 
 @media (min-width: 1100px) {
-  .video-translation-failure-page .creator-resizable-layout {
+  :is(.video-translation-failure-page, .video-download-failure-page) .creator-resizable-layout {
     --creator-agent-pane-width: 420px;
   }
 }
 
 @media (min-width: 1800px) {
-  .video-translation-failure-page .creator-resizable-layout {
+  :is(.video-translation-failure-page, .video-download-failure-page) .creator-resizable-layout {
     --creator-agent-pane-width: 520px;
   }
 }
@@ -14331,6 +14286,19 @@
   height: 304px;
   min-height: 304px;
   max-height: none;
+}
+
+.video-translation-failure-page .dashboard-translation-composer:has(.dashboard-translation-source[data-source-type="url"]) .image-generation-editor {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.video-translation-failure-page .dashboard-translation-source[data-source-type="url"],
+.video-translation-failure-page .dashboard-translation-source-divider {
+  display: none;
+}
+
+.video-translation-failure-page .dashboard-translation-composer:has(.dashboard-translation-source[data-source-type="url"]) .dashboard-translation-url-field {
+  grid-column: 1;
 }
 
 @media (min-width: 521px) {
@@ -14394,23 +14362,6 @@
 .video-translation-failure-source-file small {
   color: var(--muted);
   font-size: 11px;
-}
-
-.video-translation-failure-page .image-generation-submit-row {
-  gap: 8px;
-  align-items: center;
-}
-
-.video-translation-failure-page .image-generation-submit-row .video-translation-failure-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  text-decoration: none;
-  white-space: nowrap;
 }
 
 @container image-generation (max-width: 520px) {

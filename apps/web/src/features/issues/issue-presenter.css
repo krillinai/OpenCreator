@@ -11,15 +11,19 @@
   align-items: start;
   min-width: 0;
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--danger, #c53b3b) 32%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--destructive) 32%, var(--border));
   border-radius: 6px;
-  background: color-mix(in srgb, var(--danger, #c53b3b) 7%, var(--surface));
+  background: color-mix(in srgb, var(--destructive) 7%, var(--surface));
   color: var(--text);
 }
 
 .issue-presenter-resolving {
   border-color: color-mix(in srgb, var(--accent, #2d6cdf) 34%, var(--border));
   background: color-mix(in srgb, var(--accent, #2d6cdf) 7%, var(--surface));
+}
+
+.issue-presenter-open > svg {
+  color: var(--destructive);
 }
 
 .issue-presenter-resolved {
@@ -43,6 +47,7 @@
 .issue-presenter-heading strong {
   font-size: 14px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .issue-presenter-heading span,
@@ -87,6 +92,23 @@
 .issue-presenter-actions button:disabled {
   cursor: wait;
   opacity: 0.6;
+}
+
+.issue-presenter-actions :is(button, a) > svg {
+  flex-shrink: 0;
+}
+
+.issue-presenter-actions > a {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-height: 30px;
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-underline-offset: 2px;
 }
 
 .issue-presenter-dismiss {

@@ -300,14 +300,17 @@ describe('CreatorCollaborationPanel', () => {
     expect(applyAction).not.toHaveBeenCalled();
   });
 
-  it('offers proxy settings and the existing stage retry for a timed-out translation subtitle', () => {
+  it.each([
+    ['subtitle_timeout', 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 60] Operation timed out', '视频平台连接超时，字幕读取未完成'],
+    ['subtitle_refused', 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 61] Connection refused', '视频平台连接被拒绝，字幕读取未完成']
+  ])('offers proxy settings and stage retry for %s', (stageId, errorMessage, summary) => {
     const job = videoGenerationJob();
     job.templateId = 'video-translation';
     job.status = 'failed';
     job.state = { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=demo' };
-    const failedStage = { ...job.stages[0]!, id: 'subtitle_timeout', stageId: 'subtitle', status: 'failed' as const,
+    const failedStage = { ...job.stages[0]!, id: stageId, stageId: 'subtitle', status: 'failed' as const,
       errorCode: 'platform_caption_access_failed',
-      errorMessage: 'downloadYouTubeSubtitle: yt-dlp subtitle metadata error: [Errno 60] Operation timed out',
+      errorMessage,
       progress: { phase: 'failed', percent: 1, workflow: true }, finishedAt: job.updatedAt };
     job.stages = [failedStage];
     const previousHash = window.location.hash;
@@ -325,12 +328,33 @@ describe('CreatorCollaborationPanel', () => {
       </CreatorSessionProvider>
     </LanguageProvider>);
 
-    expect(screen.getByRole('log', { name: '协作时间线' })).toHaveTextContent('视频平台连接超时，字幕读取未完成');
+    expect(screen.getByRole('log', { name: '协作时间线' })).toHaveTextContent(summary);
     const settings = screen.getByRole('link', { name: '检查代理设置' });
     expect(settings.getAttribute('href')).toContain('#/settings?from=video-translation&returnPath=');
     expect(new URLSearchParams(settings.getAttribute('href')?.split('?')[1]).get('returnPath'))
       .toBe(`#/workbench?tool=video-translation&jobId=${job.id}&returnTo=projects`);
     expect(screen.getByRole('button', { name: '重试字幕翻译' })).toBeEnabled();
+    window.location.hash = previousHash;
+  });
+
+  it('links a cover extractor failure to yt-dlp components and returns to the cover job', () => {
+    const job = coverJob();
+    job.status = 'failed';
+    const errorMessage = 'ERROR: [youtube] Signature extraction failed. Please update to the latest version.';
+    const issue = { ...normalizePageIssue('runtime', 'creator.retry-stage', new Error(errorMessage), errorMessage),
+      source: 'stage' as const, code: 'yt_dlp_update_recommended', stageId: 'analyze-source', status: 'open' as const,
+      publicFacts: { kind: 'unsupported' as const, provider: 'yt-dlp', upstreamMessage: errorMessage } };
+    const previousHash = window.location.hash;
+    window.location.hash = `#/workbench?tool=cover-generator&jobId=${job.id}&returnTo=projects`;
+    render(<LanguageProvider initialPreference="zh-CN">
+      <CreatorSessionProvider initialJob={job} externalIssues={[issue]} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
+        <CreatorCollaborationPanel adapter={coverPanelAdapter} stepLabel="分析视频" contextSummary="封面" />
+      </CreatorSessionProvider>
+    </LanguageProvider>);
+    const settings = screen.getByRole('link', { name: '检查 yt-dlp 更新' });
+    const params = new URLSearchParams(settings.getAttribute('href')?.split('?')[1]);
+    expect(params.get('tab')).toBe('local-components');
+    expect(params.get('returnPath')).toBe(`#/workbench?tool=cover-generator&jobId=${job.id}&returnTo=projects`);
     window.location.hash = previousHash;
   });
 
