@@ -77,6 +77,9 @@ export type VideoGenerationDuration = number;
 export type VideoGenerationStatus = 'queued' | 'in_progress' | 'completed' | 'failed';
 export type VideoGenerationProvider = 'seedance' | 'kling' | 'veo';
 
+export const googleOmniVideoSizes = ['1280x720', '720x1280'] as const;
+export const googleOmniVideoDurations = [4, 6, 8] as const;
+
 export const videoGenerationModelIds = {
   seedance: [
     'doubao-seedance-2-5-260628',
@@ -88,7 +91,7 @@ export const videoGenerationModelIds = {
     'doubao-seedance-1-0-pro-250528'
   ],
   kling: ['kling-v2-1-master'],
-  veo: ['veo-3.1-generate-preview']
+  veo: ['gemini-omni-1.2-flash']
 } as const;
 
 export const defaultVideoGenerationModels = {

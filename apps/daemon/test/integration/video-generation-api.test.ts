@@ -1,6 +1,6 @@
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -194,59 +194,110 @@ describe('video generation API', () => {
     expect(refreshed.json().result).toMatchObject({ status: 'completed', size: video.length });
   });
 
-  it('creates and refreshes a Veo long-running generation operation', async () => {
+  it('migrates an existing Google Veo configuration and draft to an Omni interaction', async () => {
     const config = createDefaultCreatorServicesConfig();
     config.video.veo.apiKey = 'google-test';
     config.video.veo.baseUrl = 'https://gemini.example.test/v1beta';
-    const video = Buffer.from('veo-video');
+    config.video.veo.model = 'veo-3.1-generate-preview';
+    const video = Buffer.from('omni-video');
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       const value = String(url);
-      if (value.endsWith('/models/veo-3.1-generate-preview:predictLongRunning') && init?.method === 'POST') {
-        return new Response(JSON.stringify({ name: 'operations/veo-task', done: false }), { status: 200 });
+      if (value === 'https://gemini.example.test/v1beta/interactions' && init?.method === 'POST') {
+        return Response.json({ id: 'v1_omni-task', status: 'in_progress' });
       }
-      if (value === 'https://gemini.example.test/v1beta/operations/veo-task') {
-        return new Response(JSON.stringify({
-          name: 'operations/veo-task',
-          done: true,
-          response: {
-            generateVideoResponse: {
-              generatedSamples: [{ video: { uri: 'https://gemini.example.test/v1beta/files/video:download' } }]
-            }
-          }
-        }), { status: 200 });
+      if (value === 'https://gemini.example.test/v1beta/interactions/v1_omni-task' && init?.method === 'GET') {
+        return Response.json({
+          id: 'v1_omni-task', status: 'completed',
+          steps: [
+            { type: 'user_input', content: [{ type: 'video', mime_type: 'video/mp4', data: 'd3Jvbmc=' }] },
+            { type: 'model_output', content: [{ type: 'video', mime_type: 'video/mp4', data: video.toString('base64') }] }
+          ]
+        });
       }
-      if (value === 'https://gemini.example.test/v1beta/files/video:download') return new Response(video, { status: 200 });
       return new Response('not found', { status: 404 });
     });
-    await registerVideoGenerationRoutes(server, createVideoGenerationService({
+    const service = createVideoGenerationService({
       dataDir,
       configStore: createConfigStore(config),
       fetchImpl: fetchImpl as typeof fetch,
       createId: () => 'veo_video_result_1'
-    }));
+    });
+    await registerVideoGenerationRoutes(server, service);
 
     const created = await server.inject({
       method: 'POST',
       url: '/video-generation/results',
-      payload: { prompt: 'Clouds moving over mountains', provider: 'veo', size: '1280x720', duration: 8 }
+      payload: { prompt: 'Clouds moving over mountains', provider: 'veo', model: 'veo-3.1-generate-preview', size: '1280x720', duration: 8 }
     });
     expect(created.statusCode).toBe(202);
-    expect(created.json().result).toMatchObject({ provider: 'veo', status: 'in_progress', duration: 8 });
+    expect(created.json().result).toMatchObject({ provider: 'veo', model: 'gemini-omni-1.2-flash', status: 'in_progress', duration: 8 });
     expect(created.json().result).toMatchObject({
       progress: 0,
       progressKnown: false
     });
     expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toMatchObject({
-      parameters: { aspectRatio: '16:9', durationSeconds: 8, sampleCount: 1 }
+      model: 'gemini-omni-1.2-flash', input: 'Clouds moving over mountains', background: true,
+      response_format: { type: 'video', aspect_ratio: '16:9', resolution: '720p', duration: '8s' }
     });
 
     const refreshed = await server.inject({ method: 'GET', url: '/video-generation/results/veo_video_result_1' });
     expect(refreshed.statusCode).toBe(200);
     expect(refreshed.json().result).toMatchObject({ status: 'completed', size: video.length });
-    expect((fetchImpl.mock.calls[2]?.[1]?.headers as Record<string, string>)['x-goog-api-key']).toBe('google-test');
+    expect((await service.read('veo_video_result_1')).content).toEqual(video);
+    expect(fetchImpl.mock.calls.map(([, options]) => options?.method)).toEqual(['POST', 'GET']);
+    expect(new Headers(fetchImpl.mock.calls[1]?.[1]?.headers).get('x-goog-api-key')).toBe('google-test');
   });
 
-  it('maps an optional reference image to Seedance, Kling, and Veo image-to-video requests', async () => {
+  it('keeps completed direct Veo videos readable without polling retired Veo jobs', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    const fetchImpl = vi.fn<typeof fetch>();
+    const service = createVideoGenerationService({ dataDir, configStore: createConfigStore(config), fetchImpl });
+    const video = Buffer.from('old-veo-video');
+    const timestamp = '2026-10-20T12:00:00.000Z';
+    for (const status of ['completed', 'in_progress'] as const) {
+      const id = `legacy_veo_${status}`;
+      const dir = join(dataDir, 'video-generation', id);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, 'result.json'), JSON.stringify({ upstreamId: 'models/veo/operations/legacy', result: {
+        id, prompt: 'Coast road', provider: 'veo', model: 'veo-3.1-generate-preview', videoSize: '1024x1024', duration: 8,
+        status, progress: status === 'completed' ? 100 : 0, createdAt: timestamp, updatedAt: timestamp,
+        ...(status === 'completed' ? { fileName: 'original.mp4', mime: 'video/mp4', size: video.length } : {})
+      } }));
+      if (status === 'completed') await writeFile(join(dir, 'video.mp4'), video);
+    }
+    await expect(service.refresh('legacy_veo_completed')).resolves.toMatchObject({ status: 'completed', model: 'veo-3.1-generate-preview' });
+    expect((await service.read('legacy_veo_completed')).content).toEqual(video);
+    await expect(service.refresh('legacy_veo_in_progress')).resolves.toMatchObject({ status: 'failed',
+      publicFacts: { kind: 'provider-failed', provider: 'veo', upstreamCode: 'model_retired' } });
+    expect((await service.get('legacy_veo_in_progress')).status).toBe('failed');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a different interaction', () => Response.json({ id: 'v1_other_job', status: 'in_progress' })],
+    ['invalid video Base64', () => Response.json({ id: 'v1_omni_job', status: 'completed', steps: [
+      { type: 'model_output', content: [{ type: 'video', mime_type: 'video/mp4', data: '!!!!' }] }
+    ] })],
+    ['oversized JSON', () => new Response(new ReadableStream({ start(controller) {
+      const chunk = new Uint8Array(1024 * 1024);
+      for (let index = 0; index < 65; index++) controller.enqueue(chunk);
+      controller.close();
+    } }))]
+  ] as const)('rejects an Omni polling response with %s', async (_name, response) => {
+    const config = createDefaultCreatorServicesConfig();
+    config.video.veo.apiKey = 'google-test';
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ id: 'v1_omni_job', status: 'in_progress' })).mockImplementationOnce(async () => response());
+    const service = createVideoGenerationService({ dataDir, configStore: createConfigStore(config), fetchImpl });
+    const request = { prompt: 'Coast road', provider: 'veo', size: '1280x720', duration: 8 } as const;
+    await expect(service.create({ ...request, size: '1024x1024' })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const result = await service.create(request);
+    await expect(service.refresh(result.id)).rejects.toMatchObject({ code: 'VIDEO_GENERATION_UPSTREAM_ERROR' });
+    expect((await service.get(result.id)).status).toBe('in_progress');
+    expect(fetchImpl.mock.calls.map(([, init]) => init?.method)).toEqual(['POST', 'GET']);
+  });
+
+  it('maps an optional reference image to Seedance, Kling, and Omni image-to-video requests', async () => {
     const config = createDefaultCreatorServicesConfig();
     config.video.seedance.apiKey = 'seedance-test';
     config.video.seedance.baseUrl = 'https://seedance.example.test/api/v3';
@@ -265,7 +316,7 @@ describe('video generation API', () => {
           data: { task_id: 'kling-image-job', task_status: 'submitted' }
         }));
       }
-      return new Response(JSON.stringify({ name: 'operations/veo-image-job', done: false }));
+      return Response.json({ id: 'v1_omni-image-job', status: 'in_progress' });
     });
     const ids = ['seedance_image_result', 'kling_image_result', 'veo_image_result'];
     const service = createVideoGenerationService({
@@ -310,11 +361,11 @@ describe('video generation API', () => {
     });
     const klingBody = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body));
     expect(klingBody.image).toBe(referenceImage.data);
-    const veoBody = JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body));
-    expect(veoBody.instances[0].image).toEqual({
-      bytesBase64Encoded: referenceImage.data,
-      mimeType: 'image/png'
-    });
+    const omniBody = JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body));
+    expect(omniBody.input).toEqual([
+      { type: 'image', data: referenceImage.data, mime_type: 'image/png' },
+      { type: 'text', text: 'Coast road' }
+    ]);
   });
 
   it('validates requests and requires video service configuration', async () => {

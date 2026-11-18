@@ -273,6 +273,27 @@ describe('creator service', () => {
     db.close();
   });
 
+  it('accepts an existing local Google video preset draft when Omni is configured', async () => {
+    const services = createDefaultCreatorServicesConfig();
+    services.video.provider = 'veo';
+    services.video.veo.apiKey = 'google-test';
+    const { db, service } = setupPresetService([
+      preset({ module: 'video-generation', id: 'product-ad', runtimeTemplate: { id: 'video-generation', version: 1 },
+        defaults: { prompt: 'A product shot', size: '1280x720', duration: 8 },
+        requirements: { service: 'video', capabilities: ['text-to-video'] } })
+    ], services);
+    try {
+      const created = await service.createJob({ projectId: 'project_preset',
+        preset: { module: 'video-generation', id: 'product-ad', version: 1 }, locale: 'en-US', creationKey: 'legacy-google-preset' });
+      const legacy = { ...created, state: { ...created.state, model: 'veo-3.1-generate-preview' } };
+      expect(() => assertCreatorPresetStageRequirement({ job: legacy, stageId: 'generate', services })).not.toThrow();
+      services.video.veo.apiKey = '';
+      expect(() => assertCreatorPresetStageRequirement({ job: legacy, stageId: 'generate', services })).toThrow();
+    } finally {
+      db.close();
+    }
+  });
+
   it('replays only an identical resolved preset creation fingerprint', async () => {
     const config = createDefaultCreatorServicesConfig();
     config.video.seedance.model = videoGenerationModelIds.seedance[0];

@@ -1,6 +1,8 @@
 import {
   defaultVideoGenerationModels,
   gatewayVideoSizes,
+  googleOmniVideoDurations,
+  googleOmniVideoSizes,
   videoGenerationDurations,
   videoGenerationSizes,
   type CreateVideoGenerationRequest,
@@ -32,6 +34,8 @@ const MAX_PROMPT_LENGTH = 4_000;
 const MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_JSON_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
+const MAX_OMNI_VIDEO_BYTES = 40 * 1024 * 1024;
+const MAX_OMNI_JSON_BYTES = 64 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 180_000;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 const SAFE_RESULT_ID = /^[A-Za-z0-9_-]{12,64}$/;
@@ -188,7 +192,11 @@ export function createVideoGenerationService(input: {
     config: CreatorServicesConfig,
     options: VideoGenerationOperationOptions = {}
   ): Promise<StoredVideoGeneration> {
-    const download = resolveVideoDownload(stored, payload, config);
+    if (stored.result.provider === 'veo') {
+      options.onDownloadStart?.();
+      return storeCompletedVideo(stored, readOmniVideo(payload));
+    }
+    const download = resolveVideoDownload(stored, payload);
     options.onDownloadStart?.();
     const operation = operationSignal(options.signal, DOWNLOAD_TIMEOUT_MS);
     let response: Response;
@@ -218,6 +226,10 @@ export function createVideoGenerationService(input: {
       );
     }
     const content = Buffer.from(await response.arrayBuffer());
+    return storeCompletedVideo(stored, content);
+  }
+
+  async function storeCompletedVideo(stored: StoredVideoGeneration, content: Buffer): Promise<StoredVideoGeneration> {
     if (content.length === 0 || content.length > MAX_VIDEO_BYTES) {
       throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'The video provider returned an invalid video file', 502);
     }
@@ -332,6 +344,7 @@ export function createVideoGenerationService(input: {
         await rm(resultDir(id), { recursive: true, force: true }).catch(() => undefined);
         throw error;
       }
+      if (request.provider === 'veo') options.onPending?.(id);
       return stored.result;
     },
     async get(id) {
@@ -345,6 +358,12 @@ export function createVideoGenerationService(input: {
       let stored = await readStored(id);
       if (stored.gateway) return refreshGateway(stored, options);
       if (stored.result.status === 'completed' || stored.result.status === 'failed') return stored.result;
+      if (stored.result.provider === 'veo' && stored.result.model !== defaultVideoGenerationModels.veo) {
+        const publicFacts: PublicErrorFacts = { kind: 'provider-failed', provider: 'veo', upstreamCode: 'model_retired' };
+        stored.result = { ...stored.result, status: 'failed', error: readJobError(publicFacts), publicFacts, updatedAt: now().toISOString() };
+        await writeStored(stored);
+        return stored.result;
+      }
       const config = await input.configStore.read();
       const operation = operationSignal(options.signal, REQUEST_TIMEOUT_MS);
       let remote: RemoteVideoJob;
@@ -439,7 +458,7 @@ async function createRemoteVideoJob(
   fetchImpl?: typeof fetch
 ): Promise<RemoteVideoJob> {
   if (request.provider === 'kling') return await createKlingVideoJob(request, config, signal, fetchImpl);
-  if (request.provider === 'veo') return await createVeoVideoJob(request, config, signal, fetchImpl);
+  if (request.provider === 'veo') return await createOmniVideoJob(request, config, signal, fetchImpl);
   return await createSeedanceVideoJob(request, config, signal, fetchImpl);
 }
 
@@ -463,11 +482,8 @@ async function refreshRemoteVideoJob(
   } else if (provider === 'veo') {
     const settings = config.video.veo;
     requireApiKey(settings.apiKey, 'veo');
-    endpoint = creatorProviderEndpoint(
-      settings.baseUrl,
-      'https://generativelanguage.googleapis.com/v1beta',
-      stored.upstreamId
-    );
+    if (!isOmniInteractionId(stored.upstreamId)) invalidRemoteJob('Gemini Omni Flash');
+    endpoint = appendEndpointPath(omniInteractionsEndpoint(settings.baseUrl), stored.upstreamId);
     headers = { 'x-goog-api-key': settings.apiKey };
   } else {
     const settings = config.video.seedance;
@@ -564,7 +580,7 @@ async function createKlingVideoJob(
   return normalizeRemoteVideoJob('kling', upstreamId, model, payload);
 }
 
-async function createVeoVideoJob(
+async function createOmniVideoJob(
   request: CreateVideoGenerationRequest,
   config: CreatorServicesConfig,
   signal: AbortSignal,
@@ -572,44 +588,42 @@ async function createVeoVideoJob(
 ) {
   const settings = config.video.veo;
   requireApiKey(settings.apiKey, 'veo');
-  const model = requestedModel(
-    request.model,
-    settings.model,
-    defaultVideoGenerationModels.veo
-  );
-  const instance = {
-    prompt: request.prompt.trim(),
-    ...(request.referenceImage ? {
-      image: {
-        bytesBase64Encoded: request.referenceImage.data,
-        mimeType: request.referenceImage.mime
-      }
-    } : {})
-  };
+  const model = defaultVideoGenerationModels.veo;
+  const prompt = request.prompt.trim();
   const payload = await requestVideoJson({
     provider: 'veo',
-    endpoint: creatorProviderEndpoint(
-      settings.baseUrl,
-      'https://generativelanguage.googleapis.com/v1beta',
-      `models/${encodeURIComponent(model)}:predictLongRunning`
-    ),
+    endpoint: omniInteractionsEndpoint(settings.baseUrl),
     method: 'POST',
     headers: { 'x-goog-api-key': settings.apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      instances: [instance],
-      parameters: {
-        aspectRatio: videoAspectRatio(request.size),
-        durationSeconds: request.duration,
-        sampleCount: 1
+      model,
+      input: request.referenceImage ? [
+        { type: 'image', data: request.referenceImage.data, mime_type: request.referenceImage.mime },
+        { type: 'text', text: prompt }
+      ] : prompt,
+      background: true,
+      response_format: {
+        type: 'video',
+        aspect_ratio: videoAspectRatio(request.size),
+        resolution: '720p',
+        duration: `${request.duration}s`
       }
     }),
     config,
     signal,
     fetchImpl
   });
-  const upstreamId = readString(payload, ['name']);
-  if (!upstreamId) invalidRemoteJob('Veo');
+  const upstreamId = payload.id;
+  if (!isOmniInteractionId(upstreamId)) invalidRemoteJob('Gemini Omni Flash');
   return normalizeRemoteVideoJob('veo', upstreamId, model, payload);
+}
+
+function omniInteractionsEndpoint(baseUrl: string): URL {
+  return creatorProviderEndpoint(baseUrl, 'https://generativelanguage.googleapis.com/v1beta', 'interactions');
+}
+
+function isOmniInteractionId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,512}$/.test(value);
 }
 
 async function requestVideoJson(input: {
@@ -629,7 +643,8 @@ async function requestVideoJson(input: {
     body: input.body,
     proxy: input.config.proxy.trim(),
     signal: input.signal,
-    maxResponseBytes: MAX_JSON_BYTES,
+    ...(input.provider === 'veo' ? { redirect: 'manual' as const } : {}),
+    maxResponseBytes: input.provider === 'veo' ? MAX_OMNI_JSON_BYTES : MAX_JSON_BYTES,
     fetchImpl: input.fetchImpl
   });
   if (!response.ok) {
@@ -641,9 +656,48 @@ async function requestVideoJson(input: {
       failure.publicFacts
     );
   }
-  const payload = await response.json() as unknown;
+  const payload: unknown = input.provider === 'veo' ? await readOmniJson(response) : await response.json();
   if (!isRecord(payload)) invalidRemoteJob('Video provider');
   return payload;
+}
+
+async function readOmniJson(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (reader === undefined) invalidRemoteJob('Gemini Omni Flash');
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > MAX_OMNI_JSON_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        invalidRemoteJob('Gemini Omni Flash');
+      }
+      chunks.push(chunk.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks, size).toString('utf8')) as unknown;
+  } catch {
+    return invalidRemoteJob('Gemini Omni Flash');
+  }
+}
+
+function readOmniVideo(payload: Record<string, unknown>): Buffer {
+  const outputs = Array.isArray(payload.steps) ? payload.steps.flatMap(step => (
+    isRecord(step) && step.type === 'model_output' && Array.isArray(step.content) ? step.content : []
+  )) : [];
+  const video = outputs.find(part => isRecord(part) && part.type === 'video' && part.mime_type === 'video/mp4');
+  const data = isRecord(video) ? video.data : undefined;
+  if (typeof data !== 'string' || !data.length || data.length > Math.ceil(MAX_OMNI_VIDEO_BYTES / 3) * 4
+    || data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) invalidRemoteJob('Gemini Omni Flash');
+  const content = Buffer.from(data, 'base64');
+  if (content.length === 0 || content.length > MAX_OMNI_VIDEO_BYTES) invalidRemoteJob('Gemini Omni Flash');
+  return content;
 }
 
 function normalizeRemoteVideoJob(
@@ -658,8 +712,11 @@ function normalizeRemoteVideoJob(
     rawStatus = readValue(payload, ['data', 'task_status']);
     progress = readValue(payload, ['data', 'task_progress']);
   } else if (provider === 'veo') {
-    rawStatus = isRecord(payload.error) ? 'failed' : payload.done === true ? 'completed' : 'in_progress';
-    progress = payload.done === true ? 100 : undefined;
+    if (payload.id !== upstreamId || typeof payload.status !== 'string'
+      || !['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'requires_action', 'incomplete'].includes(payload.status)) {
+      invalidRemoteJob('Gemini Omni Flash');
+    }
+    rawStatus = payload.status === 'requires_action' || payload.status === 'incomplete' ? 'failed' : payload.status;
   } else {
     rawStatus = payload.status;
     progress = payload.progress;
@@ -681,15 +738,11 @@ function normalizeRemoteVideoJob(
 
 function resolveVideoDownload(
   stored: StoredVideoGeneration,
-  payload: Record<string, unknown>,
-  config: CreatorServicesConfig
+  payload: Record<string, unknown>
 ): { endpoint: URL; headers: Record<string, string> } {
   const urlValue = stored.result.provider === 'kling'
     ? readString(payload, ['data', 'task_result', 'videos', '0', 'url'])
-    : stored.result.provider === 'veo'
-      ? readString(payload, ['response', 'generateVideoResponse', 'generatedSamples', '0', 'video', 'uri'])
-        ?? readString(payload, ['response', 'generatedVideos', '0', 'video', 'uri'])
-      : readString(payload, ['content', 'video_url'])
+    : readString(payload, ['content', 'video_url'])
         ?? readString(payload, ['content', 'videoUrl'])
         ?? readString(payload, ['output_url']);
   if (!urlValue) {
@@ -704,13 +757,7 @@ function resolveVideoDownload(
   if (endpoint.protocol !== 'https:' && endpoint.protocol !== 'http:') {
     throw new VideoGenerationError('VIDEO_GENERATION_UPSTREAM_ERROR', 'The video provider returned an unsupported download URL', 502);
   }
-  return {
-    endpoint,
-    headers: stored.result.provider === 'veo'
-      && endpoint.origin === new URL(config.video.veo.baseUrl.trim() || 'https://generativelanguage.googleapis.com/v1beta').origin
-      ? { 'x-goog-api-key': config.video.veo.apiKey }
-      : {}
-  };
+  return { endpoint, headers: {} };
 }
 
 function seedanceVideoEndpoint(baseUrl: string) {
@@ -849,7 +896,10 @@ function validateRequest(request: CreateVideoGenerationRequest, validateProvider
   if (validateProvider && !(videoGenerationDurations as readonly unknown[]).includes(request.duration)) {
     throw new VideoGenerationError('VALIDATION_FAILED', 'video duration is invalid', 400);
   }
-  const validDurations = request.provider === 'veo' ? [4, 6, 8] : [5, 10];
+  if (validateProvider && request.provider === 'veo' && !(googleOmniVideoSizes as readonly unknown[]).includes(request.size)) {
+    throw new VideoGenerationError('VALIDATION_FAILED', 'video size is not supported by Gemini Omni Flash', 400);
+  }
+  const validDurations: readonly number[] = request.provider === 'veo' ? googleOmniVideoDurations : [5, 10];
   if (validateProvider && !validDurations.includes(request.duration)) {
     throw new VideoGenerationError('VALIDATION_FAILED', `video duration is not supported by ${request.provider}`, 400);
   }

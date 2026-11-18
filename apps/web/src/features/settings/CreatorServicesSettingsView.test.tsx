@@ -618,8 +618,9 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.getByRole('option', { name: 'doubao-seedance-2-5-260628' })).toBeInTheDocument();
     expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'password');
     await user.click(screen.getByRole('combobox', { name: '服务商' }));
-    await user.click(screen.getByRole('option', { name: 'Veo' }));
-    expect(screen.getByLabelText('默认模型')).toHaveValue('veo-3.1-generate-preview');
+    await user.click(screen.getByRole('option', { name: 'Gemini Omni Flash' }));
+    expect(screen.getByRole('status')).toHaveTextContent('gemini-omni-1.2-flash');
+    expect(screen.queryByLabelText('默认模型')).not.toBeInTheDocument();
   });
 
   it('loads and saves local video settings independently of the signed-in service', async () => {
@@ -629,7 +630,7 @@ describe('CreatorServicesSettingsView', () => {
     service.getLocalVideoConfig = vi.fn(async () => ({ config: local, configuredCredentials: ['video.veo.apiKey' as const] }));
     service.saveLocalVideoConfig = vi.fn(async video => ({ config: { ...local, video }, configuredCredentials: ['video.veo.apiKey' as const] }));
     render(<LanguageProvider initialPreference="zh-CN"><CreatorServicesSettingsView connected service={service} initialSection="video" /></LanguageProvider>);
-    await waitFor(() => expect(screen.getByRole('combobox', { name: '服务商' })).toHaveTextContent('Veo'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '服务商' })).toHaveTextContent('Gemini Omni Flash'));
     await userEvent.click(screen.getByRole('combobox', { name: '服务商' }));
     await userEvent.click(screen.getByRole('option', { name: 'Seedance' }));
     await userEvent.click(screen.getByRole('button', { name: '保存配置' }));

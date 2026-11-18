@@ -3,7 +3,7 @@ import type {
   CreatorServicesConfigResponse,
   CreatorServicesCredentialField
 } from '@opencreator/protocol';
-import { createDefaultCreatorServicesConfig, migrateOpenAiImageModel } from '@opencreator/protocol';
+import { createDefaultCreatorServicesConfig, defaultVideoGenerationModels, migrateOpenAiImageModel } from '@opencreator/protocol';
 import { z } from 'zod/v3';
 import {
   readOpenCreatorConfig,
@@ -310,7 +310,9 @@ export function createCreatorServicesConfigStoreWithTextModelFallback(
 }
 
 export function parseCreatorServicesConfig(value: unknown): CreatorServicesConfig {
-  return creatorServicesConfigSchema.parse(value) as CreatorServicesConfig;
+  const config = creatorServicesConfigSchema.parse(value) as CreatorServicesConfig;
+  config.video.veo.model = defaultVideoGenerationModels.veo;
+  return config;
 }
 
 export const creatorCredentialPaths = [

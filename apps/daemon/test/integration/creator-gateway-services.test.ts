@@ -352,6 +352,40 @@ it('video uses the unified gateway task and preserves its account for query and 
   await expect(service.create({ prompt: 'official model duration', provider: 'veo', size: '720x1280', duration: 5 })).resolves.toMatchObject({ status: 'in_progress', videoSize: '720x1280' });
 });
 
+it('keeps the signed-in gateway Veo model and its catalog parameters independent from the Google direct provider', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'oc-gateway-veo-')); close.push(() => rm(root, { recursive: true, force: true }));
+  const model = 'veo-3.1-generate-preview';
+  const requestId = `ocreq_${'c'.repeat(48)}`;
+  const video = Buffer.from('gateway-veo-video');
+  const headers = { 'X-Request-ID': requestId };
+  const fetcher = vi.fn<typeof fetch>(async url => String(url).endsWith('/video/jobs')
+    ? Response.json({ requestId, state: 'waiting_upstream' }, { status: 202, headers })
+    : String(url).endsWith('/result') ? new Response(new Uint8Array(video), { headers })
+      : Response.json({ requestId, state: 'succeeded' }, { headers }));
+  const config = createDefaultCreatorServicesConfig();
+  config.video.veo.apiKey = 'personal-google-key';
+  const read = vi.fn(async () => config);
+  const binding = {
+    accountId: 'a', bindingVersion: 'a:1', baseUrl: 'http://127.0.0.1:39999/internal/krillin-llm/gateway/v1',
+    apiKey: 'gateway-token', models: { video: model },
+    catalog: [{ id: model, modality: 'video' as const, capabilities: [], sizes: ['1024x1024'], durations: [5] }]
+  };
+  const service = createVideoGenerationService({
+    dataDir: root, configStore: { read, write: async value => value, reset: async () => config },
+    fetchImpl: fetcher, gatewaySource: { binding: async () => binding }
+  });
+  const result = await service.create({ prompt: 'Gateway Veo', provider: 'veo', model, size: '1024x1024', duration: 5 });
+  expect(result).toMatchObject({ model, status: 'in_progress', videoSize: '1024x1024', duration: 5 });
+  await expect(service.refresh(result.id)).resolves.toMatchObject({ model, status: 'completed' });
+  expect((await service.read(result.id)).content).toEqual(video);
+  expect(read).not.toHaveBeenCalled();
+  expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
+    `${binding.baseUrl}/video/jobs`, `${binding.baseUrl}/requests/${requestId}`, `${binding.baseUrl}/requests/${requestId}/result`
+  ]);
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ model, size: '1024x1024', duration: 5 });
+  expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer gateway-token');
+});
+
 it('keeps a rejected official video task reason without another submission', async () => {
   const root = await mkdtemp(join(tmpdir(), 'oc-gateway-video-rejected-'));
   close.push(() => rm(root, { recursive: true, force: true }));

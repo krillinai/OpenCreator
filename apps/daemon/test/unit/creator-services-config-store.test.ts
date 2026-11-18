@@ -16,6 +16,22 @@ import {
 } from '../../src/creator-services/config-store.js';
 
 describe('CreatorServicesConfigStore', () => {
+  it('migrates the local Google video model without changing credentials or the custom API base', async () => {
+    const legacy = createDefaultCreatorServicesConfig();
+    legacy.video.provider = 'veo';
+    legacy.video.veo = { model: 'veo-3.1-generate-preview', baseUrl: 'https://gemini.example.test/v1beta', apiKey: 'google-secret' };
+    let saved = JSON.stringify(legacy);
+    const store = createCreatorServicesConfigStore({
+      getPassword: async () => saved,
+      setPassword: async value => { saved = value; },
+      deletePassword: async () => undefined
+    });
+    const migrated = { ...legacy.video.veo, model: 'gemini-omni-1.2-flash' };
+    expect((await store.read()).video).toEqual({ ...legacy.video, veo: migrated });
+    await store.write(legacy);
+    expect(JSON.parse(saved).video.veo).toEqual(migrated);
+  });
+
   it('migrates saved image settings and persists the replacement while retaining credentials and other models', async () => {
     const legacy = createDefaultCreatorServicesConfig();
     legacy.image.openai = { model: 'gpt-image-1', baseUrl: 'https://images.example.test/v1', apiKey: 'image-secret' };

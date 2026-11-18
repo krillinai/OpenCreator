@@ -3,6 +3,8 @@ import {
   creatorPromptMaxLength,
   defaultVideoGenerationModels,
   gatewayVideoSizes,
+  googleOmniVideoDurations,
+  googleOmniVideoSizes,
   isPublicErrorFacts,
   readCreatorResultSnapshots,
   sanitizePublicErrorFacts,
@@ -63,18 +65,19 @@ const sizes: Array<{ value: VideoGenerationSize; zh: string; en: string; ratio: 
   { value: '720x1280', zh: '竖屏', en: 'Portrait', ratio: '9:16' },
   { value: '1024x1024', zh: '方形', en: 'Square', ratio: '1:1' }
 ];
+const googleOmniSizes = sizes.filter(size => googleOmniVideoSizes.some(value => value === size.value));
 
 const providers: Array<{ value: VideoGenerationProvider; zh: string; en: string }> = [
   { value: 'seedance', zh: 'Seedance', en: 'Seedance' },
   { value: 'kling', zh: '可灵', en: 'Kling' },
-  { value: 'veo', zh: 'Veo', en: 'Veo' }
+  { value: 'veo', zh: 'Gemini Omni Flash', en: 'Gemini Omni Flash' }
 ];
 const localVideoModelId = '__local_video__';
 
-const providerDurations: Record<VideoGenerationProvider, VideoGenerationDuration[]> = {
+const providerDurations: Record<VideoGenerationProvider, readonly VideoGenerationDuration[]> = {
   seedance: [5, 10],
   kling: [5, 10],
-  veo: [4, 6, 8]
+  veo: googleOmniVideoDurations
 };
 const modelLabels: Record<string, string> = {
   'doubao-seedance-2-5-260628': 'Seedance 2.5',
@@ -85,7 +88,8 @@ const modelLabels: Record<string, string> = {
   'doubao-seedance-1-0-pro-fast-251015': 'Seedance 1.0 Pro Fast',
   'doubao-seedance-1-0-pro-250528': 'Seedance 1.0 Pro',
   'kling-v2-1-master': 'Kling 2.1 Master',
-  'veo-3.1-generate-preview': 'Veo 3.1'
+  'veo-3.1-generate-preview': 'Veo 3.1',
+  [defaultVideoGenerationModels.veo]: 'Gemini Omni 1.2 Flash'
 };
 
 const samplePromptZh = '一辆复古红色跑车沿着海岸公路行驶，黄昏金色阳光，低机位跟拍，海风吹动路边植物，电影级真实质感，镜头运动平稳';
@@ -179,7 +183,7 @@ export default function VideoGenerationWorkspace(props: {
   const localModel: GatewayModel | undefined = videoConfig ? {
     id: localVideoModelId, name: l('本地视频服务', 'Local video service', 'Lokal videotjänst'),
     vendor: l('本地', 'Local', 'Lokal'), modality: 'video', capabilities: [],
-    status: localConfigured ? 'ready' : 'temporarily_unavailable', durations: providerDurations[provider]
+    status: localConfigured ? 'ready' : 'temporarily_unavailable', durations: [...providerDurations[provider]]
   } : undefined;
   const publicModels = publicCatalog?.models ?? [];
   const catalogModels = [...(localModel ? [localModel] : []), ...(official.official ? official.models : publicModels)];
@@ -203,9 +207,11 @@ export default function VideoGenerationWorkspace(props: {
   useEffect(() => {
     return () => { catalogRequest.current++; };
   }, [props.gatewayAccountService]);
-  const activeModel = usingOfficial ? official.model?.id ?? '' : model;
+  const localOmni = !usingOfficial && provider === 'veo';
+  const unsupportedLocalOmniRatio = localOmni && size === '1024x1024';
+  const activeModel = usingOfficial ? official.model?.id ?? '' : localOmni ? defaultVideoGenerationModels.veo : model;
   const selectedModelLabel = usingOfficial && official.model ? gatewayModelDisplayName(official.model, l('官方模型', 'Official model')) : videoModelLabel(activeModel);
-  const availableSizes = usingOfficial ? gatewayVideoSizes(official.model).map(videoSizeOption) : sizes;
+  const availableSizes = usingOfficial ? gatewayVideoSizes(official.model).map(videoSizeOption) : localOmni ? googleOmniSizes : sizes;
   const selectedSize = availableSizes.find(item => item.value === size) ?? videoSizeOption(size);
   const availableRatios = [...new Set(availableSizes.map(item => item.ratio))];
   const resolutionSizes = availableSizes.filter(item => item.ratio === selectedSize.ratio);
@@ -405,9 +411,9 @@ export default function VideoGenerationWorkspace(props: {
   }, [pendingModelId, official.authState, official.activationState, props.gatewayAccountService, props.onGatewayStateChange, session?.job.id]);
 
   useEffect(() => {
-    if (availableSizes.length && !availableSizes.some(item => item.value === size)) setSize(availableSizes[0]!.value);
+    if (!unsupportedLocalOmniRatio && availableSizes.length && !availableSizes.some(item => item.value === size)) setSize(availableSizes[0]!.value);
     if (durations.length && !durations.includes(duration)) setDuration(durations[0]!);
-  }, [usingOfficial, activeModel, size, duration, availableSizes.map(item => item.value).join(','), durations.join(',')]);
+  }, [usingOfficial, activeModel, size, duration, unsupportedLocalOmniRatio, availableSizes.map(item => item.value).join(','), durations.join(',')]);
 
   useEffect(() => {
     const { session, localize } = mediaPreviewContextRef.current;
@@ -594,6 +600,12 @@ export default function VideoGenerationWorkspace(props: {
     }
     if (!usingOfficial && !localConfigured) {
       setError(l('请先在设置中配置可用的本地视频服务。', 'Configure a ready local video service in Settings first.', 'Konfigurera en tillgänglig lokal videotjänst i inställningarna först.'));
+      return;
+    }
+    if (unsupportedLocalOmniRatio) {
+      setError(l('Gemini Omni Flash 不支持方形画幅，请选择横屏或竖屏。',
+        'Gemini Omni Flash does not support square video. Select a landscape or portrait format.',
+        'Gemini Omni Flash stöder inte kvadratisk video. Välj liggande eller stående format.'));
       return;
     }
     if (!usingOfficial && savedVideoImage) {
@@ -1215,7 +1227,7 @@ function videoModelDefaults(
       ? defaultVideoGenerationModels.seedance
       : config.video.seedance.model.trim() || defaultVideoGenerationModels.seedance,
     kling: config.video.kling.model.trim() || defaultVideoGenerationModels.kling,
-    veo: config.video.veo.model.trim() || defaultVideoGenerationModels.veo
+    veo: defaultVideoGenerationModels.veo
   };
 }
 
@@ -1224,7 +1236,7 @@ function localVideoProviderReady(
   credentials: CreatorServicesCredentialField[],
   provider: VideoGenerationProvider
 ): boolean {
-  if (!config[provider].model.trim()) return false;
+  if (provider !== 'veo' && !config[provider].model.trim()) return false;
   return provider === 'kling'
     ? credentials.includes('video.kling.accessKey') && credentials.includes('video.kling.secretKey')
     : credentials.includes(`video.${provider}.apiKey` as CreatorServicesCredentialField);
@@ -1412,6 +1424,11 @@ function formatVideoError(
   const suppliedFacts = typeof error === 'object' && error !== null && 'publicFacts' in error
     && typeof error.publicFacts === 'object' && error.publicFacts !== null
     ? sanitizePublicErrorFacts(error.publicFacts as PublicErrorFacts) : undefined;
+  if (suppliedFacts?.provider === 'veo' && suppliedFacts.upstreamCode === 'model_retired') {
+    return l('此任务使用了已停用的 Veo 直连模型，请使用 Gemini Omni Flash 重新生成。',
+      'This task used a retired direct Veo model. Generate again with Gemini Omni Flash.',
+      'Uppgiften använde en utfasad direktansluten Veo-modell. Generera igen med Gemini Omni Flash.');
+  }
   if (suppliedFacts && isPublicErrorFacts(suppliedFacts) && suppliedFacts.kind !== 'unknown') {
     if (suppliedFacts.provider === 'opencreator-gateway-video') {
       const contentReason = mediaContentSafetyReason(suppliedFacts, l);

@@ -141,7 +141,7 @@ describe('VideoGenerationWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
     expect(mergedSettingsPatch(view.applyAction.mock.calls))
-      .toMatchObject({ provider: 'veo', model: config.video.veo.model });
+      .toMatchObject({ provider: 'veo', model: 'gemini-omni-1.2-flash' });
     expect(screen.queryByRole('dialog', { name: '登录后继续创作' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('combobox', { name: '模型' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Gateway Motion' }));
@@ -261,7 +261,7 @@ describe('VideoGenerationWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
     expect(mergedSettingsPatch(view.applyAction.mock.calls))
-      .toMatchObject({ provider: 'veo', model: 'veo-3.1-generate-preview' });
+      .toMatchObject({ provider: 'veo', model: 'gemini-omni-1.2-flash' });
   });
   it('keeps the ready local provider when switching back from a gateway model', async () => {
     const signedOut: GatewayAccountState = { source: 'manual', authState: 'signed_out', activationState: 'inactive', account: null, bindingVersion: null, models: [], activationError: null };
@@ -278,7 +278,7 @@ describe('VideoGenerationWorkspace', () => {
     fireEvent.click(screen.getByRole('option', { name: '本地视频服务' }));
     fireEvent.click(screen.getByRole('button', { name: '生成' }));
     await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
-    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ provider: 'veo', model: 'veo-3.1-generate-preview' });
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ provider: 'veo', model: 'gemini-omni-1.2-flash' });
   });
   it.each([0, 1, 2])('opens legacy step %s as a single editable form with the summary in the agent panel', async step => {
     const config: CreatorServicesConfig = createVideoConfig();
@@ -295,10 +295,34 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.getByRole('spinbutton', { name: '视频时长' })).toHaveValue(8);
     expect(within(form).getByRole('button', { name: '生成' })).toBeEnabled();
     const agent = screen.getByRole('complementary', { name: 'OpenCreator' });
-    expect(within(agent).getByRole('complementary', { name: '任务摘要' })).toHaveTextContent('Veo 3.1 · 9:16 · 8s');
+    expect(within(agent).getByRole('complementary', { name: '任务摘要' })).toHaveTextContent('Gemini Omni 1.2 Flash · 9:16 · 8s');
     expect(document.querySelector('.creator-workspace-main .creator-task-summary')).toBeNull();
     expect(screen.queryByRole('navigation', { name: '视频生成流程' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '继续' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['zh-CN', '生成', '视频设置', 'Gemini Omni Flash 不支持方形画幅，请选择横屏或竖屏。'],
+    ['en-US', 'Generate', 'Video settings', 'Gemini Omni Flash does not support square video. Select a landscape or portrait format.'],
+    ['sv-SE', 'Generera', 'Videoinställningar', 'Gemini Omni Flash stöder inte kvadratisk video. Välj liggande eller stående format.']
+  ] as const)('requires a supported aspect ratio for a legacy local Veo draft in %s', async (language, generate, settings, copy) => {
+    const config: CreatorServicesConfig = createVideoConfig();
+    config.video.provider = 'veo';
+    const view = renderWorkspace(creatorJob({ state: {
+      prompt: 'Clouds moving over mountains', provider: 'veo', model: 'veo-3.1-generate-preview', size: '1024x1024', duration: 8
+    } }), { language, creatorServicesService: { getConfig: async () => ({ config, configuredCredentials: ['video.veo.apiKey'] }) } });
+    const settingsButton = screen.getByRole('button', { name: settings });
+    await waitFor(() => expect(settingsButton).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: generate }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(copy);
+    expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(false);
+    fireEvent.click(settingsButton);
+    expect(screen.queryByRole('radio', { name: '1:1' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: '9:16' }));
+    expect(screen.getByRole('spinbutton')).toHaveValue(8);
+    fireEvent.click(screen.getByRole('button', { name: generate }));
+    await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ model: 'gemini-omni-1.2-flash', size: '720x1280' });
   });
 
   it('validates and submits the edited prompt and settings directly from one form', async () => {
@@ -504,6 +528,35 @@ describe('VideoGenerationWorkspace', () => {
     expect(screen.getByRole('slider', { name: '视频时长' })).toHaveAttribute('max', '1');
     expect(screen.queryByRole('option', { name: /1024/ })).not.toBeInTheDocument();
     expect(getConfig).toHaveBeenCalled();
+  });
+
+  it('selects and submits the signed-in Veo catalog model even when local Google video is configured', async () => {
+    const model = 'veo-3.1-generate-preview';
+    const config: CreatorServicesConfig = createVideoConfig();
+    config.video.provider = 'veo';
+    const gatewayState: GatewayAccountState = {
+      source: 'gateway', authState: 'signed_in', activationState: 'ready', account: { id: 'a', email: 'a@example.test', verified: true }, bindingVersion: 'a:1',
+      selectedModels: { video: 'vendor/video' }, activationError: null,
+      models: [
+        { id: 'vendor/video', name: 'Other Video', modality: 'video', capabilities: [], sizes: ['1280x720'], durations: [8] },
+        { id: model, name: 'Veo 3.1', modality: 'video', capabilities: [], sizes: ['1024x1024'], durations: [5, 10] }
+      ]
+    };
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk' } }), {
+      gatewayState, creatorServicesService: { getConfig: async () => ({ config, configuredCredentials: ['video.veo.apiKey'] }) }
+    });
+    const picker = screen.getByRole('combobox', { name: '模型' });
+    await waitFor(() => expect(picker).toHaveValue('本地视频服务'));
+    fireEvent.click(picker);
+    fireEvent.click(await screen.findByRole('option', { name: 'Veo 3.1' }));
+    expect(picker).toHaveValue('Veo 3.1');
+    openVideoSettings();
+    expect(screen.getByRole('radio', { name: '1:1' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.change(screen.getByRole('slider', { name: '视频时长' }), { target: { value: '1' } });
+    expect(screen.getByRole('spinbutton', { name: '视频时长' })).toHaveValue(10);
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    await waitFor(() => expect(view.applyAction.mock.calls.some(([, request]) => request.action === 'run-stage')).toBe(true));
+    expect(mergedSettingsPatch(view.applyAction.mock.calls)).toMatchObject({ videoServiceSource: 'gateway', officialModels: { video: model }, model, size: '1024x1024', duration: 10 });
   });
 
   it('keeps the signed-in video model menu compact', async () => {
@@ -1360,6 +1413,23 @@ describe('VideoGenerationWorkspace', () => {
       language === 'zh-CN' ? '积分不足' : language === 'sv-SE' ? 'Krediterna räcker inte' : 'Insufficient credits'
     ));
     expect(screen.getByRole('alert')).not.toHaveTextContent(/sk-private-value|Bearer|Authorization/);
+  });
+
+  it.each([
+    ['zh-CN', '生成', '此任务使用了已停用的 Veo 直连模型，请使用 Gemini Omni Flash 重新生成。'],
+    ['en-US', 'Generate', 'This task used a retired direct Veo model. Generate again with Gemini Omni Flash.'],
+    ['sv-SE', 'Generera', 'Uppgiften använde en utfasad direktansluten Veo-modell. Generera igen med Gemini Omni Flash.']
+  ] as const)('explains a retired direct Veo job in %s', async (language, generate, copy) => {
+    const failure = Object.assign(new Error('Video generation failed (upstream code: model_retired)'), {
+      publicFacts: { kind: 'provider-failed', provider: 'veo', upstreamCode: 'model_retired' }
+    });
+    const view = renderWorkspace(creatorJob({ state: { prompt: 'A city at dusk', provider: 'veo', size: '1280x720', duration: 8 } }), {
+      language, runStageError: failure
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: generate })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: generate }));
+    await waitFor(() => expect(view.applyAction).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ action: 'run-stage' })));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(copy));
   });
 
   it('queries a non-unknown request even when a price-change issue is present', async () => {

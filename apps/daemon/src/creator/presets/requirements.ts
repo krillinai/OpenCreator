@@ -5,9 +5,9 @@ import type {
   CreatorRuntimeWorkspace,
   CreatorServicesConfig
 } from '@opencreator/protocol';
-import { creatorProviderOfKind } from '@opencreator/protocol';
+import { creatorProviderOfKind, defaultVideoGenerationModels, videoGenerationModelIds } from '@opencreator/protocol';
+import { gatewayCreatorBinding } from '../../gateway/creator-service-source.js';
 import { imageProviderConfigured } from '../image-settings.js';
-import { videoGenerationModelIds } from '@opencreator/protocol';
 import { CreatorExecutorError } from '../executor.js';
 import type { CreatorPresetModuleDefinition, CreatorPresetLocale } from './types.js';
 
@@ -100,7 +100,9 @@ export function assertCreatorPresetStageRequirement(input: {
   }
   if (service === 'video') {
     const provider = requiredProvider(service, input.job.state.provider);
-    const model = readString(input.job.state.model);
+    const model = provider === 'veo' && !gatewayCreatorBinding(input.services)
+      ? defaultVideoGenerationModels.veo
+      : readString(input.job.state.model);
     const allowedModels = videoGenerationModelIds[
       provider as keyof typeof videoGenerationModelIds
     ] as readonly string[] | undefined;
