@@ -39,6 +39,13 @@ describe('video translation failures', () => {
     expect(creatorSystemIssueText('audio_transcription_pending', en)).toContain('verified');
     expect(creatorSystemIssueText('audio_transcription_pending', createLocalizedCopy('sv-SE'))).toContain('kontrolleras');
   });
+  it.each([
+    ['zh-CN', '语音转录请求频率受限。请稍后重试当前阶段。'],
+    ['en-US', 'The transcription request was rate-limited. Try this stage again later.'],
+    ['sv-SE', 'Transkriptionsbegäran begränsades på grund av för många anrop. Försök igen med det här steget senare.']
+  ] as const)('shows rate limiting rather than pending verification in %s', (language, message) => {
+    expect(creatorSystemIssueText('audio_transcription_rate_limited', createLocalizedCopy(language))).toBe(message);
+  });
   it('describes a rejected Chinese translation without exposing the raw stage message', () => {
     const failed = { ...stage('subtitle', '', 'failed', null, 'subtitle'),
       errorCode: 'creator_translation_output_language_mismatch',

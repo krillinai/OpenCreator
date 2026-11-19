@@ -38,6 +38,42 @@ afterEach(() => {
 });
 
 describe('KrillinAI CLI runner', () => {
+  it.skipIf(process.platform === 'win32')('preserves only valid failed transcription positions from a CLI response', async () => {
+    tempDir = realpathSync(mkdtempSync(join(tmpdir(), 'creator-krillin-transcription-')));
+    const resourceRoot = join(tempDir, 'runtime');
+    const jobsRoot = join(tempDir, 'jobs');
+    const dependencyRoot = join(tempDir, 'dependencies');
+    const workdir = join(jobsRoot, 'job', 'subtitle');
+    const cli = join(resourceRoot, 'bin', 'krillinai-cli');
+    mkdirSync(dirname(cli), { recursive: true });
+    mkdirSync(workdir, { recursive: true });
+    const manifest: KrillinRuntimeManifest = { version: 1, platform: process.platform, arch: process.arch,
+      resources: [{ path: 'bin/krillinai-cli', sha256: 'a'.repeat(64), kind: 'executable' }] };
+    const stage = {
+      stageRun: { id: 'subtitle', stageId: 'subtitle', progress: {} },
+      job: { id: 'job', templateId: 'video-translation', templateVersion: 2, state: {} },
+      workdir, signal: new AbortController().signal, reportProgress() {}
+    } as unknown as CreatorExecutorInput;
+    for (const [transcription, expected] of [
+      [{ segment_number: 2, attempt_number: 3, file: '/private/audio.mp3' }, { segment_number: 2, attempt_number: 3 }],
+      [{ segment_number: 2, attempt_number: -1 }, undefined],
+      [undefined, undefined]
+    ] as const) {
+      const response = JSON.stringify({ ok: false, stage: 'subtitle', error: {
+        code: 'audio_transcription_pending', kind: 'retryable', message: 'fixture pending', retryable: true, transcription
+      } });
+      writeFileSync(cli, `#!${process.execPath}\nconsole.log(${JSON.stringify(response)}); process.exitCode = 1;`, { mode: 0o755 });
+      const error = await runKrillinCli({ resourceRoot, jobsRoot, dependencyRoot, manifest, stage,
+        config: createDefaultCreatorServicesConfig(), artifacts: [], options: { sourceType: 'url', originLanguage: 'en', targetLanguage: 'zh_cn' },
+        source: 'https://example.test/fixture' }).then(() => undefined, failure => failure);
+      expect(error).toMatchObject({ code: 'audio_transcription_pending', retryable: true });
+      const diagnostic = failureDiagnosticFromError(error, 'krillinai.subtitle');
+      expect(diagnostic).toMatchObject({ operation: 'krillinai.subtitle', process: { exit_code: 1 } });
+      expect(diagnostic).not.toHaveProperty('file');
+      expect(Reflect.get(diagnostic!, 'transcription')).toEqual(expected);
+    }
+  });
+
   it.skipIf(process.platform === 'win32')('shares dubbing checkpoints only across compatible unsuccessful attempts', async () => {
     tempDir = realpathSync(mkdtempSync(join(tmpdir(), 'creator-krillin-dubbing-')));
     const resourceRoot = join(tempDir, 'runtime');

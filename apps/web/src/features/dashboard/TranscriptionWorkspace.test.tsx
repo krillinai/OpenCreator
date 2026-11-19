@@ -67,6 +67,17 @@ it('accepts a public video URL without uploading a local file', async () => {
   });
 });
 
+it('shows the confirmed transcription rate limit instead of a generic configuration error', async () => {
+  const fixture = createFixture();
+  const job = fixture.currentJob();
+  await renderWorkspace(fixture, { ...job, status: 'failed', stages: [{
+    id: 'limited-stage', jobId: job.id, stageId: 'transcription', executor: 'krillinai', status: 'failed', dispatchStatus: 'finished',
+    attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null, claimOwner: null, claimExpiresAt: null,
+    progress: {}, errorCode: 'audio_transcription_rate_limited', errorMessage: null, startedAt: job.createdAt, finishedAt: job.createdAt
+  }] });
+  expect(screen.getByRole('alert')).toHaveTextContent('语音转录请求频率受限。请稍后重试当前阶段。');
+});
+
 it('opens the subtitle editor, autosaves changes, and downloads results after returning', async () => {
   const fixture = createFixture({ sourceFileName: 'interview.mp4' });
   const source = sourceArtifact(fixture.currentJob());

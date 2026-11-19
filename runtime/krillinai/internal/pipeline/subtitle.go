@@ -397,6 +397,11 @@ func subtitleFailureResponse(req SubtitleRequest, manifest *Manifest, kind Error
 		pipelineErr.UpstreamCode = transcriptionErr.UpstreamCode
 		pipelineErr.RequestID = transcriptionErr.RequestID
 	}
+	var positioned interface{ TranscriptionPosition() (int, int) }
+	if errors.As(err, &positioned) {
+		segment, attempt := positioned.TranscriptionPosition()
+		pipelineErr.Transcription = &transcriptionPosition{SegmentNumber: segment, AttemptNumber: attempt}
+	}
 	return subtitleResponse(false, req, manifest, req.CaptionSource, pipelineErr)
 }
 

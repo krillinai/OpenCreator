@@ -273,7 +273,8 @@ export function normalizeKrillinFailure(error: { code?: string; kind?: string; m
   }
   if (error?.code !== undefined && [
     'audio_no_speech', 'audio_transcription_empty', 'audio_transcription_invalid_response',
-    'audio_transcription_timestamps_missing', 'audio_transcription_api_failed', 'audio_transcription_pending', 'credits_insufficient'
+    'audio_transcription_timestamps_missing', 'audio_transcription_api_failed', 'audio_transcription_pending',
+    'audio_transcription_rate_limited', 'credits_insufficient'
   ].includes(error.code)) {
     return { code: error.code, message };
   }

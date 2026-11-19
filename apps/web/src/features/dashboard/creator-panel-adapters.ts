@@ -6,7 +6,7 @@ import type {
 } from '@opencreator/protocol';
 import type { LocalizeCopy } from '../../i18n/localized-copy.js';
 import { localComponentPreparationMessage } from '../settings/local-component-copy.js';
-import { creditInsufficientCopy, isYtDlpCaptionConnectionRefused, isYtDlpCaptionTimeout, isYtDlpPreviewConnectionRefused, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
+import { creditInsufficientCopy, isYtDlpCaptionConnectionRefused, isYtDlpCaptionTimeout, isYtDlpPreviewConnectionRefused, isYtDlpPreviewTimeout, transcriptionRateLimitedCopy } from '../issues/issue-catalog.js';
 
 export type CreatorPanelLocalize = LocalizeCopy;
 
@@ -1665,8 +1665,8 @@ export function creatorSystemIssueText(
   l: CreatorPanelLocalize
 ): string | null {
   if (code === null) return null;
-  if (code === 'credits_insufficient') {
-    const { message, nextStep } = creditInsufficientCopy(l);
+  if (code === 'credits_insufficient' || code === 'audio_transcription_rate_limited') {
+    const { message, nextStep } = code === 'credits_insufficient' ? creditInsufficientCopy(l) : transcriptionRateLimitedCopy(l);
     return `${message}${l('', ' ', ' ')}${nextStep}`;
   }
   const labels: Record<string, string> = {

@@ -23,11 +23,13 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import AppSelect from '../../components/forms/Select.js';
+import type { LocalizeCopy } from '../../i18n/localized-copy.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
 import { IssueNotice } from '../issues/IssuePresenter.js';
+import { transcriptionRateLimitedCopy } from '../issues/issue-catalog.js';
 import DashboardVideoTranslationSettings from './DashboardVideoTranslationSettings.js';
 import TranscriptionSubtitleEditor from './TranscriptionSubtitleEditor.js';
 import VideoSourceInput from './VideoSourceInput.js';
@@ -675,7 +677,11 @@ function providerLabel(provider: CreatorServicesConfig['transcription']['provide
   return provider === 'openai' ? 'OpenAI Whisper' : '—';
 }
 
-function formatTranscriptionError(code: string | null | undefined, l: (zh: string, en: string) => string): string {
+function formatTranscriptionError(code: string | null | undefined, l: LocalizeCopy): string {
+  if (code === 'audio_transcription_rate_limited') {
+    const { message, nextStep } = transcriptionRateLimitedCopy(l);
+    return `${message}${l('', ' ', ' ')}${nextStep}`;
+  }
   if (code === 'creator_transcription_config_missing') return l('请先在设置中完成当前转录服务的配置', 'Configure the selected transcription service in Settings first');
   if (code === 'creator_transcription_language_unsupported') return l('当前转录服务不支持所选语言，请更换服务或源语言', 'The selected service does not support this language. Change the service or source language.');
   if (code === 'creator_transcription_timestamps_unavailable') return l('当前模型不提供时间戳，请选择支持 SRT 的转录服务', 'This model does not return timestamps. Choose a transcription service that supports SRT.');

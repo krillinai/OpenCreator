@@ -92,6 +92,18 @@ type originSubtitleCue struct {
 	Text  string
 }
 
+type transcriptionSegmentError struct {
+	error
+	segmentNumber int
+	attemptNumber int
+}
+
+func (err *transcriptionSegmentError) Unwrap() error { return err.error }
+
+func (err *transcriptionSegmentError) TranscriptionPosition() (int, int) {
+	return err.segmentNumber, err.attemptNumber
+}
+
 func (s Service) audioToOriginSubtitle(ctx context.Context, stepParam *types.SubtitleTaskStepParam) error {
 	timePoints, err := s.getSplitPointsForAudio(stepParam)
 	if err != nil {
@@ -124,7 +136,9 @@ func (s Service) audioToOriginSubtitle(ctx context.Context, stepParam *types.Sub
 		if attempts < 1 {
 			attempts = 1
 		}
+		attemptNumber := 0
 		for range attempts {
+			attemptNumber++
 			transcription, err = s.transcribeAudio(
 				segmentIndex,
 				audioPath,
@@ -143,7 +157,11 @@ func (s Service) audioToOriginSubtitle(ctx context.Context, stepParam *types.Sub
 			}
 		}
 		if err != nil {
-			return fmt.Errorf("transcribe audio segment %d: %w", segmentIndex, err)
+			return &transcriptionSegmentError{
+				error:         fmt.Errorf("transcribe audio segment %d: %w", segmentIndex, err),
+				segmentNumber: segmentIndex + 1,
+				attemptNumber: attemptNumber,
+			}
 		}
 		cues = append(cues, originCuesFromTranscription(
 			transcription,
@@ -800,7 +818,9 @@ func (s Service) startTranscribeWorkers(ctx context.Context, eg *errgroup.Group,
 					log.GetLogger().Info("Begin transcribe", zap.Any("taskId", stepParam.TaskId), zap.Any("splitId", audioFileItem.Id))
 					// 语音转文字
 					attempts := max(1, config.Conf.App.TranscribeMaxAttempts)
+					attemptNumber := 0
 					for range attempts {
+						attemptNumber++
 						transcriptionData, err = s.transcribeAudio(
 							audioFileItem.Id,
 							audioFileItem.Data,
@@ -825,7 +845,11 @@ func (s Service) startTranscribeWorkers(ctx context.Context, eg *errgroup.Group,
 						}
 					}
 					if err != nil {
-						return fmt.Errorf("audioToSubtitle audioToSrt Transcription err: %w", err)
+						return &transcriptionSegmentError{
+							error:         fmt.Errorf("audioToSubtitle audioToSrt Transcription err: %w", err),
+							segmentNumber: audioFileItem.Id + 1,
+							attemptNumber: attemptNumber,
+						}
 					}
 					log.GetLogger().Info("Transcribe completed", zap.Any("taskId", stepParam.TaskId), zap.Any("splitId", audioFileItem.Id))
 

@@ -38,6 +38,7 @@ func TestTranscriptionRetriesOnlyRetryableFailures(t *testing.T) {
 		{"audio_transcription_invalid_response", 3, 1},
 		{"audio_transcription_timestamps_missing", 3, 1},
 		{"audio_transcription_pending", 3, 1},
+		{"audio_transcription_rate_limited", 3, 1},
 		{"credits_insufficient", 3, 1},
 		{"audio_transcription_api_failed", 3, 3},
 		{"audio_transcription_api_failed", 0, 1},
@@ -46,7 +47,7 @@ func TestTranscriptionRetriesOnlyRetryableFailures(t *testing.T) {
 			config.Conf.App.TranscribeMaxAttempts = test.attempts
 			transcriber := &failingTranscriber{err: &whisper.TranscriptionError{Code: test.code, Message: "fixture failure"}}
 			pending := make(chan DataWithId[string], 1)
-			pending <- DataWithId[string]{Data: "fixture.wav"}
+			pending <- DataWithId[string]{Id: 1, Data: "fixture.wav"}
 			close(pending)
 			group, ctx := errgroup.WithContext(context.Background())
 			(Service{Transcriber: transcriber}).startTranscribeWorkers(ctx, group, &types.SubtitleTaskStepParam{TaskBasePath: t.TempDir()},
@@ -55,6 +56,13 @@ func TestTranscriptionRetriesOnlyRetryableFailures(t *testing.T) {
 			var classified *whisper.TranscriptionError
 			if !errors.As(err, &classified) || classified.Code != test.code || transcriber.calls != test.calls {
 				t.Fatalf("calls = %d, error = %v", transcriber.calls, err)
+			}
+			var positioned interface{ TranscriptionPosition() (int, int) }
+			if !errors.As(err, &positioned) {
+				t.Fatal("failed transcription did not identify the segment and attempt")
+			}
+			if segment, attempt := positioned.TranscriptionPosition(); segment != 2 || attempt != test.calls {
+				t.Fatalf("transcription position = %d, %d; want 2, %d", segment, attempt, test.calls)
 			}
 		})
 	}

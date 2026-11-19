@@ -104,6 +104,9 @@ func TestTranscriptionResponseClassification(t *testing.T) {
 		{"malformed_json", 200, `<html>upstream error</html>`, "audio_transcription_invalid_response", false},
 		{"http_error", 503, `{"error":{"message":"unavailable","type":"server_error"}}`, "audio_transcription_api_failed", true},
 		{"pending_gateway_request", 409, `{"error":{"message":"pending verification","code":"request_outcome_unknown"}}`, "audio_transcription_pending", false},
+		{"gateway_rate_limit", 429, `{"error":{"message":"Too many requests","code":"upstream_rejected","upstreamCode":"rate_limit"}}`, "audio_transcription_rate_limited", false},
+		{"unknown_gateway_rate_limit", 429, `{"error":{"message":"pending verification","code":"request_outcome_unknown"}}`, "audio_transcription_pending", false},
+		{"provider_rate_limit", 429, `{"error":{"message":"Too many requests","code":"rate_limit_exceeded"}}`, "audio_transcription_api_failed", true},
 		{"insufficient_credits", 402, `{"error":{"message":"Insufficient credits","code":"credits_insufficient"}}`, "credits_insufficient", false},
 		{"test_budget", 402, `{"error":{"message":"Test budget exceeded","code":"model_test_budget_exceeded"}}`, "audio_transcription_api_failed", true},
 	} {

@@ -45,7 +45,7 @@ describe('KrillinAI CLI protocol', () => {
     expect(() => buildKrillinCliCommandArguments(stage as never, [], buildKrillinStageOptions(stage as never), undefined))
       .toThrow('imported source SRT');
   });
-  it.each(['audio_no_speech', 'audio_transcription_empty', 'audio_transcription_invalid_response', 'audio_transcription_timestamps_missing', 'audio_transcription_api_failed', 'credits_insufficient'])('preserves %s through usage-error normalization', code => {
+  it.each(['audio_no_speech', 'audio_transcription_empty', 'audio_transcription_invalid_response', 'audio_transcription_timestamps_missing', 'audio_transcription_api_failed', 'audio_transcription_rate_limited', 'credits_insufficient'])('preserves %s through usage-error normalization', code => {
     const message = 'OpenAI transcription response was classified by the runtime';
     expect(normalizeKrillinFailure({ code, kind: 'usage', message })).toEqual({ code, message });
   });

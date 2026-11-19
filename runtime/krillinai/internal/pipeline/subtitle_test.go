@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"krillin-ai/internal/service"
@@ -304,7 +305,7 @@ func TestGenerateSubtitlesPreservesPlatformAndAudioFallbackErrors(t *testing.T) 
 }
 
 func TestGenerateSubtitlesPreservesTranscriptionClassification(t *testing.T) {
-	for _, code := range []string{"audio_no_speech", "audio_transcription_empty", "audio_transcription_invalid_response", "audio_transcription_timestamps_missing", "audio_transcription_api_failed", "audio_transcription_pending", "credits_insufficient"} {
+	for _, code := range []string{"audio_no_speech", "audio_transcription_empty", "audio_transcription_invalid_response", "audio_transcription_timestamps_missing", "audio_transcription_api_failed", "audio_transcription_pending", "audio_transcription_rate_limited", "credits_insufficient"} {
 		for _, fallback := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/fallback=%v", code, fallback), func(t *testing.T) {
 				classified := &whisper.TranscriptionError{Code: code, Message: "fixture reason"}
@@ -324,11 +325,27 @@ func TestGenerateSubtitlesPreservesTranscriptionClassification(t *testing.T) {
 	}
 }
 
+type positionedSubtitleFailure struct{ error }
+
+func (err positionedSubtitleFailure) Unwrap() error { return err.error }
+
+func (positionedSubtitleFailure) TranscriptionPosition() (int, int) { return 2, 3 }
+
 func TestSubtitleFailureResponsePreservesHTTPDiagnostics(t *testing.T) {
 	cause := &whisper.TranscriptionError{Code: "audio_transcription_api_failed", Message: "private response", HTTPStatus: 503, UpstreamCode: "server_error", RequestID: "ocreq_" + strings.Repeat("b", 48)}
 	response := subtitleFailureResponse(SubtitleRequest{}, nil, ErrorKindRetryable, cause.Code, fmt.Errorf("segment 1: %w", cause))
 	if response.Error == nil || response.Error.Code != cause.Code || response.Error.HTTPStatus != 503 || response.Error.UpstreamCode != "server_error" || response.Error.RequestID != cause.RequestID {
 		t.Fatalf("diagnostics = %+v", response.Error)
+	}
+	legacy, err := json.Marshal(response)
+	if err != nil || strings.Contains(string(legacy), `"transcription":`) {
+		t.Fatalf("unexpected transcription metadata for unpositioned error: %s, %v", legacy, err)
+	}
+	response = subtitleFailureResponse(SubtitleRequest{}, nil, ErrorKindRetryable, cause.Code, positionedSubtitleFailure{cause})
+	encoded, err := json.Marshal(response)
+	if err != nil || !strings.Contains(string(encoded), `"transcription":{"segment_number":2,"attempt_number":3}`) ||
+		response.Error.HTTPStatus != 503 || response.Error.RequestID != cause.RequestID {
+		t.Fatalf("missing structured position or existing HTTP diagnostic: %s, %v", encoded, err)
 	}
 }
 

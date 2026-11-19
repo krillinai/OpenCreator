@@ -223,10 +223,19 @@ export function creditInsufficientCopy(localize: LocalizeCopy): { message: strin
   };
 }
 
+export function transcriptionRateLimitedCopy(localize: LocalizeCopy): { message: string; nextStep: string } {
+  return {
+    message: localize('语音转录请求频率受限。', 'The transcription request was rate-limited.', 'Transkriptionsbegäran begränsades på grund av för många anrop.'),
+    nextStep: localize('请稍后重试当前阶段。', 'Try this stage again later.', 'Försök igen med det här steget senare.')
+  };
+}
+
 function transcriptionIssueCopy(code: string | undefined, localize: LocalizeCopy): { message: string; nextStep: string } | undefined {
   switch (code) {
     case 'credits_insufficient':
       return creditInsufficientCopy(localize);
+    case 'audio_transcription_rate_limited':
+      return transcriptionRateLimitedCopy(localize);
     case 'creator_transcription_language_unsupported':
       return {
         message: localize('当前识别模型不支持所选源语言。', 'The speech recognition model does not support the selected source language.', 'Taligenkänningsmodellen stöder inte det valda källspråket.'),

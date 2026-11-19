@@ -50,6 +50,9 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 			if classified.UpstreamCode == "request_outcome_unknown" {
 				classified.Code = "audio_transcription_pending"
 				classified.Message = "transcription request is pending verification; retry this stage later"
+			} else if c.official && apiError.HTTPStatusCode == http.StatusTooManyRequests && apiError.Code == "upstream_rejected" {
+				classified.Code = "audio_transcription_rate_limited"
+				classified.Message = "The transcription request was rate-limited. Try this stage again later."
 			} else if apiError.HTTPStatusCode == http.StatusPaymentRequired && apiError.Code == "credits_insufficient" {
 				classified.Code = "credits_insufficient"
 				classified.Message = "Insufficient credits"

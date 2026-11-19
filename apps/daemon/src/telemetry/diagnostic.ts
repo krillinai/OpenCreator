@@ -6,6 +6,7 @@ export type FailureDiagnostic = {
   causes: Array<{ name: string; code?: string }>;
   steps?: Array<{ operation: string; code: string; result: 'fallback' | 'failed' }>;
   process?: { tool: string; version?: string; exit_code?: number };
+  transcription?: { segment_number: number; attempt_number: number };
   network?: {
     route: 'direct' | 'proxy' | 'unknown';
     peer: 'proxy' | 'platform' | 'gateway' | 'unknown';
@@ -164,6 +165,7 @@ export function failureDiagnosticFromError(error: unknown, operation: string): F
     causes,
     ...(attached?.steps === undefined ? {} : { steps: attached.steps }),
     ...(attached?.process === undefined ? {} : { process: attached.process }),
+    ...(attached?.transcription === undefined ? {} : { transcription: attached.transcription }),
     ...(attached?.network === undefined ? {} : { network: attached.network }),
     ...(attached?.evidence === undefined ? {} : { evidence: attached.evidence }),
     ...(frames.length ? { frames } : {}),
@@ -192,6 +194,11 @@ export function sanitizeFailureDiagnostic(value: unknown): FailureDiagnostic | u
   const exitCode = input.process?.exit_code;
   const process = tool ? { tool, ...(version ? { version } : {}),
     ...(Number.isInteger(exitCode) && exitCode! >= -255 && exitCode! <= 255 ? { exit_code: exitCode } : {}) } : undefined;
+  const segment = input.transcription?.segment_number;
+  const attempt = input.transcription?.attempt_number;
+  const transcription = segment !== undefined && Number.isInteger(segment) && segment >= 1 && segment <= 1_000_000
+    && attempt !== undefined && Number.isInteger(attempt) && attempt >= 1 && attempt <= 1_000
+    ? { segment_number: segment, attempt_number: attempt } : undefined;
   const network = input.network && ['direct', 'proxy', 'unknown'].includes(input.network.route)
     && ['proxy', 'platform', 'gateway', 'unknown'].includes(input.network.peer) ? {
       route: input.network.route,
@@ -211,6 +218,7 @@ export function sanitizeFailureDiagnostic(value: unknown): FailureDiagnostic | u
     version: 1, operation, causes,
     ...(steps.length ? { steps } : {}),
     ...(process ? { process } : {}),
+    ...(transcription ? { transcription } : {}),
     ...(network ? { network } : {}),
     ...(evidence.length ? { evidence } : {}),
     ...(frames.length ? { frames } : {}),

@@ -52,7 +52,7 @@ const fakeCodexLauncherSource = join(e2eDir, 'fixtures', 'fake-codex-launcher.go
 test.describe.configure({ mode: 'serial' });
 
 test('@package-smoke 字幕转录余额不足时不自动重试，充值后手动重试产出字幕', async ({}, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(210_000);
   const account = { id: 'subtitle-test', email: 'subtitle@example.test', verified: true };
   const models = [
     { id: 'deepseek-v4-flash', modality: 'text' as const, capabilities: ['chat', 'responses'] },
@@ -64,6 +64,8 @@ test('@package-smoke 字幕转录余额不足时不自动重试，充值后手�
   const submissions: Array<{ key: string; audio: boolean; funded: boolean }> = [];
   const transcriptionCallIds: string[] = [];
   const rejectedTraceEvents: Array<Record<string, unknown>> = [];
+  const acceptedTraceIDs = new Set<unknown>();
+  let telemetryAvailable = false;
   const sourceText = 'Hello world.';
   const targetText = '你好，世界。';
   const gateway = createServer(async (request, response) => {
@@ -103,8 +105,15 @@ test('@package-smoke 字幕转录余额不足时不自动重试，充值后手�
       return response.end(JSON.stringify({ id: 'subtitle-test-translation', choices: [{ finish_reason: 'stop', message: { role: 'assistant', content } }] }));
     }
     if (path === '/telemetry/task-events' && request.method === 'POST') {
-      rejectedTraceEvents.push(...(JSON.parse(payload) as { events: Array<Record<string, unknown>> }).events);
-      return response.writeHead(503).end('{}');
+      const { events } = JSON.parse(payload) as { events: Array<Record<string, unknown>> };
+      if (!telemetryAvailable) {
+        rejectedTraceEvents.push(...events);
+        request.socket.destroy();
+        return;
+      }
+      const ids = events.map(event => event.event_id);
+      ids.forEach(id => acceptedTraceIDs.add(id));
+      return response.end(JSON.stringify({ error: 0, data: { acknowledged_event_ids: ids } }));
     }
     if (path?.startsWith('/v1/requests/')) return response.writeHead(404).end(JSON.stringify({ error: { code: 'request_not_found' } }));
     return response.end(JSON.stringify({ items: [] }));
@@ -202,6 +211,19 @@ test('@package-smoke 字幕转录余额不足时不自动重试，充值后手�
       expect(srt.text).toContain(text);
       expect(srt.text).toMatch(/\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}/);
     }
+    const taskEvents = async (activePage: Page) => (await runtimeRequest<{ events: Array<Record<string, unknown>> }>(activePage, 'GET', '/telemetry/task-events')).body.events.filter(event => event.task_id === id);
+    await expect.poll(() => taskEvents(page)).toEqual(expect.arrayContaining([failedTrace,
+      expect.objectContaining({ event_type: 'task_state', outcome: 'completed' })]));
+    const pendingIDs = (await taskEvents(page)).map(event => event.event_id);
+    const previous = fixture;
+    await closePackagedApp(previous);
+    fixture = { ...await relaunchPackagedApp(previous), root: previous.root, stateDir: previous.stateDir };
+    await waitForWorkspace(fixture.page);
+    expect((await taskEvents(fixture.page)).map(event => event.event_id)).toEqual(pendingIDs);
+    telemetryAvailable = true;
+    await expect.poll(() => pendingIDs.filter(id => !acceptedTraceIDs.has(id)), { timeout: 70_000 }).toEqual([]);
+    await expect.poll(() => taskEvents(fixture!.page)).toEqual([]);
+    expect(submissions).toHaveLength(2);
   } finally {
     if (fixture) await closeFixture(fixture);
     gateway.closeAllConnections();

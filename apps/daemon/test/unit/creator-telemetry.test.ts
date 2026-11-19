@@ -54,6 +54,31 @@ function event(eventId = '9d9dd73e-b27f-4f0f-a5ef-0f5763d04c1a'): CreatorTelemet
 }
 
 describe('creator telemetry outbox', () => {
+  it('keeps the transcription position in a failed subtitle trace without adding a user message', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-task-trace-subtitle-'));
+    const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const outbox = createCreatorTelemetryOutbox(db);
+    const sink = createCreatorTelemetrySink({ outbox, readAccount: () => account });
+    try {
+      sink.stageFinished({ id: 'creator_job_1', templateId: 'video-translation' } as CreatorJob, {
+        id: 'subtitle-attempt', stageId: 'subtitle', executor: 'krillinai', progress: {}, attempt: 1,
+        errorCode: 'audio_transcription_pending'
+      } as CreatorStageRun, 'video-translation', 'unknown', undefined, {
+        version: 1, operation: 'krillinai.subtitle', causes: [],
+        transcription: { segment_number: 2, attempt_number: 1 }
+      });
+      await new Promise<void>(resolve => setImmediate(resolve));
+      const traces = await outbox.listTrace();
+      expect(traces).toHaveLength(1);
+      expect(traces[0]).toMatchObject({ event_type: 'stage_finished', outcome: 'unknown', attempt_id: 'subtitle-attempt',
+        failure: { diagnostic: { transcription: { segment_number: 2, attempt_number: 1 } } } });
+      expect(traces[0]?.failure).not.toHaveProperty('user_message');
+    } finally {
+      await outbox.closeTrace();
+      db.close();
+    }
+  });
+
   it('reports the video translation launch and preflight rejection separately from legacy stage events', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-task-trace-'));
     const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
