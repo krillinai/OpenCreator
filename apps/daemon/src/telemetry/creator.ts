@@ -14,6 +14,8 @@ export type CreatorTelemetrySink = ReturnType<typeof createCreatorTelemetrySink>
 export function createCreatorTelemetrySink(input: {
   outbox: CreatorTelemetryOutbox;
   readAccount(job: CreatorJob): CreatorTelemetryAccountSnapshot;
+  readStartAccount?(): Pick<CreatorTaskTrace, 'auth_state' | 'account_id' | 'payment_state'>;
+  readExecutionMode?(job: CreatorJob): CreatorTaskTrace['execution_mode'];
   now?(): string;
   enabled?: boolean;
 }) {
@@ -69,7 +71,10 @@ export function createCreatorTelemetrySink(input: {
       if (feature === 'video-translation' && eventType === 'task_finished') {
         const failure = event.failure ? { ...event.failure } : undefined;
         if (failure) delete failure.user_message;
+        let executionMode: CreatorTaskTrace['execution_mode'];
+        try { executionMode = input.readExecutionMode?.(job); } catch { /* Leave unobserved. */ }
         trace({ event_type: 'stage_finished', task_id: job.id, stage_id: stage.stageId, attempt_id: stage.id,
+          ...(executionMode ? { execution_mode: executionMode } : {}),
           ...(outcome === undefined ? {} : { outcome }), ...(failure?.error_code ? { code: failure.error_code } : {}),
           ...(event.duration_ms === undefined ? {} : { duration_ms: event.duration_ms }),
           ...(failure?.request_id ? { gateway_request_id: failure.request_id } : {}),
@@ -94,7 +99,10 @@ export function createCreatorTelemetrySink(input: {
     },
     traceEnabled(): boolean { return enabled; },
     taskStarted(job: CreatorJob): void {
-      if (job.templateId === 'video-translation') trace({ event_type: 'task_started', task_id: job.id }, `${job.id}:started`);
+      if (!enabled || job.templateId !== 'video-translation') return;
+      let identity: Pick<CreatorTaskTrace, 'auth_state' | 'account_id' | 'payment_state'> | undefined;
+      try { identity = input.readStartAccount?.(); } catch { /* Leave unobserved. */ }
+      trace({ event_type: 'task_started', task_id: job.id, ...identity }, `${job.id}:started`);
     },
     taskState(job: CreatorJob): void {
       if (job.templateId === 'video-translation') trace({ event_type: 'task_state', task_id: job.id,

@@ -83,6 +83,64 @@ function daemonEvent() {
 }
 
 describe('desktop telemetry', () => {
+  it('records both observed login states on a day with activity but without another launch', () => {
+    const memory = memoryPersistence();
+    const store = createTelemetryStore('/virtual/telemetry.json', memory.persistence);
+    store.incrementLaunch('2026-11-18');
+    store.incrementActiveMinute('2026-11-19');
+    store.observeAuth('2026-11-19', 'signed_out');
+    store.observeAuth('2026-11-19', 'signed_in');
+    expect(store.readDays('2026-11-19')).toEqual([
+      { date: '2026-11-18', launchCount: 1, activeMinutes: 0 },
+      { date: '2026-11-19', launchCount: 0, activeMinutes: 1, seenSignedOut: true, seenSignedIn: true }
+    ]);
+  });
+
+  it('sends daily reports without the new fields when an older server rejects them', async () => {
+    const reports: Array<Record<string, unknown>> = [];
+    const memory = memoryPersistence(JSON.stringify({ days: [{ date: '2026-11-19', launchCount: 1, activeMinutes: 1, seenSignedIn: true }] }));
+    const controller = startDesktopTelemetry({
+      path: '/virtual/telemetry.json', settings: memorySettings(), logger: logger(), appVersion: '3.3.4',
+      isOfficialBuild: false, endpointOverride: 'http://127.0.0.1:8790/api/v1/public/desktop-usage', isWindowActive: () => false,
+      now: () => new Date('2026-11-19T02:00:00.000Z'), persistence: memory.persistence,
+      fetchImpl: async (_url, init) => {
+        const report = JSON.parse(String(init?.body));
+        reports.push(report);
+        return Response.json({ error: report.seen_signed_in ? 1001 : 0 });
+      }
+    });
+    try {
+      await vi.waitFor(() => expect(reports).toHaveLength(2));
+      expect(reports[0]).toMatchObject({ seen_signed_in: true, launch_count: 2 });
+      expect(reports[1]).not.toHaveProperty('seen_signed_in');
+      expect(reports[1]).toMatchObject({ launch_count: 2 });
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  it('keeps reporting launches when an older server cannot accept an activity-only day', async () => {
+    const reports: Array<{ usage_date: string; launch_count: number }> = [];
+    const memory = memoryPersistence(JSON.stringify({ days: [{ date: '2026-11-18', launchCount: 0, activeMinutes: 1 }] }));
+    const controller = startDesktopTelemetry({
+      path: '/virtual/telemetry.json', settings: memorySettings(), logger: logger(), appVersion: '3.3.4',
+      isOfficialBuild: false, endpointOverride: 'http://127.0.0.1:8790/api/v1/public/desktop-usage', isWindowActive: () => false,
+      now: () => new Date('2026-11-19T02:00:00.000Z'), persistence: memory.persistence,
+      fetchImpl: async (_url, init) => {
+        const report = JSON.parse(String(init?.body));
+        reports.push(report);
+        return Response.json({ error: report.launch_count === 0 ? 1001 : 0 });
+      }
+    });
+    try {
+      await controller.reportNow();
+      expect(reports).toContainEqual(expect.objectContaining({ usage_date: '2026-11-19', launch_count: 1 }));
+      expect(memory.read()).toContain('2026-11-18');
+    } finally {
+      controller.dispose();
+    }
+  });
+
   it('keeps daily launch and active-minute counters', () => {
     const memory = memoryPersistence();
     const store = createTelemetryStore(

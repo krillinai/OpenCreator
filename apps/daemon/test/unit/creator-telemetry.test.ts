@@ -83,9 +83,13 @@ describe('creator telemetry outbox', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-task-trace-'));
     const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const outbox = createCreatorTelemetryOutbox(db);
-    const sink = createCreatorTelemetrySink({ outbox, readAccount: () => account });
+    let snapshot: { auth_state: 'signed_in' | 'signed_out'; account_id?: string; payment_state?: 'recharged' } = {
+      auth_state: 'signed_in', account_id: 'fixture-account', payment_state: 'recharged'
+    };
+    const sink = createCreatorTelemetrySink({ outbox, readAccount: () => account, readStartAccount: () => snapshot });
     const job = { id: 'creator_job_1', templateId: 'video-translation', status: 'draft', revision: 0 } as CreatorJob;
     sink.taskStarted(job);
+    snapshot = { auth_state: 'signed_out' };
     sink.taskStarted(job);
     sink.preflightRejected(job, 'subtitle', new CreatorExecutorError('creator_llm_config_missing', 'sensitive source URL'));
     await new Promise<void>(resolve => setImmediate(resolve));
@@ -95,6 +99,8 @@ describe('creator telemetry outbox', () => {
       ['task_started', undefined, undefined],
       ['preflight_rejected', 'subtitle', 'creator_llm_config_missing']
     ]);
+    expect(traces[0]).toMatchObject({ auth_state: 'signed_in', account_id: 'fixture-account', payment_state: 'recharged' });
+    expect(traces[1]).not.toHaveProperty('account_id');
     expect(JSON.stringify(traces)).not.toContain('sensitive');
     await outbox.closeTrace();
     expect(await outbox.listTrace()).toEqual(traces);

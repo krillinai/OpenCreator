@@ -636,9 +636,24 @@ export async function buildServer(input: BuildServerInput) {
     }
   });
   await gatewayAccount.initialize();
+  const telemetryAuthState = () => {
+    const state = gatewayAccount.peekState().authState;
+    return state === 'signed_in' || state === 'signed_out' ? state : undefined;
+  };
   const creatorTelemetry = createCreatorTelemetrySink({
     outbox: creatorTelemetryOutbox,
     enabled: process.env.OPENCREATOR_TELEMETRY_ENABLED !== '0',
+    readStartAccount() {
+      const authState = telemetryAuthState();
+      const accountId = authState === 'signed_in' ? gatewayAccount.peekState().account?.id : undefined;
+      const recharge = gatewayAccount.peekTelemetryRechargeState();
+      const paymentState = accountId && recharge.accountId === accountId
+        ? recharge.confirmedNoOrders ? 'not_recharged' : recharge.state === 'recharged' || recharge.state === 'pending' ? recharge.state : undefined
+        : undefined;
+      return { ...(authState ? { auth_state: authState } : {}), ...(accountId ? { account_id: accountId } : {}),
+        ...(paymentState ? { payment_state: paymentState } : {}) };
+    },
+    readExecutionMode(job) { return creatorRepository.getServiceBinding(job.id).source === 'manual' ? 'local' : undefined; },
     readAccount(job) {
       const account = gatewayAccount.peekState();
       const recharge = gatewayAccount.peekTelemetryRechargeState();
@@ -1768,7 +1783,7 @@ export async function buildServer(input: BuildServerInput) {
     maxSizeBytes: input.attachmentMaxSizeBytes
   });
   await registerApprovalRoutes(server, approvalManager);
-  await registerTelemetryRoutes(server, creatorTelemetryOutbox, creatorTelemetry);
+  await registerTelemetryRoutes(server, creatorTelemetryOutbox, creatorTelemetry, telemetryAuthState);
   await registerNotificationRoutes(server, notificationService);
   await registerTaskRoutes(server, taskService);
   await registerMemoryRoutes(server, memoryService, {

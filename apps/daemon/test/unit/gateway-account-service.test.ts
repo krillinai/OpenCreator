@@ -122,10 +122,14 @@ it('caches only coarse recharge state and its observation time from order respon
 it('reports an authoritative empty order list as not recharged', async () => {
   const f = await setup();
   await seedSavedAccount(f);
-  vi.spyOn(f.client, 'request').mockResolvedValue({ items: [] });
+  const request = vi.spyOn(f.client, 'request').mockResolvedValue({ items: [] });
   try {
     await f.service.billing('/api/v1/billing/orders');
-    expect(f.service.peekTelemetryRechargeState().state).toBe('not_recharged');
+    expect(f.service.peekTelemetryRechargeState()).toMatchObject({ state: 'not_recharged', confirmedNoOrders: true });
+    expect(f.service.peekTelemetryRechargeState().accountId).toBe(f.service.peekState().account?.id);
+    request.mockResolvedValue({ order: { status: 'failed' } });
+    await f.service.billing('/api/v1/billing/orders/order-secret');
+    expect(f.service.peekTelemetryRechargeState().confirmedNoOrders).toBeUndefined();
   } finally { await f.service.close(); }
 });
 

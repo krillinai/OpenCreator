@@ -41,6 +41,8 @@ export function createGatewayAccountService(input: {
   let rechargeSnapshot: {
     state: 'recharged' | 'not_recharged' | 'pending' | 'unknown';
     observedAt: string;
+    accountId?: string;
+    confirmedNoOrders?: true;
   } = { state: 'unknown', observedAt: new Date().toISOString() };
   let mutation = Promise.resolve();
   let selectedModels: Record<string, string> = {};
@@ -753,9 +755,11 @@ export function createGatewayAccountService(input: {
     const current = assertSignedIn();
     const response = await withAccountAccess(() => input.client.request(path, current.accessToken, body));
     const rechargeState = rechargeStateFromOrderResponse(response);
-    if (rechargeState !== undefined
-      && (rechargeSnapshot.state !== 'recharged' || rechargeState === 'recharged')) {
-      rechargeSnapshot = { state: rechargeState, observedAt: new Date().toISOString() };
+    if (rechargeState !== undefined && current.account?.id
+      && (rechargeSnapshot.accountId !== current.account.id || rechargeSnapshot.state !== 'recharged' || rechargeState === 'recharged')) {
+      const orders = (response as { items?: unknown })?.items;
+      rechargeSnapshot = { state: rechargeState, observedAt: new Date().toISOString(), accountId: current.account.id,
+        ...(path === '/api/v1/billing/orders' && Array.isArray(orders) && orders.length === 0 ? { confirmedNoOrders: true } : {}) };
     }
     return response;
   }

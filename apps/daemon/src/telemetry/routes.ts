@@ -8,8 +8,13 @@ import { apiError } from '../api/errors.js';
 export async function registerTelemetryRoutes(
   server: FastifyInstance,
   outbox: CreatorTelemetryOutbox,
-  sink?: CreatorTelemetrySink
+  sink?: CreatorTelemetrySink,
+  readAuthState?: () => 'signed_in' | 'signed_out' | undefined
 ): Promise<void> {
+  if (readAuthState) server.get('/telemetry/activity-auth', (_request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return { auth_state: sink?.traceEnabled() === false ? 'unknown' : readAuthState() ?? 'unknown' };
+  });
   server.get('/telemetry/events', (request, reply) => {
     const query = z.object({
       limit: z.coerce.number().int().min(1).max(CREATOR_TELEMETRY_BATCH_SIZE).optional()

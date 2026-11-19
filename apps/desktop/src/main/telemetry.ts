@@ -15,6 +15,8 @@ type TelemetryDay = {
   date: string;
   launchCount: number;
   activeMinutes: number;
+  seenSignedIn?: true;
+  seenSignedOut?: true;
 };
 
 type TelemetryState = {
@@ -67,6 +69,7 @@ export function startDesktopTelemetry(input: {
   let reportTimer: NodeJS.Timeout | undefined;
   let eventReportTimer: NodeJS.Timeout | undefined;
   let traceReport: AbortController | undefined;
+  let authSample: AbortController | undefined;
 
   const installId = () => {
     const existing = input.settings.read().telemetryInstallId;
@@ -80,6 +83,24 @@ export function startDesktopTelemetry(input: {
     launchRecorded = true;
     store.incrementLaunch(usageDate(now()));
   };
+  const sampleActivityAuth = async (date: string) => {
+    if (!endpoint || stopped || authSample) return;
+    const controller = new AbortController();
+    authSample = controller;
+    try {
+      const connection = input.getDaemonConnection?.();
+      if (!connection || !input.settings.read().telemetryEnabled) return;
+      const response = await fetchImpl(`${connection.address.replace(/\/+$/, '')}/telemetry/activity-auth`, {
+        headers: { Authorization: `Bearer ${connection.token}` },
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(REPORT_TIMEOUT_MS)])
+      });
+      if (!response.ok) return;
+      const state = (await response.json() as { auth_state?: unknown }).auth_state;
+      if (!stopped && !controller.signal.aborted && input.settings.read().telemetryEnabled && date === usageDate(now())
+        && (state === 'signed_in' || state === 'signed_out')) store.observeAuth(date, state);
+    } catch { /* Telemetry must not affect activity. */ }
+    finally { if (authSample === controller) authSample = undefined; }
+  };
   const sendReports = async () => {
     if (stopped || !input.settings.read().telemetryEnabled || endpoint === undefined) return;
     const currentInstallId = installId();
@@ -91,24 +112,29 @@ export function startDesktopTelemetry(input: {
       const timeout = setTimeout(() => controller.abort(), REPORT_TIMEOUT_MS);
       timeout.unref();
       try {
-        const response = await fetchImpl(endpoint, {
+        const report = {
+          install_id: currentInstallId, usage_date: day.date, launch_count: day.launchCount,
+          active_minutes: day.activeMinutes, app_version: input.appVersion,
+          operating_system: input.platform ?? process.platform, architecture: input.architecture ?? process.arch
+        };
+        const identity = { ...(day.seenSignedIn ? { seen_signed_in: true } : {}), ...(day.seenSignedOut ? { seen_signed_out: true } : {}) };
+        const send = (body: typeof report) => fetchImpl(endpoint, {
           method: 'POST',
           headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            install_id: currentInstallId,
-            usage_date: day.date,
-            launch_count: day.launchCount,
-            active_minutes: day.activeMinutes,
-            app_version: input.appVersion,
-            operating_system: input.platform ?? process.platform,
-            architecture: input.architecture ?? process.arch
-          }),
+          body: JSON.stringify(body),
           signal: controller.signal
         });
-        if (!response.ok) {
+        let response = await send({ ...report, ...identity });
+        let invalidPayload = await invalidTelemetryPayload(response);
+        if (day.launchCount === 0 && invalidPayload) continue;
+        if ((day.seenSignedIn || day.seenSignedOut) && invalidPayload && !controller.signal.aborted) {
+          response = await send(report);
+          invalidPayload = await invalidTelemetryPayload(response);
+        }
+        if (!response.ok || invalidPayload) {
           input.logger.warnRateLimited(
             'desktop-telemetry-report',
             'Desktop telemetry report was rejected',
@@ -229,9 +255,14 @@ export function startDesktopTelemetry(input: {
       const events = batch.events.slice(0, EVENT_BATCH_SIZE);
       const url = new URL(endpoint);
       url.pathname = `${url.pathname.replace(/\/+$/, '')}/task-events`;
-      const sent = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+      const send = (payload: unknown[]) => fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
         body: JSON.stringify({ install_id: installId(), app_version: input.appVersion,
-          operating_system: input.platform ?? process.platform, events }) });
+          operating_system: input.platform ?? process.platform, events: payload }) });
+      let sent = await send(events);
+      const extensionFields = ['auth_state', 'account_id', 'payment_state', 'execution_mode'];
+      if (enabled() && events.some(event => isRecord(event) && extensionFields.some(field => Object.hasOwn(event, field))) && await invalidTelemetryPayload(sent) && enabled()) {
+        sent = await send(events.map(event => isRecord(event) ? Object.fromEntries(Object.entries(event).filter(([key]) => !extensionFields.includes(key))) : event));
+      }
       if (!sent.ok || !enabled()) return;
       const receipt = await sent.json() as { error?: unknown; data?: { acknowledged_event_ids?: unknown } };
       if (receipt.error !== 0 || !Array.isArray(receipt.data?.acknowledged_event_ids) || !enabled()) return;
@@ -258,6 +289,7 @@ export function startDesktopTelemetry(input: {
   };
   const clearTimers = () => {
     traceReport?.abort();
+    authSample?.abort();
     clearInterval(activeTimer);
     clearInterval(reportTimer);
     clearInterval(eventReportTimer);
@@ -268,7 +300,9 @@ export function startDesktopTelemetry(input: {
   const startTimers = () => {
     activeTimer = setInterval(() => {
       if (!input.settings.read().telemetryEnabled || !input.isWindowActive()) return;
-      store.incrementActiveMinute(usageDate(now()));
+      const date = usageDate(now());
+      store.incrementActiveMinute(date);
+      void sampleActivityAuth(date);
     }, input.activeIntervalMs ?? ACTIVE_INTERVAL_MS);
     activeTimer.unref();
     reportTimer = setInterval(() => void reportNow(), input.reportIntervalMs ?? REPORT_INTERVAL_MS);
@@ -288,6 +322,7 @@ export function startDesktopTelemetry(input: {
     },
     setEnabled(enabled) {
       if (!enabled) activeReport?.abort();
+      if (!enabled) authSample?.abort();
       if (!enabled) traceReport?.abort();
       const work = settingQueue.then(async () => {
         const connection = input.getDaemonConnection?.();
@@ -403,10 +438,17 @@ export function createTelemetryStore(
       prune(date);
       write();
     },
+    observeAuth(date: string, auth: 'signed_in' | 'signed_out') {
+      const key = auth === 'signed_in' ? 'seenSignedIn' : 'seenSignedOut';
+      const previous = state.days.find(item => item.date === date);
+      if (!previous || previous[key]) return;
+      updateDay(date, value => ({ ...value, [key]: true }));
+      write();
+    },
     readDays(today: string): TelemetryDay[] {
       prune(today);
       return state.days
-        .filter(item => item.launchCount > 0)
+        .filter(item => item.launchCount > 0 || item.activeMinutes > 0)
         .sort((a, b) => a.date.localeCompare(b.date))
         .map(item => ({ ...item }));
     },
@@ -447,13 +489,22 @@ function readTelemetryState(
         return [{
           date: item.date,
           launchCount: Math.min(10_000, item.launchCount as number),
-          activeMinutes: Math.min(1440, item.activeMinutes as number)
+          activeMinutes: Math.min(1440, item.activeMinutes as number),
+          ...(item.seenSignedIn === true ? { seenSignedIn: true as const } : {}),
+          ...(item.seenSignedOut === true ? { seenSignedOut: true as const } : {})
         }];
       })
     };
   } catch {
     return { days: [] };
   }
+}
+
+async function invalidTelemetryPayload(response: Response): Promise<boolean> {
+  if (response.status === 400) return true;
+  if (!(response.headers.get('Content-Type') ?? '').includes('application/json')) return false;
+  try { return (await response.clone().json() as { error?: unknown })?.error === 1001; }
+  catch { return false; }
 }
 
 function sanitizeDaemonTelemetryEvent(

@@ -7,6 +7,10 @@ export type CreatorTaskTrace = {
   occurred_at: string;
   task_id: string;
   feature: string;
+  auth_state?: 'signed_in' | 'signed_out';
+  account_id?: string;
+  payment_state?: 'recharged' | 'not_recharged' | 'pending';
+  execution_mode?: 'local';
   stage_id?: string;
   attempt_id?: string;
   revision?: number;
