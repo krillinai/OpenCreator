@@ -225,3 +225,16 @@ it.each([false, true])('reassembles interleaved Chat tool calls with explicit in
     { id: 'call_london', name: 'get_weather', arguments: '{"city":"London"}' }
   ]);
 });
+
+it('asks streamed Chat requests for usage and maps the final usage chunk onto the Responses usage', async () => {
+  const streamed = responsesToChat({ model: 'gemini-3.7-flash', input: 'hi', stream: true });
+  expect(streamed.body.stream_options).toEqual({ include_usage: true });
+  expect(responsesToChat({ model: 'gemini-3.7-flash', input: 'hi' }).body.stream_options).toBeUndefined();
+  const sse = 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}\n\n'
+    + 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+    + 'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18,"prompt_tokens_details":{"cached_tokens":4}}}\n\n'
+    + 'data: [DONE]\n\n';
+  const response = await chatToResponses(new Response(sse, { headers: { 'content-type': 'text/event-stream' } }), streamed.tools, 'gemini-3.7-flash');
+  const completed = (await response.text()).split('\n\n').filter(f => f.includes('event: response.completed')).map(f => JSON.parse(f.split('data: ')[1]!))[0];
+  expect(completed.response.usage).toMatchObject({ input_tokens: 11, output_tokens: 7, total_tokens: 18, input_tokens_details: { cached_tokens: 4 } });
+});
