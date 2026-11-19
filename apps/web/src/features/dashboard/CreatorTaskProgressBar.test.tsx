@@ -215,6 +215,19 @@ describe('shared persistent task progress', () => {
     expect(view.onCompleted).not.toHaveBeenCalled();
   });
 
+  it('shows the insufficient-credit reason and allows a manual subtitle retry', async () => {
+    const failed = stage('subtitle', { id: 'failed_subtitle', status: 'failed', errorCode: 'credits_insufficient',
+      errorMessage: 'Provider error', progress: { workflow: true, phase: 'transcribing_audio' } });
+    const view = mount({ ...job([failed]), status: 'failed' });
+    expect(screen.getByRole('region', { name: '当前任务进度' })).toHaveTextContent('积分不足。请充值后重试当前阶段。');
+    expect(view.applyAction).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '重试当前阶段' }));
+    await act(async () => { await Promise.resolve(); });
+    expect(view.applyAction).toHaveBeenCalledWith('job_1', expect.objectContaining({ action: 'run-stage', input: {
+      stageId: 'subtitle', resumedFromStageRunId: failed.id, workflow: true
+    } }));
+  });
+
   it('retains failed retry feedback and offers resume after cancellation', async () => {
     const failed = stage('tts', { status: 'failed' });
     const view = mount({ ...job([failed]), status: 'failed' }, { applyAction: vi.fn().mockRejectedValue(new Error('offline')) });

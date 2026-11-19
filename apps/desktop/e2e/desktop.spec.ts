@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync
@@ -17,10 +18,12 @@ import {
   resolve
 } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createServer } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import type { CreatorJob } from '@opencreator/protocol';
 import {
   expect,
   test,
@@ -47,6 +50,144 @@ const fakeCodexScript = join(e2eDir, 'fixtures', 'fake-codex.mjs');
 const fakeCodexLauncherSource = join(e2eDir, 'fixtures', 'fake-codex-launcher.go');
 
 test.describe.configure({ mode: 'serial' });
+
+test('@package-smoke 字幕转录余额不足时不自动重试，充值后手动重试产出字幕', async ({}, testInfo) => {
+  const account = { id: 'subtitle-test', email: 'subtitle@example.test', verified: true };
+  const models = [
+    { id: 'deepseek-v4-flash', modality: 'text' as const, capabilities: ['chat', 'responses'] },
+    { id: 'whisper-1', modality: 'transcription' as const, capabilities: ['subtitle_timestamps'] }
+  ];
+  const defaults = { text: 'deepseek-v4-flash', transcription: 'whisper-1' };
+  let funded = false;
+  let translations = 0;
+  const submissions: Array<{ key: string; audio: boolean; funded: boolean }> = [];
+  const sourceText = 'Hello world.';
+  const targetText = '你好，世界。';
+  const gateway = createServer(async (request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    const path = request.url?.split('?')[0];
+    if (path === '/api/v1/client/bootstrap') return response.end(JSON.stringify(bootstrap));
+    if (path === '/api/v1/me') return response.end(JSON.stringify({ account }));
+    if (path === '/api/v1/client/models') return response.end(JSON.stringify({ models, defaults }));
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const payload = Buffer.concat(chunks).toString('utf8');
+    if (path === '/v1/audio/transcriptions' && request.method === 'POST') {
+      const key = String(request.headers['idempotency-key'] ?? '');
+      submissions.push({ key, audio: payload.includes('name="file"') && payload.includes('whisper-1'), funded });
+      if (!funded) return response.writeHead(402).end(JSON.stringify({ error: { code: 'credits_insufficient', message: 'Insufficient credits' } }));
+      const id = `ocreq_${createHash('sha256').update(`${account.id}:${key}`).digest('hex').slice(0, 48)}`;
+      return response.writeHead(200, { 'X-Request-ID': id }).end(JSON.stringify({
+        language: 'en', duration: 3, text: sourceText, segments: [{ start: 0.1, end: 2.8, text: sourceText }]
+      }));
+    }
+    if (path === '/v1/chat/completions') {
+      const { messages } = JSON.parse(payload) as { messages: Array<{ content: string }> };
+      const input = JSON.parse(messages.at(-1)?.content.split('Input JSON:\n').at(1) ?? '{}') as {
+        source_text?: string; max_target_characters?: number; max_characters?: number;
+        sentences?: Array<{ sentence_id: string; text: string }>
+      };
+      let content: string;
+      if (input.source_text !== undefined) content = JSON.stringify({ terms: [] });
+      else if (input.max_characters !== undefined) content = JSON.stringify({ corrections: [] });
+      else if (input.max_target_characters !== undefined && input.sentences) {
+        translations++;
+        const sentences = input.sentences;
+        content = JSON.stringify({ sentences: sentences.map(sentence => ({ sentence_id: sentence.sentence_id,
+          segments: [{ source: sentence.text, target: targetText }] })) });
+      } else return response.writeHead(400).end(JSON.stringify({ error: { code: 'unexpected_fixture_prompt' } }));
+      return response.end(JSON.stringify({ id: 'subtitle-test-translation', choices: [{ finish_reason: 'stop', message: { role: 'assistant', content } }] }));
+    }
+    if (path?.startsWith('/v1/requests/')) return response.writeHead(404).end(JSON.stringify({ error: { code: 'request_not_found' } }));
+    return response.end(JSON.stringify({ items: [] }));
+  });
+  await new Promise<void>(resolve => gateway.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${(gateway.address() as AddressInfo).port}`;
+  const bootstrap = {
+    schemaVersion: 3 as const, account, models, defaults, keyVersion: 'subtitle-1', bindingVersion: 'subtitle:1',
+    keyRotation: false, transport: 'gateway' as const, supplier: 'chatanywhere' as const, baseUrl: `${origin}/v1`
+  };
+  let fixture: DesktopFixture | undefined;
+  try {
+    fixture = await launchPackagedDesktop('success', { runtimeMode: 'bundled', gatewayOrigin: origin,
+      telemetryUrl: `${origin}/telemetry`, gatewaySelectedModels: defaults,
+      gatewayCredentials: { ...bootstrap, accessToken: 'subtitle-fixture-access', refreshToken: 'subtitle-fixture-refresh',
+        expiresIn: 900, accessExpiresAt: new Date(Date.now() + 900_000).toISOString() }
+    });
+    const { page } = fixture;
+    await waitForWorkspace(page);
+    await expect.poll(async () => (await runtimeRequest<{ activationState: string }>(page, 'GET', '/gateway/account')).body.activationState).toBe('ready');
+    const { body: { projects } } = await runtimeRequest<{ projects: Array<{ id: string }> }>(page, 'GET', '/projects?status=all');
+    const created = await runtimeRequest<{ job: CreatorJob }>(page, 'POST', '/creator/jobs', {
+      projectId: projects[0]?.id, templateId: 'video-translation', templateVersion: 2, creationKey: 'credits-retry',
+      state: { sourceType: 'file', sourceLanguage: 'en', targetLanguage: 'zh_cn', preferPlatformCaptions: false, dubbing: false, composeVideo: false }
+    });
+    expect(created.body.job).toBeDefined();
+    const { id, revision } = created.body.job;
+    const audio = Buffer.alloc(44 + 3 * 16_000 * 2);
+    audio.write('RIFF');
+    audio.writeUInt32LE(audio.length - 8, 4);
+    audio.write('WAVEfmt ', 8);
+    audio.writeUInt32LE(16, 16);
+    audio.writeUInt16LE(1, 20);
+    audio.writeUInt16LE(1, 22);
+    audio.writeUInt32LE(16_000, 24);
+    audio.writeUInt32LE(32_000, 28);
+    audio.writeUInt16LE(2, 32);
+    audio.writeUInt16LE(16, 34);
+    audio.write('data', 36);
+    audio.writeUInt32LE(audio.length - 44, 40);
+    for (let sample = 0; sample < 48_000; sample++) audio.writeInt16LE(Math.round(9000 * Math.sin(sample * 2 * Math.PI * 440 / 16_000)), 44 + sample * 2);
+    const uploaded = await page.evaluate(async ({ id, revision, bytes }) => {
+      const query = new URLSearchParams({ expectedRevision: String(revision), fileName: 'fixture.wav', mime: 'audio/wav' });
+      const response = await fetch(`/.opencreator/runtime/creator/jobs/${id}/source-video?${query}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/vnd.opencreator.creator-source' }, body: new Uint8Array(bytes)
+      });
+      return { status: response.status, body: await response.json() as { job: CreatorJob } };
+    }, { id, revision, bytes: [...audio] });
+    expect(uploaded).toMatchObject({ status: 201, body: { job: { id } } });
+    const started = await runtimeRequest(page, 'POST', `/creator/jobs/${id}/actions`, {
+      action: 'run-stage', expectedRevision: uploaded.body.job.revision, input: { stageId: 'subtitle', workflow: true }
+    });
+    expect(started.body).toMatchObject({ job: { id } });
+    const readJob = async () => (await runtimeRequest<{ job: CreatorJob }>(page, 'GET', `/creator/jobs/${id}`)).body.job;
+    await expect.poll(async () => (await readJob()).stages.at(-1)).toMatchObject({ status: 'failed', errorCode: 'credits_insufficient' });
+    const failed = (await readJob()).stages.at(-1)!;
+    await page.goto(`opencreator-app://app/#/workbench?tool=video-translation&jobId=${id}&returnTo=projects`);
+    await expect(page.getByText('请充值后重试当前阶段。', { exact: false }).first()).toBeVisible();
+    const retry = page.getByRole('button', { name: '重试当前阶段', exact: true }).first();
+    await expect(retry).toBeEnabled();
+    expect(submissions).toEqual([{ key: expect.stringMatching(/^creator:/), audio: true, funded: false }]);
+    expect(translations).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath('subtitle-credits-insufficient.png') });
+
+    funded = true;
+    await retry.click();
+    await expect.poll(async () => (await readJob()).stages.find(stage => stage.stageId === 'subtitle' && stage.id !== failed.id), { timeout: 30_000 })
+      .toMatchObject({ status: 'succeeded', errorCode: null });
+    const completed = await readJob();
+    expect(completed.stages.filter(stage => stage.stageId === 'subtitle')).toHaveLength(2);
+    expect(submissions).toHaveLength(2);
+    expect(submissions[1]).toMatchObject({ audio: true, funded: true });
+    expect(submissions[1]?.key).not.toBe(submissions[0]?.key);
+    expect(translations).toBeGreaterThan(0);
+    for (const [kind, text] of [['source_subtitle', sourceText], ['target_subtitle', targetText], ['bilingual_subtitle', targetText]] as const) {
+      const artifact = completed.artifacts?.find(candidate => candidate.kind === kind && candidate.status === 'completed');
+      expect(artifact, kind).toBeDefined();
+      const srt = await page.evaluate(async ({ id, artifactId }) => {
+        const response = await fetch(`/.opencreator/runtime/creator/jobs/${id}/artifacts/${artifactId}/content`);
+        return { status: response.status, text: await response.text() };
+      }, { id, artifactId: artifact!.id });
+      expect(srt.status).toBe(200);
+      expect(srt.text).toContain(text);
+      expect(srt.text).toMatch(/\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}/);
+    }
+  } finally {
+    if (fixture) await closeFixture(fixture);
+    gateway.closeAllConnections();
+    await new Promise<void>(resolve => gateway.close(() => resolve()));
+  }
+});
 
 test('@package-smoke 官方配音试听加载公开样本且不触发付费合成', async ({}, testInfo) => {
   const account = { id: 'speech-test', email: 'speech@example.test', verified: true };
@@ -1980,7 +2121,7 @@ async function launchPackagedDesktop(
     browserLanguage?: string;
   } = {}
 ): Promise<DesktopFixture> {
-  const root = mkdtempSync(join(tmpdir(), 'opencreator-desktop-e2e-'));
+  const root = mkdtempSync(join(realpathSync(tmpdir()), 'opencreator-desktop-e2e-'));
   const binDir = options.codexLocation === 'nvm'
     ? join(root, '.nvm', 'versions', 'node', 'v22.14.0', 'bin')
     : options.codexLocation === 'chatgpt-app'

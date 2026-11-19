@@ -304,7 +304,7 @@ func TestGenerateSubtitlesPreservesPlatformAndAudioFallbackErrors(t *testing.T) 
 }
 
 func TestGenerateSubtitlesPreservesTranscriptionClassification(t *testing.T) {
-	for _, code := range []string{"audio_no_speech", "audio_transcription_empty", "audio_transcription_invalid_response", "audio_transcription_timestamps_missing", "audio_transcription_api_failed", "audio_transcription_pending"} {
+	for _, code := range []string{"audio_no_speech", "audio_transcription_empty", "audio_transcription_invalid_response", "audio_transcription_timestamps_missing", "audio_transcription_api_failed", "audio_transcription_pending", "credits_insufficient"} {
 		for _, fallback := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/fallback=%v", code, fallback), func(t *testing.T) {
 				classified := &whisper.TranscriptionError{Code: code, Message: "fixture reason"}

@@ -206,6 +206,17 @@ describe('localized issue copy', () => {
     expect(presentIssue(next, 'en-US').description).toContain('whether the audio contains speech is still unconfirmed');
     expect(presentIssue(next, 'sv-SE').description).not.toMatch(/\p{Script=Han}/u);
   });
+  it.each([
+    ['zh-CN', '积分不足', '请充值后重试当前阶段。'],
+    ['en-US', 'Not enough credits', 'Top up your credits and retry this stage.'],
+    ['sv-SE', 'Otillräckligt med krediter', 'Fyll på krediter och försök igen med det här steget.']
+  ] as const)('explains a credit rejection in %s', (language, message, nextStep) => {
+    const next = { ...issue, code: 'credits_insufficient', publicFacts: {
+      kind: 'unknown' as const, httpStatus: 402, upstreamCode: 'credits_insufficient'
+    } };
+    expect(issueConversationText(next, language)).toMatchObject({ message: expect.stringContaining(message), nextStep });
+    expect(presentIssue(next, language).description).toContain(message);
+  });
   it('shows the filesystem failure code and actual cause with relevant retry guidance', () => {
     const next = { ...issue, source: 'stage' as const, code: 'ERR_FS_FILE_TOO_LARGE', publicFacts: {
       kind: 'storage' as const, upstreamCode: 'ERR_FS_FILE_TOO_LARGE',

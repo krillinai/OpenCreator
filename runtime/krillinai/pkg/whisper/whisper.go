@@ -9,6 +9,7 @@ import (
 	"krillin-ai/internal/types"
 	"krillin-ai/log"
 	"net"
+	"net/http"
 	"strings"
 )
 
@@ -49,6 +50,9 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 			if classified.UpstreamCode == "request_outcome_unknown" {
 				classified.Code = "audio_transcription_pending"
 				classified.Message = "transcription request is pending verification; retry this stage later"
+			} else if apiError.HTTPStatusCode == http.StatusPaymentRequired && apiError.Code == "credits_insufficient" {
+				classified.Code = "credits_insufficient"
+				classified.Message = "Insufficient credits"
 			}
 		} else {
 			var networkError net.Error

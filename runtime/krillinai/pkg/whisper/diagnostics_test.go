@@ -104,6 +104,8 @@ func TestTranscriptionResponseClassification(t *testing.T) {
 		{"malformed_json", 200, `<html>upstream error</html>`, "audio_transcription_invalid_response", false},
 		{"http_error", 503, `{"error":{"message":"unavailable","type":"server_error"}}`, "audio_transcription_api_failed", true},
 		{"pending_gateway_request", 409, `{"error":{"message":"pending verification","code":"request_outcome_unknown"}}`, "audio_transcription_pending", false},
+		{"insufficient_credits", 402, `{"error":{"message":"Insufficient credits","code":"credits_insufficient"}}`, "credits_insufficient", false},
+		{"test_budget", 402, `{"error":{"message":"Test budget exceeded","code":"model_test_budget_exceeded"}}`, "audio_transcription_api_failed", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +130,7 @@ func TestTranscriptionResponseClassification(t *testing.T) {
 
 func TestTranscriptionHTTPDiagnostics(t *testing.T) {
 	log.InitLogger()
-	for _, status := range []int{401, 429, 503} {
+	for _, status := range []int{401, 402, 429, 503} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Request-ID", "ocreq_"+strings.Repeat("a", 48))
 			w.WriteHeader(status)

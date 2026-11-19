@@ -13,7 +13,7 @@ import { openRuntimeDatabase } from '../../src/storage/database.js';
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
 
-async function fixture(firstStatus: 503 | 202 | 400 = 503) {
+async function fixture(firstStatus: 503 | 202 | 400 | 402 = 503) {
   const root = await mkdtemp(join(tmpdir(), 'oc-gateway-transcription-'));
   const db = openRuntimeDatabase(join(root, 'runtime.sqlite'));
   const repository = createCreatorRepository(db);
@@ -24,6 +24,8 @@ async function fixture(firstStatus: 503 | 202 | 400 = 503) {
   let originalState: 'outcome_unknown' | 'waiting_upstream' | 'succeeded' | 'failed' = 'outcome_unknown';
   let originalBillingState: 'reconciling' | 'released' = 'reconciling';
   const postedKeys: string[] = [];
+  const rejected = firstStatus === 400 || firstStatus === 402;
+  const firstCode = firstStatus === 402 ? 'credits_insufficient' : firstStatus === 400 ? 'invalid_request' : 'request_outcome_unknown';
   const originalId = () => `ocreq_${createHash('sha256').update(`a:${postedKeys[0]}`).digest('hex').slice(0, 48)}`;
   const fetcher = vi.fn<typeof fetch>(async (url, options) => {
     if (options?.method === 'POST') {
@@ -32,13 +34,13 @@ async function fixture(firstStatus: 503 | 202 | 400 = 503) {
       const id = `ocreq_${createHash('sha256').update(`a:${key}`).digest('hex').slice(0, 48)}`;
       return postedKeys.length === 1
         ? Response.json(firstStatus === 202 ? { requestId: id, state: 'outcome_unknown' }
-          : { error: { code: firstStatus === 400 ? 'invalid_request' : 'request_outcome_unknown' } },
-          { status: firstStatus, headers: firstStatus === 400 ? {} : { 'X-Request-ID': id } })
+          : { error: { code: firstCode } },
+          { status: firstStatus, headers: rejected ? {} : { 'X-Request-ID': id } })
         : Response.json(transcript, { headers: { 'X-Request-ID': id } });
     }
     if (String(url).endsWith('/result')) return Response.json(transcript, { headers: { 'X-Request-ID': originalId() } });
     const id = String(url).split('/').at(-1)!;
-    if (firstStatus === 400 && id === originalId()) return Response.json({ error: { code: 'request_not_found' } }, { status: 404 });
+    if (rejected && id === originalId()) return Response.json({ error: { code: 'request_not_found' } }, { status: 404 });
     return Response.json({ requestId: id, state: id === originalId() ? originalState : 'succeeded',
       billingState: id === originalId() ? originalState === 'succeeded' ? 'settled' : originalBillingState : 'settled' });
   });
@@ -115,9 +117,12 @@ it('uses a new request identity only after the uncertain transcription is releas
   expect(f.postedKeys[1]).not.toBe(f.postedKeys[0]);
 });
 
-it('resubmits a rejected transcription on a new stage without waiting for a nonexistent request', async () => {
-  const f = await fixture(400);
-  expect((await f.transcribe()).statusCode).toBe(400);
+it.each([[400, 'invalid_request'], [402, 'credits_insufficient']] as const)('preserves HTTP %i and resubmits only on a new stage', async (status, code) => {
+  const f = await fixture(status);
+  const rejection = await f.transcribe();
+  expect(rejection.statusCode).toBe(status);
+  expect(rejection.json()).toMatchObject({ error: { code } });
+  expect(f.postedKeys).toHaveLength(1);
   const result = await f.transcribe(f.retryStage().id);
   expect(result.statusCode).toBe(200);
   expect(f.postedKeys).toHaveLength(2);

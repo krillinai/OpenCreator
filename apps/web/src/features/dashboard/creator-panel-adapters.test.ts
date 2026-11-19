@@ -27,6 +27,13 @@ describe('video download controls', () => {
 });
 
 describe('video translation failures', () => {
+  it.each([
+    ['zh-CN', '积分不足。请充值后重试当前阶段。'],
+    ['en-US', 'Not enough credits. Top up your credits and retry this stage.'],
+    ['sv-SE', 'Otillräckligt med krediter. Fyll på krediter och försök igen med det här steget.']
+  ] as const)('gives recharge guidance in %s', (language, message) => {
+    expect(creatorSystemIssueText('credits_insufficient', createLocalizedCopy(language))).toBe(message);
+  });
   it('explains pending transcription in each supported language', () => {
     expect(creatorSystemIssueText('audio_transcription_pending', zh)).toContain('核对');
     expect(creatorSystemIssueText('audio_transcription_pending', en)).toContain('verified');

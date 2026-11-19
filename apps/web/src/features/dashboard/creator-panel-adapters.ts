@@ -6,7 +6,7 @@ import type {
 } from '@opencreator/protocol';
 import type { LocalizeCopy } from '../../i18n/localized-copy.js';
 import { localComponentPreparationMessage } from '../settings/local-component-copy.js';
-import { isYtDlpCaptionConnectionRefused, isYtDlpCaptionTimeout, isYtDlpPreviewConnectionRefused, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
+import { creditInsufficientCopy, isYtDlpCaptionConnectionRefused, isYtDlpCaptionTimeout, isYtDlpPreviewConnectionRefused, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
 
 export type CreatorPanelLocalize = LocalizeCopy;
 
@@ -1665,6 +1665,10 @@ export function creatorSystemIssueText(
   l: CreatorPanelLocalize
 ): string | null {
   if (code === null) return null;
+  if (code === 'credits_insufficient') {
+    const { message, nextStep } = creditInsufficientCopy(l);
+    return `${message}${l('', ' ', ' ')}${nextStep}`;
+  }
   const labels: Record<string, string> = {
     creator_llm_config_missing: l(
       '请先配置文本模型',

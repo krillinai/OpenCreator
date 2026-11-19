@@ -26,9 +26,9 @@ describe('additional language catalogs', () => {
   it('covers subtitle translation and download messages in every additional language', () => {
     const messages = [
       'Add an SRT file to translate first', 'Add source', 'Add subtitles', 'Automatic captions',
-      'Bilingual SRT', 'Manual subtitles', 'Remove subtitles', 'Replace file', 'Save subtitles',
+      'Bilingual SRT', 'Manual subtitles', 'Not enough credits.', 'Remove subtitles', 'Replace file', 'Save subtitles',
       'Source type', 'Subtitle Translation', 'Subtitles were saved; the project remains V{{0}}.',
-      'Translate subtitles', 'Translate video', 'Translated SRT', 'Waiting for subtitles'
+      'Top up your credits and retry this stage.', 'Translate subtitles', 'Translate video', 'Translated SRT', 'Waiting for subtitles'
     ];
     for (const [language, catalog] of Object.entries(additionalLanguageCatalogs)) {
       for (const message of messages) {
