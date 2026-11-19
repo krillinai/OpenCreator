@@ -531,6 +531,61 @@ describe('desktop telemetry', () => {
     expect(acknowledgments).toBe(1);
   });
 
+  it('resends task events after HTTP rejection and timeout, and acknowledges only the delivered subset', async () => {
+    const deliveredID = '821526e6-e9a7-4c91-8ec4-72e869673511';
+    const pendingID = '821526e6-e9a7-4c91-8ec4-72e869673512';
+    const sent: string[][] = [];
+    const acknowledgments: string[][] = [];
+    let accepted = false;
+    let timedOut = false;
+    const nativeTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => nativeTimeout(30));
+    const controller = startDesktopTelemetry({
+      path: '/virtual/telemetry.json', settings: memorySettings(), logger: logger(), appVersion: '3.3.3',
+      isOfficialBuild: false, endpointOverride: 'http://127.0.0.1:8790/api/v1/public/desktop-usage',
+      getDaemonConnection: () => ({ address: 'http://127.0.0.1:31234', token: 'local-token' }),
+      isWindowActive: () => false, eventReportIntervalMs: 10, persistence: memoryPersistence().persistence,
+      fetchImpl: async (url, request) => {
+        const target = String(url);
+        if (target === 'http://127.0.0.1:31234/telemetry/task-events') {
+          return Response.json({ events: [deliveredID, pendingID].map(event_id => ({ event_id })) });
+        }
+        if (target.endsWith('/telemetry/task-events/ack')) {
+          acknowledgments.push(JSON.parse(String(request?.body)).event_ids);
+          return Response.json({ acknowledged: 1 });
+        }
+        if (target.endsWith('/desktop-usage/task-events')) {
+          expect(new Headers(request?.headers).has('Authorization')).toBe(false);
+          sent.push(JSON.parse(String(request?.body)).events.map((event: { event_id: string }) => event.event_id));
+          if (sent.length === 1) return Response.json({}, { status: 503 });
+          if (!accepted) {
+            const signal = request?.signal;
+            if (!signal) throw new Error('Missing request timeout');
+            return new Promise<Response>((_resolve, reject) => {
+              signal.addEventListener('abort', () => {
+                timedOut = true;
+                reject(signal.reason);
+              }, { once: true });
+            });
+          }
+          return Response.json({ error: 0, data: { acknowledged_event_ids: [deliveredID, 'not-from-this-batch'] } });
+        }
+        return Response.json({});
+      }
+    });
+    try {
+      await vi.waitFor(() => expect(timedOut).toBe(true));
+      expect(acknowledgments).toEqual([]);
+      accepted = true;
+      await vi.waitFor(() => expect(acknowledgments.length).toBeGreaterThan(0));
+      expect(sent.every(ids => ids.join(',') === `${deliveredID},${pendingID}`)).toBe(true);
+      expect(acknowledgments.every(ids => ids.length === 1 && ids[0] === deliveredID)).toBe(true);
+    } finally {
+      controller.dispose();
+      timeout.mockRestore();
+    }
+  });
+
   it('does not pull or deliver daemon events while disabled', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const controller = startDesktopTelemetry({

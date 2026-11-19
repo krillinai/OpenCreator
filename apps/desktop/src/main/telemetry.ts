@@ -66,6 +66,7 @@ export function startDesktopTelemetry(input: {
   let activeTimer: NodeJS.Timeout | undefined;
   let reportTimer: NodeJS.Timeout | undefined;
   let eventReportTimer: NodeJS.Timeout | undefined;
+  let traceReport: AbortController | undefined;
 
   const installId = () => {
     const existing = input.settings.read().telemetryInstallId;
@@ -211,6 +212,36 @@ export function startDesktopTelemetry(input: {
       );
     }
   };
+  const sendTaskTrace = async () => {
+    const connection = input.getDaemonConnection?.();
+    if (!endpoint || !connection || stopped || traceReport || !input.settings.read().telemetryEnabled) return;
+    const controller = new AbortController();
+    traceReport = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(REPORT_TIMEOUT_MS)]);
+    const daemon = connection.address.replace(/\/+$/, '');
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${connection.token}` };
+    const enabled = () => !stopped && input.settings.read().telemetryEnabled && !controller.signal.aborted;
+    try {
+      const pulled = await fetchImpl(`${daemon}/telemetry/task-events`, { headers, signal });
+      if (!pulled.ok || !enabled()) return;
+      const batch = await pulled.json() as { events?: unknown };
+      if (!Array.isArray(batch.events) || batch.events.length === 0 || !enabled()) return;
+      const events = batch.events.slice(0, EVENT_BATCH_SIZE);
+      const url = new URL(endpoint);
+      url.pathname = `${url.pathname.replace(/\/+$/, '')}/task-events`;
+      const sent = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+        body: JSON.stringify({ install_id: installId(), app_version: input.appVersion,
+          operating_system: input.platform ?? process.platform, events }) });
+      if (!sent.ok || !enabled()) return;
+      const receipt = await sent.json() as { error?: unknown; data?: { acknowledged_event_ids?: unknown } };
+      if (receipt.error !== 0 || !Array.isArray(receipt.data?.acknowledged_event_ids) || !enabled()) return;
+      const batchIDs = new Set(events.filter(isRecord).map(event => event.event_id));
+      const ids = receipt.data.acknowledged_event_ids.filter(id => typeof id === 'string' && batchIDs.has(id));
+      if (ids.length > 0) await fetchImpl(`${daemon}/telemetry/task-events/ack`, { method: 'POST', headers, signal,
+        body: JSON.stringify({ event_ids: ids }) });
+    } catch { /* Telemetry is best effort. */ }
+    finally { if (traceReport === controller) traceReport = undefined; }
+  };
   const reportNow = () => {
     const work = reportQueue.then(async () => {
       await sendReports();
@@ -220,11 +251,13 @@ export function startDesktopTelemetry(input: {
     return work;
   };
   const reportEventsNow = () => {
+    void sendTaskTrace().catch(() => undefined);
     const work = reportQueue.then(sendEventReports);
     reportQueue = work.catch(() => undefined);
     return work;
   };
   const clearTimers = () => {
+    traceReport?.abort();
     clearInterval(activeTimer);
     clearInterval(reportTimer);
     clearInterval(eventReportTimer);
@@ -255,6 +288,7 @@ export function startDesktopTelemetry(input: {
     },
     setEnabled(enabled) {
       if (!enabled) activeReport?.abort();
+      if (!enabled) traceReport?.abort();
       const work = settingQueue.then(async () => {
         const connection = input.getDaemonConnection?.();
         if (connection !== undefined) {

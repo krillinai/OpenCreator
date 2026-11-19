@@ -3,6 +3,7 @@ import { isDirectTransport } from './supplier.js';
 import { createDefaultCreatorServicesConfig, gatewayDefaultVoiceId, gatewayModelReady, gatewayTranslationFlashModel, type CreatorServicesConfig, type CreatorProviderRequest, type CreatorStageRun, type CreatorJob, type GatewayModel } from '@opencreator/protocol';
 import type { FastifyInstance } from 'fastify';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import type { CreatorTelemetrySink } from '../telemetry/creator.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -32,6 +33,7 @@ export function createGatewayCreatorSource(input: {
   readStageRun?(stageRunId: string): CreatorStageRun | undefined;
   ledger?: CreatorProviderRequestLedger;
   directRequestsRoot?: string;
+  telemetry?: Pick<CreatorTelemetrySink, 'gatewayCall' | 'traceEnabled'>;
 }) {
   const capabilities = new Map<string, { token: string; accountId: string; bindingVersion: string; supplierBase: string; logicalId?: string; stageRunId?: string; jobId?: string }>();
   const context = new AsyncLocalStorage<{ snapshot: CreatorServiceBinding; logicalId: string; stageRunId: string; jobId: string; manualVideo: boolean }>();
@@ -399,14 +401,44 @@ export function createGatewayCreatorSource(input: {
                 body = Buffer.isBuffer(native.body) ? new Uint8Array(native.body) : JSON.stringify(native.body);
               }
               const gatewayRequest = async (target: string, method = 'GET', payload?: typeof body): Promise<Response> => {
-                let result = await (input.fetcher ?? fetch)(`${credentials.baseUrl}/${target}`, { method, headers, body: payload, redirect: 'error', signal });
+                const requestOnce = () => {
+                  const send = (requestHeaders: Record<string, string>) => (input.fetcher ?? fetch)(`${credentials.baseUrl}/${target}`, { method, headers: requestHeaders, body: payload, redirect: 'error', signal });
+                  const telemetry = input.telemetry;
+                  let trace: Parameters<CreatorTelemetrySink['gatewayCall']>[0] | undefined;
+                  try {
+                    if (credentials.transport === 'gateway' && telemetry?.traceEnabled() && original.jobId && original.stageRunId
+                      && input.readJobTemplateId?.(original.jobId) === 'video-translation') {
+                      const operation = target.endsWith('/result') ? 'result_read' : target.startsWith('requests/') ? 'status_lookup' : resource;
+                      if (/^(?:result_read|status_lookup|audio\/(?:speech|transcriptions)|chat\/completions|responses)$/.test(operation)) {
+                        const stageId = input.readStageRun?.(original.stageRunId)?.stageId;
+                        trace = { event_type: 'request_started', task_id: original.jobId, attempt_id: original.stageRunId,
+                          ...(stageId ? { stage_id: stageId } : {}), operation, call_id: randomUUID() };
+                        telemetry.gatewayCall(trace);
+                      }
+                    }
+                  } catch { trace = undefined; }
+                  if (!trace) return send(headers);
+                  const facts = trace;
+                  const started = performance.now();
+                  const finish = (response?: Response) => {
+                    try {
+                      const id = response?.headers.get('x-request-id') ?? (target.startsWith('requests/') ? target.split('/')[1] : undefined);
+                      telemetry?.gatewayCall({ ...facts, event_type: 'request_finished',
+                        outcome: response?.ok ? 'succeeded' : 'failed', duration_ms: Math.round(performance.now() - started),
+                        ...(response ? { http_status: response.status } : { code: signal.aborted ? 'request_aborted' : 'transport_error' }),
+                        ...(id && /^ocreq_[0-9a-f]{48}$/.test(id) ? { gateway_request_id: id } : {}) });
+                    } catch { /* Telemetry is best effort. */ }
+                  };
+                  return send({ ...headers, 'X-OC-Call-ID': facts.call_id! }).then(response => { finish(response); return response; }, error => { finish(); throw error; });
+                };
+                let result = await requestOnce();
                 if (credentials.transport === 'gateway' && result.status === 401 && input.account.recoverModelCredentials) {
                   await result.body?.cancel();
                   const updated = await input.account.recoverModelCredentials(credentials.keyVersion);
                   if (updated.accountId !== credentials.accountId || updated.baseUrl !== credentials.baseUrl) throw new GatewayError('supplier_binding_changed', 409);
                   if (updated.modelKey !== headers.Authorization?.replace(/^Bearer /, '')) {
                     headers.Authorization = `Bearer ${updated.modelKey}`;
-                    result = await (input.fetcher ?? fetch)(`${credentials.baseUrl}/${target}`, { method, headers, body: payload, redirect: 'error', signal });
+                    result = await requestOnce();
                   }
                 }
                 return result;

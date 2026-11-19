@@ -116,6 +116,8 @@ export function createCreatorStageRunner(input: {
         return stageRun;
       }
       const job = requireJob(input.repository, jobId);
+      input.telemetry?.taskStarted(job);
+      input.telemetry?.traceStageStarted(job, stageRun);
       const template = input.templates.get(job.templateId, job.templateVersion);
       const stage = template.stages.find(candidate => candidate.id === stageId);
       if (stage === undefined) throw new CreatorExecutorError('creator_stage_not_found', 'Creator stage was not found');
@@ -557,6 +559,7 @@ export function createCreatorStageRunner(input: {
     ));
     const issue = stageIssues.find(candidate => candidate.code === stage.errorCode)
       ?? (stage.errorCode === null ? stageIssues[0] : undefined);
+    input.telemetry.taskState(job);
     input.telemetry.stageFinished(
       job,
       stage,

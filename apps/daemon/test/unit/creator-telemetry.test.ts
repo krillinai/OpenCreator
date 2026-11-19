@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Fastify from 'fastify';
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCreatorTelemetryOutbox } from '../../src/telemetry/outbox.js';
 import {
@@ -53,6 +54,31 @@ function event(eventId = '9d9dd73e-b27f-4f0f-a5ef-0f5763d04c1a'): CreatorTelemet
 }
 
 describe('creator telemetry outbox', () => {
+  it('reports the video translation launch and preflight rejection separately from legacy stage events', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-task-trace-'));
+    const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const outbox = createCreatorTelemetryOutbox(db);
+    const sink = createCreatorTelemetrySink({ outbox, readAccount: () => account });
+    const job = { id: 'creator_job_1', templateId: 'video-translation', status: 'draft', revision: 0 } as CreatorJob;
+    sink.taskStarted(job);
+    sink.taskStarted(job);
+    sink.preflightRejected(job, 'subtitle', new CreatorExecutorError('creator_llm_config_missing', 'sensitive source URL'));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(outbox.list()).toEqual([]);
+    const traces = await outbox.listTrace();
+    expect(traces.map(trace => [trace.event_type, trace.stage_id, trace.code])).toEqual([
+      ['task_started', undefined, undefined],
+      ['preflight_rejected', 'subtitle', 'creator_llm_config_missing']
+    ]);
+    expect(JSON.stringify(traces)).not.toContain('sensitive');
+    await outbox.closeTrace();
+    expect(await outbox.listTrace()).toEqual(traces);
+    await outbox.closeTrace();
+    db.close();
+    expect(() => sink.taskStarted(job)).not.toThrow();
+    await new Promise<void>(resolve => setImmediate(resolve));
+  });
+
   it('persists, deduplicates, bounds and acknowledges events', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-telemetry-outbox-'));
     const path = join(tempDir, 'app.sqlite');
@@ -84,6 +110,44 @@ describe('creator telemetry outbox', () => {
       await app.close();
       db.close();
     });
+  });
+
+  it('keeps the task collector isolated from a locked trace database and the legacy outbox', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-task-trace-lock-'));
+    const path = join(tempDir, 'app.sqlite');
+    const db = openRuntimeDatabase(path);
+    const outbox = createCreatorTelemetryOutbox(db);
+    const sink = createCreatorTelemetrySink({ outbox, readAccount: () => account });
+    const app = Fastify();
+    await registerTelemetryRoutes(app, outbox, sink);
+    const trace = { event_id: 'c5a6e39d-383e-4a24-bfba-5563a6b72dd1', event_type: 'task_started' as const,
+      occurred_at: new Date().toISOString(), task_id: 'creator_job_1', feature: 'video-translation' };
+    try {
+      outbox.enqueue(event(trace.event_id), 'fixture');
+      await outbox.enqueueTrace([trace]);
+      const lock = new Database(`${path}.task-trace`, { timeout: 0 });
+      try {
+        lock.exec('BEGIN EXCLUSIVE');
+        const pulled = await app.inject('/telemetry/task-events');
+        expect(pulled.statusCode).toBe(200);
+        expect(pulled.json()).toEqual({ events: [] });
+        expect(outbox.count()).toBe(1);
+      } finally {
+        lock.close();
+      }
+      expect((await app.inject('/telemetry/task-events')).json()).toEqual({ events: [trace] });
+      const ack = await app.inject({ method: 'POST', url: '/telemetry/task-events/ack', payload: { event_ids: [trace.event_id] } });
+      expect(ack.json()).toEqual({ acknowledged: 1 });
+      expect(outbox.count()).toBe(1);
+      await outbox.enqueueTrace([trace]);
+      await app.inject({ method: 'POST', url: '/telemetry/enabled', payload: { enabled: false } });
+      expect((await app.inject('/telemetry/task-events')).json()).toEqual({ events: [] });
+      expect(await outbox.listTrace()).toEqual([]);
+    } finally {
+      await app.close();
+      await outbox.closeTrace();
+      db.close();
+    }
   });
 
   it('drops events outside the server acceptance window before reporting', async () => {

@@ -93,6 +93,7 @@ import type { CodexNativeImageRuntime } from '../image-generation/provider.js';
 import type { CreatorIssueService } from '../creator/issues.js';
 import { registerCreatorThumbnailRoutes } from './routes.creator-thumbnail.js';
 import { GatewayError } from '../gateway/client.js';
+import type { CreatorTelemetrySink } from '../telemetry/creator.js';
 
 export async function registerCreatorRoutes(
   server: FastifyInstance,
@@ -112,6 +113,7 @@ export async function registerCreatorRoutes(
     artifactImportService?: CreatorArtifactImportService;
     jobsRoot: string;
     dispatcher: CreatorCommandDispatcher;
+    telemetry?: CreatorTelemetrySink;
     preflight?: Pick<CreatorPreflight, 'check'>;
     stageRunner?: Pick<CreatorStageRunner, 'cancel' | 'cancelJob' | 'pauseDownload' | 'resumeDownload'>;
     presets?: CreatorPresetRegistry;
@@ -1001,6 +1003,7 @@ export async function registerCreatorRoutes(
 
   server.post<{ Body: unknown }>('/creator/jobs/:id/actions', async (request, reply) => {
     const { id } = request.params as { id: string };
+    let preflightTrace: { job: CreatorJob; stageId: string } | undefined;
     try {
       const body = readObject(request.body);
       const action = readString(body.action, 'action');
@@ -1008,6 +1011,11 @@ export async function registerCreatorRoutes(
       const jobBeforeAction = service.getJob(id);
       if (jobBeforeAction === undefined) {
         throw new CreatorServiceError('creator_job_not_found', 'Creator job not found');
+      }
+      if ((action === 'run-stage' || action === 'retry-stage') && jobBeforeAction.templateId === 'video-translation'
+        && typeof actionInput.stageId === 'string') {
+        preflightTrace = { job: jobBeforeAction, stageId: actionInput.stageId };
+        options.telemetry?.taskStarted(jobBeforeAction);
       }
       if (
         (action === 'run-stage' || action === 'retry-stage')
@@ -1097,6 +1105,7 @@ export async function registerCreatorRoutes(
           throw error;
         }
       }
+      preflightTrace = undefined;
       const expectedRevision = readInteger(body.expectedRevision, 'expectedRevision');
       const result = await options.dispatcher.dispatchAsync(id, {
         idempotencyKey: typeof body.idempotencyKey === 'string'
@@ -1141,6 +1150,7 @@ export async function registerCreatorRoutes(
       }
       return result;
     } catch (error) {
+      if (preflightTrace) options.telemetry?.preflightRejected(preflightTrace.job, preflightTrace.stageId, error);
       return sendCreatorError(reply, error, {
         jobId: id,
         source: error instanceof CreatorPreflightError ? 'preflight' : 'api',

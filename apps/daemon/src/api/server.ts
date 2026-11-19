@@ -663,6 +663,7 @@ export async function buildServer(input: BuildServerInput) {
     const job = creatorRepository.getJob(stage.jobId);
     if (job === undefined) continue;
     const template = creatorTemplates.get(job.templateId, job.templateVersion);
+    creatorTelemetry.taskState(job);
     creatorTelemetry.stageFinished(job, stage, template.id, 'interrupted');
   }
   const creatorPresetCatalogRoot = resolve(
@@ -779,7 +780,7 @@ export async function buildServer(input: BuildServerInput) {
       storedCreatorServicesConfigStore,
       localCodexTextModelDefaults
     );
-  gatewayCreatorSource = createGatewayCreatorSource({ account: gatewayAccount, manual: manualCreatorServicesConfigStore, getLocalOrigin: getAgentToolBaseUrl, readJobBinding: creatorRepository.getServiceBinding, readJobState: id => creatorRepository.getJob(id)?.state, readJobTemplateId: id => creatorRepository.getJob(id)?.templateId, readStageRun: creatorRepository.getStageRun, ledger: creatorProviderRequestLedger, directRequestsRoot: join(dataDir, 'gateway', 'requests') });
+  gatewayCreatorSource = createGatewayCreatorSource({ account: gatewayAccount, manual: manualCreatorServicesConfigStore, getLocalOrigin: getAgentToolBaseUrl, readJobBinding: creatorRepository.getServiceBinding, readJobState: id => creatorRepository.getJob(id)?.state, readJobTemplateId: id => creatorRepository.getJob(id)?.templateId, readStageRun: creatorRepository.getStageRun, ledger: creatorProviderRequestLedger, directRequestsRoot: join(dataDir, 'gateway', 'requests'), telemetry: creatorTelemetry });
   const creatorServicesConfigStore = gatewayCreatorSource.store;
   // Validation must resolve the same frozen binding and task model choices as execution.
   const readCreatorConfigForJob = (jobId: string) => gatewayCreatorSource!.runForJob(
@@ -1206,6 +1207,7 @@ export async function buildServer(input: BuildServerInput) {
           });
         },
         onJobChanged(job) {
+          creatorTelemetry.taskState(job);
           creatorEvents.publish({
             id: `snapshot:${job.revision}`,
             jobId: job.id,
@@ -1610,6 +1612,7 @@ export async function buildServer(input: BuildServerInput) {
       capture(() => creatorStageRunner?.close())
     ]);
     await capture(() => agentCapabilityTokens.close());
+    void creatorTelemetryOutbox.closeTrace();
     if (ownsDb) {
       await capture(() => {
         if (db.open) db.close();
@@ -1741,6 +1744,7 @@ export async function buildServer(input: BuildServerInput) {
     artifactImportService: creatorArtifactImportService,
     dispatcher: creatorCommandDispatcher,
     stageRunner: creatorStageRunner,
+    telemetry: creatorTelemetry,
     presets: creatorPresetRegistry,
     presetCatalogRoot: creatorPresetCatalogRoot,
     presetAssetsRoot: creatorPresetAssetsRoot,

@@ -3,6 +3,7 @@ import {
   sanitizeCreatorTelemetryEvent,
   type CreatorTelemetryEvent
 } from './events.js';
+import { createTaskTraceOutbox } from './task-trace-outbox.js';
 
 export const CREATOR_TELEMETRY_BATCH_SIZE = 50;
 export const DEFAULT_CREATOR_TELEMETRY_OUTBOX_LIMIT = 10_000;
@@ -17,8 +18,10 @@ export function createCreatorTelemetryOutbox(
     CREATOR_TELEMETRY_BATCH_SIZE,
     options.maxPendingEvents ?? DEFAULT_CREATOR_TELEMETRY_OUTBOX_LIMIT
   );
+  const traceOutbox = createTaskTraceOutbox(db.memory ? ':memory:' : `${db.name}.task-trace`, () => db.open);
 
   return {
+    ...traceOutbox,
     enqueue(event: CreatorTelemetryEvent, dedupeKey: string): void {
       const sanitized = sanitizeCreatorTelemetryEvent(event);
       db.transaction(() => {
@@ -70,6 +73,7 @@ export function createCreatorTelemetryOutbox(
       ))();
     },
     clear(): void {
+      void traceOutbox.clearTrace();
       db.prepare('DELETE FROM telemetry_outbox').run();
     },
     dropExpired(cutoff: string): number {

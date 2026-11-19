@@ -117,13 +117,16 @@ it.each([400, 422, 429])('records a definitive gateway %s rejection despite a tr
   const fetcher = vi.fn<typeof fetch>(async () => Response.json({ error: { code: 'output_too_large', message: 'Requested output exceeds the gateway limit of 4096 tokens' } },
     { status, headers: { 'X-Request-ID': 'trace_admission_rejected' } }));
   const manual = createDefaultCreatorServicesConfig();
+  const trace = vi.fn();
   const source = createGatewayCreatorSource({ account: {
     peekState: () => ({ source: 'gateway', transport: 'gateway', authState: 'signed_in', activationState: 'ready',
       account: bootstrap.account, bindingVersion: bootstrap.bindingVersion, models: bootstrap.models, selectedModels: bootstrap.defaults, activationError: null }),
     modelCredentials: async () => ({ accountId: bootstrap.account.id, transport: 'gateway', modelKey: 'device-test', keyVersion: '1',
       bindingVersion: bootstrap.bindingVersion, baseUrl: bootstrap.baseUrl, models: bootstrap.models, defaults: bootstrap.defaults })
   }, manual: { read: async () => manual, write: async value => value, reset: async () => manual },
-  getLocalOrigin: () => 'http://127.0.0.1:39999', ledger, fetcher });
+  getLocalOrigin: () => 'http://127.0.0.1:39999', ledger, fetcher,
+  readJobTemplateId: () => 'video-translation', readStageRun: repository.getStageRun,
+  telemetry: { traceEnabled: () => true, gatewayCall: trace } });
   const app = Fastify();
   try {
     await source.register(app);
@@ -134,6 +137,12 @@ it.each([400, 422, 429])('records a definitive gateway %s rejection despite a tr
       expect(result.statusCode).toBe(status);
     });
     expect(fetcher).toHaveBeenCalledOnce();
+    const callId = new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('x-oc-call-id');
+    expect(callId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(trace.mock.calls.map(([event]) => event)).toEqual([
+      expect.objectContaining({ event_type: 'request_started', call_id: callId, task_id: job.id, attempt_id: stage.id }),
+      expect.objectContaining({ event_type: 'request_finished', call_id: callId, http_status: status })
+    ]);
     expect(ledger.requestsForStage(stage.id)).toEqual([expect.objectContaining({ status: 'failed', remoteTaskId: null })]);
   } finally {
     await source.revoke(); await app.close(); db.close(); await rm(root, { recursive: true, force: true });
