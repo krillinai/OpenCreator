@@ -4,6 +4,7 @@ import { createDefaultCreatorServicesConfig, gatewayDefaultVoiceId, gatewayModel
 import type { FastifyInstance } from 'fastify';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { CreatorTelemetrySink } from '../telemetry/creator.js';
+import { supportsCreatorTaskTrace } from '../telemetry/task-trace.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -406,12 +407,14 @@ export function createGatewayCreatorSource(input: {
                   const telemetry = input.telemetry;
                   let trace: Parameters<CreatorTelemetrySink['gatewayCall']>[0] | undefined;
                   try {
-                    if (credentials.transport === 'gateway' && telemetry?.traceEnabled() && original.jobId && original.stageRunId
-                      && input.readJobTemplateId?.(original.jobId) === 'video-translation') {
-                      const operation = target.endsWith('/result') ? 'result_read' : target.startsWith('requests/') ? 'status_lookup' : resource;
-                      if (/^(?:result_read|status_lookup|audio\/(?:speech|transcriptions)|chat\/completions|responses)$/.test(operation)) {
+                    if (credentials.transport === 'gateway' && telemetry?.traceEnabled() && original.jobId && original.stageRunId) {
+                      const feature = input.readJobTemplateId?.(original.jobId);
+                      const lookup = /^(?:requests|video\/jobs)\/[A-Za-z0-9_-]{12,128}(?:\/result)?$/.test(target);
+                      const operation = lookup ? target.endsWith('/result') ? 'result_read' : 'status_lookup' : target;
+                      if (feature && supportsCreatorTaskTrace(feature)
+                        && /^(?:result_read|status_lookup|audio\/(?:speech|transcriptions)|chat\/completions|responses|images\/(?:generations|edits)|video\/(?:jobs|quotes|assets))$/.test(operation)) {
                         const stageId = input.readStageRun?.(original.stageRunId)?.stageId;
-                        trace = { event_type: 'request_started', task_id: original.jobId, attempt_id: original.stageRunId,
+                        trace = { event_type: 'request_started', feature, task_id: original.jobId, attempt_id: original.stageRunId,
                           ...(stageId ? { stage_id: stageId } : {}), operation, call_id: randomUUID() };
                         telemetry.gatewayCall(trace);
                       }

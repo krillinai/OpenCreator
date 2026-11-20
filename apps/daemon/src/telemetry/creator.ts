@@ -2,7 +2,7 @@ import type { CreatorJob, CreatorStageRun, OpenCreatorIssue, PublicErrorFacts } 
 import type { CreatorTelemetryOutbox } from './outbox.js';
 import type { FailureDiagnostic } from './diagnostic.js';
 import { failureDiagnosticFromError } from './diagnostic.js';
-import { traceEventId, traceToken, type CreatorTaskTrace } from './task-trace.js';
+import { supportsCreatorTaskTrace, traceEventId, traceToken, type CreatorTaskTrace } from './task-trace.js';
 import {
   createCreatorTelemetryEvent,
   type CreatorTelemetryAccountSnapshot,
@@ -23,8 +23,8 @@ export function createCreatorTelemetrySink(input: {
   let enabled = input.enabled !== false;
   let pending: CreatorTaskTrace[] = [];
   let scheduled = false;
-  function trace(event: Omit<CreatorTaskTrace, 'event_id' | 'occurred_at' | 'feature'>, key?: string): void {
-    if (!enabled) return;
+  function trace(event: Omit<CreatorTaskTrace, 'event_id' | 'occurred_at'>, key?: string): void {
+    if (!enabled || !supportsCreatorTaskTrace(event.feature)) return;
     try {
       const critical = event.event_type === 'task_started' || event.event_type === 'task_state'
         || event.event_type === 'preflight_rejected' || (event.outcome !== undefined && event.outcome !== 'succeeded');
@@ -32,7 +32,7 @@ export function createCreatorTelemetrySink(input: {
         if (!critical) return;
         pending.shift();
       }
-      pending.push({ ...event, event_id: traceEventId(key), occurred_at: now(), feature: 'video-translation' });
+      pending.push({ ...event, event_id: traceEventId(key), occurred_at: now() });
       if (scheduled) return;
       scheduled = true;
       setImmediate(() => {
@@ -44,6 +44,10 @@ export function createCreatorTelemetrySink(input: {
       }).unref();
     } catch { /* Telemetry is best effort. */ }
   }
+  const readExecutionMode = (job: CreatorJob): CreatorTaskTrace['execution_mode'] => {
+    if (job.templateId === 'video-download') return 'local';
+    try { return input.readExecutionMode?.(job); } catch { return undefined; }
+  };
   const write = (
     eventType: 'task_started' | 'task_finished',
     job: CreatorJob,
@@ -68,12 +72,11 @@ export function createCreatorTelemetrySink(input: {
         ...(diagnostic === undefined ? {} : { diagnostic }),
         ...(failureFacts === undefined ? {} : { failureFacts })
       });
-      if (feature === 'video-translation' && eventType === 'task_finished') {
+      if (supportsCreatorTaskTrace(job.templateId) && eventType === 'task_finished') {
         const failure = event.failure ? { ...event.failure } : undefined;
         if (failure) delete failure.user_message;
-        let executionMode: CreatorTaskTrace['execution_mode'];
-        try { executionMode = input.readExecutionMode?.(job); } catch { /* Leave unobserved. */ }
-        trace({ event_type: 'stage_finished', task_id: job.id, stage_id: stage.stageId, attempt_id: stage.id,
+        const executionMode = readExecutionMode(job);
+        trace({ event_type: 'stage_finished', feature: job.templateId, task_id: job.id, stage_id: stage.stageId, attempt_id: stage.id,
           ...(executionMode ? { execution_mode: executionMode } : {}),
           ...(outcome === undefined ? {} : { outcome }), ...(failure?.error_code ? { code: failure.error_code } : {}),
           ...(event.duration_ms === undefined ? {} : { duration_ms: event.duration_ms }),
@@ -99,30 +102,37 @@ export function createCreatorTelemetrySink(input: {
     },
     traceEnabled(): boolean { return enabled; },
     taskStarted(job: CreatorJob): void {
-      if (!enabled || job.templateId !== 'video-translation') return;
+      if (!enabled || !supportsCreatorTaskTrace(job.templateId)) return;
       let identity: Pick<CreatorTaskTrace, 'auth_state' | 'account_id' | 'payment_state'> | undefined;
       try { identity = input.readStartAccount?.(); } catch { /* Leave unobserved. */ }
-      trace({ event_type: 'task_started', task_id: job.id, ...identity }, `${job.id}:started`);
+      trace({ event_type: 'task_started', feature: job.templateId, task_id: job.id, ...identity }, `${job.id}:started`);
     },
     taskState(job: CreatorJob): void {
-      if (job.templateId === 'video-translation') trace({ event_type: 'task_state', task_id: job.id,
+      trace({ event_type: 'task_state', feature: job.templateId, task_id: job.id,
         outcome: job.status, revision: job.revision }, `${job.id}:state:${job.revision}`);
     },
-    preflightRejected(job: CreatorJob, stageId: string, error: unknown): void {
-      if (job.templateId !== 'video-translation') return;
+    preflightRejected(job: CreatorJob, stageId: string, error: unknown, blockedChecks?: readonly { id: string }[]): void {
+      if (!enabled || !supportsCreatorTaskTrace(job.templateId)) return;
       try {
         const code = traceToken((error as { code?: unknown } | null)?.code) ?? 'creator_preflight_rejected';
+        const executionMode = readExecutionMode(job);
         const diagnostic = failureDiagnosticFromError(error, 'creator.preflight');
-        trace({ event_type: 'preflight_rejected', task_id: job.id, stage_id: traceToken(stageId) ?? 'unknown',
+        const steps = blockedChecks?.slice(0, 4).flatMap(({ id }) => {
+          const check = traceToken(id);
+          return check ? [{ operation: 'creator.preflight', code: check, result: 'failed' as const }] : [];
+        });
+        if (diagnostic && !diagnostic.steps && steps?.length) diagnostic.steps = steps;
+        trace({ event_type: 'preflight_rejected', feature: job.templateId, task_id: job.id, stage_id: traceToken(stageId) ?? 'unknown',
+          ...(executionMode ? { execution_mode: executionMode } : {}),
           operation: 'creator.preflight', outcome: 'needs_input', code,
           ...(diagnostic ? { failure: { diagnostic } } : {}) });
       } catch { /* Telemetry is best effort. */ }
     },
     traceStageStarted(job: CreatorJob, stage: CreatorStageRun): void {
-      if (job.templateId === 'video-translation') trace({ event_type: 'stage_started', task_id: job.id,
+      trace({ event_type: 'stage_started', feature: job.templateId, task_id: job.id,
         stage_id: stage.stageId, attempt_id: stage.id }, `${stage.id}:started`);
     },
-    gatewayCall(event: Omit<CreatorTaskTrace, 'event_id' | 'occurred_at' | 'feature'>): void { trace(event); },
+    gatewayCall(event: Omit<CreatorTaskTrace, 'event_id' | 'occurred_at'>): void { trace(event); },
     stageStarted(job: CreatorJob, stage: CreatorStageRun, feature: string): void {
       write('task_started', job, stage, feature);
     },

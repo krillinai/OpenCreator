@@ -482,7 +482,7 @@ export function CreatorSessionProvider(props: {
     props.onAskPendingIssue(issue, question);
   }, [props.onAskPendingIssue]);
 
-  const runPreflight = useCallback(async (stageId: string, options?: { inputResultVersion?: number }) => {
+  const runPreflight = useCallback(async (stageId: string, options?: { inputResultVersion?: number; launch?: boolean }) => {
     if (props.service.preflight === undefined) {
       const cause = new Error('Creator preflight is unavailable');
       captureCreatorFailure('creator.preflight', cause, 'Preflight checks are unavailable. Try again later.', 'preflight');
@@ -491,7 +491,7 @@ export function CreatorSessionProvider(props: {
     await flush();
     await ensurePersistedJob();
     try {
-      const result = options?.inputResultVersion === undefined
+      const result = options?.inputResultVersion === undefined && !options?.launch
         ? await props.service.preflight(confirmedRef.current.id, stageId)
         : await props.service.preflight(confirmedRef.current.id, stageId, options);
       setPreflight(result);
@@ -652,8 +652,10 @@ export function CreatorSessionProvider(props: {
       requestRevision = confirmedRef.current.revision;
       if (request.action === 'run-stage' && props.service.preflight !== undefined) {
         const stageId = request.input.stageId;
-        if (typeof stageId === 'string') await runPreflight(stageId,
-          typeof request.input.inputResultVersion === 'number' ? { inputResultVersion: request.input.inputResultVersion } : undefined);
+        if (typeof stageId === 'string') await runPreflight(stageId, {
+          launch: true,
+          ...(typeof request.input.inputResultVersion === 'number' ? { inputResultVersion: request.input.inputResultVersion } : {})
+        });
       }
       const response = await props.service.applyAction(confirmedRef.current.id, {
         ...request,

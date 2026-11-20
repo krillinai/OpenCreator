@@ -54,6 +54,31 @@ function event(eventId = '9d9dd73e-b27f-4f0f-a5ef-0f5763d04c1a'): CreatorTelemet
 }
 
 describe('creator telemetry outbox', () => {
+  it.each(['video-download', 'transcription', 'image-generation', 'video-generation', 'smart-dubbing', 'auto-clip', 'stickman-video'])('scopes task lifecycle reporting to supported tasks: %s', async templateId => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-task-lifecycle-'));
+    const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const outbox = createCreatorTelemetryOutbox(db);
+    const sink = createCreatorTelemetrySink({ outbox, readAccount: () => account });
+    const job = { id: 'fixture-job', templateId, status: 'failed', revision: 3 } as CreatorJob;
+    const stage = { id: 'fixture-stage', stageId: 'generate', executor: templateId, attempt: 1, progress: {}, errorCode: 'network_unavailable' } as CreatorStageRun;
+    try {
+      sink.taskStarted(job);
+      sink.traceStageStarted(job, stage);
+      sink.taskState(job);
+      sink.stageFinished(job, stage, templateId, 'failed');
+      await new Promise<void>(resolve => setImmediate(resolve));
+      const traces = await outbox.listTrace();
+      expect(outbox.list()).toHaveLength(1);
+      expect(traces.map(({ event_type, feature, outcome }) => [event_type, feature, outcome])).toEqual(templateId === 'stickman-video' ? [] : [
+        ['task_started', templateId, undefined], ['stage_started', templateId, undefined],
+        ['task_state', templateId, 'failed'], ['stage_finished', templateId, 'failed']
+      ]);
+    } finally {
+      await outbox.closeTrace();
+      db.close();
+    }
+  });
+
   it('keeps the transcription position in a failed subtitle trace without adding a user message', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-task-trace-subtitle-'));
     const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

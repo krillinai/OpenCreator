@@ -114,10 +114,10 @@ export function createCreatorService(client: ClientLike) {
     getJob(jobId: string, options?: { signal?: AbortSignal }): Promise<{ job: CreatorJob }> {
       return client.get(`/creator/jobs/${encodeURIComponent(jobId)}`, options) as Promise<{ job: CreatorJob }>;
     },
-    preflight(jobId: string, stageId: string, options?: { inputResultVersion?: number }): Promise<CreatorPreflightResponse> {
+    preflight(jobId: string, stageId: string, options?: { inputResultVersion?: number; launch?: boolean }): Promise<CreatorPreflightResponse> {
       const version = options?.inputResultVersion;
       const query = version === undefined ? '' : `&inputResultVersion=${encodeURIComponent(version)}`;
-      return client.get(`/creator/jobs/${encodeURIComponent(jobId)}/preflight?stageId=${encodeURIComponent(stageId)}${query}`) as Promise<CreatorPreflightResponse>;
+      return client.get(`/creator/jobs/${encodeURIComponent(jobId)}/preflight?stageId=${encodeURIComponent(stageId)}${query}${options?.launch ? '&launch=1' : ''}`) as Promise<CreatorPreflightResponse>;
     },
     deleteJob(jobId: string, options: { deleteFiles?: boolean } = {}): Promise<void> {
       const query = options.deleteFiles === true ? '?deleteFiles=true' : '';

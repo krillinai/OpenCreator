@@ -175,6 +175,17 @@ describe('creator video download', () => {
     });
     const initial = created.json().job;
     expect(initial.templateVersion).toBe(2);
+    const preflightPath = `/creator/jobs/${initial.id}/preflight?stageId=download`;
+    expect((await request('GET', preflightPath)).json()).toMatchObject({ canStart: false });
+    expect((await request('GET', '/telemetry/task-events')).json().events).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ task_id: initial.id })
+    ]));
+    expect((await request('GET', `${preflightPath}&launch=1`)).json()).toMatchObject({ canStart: false });
+    await expect.poll(async () => (await request('GET', '/telemetry/task-events')).json().events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ task_id: initial.id, feature: 'video-download', event_type: 'task_started' }),
+      expect.objectContaining({ task_id: initial.id, event_type: 'preflight_rejected', stage_id: 'download', execution_mode: 'local',
+        failure: { diagnostic: expect.objectContaining({ steps: [expect.objectContaining({ code: 'input-artifact:download_probe' })] }) } })
+    ]));
     const configured = await request(
       'POST',
       `/creator/jobs/${initial.id}/actions`,

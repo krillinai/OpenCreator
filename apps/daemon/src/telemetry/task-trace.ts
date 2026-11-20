@@ -1,6 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { CreatorTelemetryFailure } from './events.js';
 
+const taskTraceFeatures = new Set([
+  'video-translation', 'video-download', 'transcription', 'image-generation', 'video-generation', 'smart-dubbing', 'auto-clip'
+]);
+
+export function supportsCreatorTaskTrace(feature: string): boolean {
+  return taskTraceFeatures.has(feature);
+}
+
 export type CreatorTaskTrace = {
   event_id: string;
   event_type: 'task_started' | 'task_state' | 'preflight_rejected' | 'stage_started' | 'stage_finished' | 'request_started' | 'request_finished';

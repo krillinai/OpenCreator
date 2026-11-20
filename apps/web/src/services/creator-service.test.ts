@@ -38,6 +38,8 @@ describe('creator web service', () => {
 
     await service.preflight('job 1', 'prepare-source-video', { inputResultVersion: 2 });
     expect(client.get).toHaveBeenCalledWith('/creator/jobs/job%201/preflight?stageId=prepare-source-video&inputResultVersion=2');
+    await service.preflight('job 1', 'prepare-source-video', { inputResultVersion: 2, launch: true });
+    expect(client.get).toHaveBeenLastCalledWith('/creator/jobs/job%201/preflight?stageId=prepare-source-video&inputResultVersion=2&launch=1');
 
     await service.listPresets('en-US');
     await service.listJobs('project 1');
