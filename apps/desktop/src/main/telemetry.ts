@@ -259,7 +259,7 @@ export function startDesktopTelemetry(input: {
         body: JSON.stringify({ install_id: installId(), app_version: input.appVersion,
           operating_system: input.platform ?? process.platform, events: payload }) });
       let sent = await send(events);
-      const extensionFields = ['auth_state', 'account_id', 'payment_state', 'execution_mode'];
+      const extensionFields = ['auth_state', 'account_id', 'payment_state', 'execution_mode', 'translation_source'];
       if (enabled() && events.some(event => isRecord(event) && extensionFields.some(field => Object.hasOwn(event, field))) && await invalidTelemetryPayload(sent) && enabled()) {
         sent = await send(events.map(event => isRecord(event) ? Object.fromEntries(Object.entries(event).filter(([key]) => !extensionFields.includes(key))) : event));
       }

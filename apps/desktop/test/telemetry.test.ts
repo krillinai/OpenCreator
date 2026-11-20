@@ -644,6 +644,37 @@ describe('desktop telemetry', () => {
     }
   });
 
+  it('keeps sending task events when an older receiver rejects the translation source field', async () => {
+    const eventId = '821526e6-e9a7-4c91-8ec4-72e869673511';
+    const event = { event_id: eventId, event_type: 'task_started', translation_source: 'youtube' };
+    const payloads: unknown[] = [];
+    const acknowledgments: unknown[] = [];
+    const controller = startDesktopTelemetry({
+      path: '/virtual/telemetry.json', settings: memorySettings(), logger: logger(), appVersion: '3.3.3',
+      isOfficialBuild: false, endpointOverride: 'http://127.0.0.1:8790/api/v1/public/desktop-usage',
+      getDaemonConnection: () => ({ address: 'http://127.0.0.1:31234', token: 'local-token' }),
+      isWindowActive: () => false, eventReportIntervalMs: 10, persistence: memoryPersistence().persistence,
+      fetchImpl: async (url, request) => {
+        const target = String(url);
+        if (target.endsWith('/telemetry/task-events')) return Response.json({ events: acknowledgments.length ? [] : [event] });
+        if (target.endsWith('/telemetry/task-events/ack')) acknowledgments.push(JSON.parse(String(request?.body)).event_ids);
+        if (target.endsWith('/desktop-usage/task-events')) {
+          const events = JSON.parse(String(request?.body)).events;
+          payloads.push(events);
+          if (Object.hasOwn(events[0], 'translation_source')) return Response.json({}, { status: 400 });
+          return Response.json({ error: 0, data: { acknowledged_event_ids: [eventId] } });
+        }
+        return Response.json({});
+      }
+    });
+    try {
+      await vi.waitFor(() => expect(acknowledgments).toEqual([[eventId]]));
+      expect(payloads).toEqual([[event], [{ event_id: eventId, event_type: 'task_started' }]]);
+    } finally {
+      controller.dispose();
+    }
+  });
+
   it('does not pull or deliver daemon events while disabled', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const controller = startDesktopTelemetry({

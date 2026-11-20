@@ -2,7 +2,7 @@ import type { CreatorJob, CreatorStageRun, OpenCreatorIssue, PublicErrorFacts } 
 import type { CreatorTelemetryOutbox } from './outbox.js';
 import type { FailureDiagnostic } from './diagnostic.js';
 import { failureDiagnosticFromError } from './diagnostic.js';
-import { supportsCreatorTaskTrace, traceEventId, traceToken, type CreatorTaskTrace } from './task-trace.js';
+import { supportsCreatorTaskTrace, traceEventId, traceToken, translationSourceAtLaunch, type CreatorTaskTrace } from './task-trace.js';
 import {
   createCreatorTelemetryEvent,
   type CreatorTelemetryAccountSnapshot,
@@ -23,6 +23,21 @@ export function createCreatorTelemetrySink(input: {
   let enabled = input.enabled !== false;
   let pending: CreatorTaskTrace[] = [];
   let scheduled = false;
+  function scheduleTraceFlush(): void {
+    if (scheduled || !enabled || pending.length === 0) return;
+    scheduled = true;
+    setImmediate(async () => {
+      const batch = pending;
+      pending = [];
+      try {
+        if (enabled && batch.length > 0) await input.outbox.enqueueTrace(batch);
+      } catch {
+      } finally {
+        scheduled = false;
+        scheduleTraceFlush();
+      }
+    }).unref();
+  }
   function trace(event: Omit<CreatorTaskTrace, 'event_id' | 'occurred_at'>, key?: string): void {
     if (!enabled || !supportsCreatorTaskTrace(event.feature)) return;
     try {
@@ -33,15 +48,7 @@ export function createCreatorTelemetrySink(input: {
         pending.shift();
       }
       pending.push({ ...event, event_id: traceEventId(key), occurred_at: now() });
-      if (scheduled) return;
-      scheduled = true;
-      setImmediate(() => {
-        const batch = pending;
-        pending = [];
-        scheduled = false;
-        if (!enabled || batch.length === 0) return;
-        void input.outbox.enqueueTrace(batch).catch(() => undefined);
-      }).unref();
+      scheduleTraceFlush();
     } catch { /* Telemetry is best effort. */ }
   }
   const readExecutionMode = (job: CreatorJob): CreatorTaskTrace['execution_mode'] => {
@@ -105,7 +112,10 @@ export function createCreatorTelemetrySink(input: {
       if (!enabled || !supportsCreatorTaskTrace(job.templateId)) return;
       let identity: Pick<CreatorTaskTrace, 'auth_state' | 'account_id' | 'payment_state'> | undefined;
       try { identity = input.readStartAccount?.(); } catch { /* Leave unobserved. */ }
-      trace({ event_type: 'task_started', feature: job.templateId, task_id: job.id, ...identity }, `${job.id}:started`);
+      let source: CreatorTaskTrace['translation_source'];
+      try { source = translationSourceAtLaunch(job); } catch { source = undefined; }
+      trace({ event_type: 'task_started', feature: job.templateId, task_id: job.id, ...identity,
+        ...(source ? { translation_source: source } : {}) }, `${job.id}:started`);
     },
     taskState(job: CreatorJob): void {
       trace({ event_type: 'task_state', feature: job.templateId, task_id: job.id,

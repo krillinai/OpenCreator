@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { supportedVideoSourcePlatform, type CreatorJob, type DownloadPlatform } from '@opencreator/protocol';
 import type { CreatorTelemetryFailure } from './events.js';
 
 const taskTraceFeatures = new Set([
@@ -18,6 +19,7 @@ export type CreatorTaskTrace = {
   auth_state?: 'signed_in' | 'signed_out';
   account_id?: string;
   payment_state?: 'recharged' | 'not_recharged' | 'pending';
+  translation_source?: DownloadPlatform | 'upload' | 'subtitle' | 'other_link';
   execution_mode?: 'local';
   stage_id?: string;
   attempt_id?: string;
@@ -31,6 +33,23 @@ export type CreatorTaskTrace = {
   duration_ms?: number;
   failure?: CreatorTelemetryFailure;
 };
+
+export function translationSourceAtLaunch(job: CreatorJob): CreatorTaskTrace['translation_source'] {
+  if (job.templateId !== 'video-translation') return undefined;
+  const { sourceType, sourceUrl } = job.state ?? {};
+  if (sourceType === 'file') return 'upload';
+  if (sourceType === 'subtitle') return 'subtitle';
+  if (sourceType !== 'url' || typeof sourceUrl !== 'string') return undefined;
+  const platform = supportedVideoSourcePlatform(sourceUrl);
+  if (platform) return platform;
+  try {
+    const { protocol } = new URL(sourceUrl);
+    if (protocol === 'https:' || protocol === 'http:') return 'other_link';
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
 
 export function traceEventId(key?: string): string {
   if (key === undefined) return randomUUID();
