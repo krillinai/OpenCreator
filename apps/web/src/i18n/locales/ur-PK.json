@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "سب ٹائٹل پیش نظارے کی پیش رفت",
   "Adjust timing": "وقت ایڈجسٹ کریں",
   "Enter the required credentials for the selected dubbing service to continue.": "جاری رکھنے کے لیے منتخب ڈبنگ سروس کی مطلوبہ اسناد درج کریں۔",
-  "Save and continue composing": "محفوظ کریں اور ویڈیو بنانا جاری رکھیں"
+  "Save and continue composing": "محفوظ کریں اور ویڈیو بنانا جاری رکھیں",
+  "AI clip score": "اے آئی کلپ اسکور",
+  "Sort clips": "کلپس ترتیب دیں",
+  "Source order": "اصل ترتیب",
+  "By score": "اسکور کے لحاظ سے",
+  "Selection reason": "انتخاب کی وجہ",
+  "No selection reason is available for this clip.": "اس کلپ کو منتخب کرنے کی وجہ دستیاب نہیں ہے۔"
 }

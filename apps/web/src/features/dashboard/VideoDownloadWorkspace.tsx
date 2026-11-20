@@ -792,6 +792,7 @@ export default function VideoDownloadWorkspace(props: {
     <CreatorToolShell
       title={l('视频下载', 'Video Downloader')}
       pageClassName={showFailureWorkbench ? 'video-download-workspace-page video-download-failure-page' : 'video-download-workspace-page'}
+      fillWorkspace
       showAgentPanel={showFailureWorkbench}
       subtitle={l(
         '解析公开链接并把视频或音频保存到项目',

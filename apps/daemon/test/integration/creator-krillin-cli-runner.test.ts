@@ -150,13 +150,16 @@ describe('KrillinAI CLI runner', () => {
 
     const artifacts = await runKrillinCli({
       resourceRoot, jobsRoot, dependencyRoot, manifest, stage, config, artifacts: [],
-      options: { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=fixture', clipCount: 2, duration: '30-60' }
+      options: { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=fixture', clipCount: 2, duration: '30-60', reasonLocale: 'fr-FR' }
     });
 
     expect(artifacts.map(artifact => artifact.kind)).toEqual(['clip_index', 'auto_clip_video', 'auto_clip_video']);
-    expect(artifacts.filter(artifact => artifact.kind === 'auto_clip_video').map(artifact => artifact.metadata))
-      .toEqual([expect.objectContaining({ candidateId: 'clip-01', start: 0, end: 30 }),
+    const clips = artifacts.filter(artifact => artifact.kind === 'auto_clip_video');
+    expect(clips.map(artifact => artifact.metadata))
+      .toEqual([expect.objectContaining({ candidateId: 'clip-01', start: 0, end: 30, score: 0.8,
+        selectionReason: { text: 'Un exemple illustre le propos.', offsetMs: 12000, locale: 'fr-FR' } }),
         expect.objectContaining({ candidateId: 'clip-02', start: 30, end: 60 })]);
+    expect(clips[1]?.metadata).not.toHaveProperty('selectionReason');
   });
   it.runIf(process.platform === 'win32')('mounts packaged executable files without requiring symlink privileges', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-windows-file-overlay-'));
@@ -889,7 +892,10 @@ if (args[0] === 'tts') {
     const file = 'clips/clip-0' + number + '.mp4';
     writeFileSync(join(workdir, file), 'video');
     return { id: 'clip-0' + number, file, start_ms: (number - 1) * 30000,
-      end_ms: number * 30000, score: 0.8 };
+      end_ms: number * 30000, score: 0.8, selection_reason: {
+        text: 'Un exemple illustre le propos.', offset_ms: number === 1 ? 12000 : 30000,
+        locale: process.env.OPENCREATOR_CLIP_REASON_LOCALE
+      } };
   });
   outputs = { clip_index: join(workdir, 'clips.json') };
   writeFileSync(outputs.clip_index, JSON.stringify({ schema_version: 1,

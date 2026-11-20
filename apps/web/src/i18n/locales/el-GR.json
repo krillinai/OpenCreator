@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Πρόοδος προεπισκόπησης υποτίτλων",
   "Adjust timing": "Προσαρμογή χρονισμού",
   "Enter the required credentials for the selected dubbing service to continue.": "Εισαγάγετε τα απαιτούμενα διαπιστευτήρια για την επιλεγμένη υπηρεσία μεταγλώττισης για να συνεχίσετε.",
-  "Save and continue composing": "Αποθήκευση και συνέχιση σύνθεσης βίντεο"
+  "Save and continue composing": "Αποθήκευση και συνέχιση σύνθεσης βίντεο",
+  "AI clip score": "Βαθμολογία κλιπ από ΤΝ",
+  "Sort clips": "Ταξινόμηση κλιπ",
+  "Source order": "Αρχική σειρά",
+  "By score": "Κατά βαθμολογία",
+  "Selection reason": "Λόγος επιλογής",
+  "No selection reason is available for this clip.": "Δεν υπάρχει αιτιολόγηση για την επιλογή αυτού του αποσπάσματος."
 }

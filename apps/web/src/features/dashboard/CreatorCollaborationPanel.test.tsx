@@ -243,10 +243,11 @@ describe('Short video script panel', () => {
 
 describe('CreatorCollaborationPanel', () => {
   it.each([
-    ['downloading_media', 41, '下载视频与音频', '正在下载视频：27.7 MiB / 39.8 MiB；预计剩余 165 秒'],
-    ['analyzing_clips', 48, '分析高光与传播潜力', '正在查找完整片段'],
-    ['rendering_clips', 60, '正在导出视频切片 0/3', '正在生成片段 1/3']
-  ])('shows the auto-clip %s phase and live detail beside overall progress', (phase, percent, label, message) => {
+    ['zh-CN', 'downloading_media', 41, '下载视频与音频', '正在下载视频：27.7 MiB / 39.8 MiB；预计剩余 165 秒', '视频: 27.7 MiB / 39.8 MiB · ~165 秒'],
+    ['en-US', 'downloading_media', 41, 'Downloading video and audio', '正在下载视频：27.7 MiB / 39.8 MiB；预计剩余 165 秒', 'Video: 27.7 MiB / 39.8 MiB · ~165 sec'],
+    ['en-US', 'analyzing_clips', 48, 'Analyzing highlights and social potential', '正在分析字幕窗口 2/4', '2/4'],
+    ['en-US', 'rendering_clips', 60, 'Exporting video clips 0/3', '正在生成片段 1/3', null]
+  ] as const)('localizes auto-clip %s progress for %s beside overall progress', (language, phase, percent, label, message, detail) => {
     const job = videoGenerationJob();
     job.templateId = 'auto-clip';
     job.templateVersion = 3;
@@ -256,15 +257,18 @@ describe('CreatorCollaborationPanel', () => {
       ...job.stages[0]!, stageId: 'clip', executor: 'krillinai',
       progress: { phase, percent, message, completed: 0, total: 3 }
     };
-    const { container } = render(<LanguageProvider initialPreference="zh-CN">
+    const { container } = render(<LanguageProvider initialPreference={language}>
       <CreatorSessionProvider initialJob={job} service={{ applyAction: vi.fn(), runAgentTurn: vi.fn() } as never}>
         <CreatorCollaborationPanel adapter={creatorPanelAdapterFor('auto-clip')} stepLabel="生成视频切片" contextSummary="3 个片段" />
       </CreatorSessionProvider>
     </LanguageProvider>);
 
     expect(screen.getByText(label)).toBeVisible();
-    expect(container.querySelector('.creator-collaboration-stage-message')).toHaveTextContent(message);
-    expect(screen.getByRole('progressbar', { name: '生成视频切片进度' })).toHaveAttribute('aria-valuenow', String(percent));
+    const displayedDetail = container.querySelector('.creator-collaboration-stage-message');
+    if (detail === null) expect(displayedDetail).not.toBeInTheDocument();
+    else expect(displayedDetail).toHaveTextContent(detail);
+    expect(screen.queryByText(message, { exact: true })).not.toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', String(percent));
   });
 
   it('keeps the failed subtitle retry distinct from an active source download', () => {

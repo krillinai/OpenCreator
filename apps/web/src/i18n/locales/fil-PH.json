@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Progreso ng preview ng subtitle",
   "Adjust timing": "Ayusin ang tiyempo",
   "Enter the required credentials for the selected dubbing service to continue.": "Ilagay ang mga kinakailangang kredensyal para sa napiling serbisyo ng dubbing upang magpatuloy.",
-  "Save and continue composing": "I-save at magpatuloy sa pagbuo ng video"
+  "Save and continue composing": "I-save at magpatuloy sa pagbuo ng video",
+  "AI clip score": "Marka ng AI para sa clip",
+  "Sort clips": "Ayusin ang mga clip",
+  "Source order": "Orihinal na ayos",
+  "By score": "Ayon sa marka",
+  "Selection reason": "Dahilan ng pagpili",
+  "No selection reason is available for this clip.": "Walang nakasaad na dahilan sa pagpili sa clip na ito."
 }

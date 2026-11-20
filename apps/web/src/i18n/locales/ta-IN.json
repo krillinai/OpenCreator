@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "வசன முன்னோட்ட முன்னேற்றம்",
   "Adjust timing": "நேரத்தைச் சரிசெய்",
   "Enter the required credentials for the selected dubbing service to continue.": "தொடர, தேர்ந்தெடுக்கப்பட்ட பின்னணிக் குரல் சேவைக்குத் தேவையான சான்றுகளை உள்ளிடவும்.",
-  "Save and continue composing": "சேமித்து காணொளி உருவாக்கத்தைத் தொடரவும்"
+  "Save and continue composing": "சேமித்து காணொளி உருவாக்கத்தைத் தொடரவும்",
+  "AI clip score": "AI கிளிப் மதிப்பெண்",
+  "Sort clips": "கிளிப்களை வரிசைப்படுத்து",
+  "Source order": "அசல் வரிசை",
+  "By score": "மதிப்பெண்ணின்படி",
+  "Selection reason": "தேர்வுக்கான காரணம்",
+  "No selection reason is available for this clip.": "இந்தக் கிளிப்பைத் தேர்ந்தெடுத்ததற்கான காரணம் இல்லை."
 }

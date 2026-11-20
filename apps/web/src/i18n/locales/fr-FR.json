@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Progression de l’aperçu des sous-titres",
   "Adjust timing": "Ajuster le minutage",
   "Enter the required credentials for the selected dubbing service to continue.": "Saisissez les identifiants requis pour le service de doublage sélectionné afin de continuer.",
-  "Save and continue composing": "Enregistrer et poursuivre la composition vidéo"
+  "Save and continue composing": "Enregistrer et poursuivre la composition vidéo",
+  "AI clip score": "Score IA du clip",
+  "Sort clips": "Trier les clips",
+  "Source order": "Ordre d’origine",
+  "By score": "Par score",
+  "Selection reason": "Raison de la sélection",
+  "No selection reason is available for this clip.": "Aucun motif de sélection n’est disponible pour cet extrait."
 }

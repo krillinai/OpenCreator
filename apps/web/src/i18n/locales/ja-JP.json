@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "字幕プレビューの進行状況",
   "Adjust timing": "タイミングを調整",
   "Enter the required credentials for the selected dubbing service to continue.": "続行するには、選択した吹き替えサービスに必要な認証情報を入力してください。",
-  "Save and continue composing": "保存して動画の合成を続行"
+  "Save and continue composing": "保存して動画の合成を続行",
+  "AI clip score": "AI クリップスコア",
+  "Sort clips": "クリップを並べ替え",
+  "Source order": "元動画順",
+  "By score": "スコア順",
+  "Selection reason": "選定理由",
+  "No selection reason is available for this clip.": "このクリップには選定理由がありません。"
 }

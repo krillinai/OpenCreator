@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "সাবটাইটেল প্রিভিউয়ের অগ্রগতি",
   "Adjust timing": "সময় সমন্বয় করুন",
   "Enter the required credentials for the selected dubbing service to continue.": "চালিয়ে যেতে নির্বাচিত ডাবিং পরিষেবার প্রয়োজনীয় পরিচয়পত্র লিখুন।",
-  "Save and continue composing": "সংরক্ষণ করে ভিডিও তৈরি চালিয়ে যান"
+  "Save and continue composing": "সংরক্ষণ করে ভিডিও তৈরি চালিয়ে যান",
+  "AI clip score": "AI ক্লিপ স্কোর",
+  "Sort clips": "ক্লিপ সাজান",
+  "Source order": "মূল ক্রম",
+  "By score": "স্কোর অনুযায়ী",
+  "Selection reason": "নির্বাচনের কারণ",
+  "No selection reason is available for this clip.": "এই ক্লিপটি বেছে নেওয়ার কোনো কারণ দেওয়া হয়নি।"
 }

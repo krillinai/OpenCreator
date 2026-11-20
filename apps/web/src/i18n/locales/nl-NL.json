@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Voortgang van ondertitelvoorbeeld",
   "Adjust timing": "Timing aanpassen",
   "Enter the required credentials for the selected dubbing service to continue.": "Voer de vereiste inloggegevens in voor de geselecteerde nasynchronisatiedienst om door te gaan.",
-  "Save and continue composing": "Opslaan en doorgaan met video samenstellen"
+  "Save and continue composing": "Opslaan en doorgaan met video samenstellen",
+  "AI clip score": "AI-clipscore",
+  "Sort clips": "Clips sorteren",
+  "Source order": "Oorspronkelijke volgorde",
+  "By score": "Op score",
+  "Selection reason": "Reden voor selectie",
+  "No selection reason is available for this clip.": "Er is geen reden voor de selectie van deze clip beschikbaar."
 }

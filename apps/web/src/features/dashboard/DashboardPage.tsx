@@ -251,6 +251,7 @@ export default function DashboardPage(props: {
   creatorService?: CreatorWebService | null;
   runtimeDependencies?: RuntimeDependenciesController;
   onJobCreated?(job: CreatorJob): void;
+  onOpenGenerationHistory?(): void;
   onAskIssue?(issue: OpenCreatorIssue, question: string): void;
   onCreateProject?(projectType: CreatorProjectType): boolean | void | Promise<boolean | void>;
   createProjectError?: string;
@@ -367,11 +368,21 @@ export default function DashboardPage(props: {
   }, [props.jobId, props.workspace]);
 
   useEffect(() => {
-    if ((props.workspace !== 'video-generation' && props.workspace !== 'video-translation')
-      || props.returnTo !== 'projects' || !props.jobId || !props.creatorService) return;
+    const clipWorkspace = props.workspace === 'auto-clips';
+    if ((!clipWorkspace && ((props.workspace !== 'video-generation' && props.workspace !== 'video-translation')
+      || props.returnTo !== 'projects')) || !props.jobId || !props.creatorService) return;
     const controller = new AbortController();
     void props.creatorService.getJob(props.jobId, { signal: controller.signal }).then(({ job }) => {
       if (controller.signal.aborted) return;
+      if (clipWorkspace) {
+        if (job.templateId === 'auto-clip' && job.templateVersion >= 3
+          && (job.status === 'failed' || job.status === 'needs_input')
+          && [...job.stages].reverse().find(stage => stage.stageId === 'clip')?.status === 'failed') {
+          setGenerationResultActive(true);
+          setGenerationSessionActive(false);
+        }
+        return;
+      }
       setGenerationResultActive(props.workspace === 'video-generation'
         ? job.stages.some(stage => stage.stageId === 'generate')
         : (job.status === 'failed' || job.status === 'needs_input')
@@ -446,6 +457,13 @@ export default function DashboardPage(props: {
     if (activeWorkspace) generationSessionReturnRef.current = { workspace: activeWorkspace, jobId: activeJobId };
     openWorkspace(workspace, job.id, true, job);
     setGenerationSessionActive(false);
+  };
+
+  const openNewAutoClip = () => {
+    resetCreationSession('auto-clips');
+    setGenerationHistoryActive(false);
+    generationSessionReturnRef.current = undefined;
+    openWorkspace('auto-clips');
   };
 
   const openGenerationHistory = () => {
@@ -607,6 +625,7 @@ export default function DashboardPage(props: {
         embeddedTabs={tabs}
         forceComposer={generationSessionActive || generationHistoryActive}
         startInResults={generationResultActive && !generationSessionActive && !generationHistoryActive}
+        onNewClip={openNewAutoClip}
         onGenerated={onGenerated}
         service={props.creatorService!}
         videoMetadataService={props.videoMetadataService}
@@ -854,6 +873,11 @@ export default function DashboardPage(props: {
         promptHint={activePromptHint}
         startInResults={generationResultActive && !generationSessionActive}
         videoMetadataService={props.videoMetadataService}
+        onNewClip={openNewAutoClip}
+        onRetryStarted={() => {
+          if (props.returnTo === 'projects' || (generationHistoryActive && generationHistoryOriginRef.current)) closeWorkspace();
+          else (props.onOpenGenerationHistory ?? openGenerationHistory)();
+        }}
         onBack={closeWorkspace}
       />
     ));

@@ -93,6 +93,7 @@ import type { CodexNativeImageRuntime } from '../image-generation/provider.js';
 import type { CreatorIssueService } from '../creator/issues.js';
 import { registerCreatorThumbnailRoutes } from './routes.creator-thumbnail.js';
 import { GatewayError } from '../gateway/client.js';
+import { CreatorGatewayNotReadyError } from '../gateway/creator-service-source.js';
 import type { CreatorTelemetrySink } from '../telemetry/creator.js';
 
 export async function registerCreatorRoutes(
@@ -1172,7 +1173,7 @@ export async function registerCreatorRoutes(
         error instanceof CreatorPreflightError ? error.result.blocked : undefined);
       return sendCreatorError(reply, error, {
         jobId: id,
-        source: error instanceof CreatorPreflightError ? 'preflight' : 'api',
+        source: error instanceof CreatorPreflightError || error instanceof CreatorGatewayNotReadyError ? 'preflight' : 'api',
         operation: 'creator.action',
         stageId: preflightTrace?.stageId,
         service,
@@ -1544,7 +1545,7 @@ function sendCreatorError(reply: FastifyReply, error: unknown, context?: Creator
   if (error instanceof CreatorPreflightError) {
     return reply.code(400).send({
       error: {
-        ...response(error.code as RuntimeErrorCode, error.message).error,
+        ...response(error.code as RuntimeErrorCode, error.message, { preflight: error.result }).error,
         preflight: error.result
       }
     });
@@ -1612,6 +1613,9 @@ function sendCreatorError(reply: FastifyReply, error: unknown, context?: Creator
       'OpenCreator sign-in has expired. Sign in again before retrying.',
       undefined
     ));
+  }
+  if (error instanceof CreatorGatewayNotReadyError) {
+    return reply.code(503).send(response('GATEWAY_SERVICES_NOT_READY', error.message));
   }
   if (error instanceof ZodError || error instanceof TypeError) {
     return reply.code(400).send(response('VALIDATION_FAILED', error.message));

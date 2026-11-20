@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Progresul previzualizării subtitrărilor",
   "Adjust timing": "Ajustează sincronizarea",
   "Enter the required credentials for the selected dubbing service to continue.": "Introduceți acreditările necesare pentru serviciul de dublaj selectat pentru a continua.",
-  "Save and continue composing": "Salvează și continuă compunerea videoclipului"
+  "Save and continue composing": "Salvează și continuă compunerea videoclipului",
+  "AI clip score": "Scorul IA al clipului",
+  "Sort clips": "Sortează clipurile",
+  "Source order": "Ordinea originală",
+  "By score": "După scor",
+  "Selection reason": "Motivul selecției",
+  "No selection reason is available for this clip.": "Nu este disponibil niciun motiv pentru selectarea acestui clip."
 }

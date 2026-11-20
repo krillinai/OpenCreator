@@ -1,4 +1,5 @@
 import { z } from 'zod/v3';
+import { openCreatorLanguages } from '@opencreator/protocol';
 import type { CreatorTemplateDefinition } from './types.js';
 const record = z.record(z.string(), z.unknown()) as never;
 
@@ -133,6 +134,7 @@ export function createAutoClipTemplate(): CreatorTemplateDefinition {
       sourceArtifactId: z.string().nullable().default(null),
       duration: z.enum(['15-30', '30-60', '60-90', '90-180']).default('90-180'),
       clipCount: z.number().int().min(1).max(20).default(3),
+      reasonLocale: z.enum(openCreatorLanguages).optional(),
       currentStage: z.string().nullable().default(null)
     }).passthrough() as never,
     stages: [{

@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "ความคืบหน้าการแสดงตัวอย่างคำบรรยาย",
   "Adjust timing": "ปรับเวลา",
   "Enter the required credentials for the selected dubbing service to continue.": "ป้อนข้อมูลรับรองที่จำเป็นสำหรับบริการพากย์เสียงที่เลือกเพื่อดำเนินการต่อ",
-  "Save and continue composing": "บันทึกและสร้างวิดีโอต่อ"
+  "Save and continue composing": "บันทึกและสร้างวิดีโอต่อ",
+  "AI clip score": "คะแนนคลิปจาก AI",
+  "Sort clips": "จัดเรียงคลิป",
+  "Source order": "ลำดับต้นฉบับ",
+  "By score": "ตามคะแนน",
+  "Selection reason": "เหตุผลที่เลือก",
+  "No selection reason is available for this clip.": "ไม่มีข้อมูลเหตุผลที่เลือกคลิปนี้"
 }

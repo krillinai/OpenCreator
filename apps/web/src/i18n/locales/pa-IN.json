@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "ਉਪਸਿਰਲੇਖ ਝਲਕ ਦੀ ਪ੍ਰਗਤੀ",
   "Adjust timing": "ਸਮਾਂ ਵਿਵਸਥਿਤ ਕਰੋ",
   "Enter the required credentials for the selected dubbing service to continue.": "ਜਾਰੀ ਰੱਖਣ ਲਈ ਚੁਣੀ ਗਈ ਡਬਿੰਗ ਸੇਵਾ ਲਈ ਲੋੜੀਂਦੇ ਪ੍ਰਮਾਣ ਪੱਤਰ ਦਾਖਲ ਕਰੋ।",
-  "Save and continue composing": "ਸੰਭਾਲੋ ਅਤੇ ਵੀਡੀਓ ਬਣਾਉਣਾ ਜਾਰੀ ਰੱਖੋ"
+  "Save and continue composing": "ਸੰਭਾਲੋ ਅਤੇ ਵੀਡੀਓ ਬਣਾਉਣਾ ਜਾਰੀ ਰੱਖੋ",
+  "AI clip score": "AI ਕਲਿੱਪ ਸਕੋਰ",
+  "Sort clips": "ਕਲਿੱਪਾਂ ਨੂੰ ਕ੍ਰਮਬੱਧ ਕਰੋ",
+  "Source order": "ਮੂਲ ਕ੍ਰਮ",
+  "By score": "ਸਕੋਰ ਅਨੁਸਾਰ",
+  "Selection reason": "ਚੋਣ ਦਾ ਕਾਰਨ",
+  "No selection reason is available for this clip.": "ਇਸ ਕਲਿੱਪ ਨੂੰ ਚੁਣਨ ਦਾ ਕਾਰਨ ਉਪਲਬਧ ਨਹੀਂ ਹੈ।"
 }

@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "字幕預覽進度",
   "Adjust timing": "調整時間",
   "Enter the required credentials for the selected dubbing service to continue.": "請輸入所選配音服務所需的憑證以繼續。",
-  "Save and continue composing": "儲存並繼續合成"
+  "Save and continue composing": "儲存並繼續合成",
+  "AI clip score": "AI 選段評分",
+  "Sort clips": "排序",
+  "Source order": "原片順序",
+  "By score": "按評分排序",
+  "Selection reason": "選段理由",
+  "No selection reason is available for this clip.": "此片段暫無選段理由。"
 }

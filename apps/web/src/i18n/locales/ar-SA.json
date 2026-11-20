@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "تقدم معاينة الترجمة",
   "Adjust timing": "ضبط التوقيت",
   "Enter the required credentials for the selected dubbing service to continue.": "أدخل بيانات الاعتماد المطلوبة لخدمة الدبلجة المحددة للمتابعة.",
-  "Save and continue composing": "حفظ ومتابعة تركيب الفيديو"
+  "Save and continue composing": "حفظ ومتابعة تركيب الفيديو",
+  "AI clip score": "تقييم المقطع بالذكاء الاصطناعي",
+  "Sort clips": "ترتيب المقاطع",
+  "Source order": "الترتيب الأصلي",
+  "By score": "حسب التقييم",
+  "Selection reason": "سبب الاختيار",
+  "No selection reason is available for this clip.": "لا يتوفر سبب لاختيار هذا المقطع."
 }

@@ -460,6 +460,27 @@
   grid-column: 3;
 }
 
+.creator-tool-embedded .dashboard-clips-composer[data-recovery] {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.creator-tool-embedded .dashboard-clips-composer[data-recovery] .image-generation-editor {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.creator-tool-embedded .dashboard-clips-composer[data-recovery] .dashboard-translation-url-field {
+  grid-column: 1;
+  min-height: 0;
+}
+
+.dashboard-clips-composer[data-recovery] .image-generation-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
 .dashboard-translation-source-divider {
   grid-column: 2;
   align-self: center;

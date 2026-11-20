@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Progres pratinjau subtitel",
   "Adjust timing": "Sesuaikan waktu",
   "Enter the required credentials for the selected dubbing service to continue.": "Masukkan kredensial yang diperlukan untuk layanan sulih suara yang dipilih untuk melanjutkan.",
-  "Save and continue composing": "Simpan dan lanjutkan penyusunan video"
+  "Save and continue composing": "Simpan dan lanjutkan penyusunan video",
+  "AI clip score": "Skor klip AI",
+  "Sort clips": "Urutkan klip",
+  "Source order": "Urutan asli",
+  "By score": "Menurut skor",
+  "Selection reason": "Alasan pemilihan",
+  "No selection reason is available for this clip.": "Tidak ada keterangan mengapa klip ini dipilih."
 }

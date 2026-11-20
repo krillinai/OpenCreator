@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Priebeh náhľadu titulkov",
   "Adjust timing": "Upraviť časovanie",
   "Enter the required credentials for the selected dubbing service to continue.": "Ak chcete pokračovať, zadajte požadované prihlasovacie údaje pre vybranú dabingovú službu.",
-  "Save and continue composing": "Uložiť a pokračovať v skladaní videa"
+  "Save and continue composing": "Uložiť a pokračovať v skladaní videa",
+  "AI clip score": "AI skóre klipu",
+  "Sort clips": "Zoradiť klipy",
+  "Source order": "Pôvodné poradie",
+  "By score": "Podľa skóre",
+  "Selection reason": "Dôvod výberu",
+  "No selection reason is available for this clip.": "Dôvod výberu tohto klipu nie je k dispozícii."
 }

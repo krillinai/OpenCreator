@@ -37,7 +37,7 @@ type RepositoryOptions = {
 };
 
 export type CreatorServiceBinding = { source: 'manual' } | {
-  source: 'gateway'; accountId: string; bindingVersion: string; supplier?: string;
+  source: 'gateway'; accountId: string; bindingVersion: string | null; supplier?: string;
   models: Record<string, string>; capabilities: Record<string, string[]>;
 };
 
@@ -154,6 +154,7 @@ type CreateProviderRequestInput = {
 
 export type CreatorRepository = {
   getServiceBinding(jobId: string): CreatorServiceBinding;
+  finalizeServiceBinding(jobId: string, binding: CreatorServiceBinding): void;
   transaction<T>(operation: () => T): T;
   createJob(input: CreateJobInput): CreatorJob;
   getJob(id: string): CreatorJob | undefined;
@@ -497,6 +498,11 @@ export function createCreatorRepository(
       const row = db.prepare('SELECT service_binding_json FROM creator_jobs WHERE id = ?').get(jobId) as { service_binding_json: string } | undefined;
       if (!row) throw new Error('Creator job was not found');
       return JSON.parse(row.service_binding_json) as CreatorServiceBinding;
+    },
+    finalizeServiceBinding(jobId, binding) {
+      db.prepare(`UPDATE creator_jobs SET service_binding_json = ? WHERE id = ?
+        AND json_extract(service_binding_json, '$.source') = 'gateway'
+        AND json_type(service_binding_json, '$.bindingVersion') = 'null'`).run(JSON.stringify(binding), jobId);
     },
     getJobByCreationKey(creationKey: string): CreatorJob | undefined {
       const row = db.prepare(`

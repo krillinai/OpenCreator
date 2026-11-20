@@ -77,6 +77,8 @@ const analysisStageIds = new Set(['probe', 'download', 'subtitle', 'analyze']);
 
 type AutoClipWorkspaceProps = {
   onBack(): void;
+  onNewClip?(): void;
+  onRetryStarted?(): void;
   promptHint?: string;
   videoMetadataService?: VideoMetadataService;
   embedded?: boolean;

@@ -52,7 +52,7 @@ func (f *clipFixtureService) PrepareMedia(_ context.Context, step *types.Subtitl
 
 func (f *clipFixtureService) AnalyzeClipWindow(_ context.Context, prompt string) (string, error) {
 	f.prompts = append(f.prompts, prompt)
-	return `{"clips":[{"start":1,"end":2,"score":0.8},{"start":4,"end":5,"score":0.9}]}`, nil
+	return `{"clips":[{"start":1,"end":2,"score":0.8,"reason":"La deuxième phrase résume la méthode.","reason_row":2},{"start":4,"end":5,"score":0.9,"reason":"Ce repère est hors du clip.","reason_row":3}]}`, nil
 }
 
 func TestRunClipWithImportedSourceSubtitlesDoesNotTranslate(t *testing.T) {
@@ -79,13 +79,16 @@ func TestRunClipWithImportedSourceSubtitlesDoesNotTranslate(t *testing.T) {
 	svc := &clipFixtureService{fakeStageService: &fakeStageService{}, video: video}
 	response, err := RunClip(context.Background(), svc, ClipRequest{
 		Input: video, InputSRT: srt, Workdir: dir, TaskID: "clip-test",
-		Count: 2, MinDurationSec: 15, MaxDurationSec: 20,
+		Count: 2, MinDurationSec: 15, MaxDurationSec: 20, ReasonLocale: "fr-FR",
 	})
 	if err != nil || !response.OK {
 		t.Fatalf("RunClip: response=%+v error=%v", response, err)
 	}
 	if len(svc.calls) != 0 || len(svc.prompts) != 1 {
 		t.Fatalf("unexpected translation or analysis calls: calls=%v prompts=%d", svc.calls, len(svc.prompts))
+	}
+	if !strings.Contains(svc.prompts[0], "in locale fr-FR") {
+		t.Fatalf("selection reason prompt did not use the requested locale: %s", svc.prompts[0])
 	}
 	if response.Outputs.TargetSRT != "" || response.Outputs.ClipIndex == "" {
 		t.Fatalf("unexpected outputs: %+v", response.Outputs)
@@ -94,12 +97,27 @@ func TestRunClipWithImportedSourceSubtitlesDoesNotTranslate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var index ClipResult
+	var index struct {
+		Clips []struct {
+			ClipResultItem
+			Reason *struct {
+				Text     string `json:"text"`
+				OffsetMS int64  `json:"offset_ms"`
+				Locale   string `json:"locale"`
+			} `json:"selection_reason"`
+		} `json:"clips"`
+	}
 	if err := json.Unmarshal(data, &index); err != nil {
 		t.Fatal(err)
 	}
 	if len(index.Clips) != 2 || index.Clips[0].StartMS != 0 || index.Clips[1].StartMS != 24000 {
 		t.Fatalf("unexpected clip index: %+v", index)
+	}
+	if reason := index.Clips[0].Reason; reason == nil || reason.Text != "La deuxième phrase résume la méthode." || reason.OffsetMS != 8000 || reason.Locale != "fr-FR" {
+		t.Fatalf("missing or invalid selection reason at the subtitle anchor: %+v", reason)
+	}
+	if index.Clips[1].Reason != nil {
+		t.Fatalf("invalid selection reason should not be exported: %+v", index.Clips[1].Reason)
 	}
 	for _, item := range index.Clips {
 		if _, err := probeClipMedia(context.Background(), filepath.Join(dir, filepath.FromSlash(item.File))); err != nil {
@@ -110,6 +128,27 @@ func TestRunClipWithImportedSourceSubtitlesDoesNotTranslate(t *testing.T) {
 
 type clipWindowAnalyzer struct {
 	calls int
+}
+
+func TestClipReasonAnchorsToSubtitleRow(t *testing.T) {
+	rows := []clipRow{{StartMS: 120000, EndMS: 132345}, {StartMS: 132345, EndMS: 150000}, {StartMS: 150000, EndMS: 160000}}
+	candidates, err := parseClipWindow(`{"clips":[{"start":1,"end":2,"score":0.8,"reason":"An example illustrates the point.","reason_row":2},{"start":1,"end":2,"score":0.9,"reason":"Outside the clip.","reason_row":3},{"start":1,"end":2,"score":0.7,"reason":{},"reason_row":1}]}`,
+		rows, [2]int{0, 2}, ClipRequest{MinDurationSec: 15, MaxDurationSec: 40}, 160000)
+	if err != nil || len(candidates) != 3 {
+		t.Fatalf("optional reasons must not invalidate clips: candidates=%+v error=%v", candidates, err)
+	}
+	for index, candidate := range candidates {
+		data, err := json.Marshal(candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 && !strings.Contains(string(data), `"offset_ms":12345`) {
+			t.Fatalf("missing the clip-relative subtitle anchor: %s", data)
+		}
+		if index > 0 && strings.Contains(string(data), `"offset_ms"`) {
+			t.Fatalf("invalid reason should not be retained: %s", data)
+		}
+	}
 }
 
 func (a *clipWindowAnalyzer) AnalyzeClipWindow(_ context.Context, prompt string) (string, error) {

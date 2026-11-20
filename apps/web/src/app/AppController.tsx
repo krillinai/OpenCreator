@@ -4573,6 +4573,7 @@ export function AppController(props: AppControllerProps) {
       jobId={props.route.view === 'workbench' ? props.route.jobId : undefined}
       returnTo={props.route.view === 'workbench' && props.route.returnTo === 'projects' ? 'projects' : undefined}
       onJobCreated={rememberCreatorJob}
+      onOpenGenerationHistory={() => openPrimaryView('projects')}
       onAskIssue={askAgentAboutIssue}
       onCreateProject={
         projectService === null

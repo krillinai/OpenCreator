@@ -34,7 +34,7 @@ import { readStickmanRemotionRuntime } from './stickman/remotion-runtime.js';
 import type { RemotionComponentManager } from './stickman/remotion-component.js';
 import { validateBilibiliSource } from './templates/video-translation-actions.js';
 import type { VideoMetadataService } from '../video-metadata/service.js';
-import { gatewayCreatorBinding } from '../gateway/creator-service-source.js';
+import { CreatorGatewayNotReadyError, gatewayCreatorBinding } from '../gateway/creator-service-source.js';
 import { stickmanShotSpecSchema } from './stickman/contracts.js';
 import { shouldUsePreviousShotReference } from './stickman/image-prompt.js';
 
@@ -105,7 +105,8 @@ export function createCreatorPreflight(input: {
       add('ready', { id: 'executor', title: 'Executor', message: `${stage.executor} loaded`, executionMode: mode });
     }
 
-    try { input.assertServiceSource?.(job.id); } catch {
+    try { input.assertServiceSource?.(job.id); } catch (error) {
+      if (error instanceof CreatorGatewayNotReadyError) throw error;
       add('blocked', { id: 'service-source', title: 'Task service source mismatch', message: 'Restore the original task account and service source before continuing.', executionMode: 'remote' }, { label: 'Open account settings', deepLink: '#/settings?tab=ai-services' });
       return { templateId: job.templateId, templateVersion: job.templateVersion, stageId: stage.id, executionMode: mode, canStart: false, ready, warning, blocked, checkedAt: new Date().toISOString() };
     }

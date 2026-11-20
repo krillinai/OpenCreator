@@ -4,6 +4,18 @@ import type { AppLanguage } from './language.js';
 import { openCreatorLanguages } from '@opencreator/protocol';
 
 describe('additional language catalogs', () => {
+  it('localizes clip review scores, ordering and evidence navigation in every additional language', () => {
+    for (const [language, catalog] of Object.entries(additionalLanguageCatalogs)) {
+      const locale = language as AppLanguage;
+      for (const message of ['AI clip score', 'Sort clips', 'Source order', 'By score', 'Selection reason', 'No selection reason is available for this clip.']) {
+        expect(catalog?.[message], `${language}: ${message}`).toBeTruthy();
+        expect(translateEnglishCopy(locale, message)).toBe(catalog?.[message]);
+        expect(translateEnglishCopy(locale, message)).not.toBe(message);
+      }
+      expect(translateEnglishCopy(locale, 'Jump to 00:12')).toBe(catalog?.['Jump to {{0}}']?.replace('{{0}}', '00:12'));
+    }
+  });
+
   it('covers immersive subtitle editing controls in every client language', () => {
     for (const [language, catalog] of Object.entries(additionalLanguageCatalogs)) {
       for (const key of ['Back to project', 'Subtitle editor', 'Undo', 'Redo', 'Agent Mode', 'Advanced editing',

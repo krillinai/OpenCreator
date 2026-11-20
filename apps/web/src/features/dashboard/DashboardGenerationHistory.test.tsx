@@ -200,6 +200,32 @@ describe('DashboardGenerationHistory', () => {
   });
 
   it.each([
+    ['zh-CN', 'rendering_clips', '正在导出视频切片 1/3'],
+    ['en-US', 'rendering_clips', 'Exporting video clips 1/3'],
+    ['ja-JP', 'rendering_clips', 'ビデオクリップをエクスポートしています 1/3'],
+    ['en-US', 'unrecognized_phase', 'Running']
+  ] as const)('localizes auto clip history in %s for phase %s', async (language, phase, expected) => {
+    const clips = { ...job('job_clipping', 'auto-clip', []), templateVersion: 3, status: 'running' as const };
+    clips.state = { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=clipping' };
+    clips.stages = [{
+      id: 'stage_clipping', jobId: clips.id, stageId: 'clip', executor: 'krillinai', status: 'running', dispatchStatus: 'claimed',
+      claimOwner: null, claimExpiresAt: null, attempt: 1, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { phase, percent: 72, message: '正在生成片段 2/3', completed: 1, total: 3 }, errorCode: null, errorMessage: null,
+      startedAt: clips.updatedAt, finishedAt: null
+    }];
+    render(<LanguageProvider initialPreference={language}><DashboardGenerationHistory
+      projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [clips] })), openArtifact: vi.fn() }}
+      onBackCreation={vi.fn()}
+      onOpenJob={vi.fn()}
+    /></LanguageProvider>);
+
+    expect(await screen.findByText('72%')).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent(`· ${expected}`);
+    expect(screen.queryByText(/正在生成片段|unrecognized_phase/)).not.toBeInTheDocument();
+  });
+
+  it.each([
     ['zh-CN', '视频翻译已完成，正在等待原视频'],
     ['en-US', 'Translation complete; waiting for the source video'],
     ['sv-SE', 'Översättningen är klar; väntar på originalvideon']
@@ -767,6 +793,55 @@ describe('DashboardGenerationHistory', () => {
     expect(screen.getByRole('button', { name: '下载 new-subtitle.srt' })).toBeInTheDocument();
     fireEvent.click(card);
     expect(onOpenJob).toHaveBeenCalledWith(translation);
+  });
+
+  it.each([
+    ['zh-CN', '打开 YouTube clips', '视频切片'],
+    ['en-US', 'Open YouTube clips', 'Video Clips']
+  ] as const)('shows one task per completed auto clip in %s and opens its workbench', async (language, openLabel, templateLabel) => {
+    const date = '2026-11-07T10:00:00.000Z';
+    const clips = { ...job('job_clips', 'auto-clip', [
+      artifact('job_clips', 'source', 'source_video', 'origin_video.mp4', date),
+      ...[1, 2, 3].map(version => ({
+        ...artifact('job_clips', `clip-${version}`, 'auto_clip_video', `clip-0${version}.mp4`, date),
+        version, metadata: { fileName: `clip-0${version}.mp4`, resultVersion: 1 }
+      }))
+    ]), templateVersion: 3, state: { title: 'YouTube clips' } };
+    const otherClips = job('job_other_clips', 'auto-clip', [artifact('job_other_clips', 'other', 'auto_clip_video', 'other.mp4', date)]);
+    const onOpenJob = vi.fn();
+    const openArtifact = vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' })));
+    render(<LanguageProvider initialPreference={language}><DashboardGenerationHistory
+      projectId="project_1" service={{ listJobs: vi.fn(async () => ({ jobs: [clips, otherClips] })), openArtifact }}
+      initialType="video" onBackCreation={vi.fn()} onOpenJob={onOpenJob}
+    /></LanguageProvider>);
+
+    await waitFor(() => expect(document.querySelectorAll('.dashboard-generation-result-card')).toHaveLength(2));
+    const card = screen.getByRole('link', { name: openLabel });
+    expect(card).toHaveTextContent(templateLabel);
+    expect(card).not.toHaveTextContent(/\.mp4|V[1-3]/);
+    fireEvent.click(card);
+    expect(onOpenJob).toHaveBeenCalledExactlyOnceWith(clips);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(openArtifact).not.toHaveBeenCalled();
+  });
+
+  it('keeps a rerunning auto clip task in history once even with earlier clips', async () => {
+    const clips = job('job_clips', 'auto-clip', [
+      artifact('job_clips', 'clip', 'auto_clip_video', 'clip-01.mp4', '2026-11-07T10:00:00.000Z')
+    ]);
+    clips.status = 'running';
+    clips.stages = [{
+      id: 'clip-retry', jobId: clips.id, stageId: 'clip', executor: 'krillinai', status: 'running', dispatchStatus: 'claimed',
+      claimOwner: null, claimExpiresAt: null, attempt: 2, idempotencyKey: null, scopeKey: null, inputFingerprint: null,
+      progress: { percent: 41 }, errorCode: null, errorMessage: null, startedAt: clips.updatedAt, finishedAt: null
+    }];
+    render(<DashboardGenerationHistory projectId="project_1"
+      service={{ listJobs: vi.fn(async () => ({ jobs: [clips] })), openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))) }}
+      onBackCreation={vi.fn()} onOpenJob={vi.fn()}
+    />);
+
+    expect(await screen.findByRole('status', { name: '正在生成 视频切片' })).toHaveTextContent('41%');
+    expect(document.querySelectorAll('.dashboard-generation-result-card')).toHaveLength(1);
   });
 
   it('shows the source video cover for a subtitle result while keeping the result openable', async () => {

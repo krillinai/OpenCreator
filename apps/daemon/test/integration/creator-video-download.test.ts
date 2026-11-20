@@ -1,13 +1,15 @@
-import type { CreatorExecutor } from '../../src/creator/executor.js';
+import { CreatorExecutorError, type CreatorExecutor } from '../../src/creator/executor.js';
 import type { CreatorJson, CreatorStageRun } from '@opencreator/protocol';
 import type { FastifyInstance } from 'fastify';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import { spawnCreatorProcess } from '../../src/creator/process-tree.js';
 import { creatorStageEventId } from '../../src/creator/events.js';
+import { createGatewayConfigStore } from '../../src/gateway/config-store.js';
 
 let server: FastifyInstance | undefined;
 let tempDir = '';
@@ -20,6 +22,95 @@ afterEach(async () => {
 });
 
 describe('creator video download', () => {
+  it('persists a rejected translation start without running it, and still accepts local download tasks when official services are blocked', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'creator-download-blocked-gateway-'));
+    const gateway = createServer((_request, response) => {
+      response.writeHead(503, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: { code: 'gateway_unavailable' } }));
+    });
+    await new Promise<void>(resolve => gateway.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = gateway.address();
+      if (address === null || typeof address === 'string') throw new Error('Missing fixture gateway address');
+      const origin = `http://127.0.0.1:${address.port}`;
+      await createGatewayConfigStore(tempDir).writeCredentials({
+        schemaVersion: 1, account: { id: 'test', email: 'fixture@example.test', verified: true },
+        accessToken: 'fixture-access', refreshToken: 'fixture-refresh', expiresIn: 900,
+        accessExpiresAt: new Date(Date.now() + 900_000).toISOString(), modelKey: 'fixture-key',
+        keyVersion: '1', bindingVersion: 'test:1', baseUrl: `${origin}/v1`,
+        models: [{ id: 'fixture-model', modality: 'text', capabilities: ['responses'] }], defaults: { text: 'fixture-model' }
+      });
+      server = await buildServer({ token: 'secret', appHome: tempDir, dataDir: tempDir, codexHome: join(tempDir, 'codex'),
+        gatewayOrigin: origin, creatorExecutors: [{ id: 'download', async run() {
+          throw new CreatorExecutorError('network_unavailable', 'Fixture video platform unreachable', {}, {
+            kind: 'connection-refused', provider: 'yt-dlp'
+          });
+        } }] });
+      await server.listen({ host: '127.0.0.1', port: 0 });
+      await expect.poll(async () => (await request('GET', '/gateway/account')).json()).toMatchObject({
+        source: 'gateway', authState: 'signed_in', activationState: 'blocked'
+      });
+      const input = { projectId: 'project_download', state: { sourceUrl: 'https://www.youtube.com/watch?v=download-demo' } };
+      const translation = await request('POST', '/creator/jobs', { ...input, templateId: 'video-translation' });
+      expect(translation.statusCode).toBe(201);
+      const translationJob = translation.json().job;
+      const translationPath = `/creator/jobs/${translationJob.id}`;
+      const start = await request('POST', `${translationPath}/actions`, {
+        action: 'run-stage', expectedRevision: translationJob.revision, input: { stageId: 'subtitle', workflow: true }
+      });
+      expect(start.statusCode).toBe(503);
+      expect(start.json()).toMatchObject({ error: { code: 'GATEWAY_SERVICES_NOT_READY', issue: {
+        source: 'preflight', stageId: 'subtitle', scope: { kind: 'creator-job', jobId: translationJob.id }
+      } } });
+      expect((await request('GET', translationPath)).json().job).toMatchObject({
+        status: 'draft', stages: [], providerRequests: [], issues: [expect.objectContaining({
+          code: 'GATEWAY_SERVICES_NOT_READY', id: start.json().error.issue.id
+        })]
+      });
+      await expect.poll(async () => (await request('GET', '/telemetry/task-events')).json().events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ task_id: translationJob.id, event_type: 'task_started' }),
+        expect.objectContaining({ task_id: translationJob.id, event_type: 'preflight_rejected', stage_id: 'subtitle',
+          outcome: 'needs_input', code: 'GATEWAY_SERVICES_NOT_READY', failure: { diagnostic: expect.objectContaining({
+            steps: [expect.objectContaining({ code: 'gateway_unavailable', result: 'failed' })]
+          }) } })
+      ]));
+      const created = await request('POST', '/creator/jobs', { ...input, templateId: 'video-download' });
+      expect(created.statusCode).toBe(201);
+      const { job } = created.json();
+      const jobPath = `/creator/jobs/${job.id}`;
+      expect((await request('GET', `${jobPath}/preflight?stageId=probe`)).json()).toMatchObject({ canStart: true });
+      expect((await request('GET', '/telemetry/task-events')).json().events).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ task_id: job.id })
+      ]));
+      const preflight = await request('GET', `${jobPath}/preflight?stageId=download&launch=1`);
+      expect(preflight.json()).toMatchObject({ canStart: false, blocked: expect.arrayContaining([expect.objectContaining({ id: 'input-artifact:download_probe' })]) });
+      await expect.poll(async () => (await request('GET', '/telemetry/task-events')).json().events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ task_id: job.id, feature: 'video-download', event_type: 'task_started' }),
+        expect.objectContaining({ task_id: job.id, event_type: 'preflight_rejected', stage_id: 'download', execution_mode: 'local',
+          failure: { diagnostic: expect.objectContaining({ steps: [expect.objectContaining({ code: 'input-artifact:download_probe' })] }) } })
+      ]));
+      expect((await request('POST', `${jobPath}/actions`, {
+        action: 'run-stage', expectedRevision: job.revision, input: { stageId: 'probe' }
+      })).statusCode).toBe(200);
+      await expect.poll(async () => (await request('GET', jobPath)).json().job).toMatchObject({
+        status: 'failed',
+        stages: [{ stageId: 'probe', status: 'failed', errorCode: 'network_unavailable', errorMessage: 'Fixture video platform unreachable' }],
+        issues: [expect.objectContaining({ code: 'network_unavailable', fallbackMessage: 'Fixture video platform unreachable',
+          publicFacts: expect.objectContaining({ kind: 'connection-refused', provider: 'yt-dlp',
+            upstreamMessage: 'Fixture video platform unreachable' }) })]
+      });
+      await expect.poll(async () => (await request('GET', '/telemetry/task-events')).json().events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ task_id: job.id, feature: 'video-download', event_type: 'stage_started', stage_id: 'probe' }),
+        expect.objectContaining({ task_id: job.id, event_type: 'stage_finished', stage_id: 'probe', execution_mode: 'local', outcome: 'failed', code: 'network_unavailable' }),
+        expect.objectContaining({ task_id: job.id, event_type: 'task_state', outcome: 'failed' })
+      ]));
+    } finally {
+      await server?.close();
+      server = undefined;
+      gateway.closeAllConnections();
+      await new Promise<void>(resolve => gateway.close(() => resolve()));
+    }
+  });
+
   it.skipIf(process.platform === 'win32')('resumes the same live process and stage without preparation or another dispatch', async () => {
     const fixture = await controlledDownloadFixture(true);
     const first = await fixture.queue('video-1080-1');

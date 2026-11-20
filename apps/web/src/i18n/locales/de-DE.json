@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Fortschritt der Untertitelvorschau",
   "Adjust timing": "Timing anpassen",
   "Enter the required credentials for the selected dubbing service to continue.": "Geben Sie die erforderlichen Zugangsdaten für den ausgewählten Synchronisationsdienst ein, um fortzufahren.",
-  "Save and continue composing": "Speichern und Video weiter zusammenstellen"
+  "Save and continue composing": "Speichern und Video weiter zusammenstellen",
+  "AI clip score": "KI-Clipbewertung",
+  "Sort clips": "Clips sortieren",
+  "Source order": "Originalreihenfolge",
+  "By score": "Nach Bewertung",
+  "Selection reason": "Auswahlgrund",
+  "No selection reason is available for this clip.": "Für diesen Clip liegt keine Auswahlbegründung vor."
 }

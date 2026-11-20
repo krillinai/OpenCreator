@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Напредък на прегледа на субтитрите",
   "Adjust timing": "Регулиране на времето",
   "Enter the required credentials for the selected dubbing service to continue.": "Въведете необходимите идентификационни данни за избраната услуга за дублаж, за да продължите.",
-  "Save and continue composing": "Запазване и продължаване на композирането"
+  "Save and continue composing": "Запазване и продължаване на композирането",
+  "AI clip score": "Оценка на клипа от ИИ",
+  "Sort clips": "Сортиране на клипове",
+  "Source order": "Първоначален ред",
+  "By score": "По оценка",
+  "Selection reason": "Причина за избора",
+  "No selection reason is available for this clip.": "Няма посочена причина за избора на този клип."
 }

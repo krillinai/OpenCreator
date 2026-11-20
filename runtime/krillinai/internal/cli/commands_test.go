@@ -94,8 +94,9 @@ func TestParseSubtitleSourceOnly(t *testing.T) {
 }
 
 func TestParseClipCommand(t *testing.T) {
+	t.Setenv("OPENCREATOR_CLIP_REASON_LOCALE", "zh-TW")
 	cmd, err := Parse([]string{"clip", "--input", "https://youtu.be/demo", "--workdir", "job", "--count", "4", "--min-duration-sec", "60", "--max-duration-sec", "90", "--defer-transcription", "--dry-run"})
-	if err != nil || cmd.Name != "clip" || cmd.Clip.Count != 4 || !cmd.Clip.DeferTranscription || !cmd.DryRun {
+	if err != nil || cmd.Name != "clip" || cmd.Clip.Count != 4 || cmd.Clip.ReasonLocale != "zh-TW" || !cmd.Clip.DeferTranscription || !cmd.DryRun {
 		t.Fatalf("Parse clip: command=%+v error=%v", cmd, err)
 	}
 	if response := Execute(context.Background(), nil, cmd); !response.OK || response.Stage != pipeline.StageClip {

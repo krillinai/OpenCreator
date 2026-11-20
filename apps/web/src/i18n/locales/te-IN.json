@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "ఉపశీర్షికల ముందస్తు వీక్షణ పురోగతి",
   "Adjust timing": "సమయాన్ని సర్దుబాటు చేయండి",
   "Enter the required credentials for the selected dubbing service to continue.": "కొనసాగించడానికి ఎంచుకున్న డబ్బింగ్ సేవకు అవసరమైన ఆధారాలను నమోదు చేయండి.",
-  "Save and continue composing": "సేవ్ చేసి వీడియో రూపొందించడం కొనసాగించండి"
+  "Save and continue composing": "సేవ్ చేసి వీడియో రూపొందించడం కొనసాగించండి",
+  "AI clip score": "AI క్లిప్ స్కోరు",
+  "Sort clips": "క్లిప్‌లను క్రమబద్ధీకరించండి",
+  "Source order": "అసలు క్రమం",
+  "By score": "స్కోరు ప్రకారం",
+  "Selection reason": "ఎంపికకు కారణం",
+  "No selection reason is available for this clip.": "ఈ క్లిప్‌ను ఎంచుకోవడానికి గల కారణం అందుబాటులో లేదు."
 }

@@ -540,7 +540,7 @@ export async function buildServer(input: BuildServerInput) {
   await purgeLegacyStickmanJobs({ db, jobsRoot: creatorJobsRoot });
   migrateStickmanVisualAssetState({ db });
   let gatewayCreatorSource: ReturnType<typeof createGatewayCreatorSource> | undefined;
-  const creatorRepository = createCreatorRepository(db, { serviceBinding: templateId => gatewayCreatorSource?.snapshot(templateId) ?? { source: 'manual' } });
+  const creatorRepository = createCreatorRepository(db, { serviceBinding: templateId => gatewayCreatorSource?.snapshot(templateId, true) ?? { source: 'manual' } });
   const creatorIssueService = createCreatorIssueService(creatorRepository, {
     onChanged(issue) {
       if (issue.scope.kind !== 'creator-job') return;
@@ -795,7 +795,7 @@ export async function buildServer(input: BuildServerInput) {
       storedCreatorServicesConfigStore,
       localCodexTextModelDefaults
     );
-  gatewayCreatorSource = createGatewayCreatorSource({ account: gatewayAccount, manual: manualCreatorServicesConfigStore, getLocalOrigin: getAgentToolBaseUrl, readJobBinding: creatorRepository.getServiceBinding, readJobState: id => creatorRepository.getJob(id)?.state, readJobTemplateId: id => creatorRepository.getJob(id)?.templateId, readStageRun: creatorRepository.getStageRun, ledger: creatorProviderRequestLedger, directRequestsRoot: join(dataDir, 'gateway', 'requests'), telemetry: creatorTelemetry });
+  gatewayCreatorSource = createGatewayCreatorSource({ account: gatewayAccount, manual: manualCreatorServicesConfigStore, getLocalOrigin: getAgentToolBaseUrl, readJobBinding: creatorRepository.getServiceBinding, finalizeJobBinding: creatorRepository.finalizeServiceBinding, readJobState: id => creatorRepository.getJob(id)?.state, readJobTemplateId: id => creatorRepository.getJob(id)?.templateId, readStageRun: creatorRepository.getStageRun, ledger: creatorProviderRequestLedger, directRequestsRoot: join(dataDir, 'gateway', 'requests'), telemetry: creatorTelemetry });
   const creatorServicesConfigStore = gatewayCreatorSource.store;
   // Validation must resolve the same frozen binding and task model choices as execution.
   const readCreatorConfigForJob = (jobId: string) => gatewayCreatorSource!.runForJob(

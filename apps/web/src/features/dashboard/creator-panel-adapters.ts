@@ -730,8 +730,16 @@ export const autoClipPanelAdapter: CreatorPanelAdapter = {
     }
     return normalizeCommonActivity(activity, l, autoClipPanelAdapter, {}, autoClipFieldLabel);
   },
-  readStageProgress(stage) {
-    return { ...readStandardProgress(stage), showMessage: stage.stageId === 'clip' };
+  readStageProgress(stage, l) {
+    const progress = readStandardProgress(stage);
+    const message = stage.stageId === 'clip' ? autoClipProgressDetail(progress, l) : null;
+    return { ...progress, message, showMessage: message !== null };
+  },
+  taskProgress(job, l) {
+    const stage = [...job.stages].reverse().find(run => run.stageId === 'clip');
+    if (stage === undefined) return null;
+    return { key: stage.id, stage, steps: [{ id: 'clip', label: autoClipPanelAdapter.stageLabel('clip', l) }],
+      stepIndex: 0, taskPercent: null, waitingForNext: false, completionLabel: l('视频切片已生成', 'Video clips created') };
   },
   runningProgressText(_stage, progress, l) {
     if (progress.total !== null && progress.total > 0 && progress.completed !== null && progress.phase === 'rendering_clips') {
@@ -749,6 +757,25 @@ export const autoClipPanelAdapter: CreatorPanelAdapter = {
     return null;
   }
 };
+
+function autoClipProgressDetail(progress: CreatorStageProgressView, l: CreatorPanelLocalize): string | null {
+  if (progress.message === null) return null;
+  if (progress.phase === 'analyzing_clips') {
+    return /^正在分析字幕窗口 (\d+\/\d+)$/.exec(progress.message)?.[1] ?? null;
+  }
+  if (progress.phase !== 'downloading_media') return null;
+  if (/^正在连接来源，准备下载(?:视频|音频)$/.test(progress.message)) {
+    return l('正在连接下载服务器', 'Connecting to download server');
+  }
+  if (/^(?:视频|音频)下载完成，正在处理媒体文件$/.test(progress.message)) {
+    return l('准备视频内容', 'Preparing the video content');
+  }
+  const download = /^正在下载(视频|音频)：([\d.]+ MiB(?: \/ [\d.]+ MiB)?)(?:；([\d.]+ MiB\/s))?(?:；预计剩余 (\d+) 秒)?$/.exec(progress.message);
+  if (download === null) return null;
+  const [, media, amount, speed, seconds] = download;
+  const label = media === '视频' ? l('视频', 'Video') : l('音频', 'Audio');
+  return [`${label}: ${amount}`, speed, seconds && `~${seconds} ${l('秒', 'sec')}`].filter(Boolean).join(' · ');
+}
 
 export const stickmanVideoPanelAdapter: CreatorPanelAdapter = {
   id: 'stickman-video',

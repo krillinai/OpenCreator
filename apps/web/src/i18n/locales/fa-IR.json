@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "پیشرفت پیش‌نمایش زیرنویس",
   "Adjust timing": "تنظیم زمان‌بندی",
   "Enter the required credentials for the selected dubbing service to continue.": "برای ادامه، اطلاعات احراز هویت موردنیاز سرویس دوبله انتخاب‌شده را وارد کنید.",
-  "Save and continue composing": "ذخیره و ادامه ساخت ویدیو"
+  "Save and continue composing": "ذخیره و ادامه ساخت ویدیو",
+  "AI clip score": "امتیاز کلیپ با هوش مصنوعی",
+  "Sort clips": "مرتب‌سازی کلیپ‌ها",
+  "Source order": "ترتیب اصلی",
+  "By score": "بر اساس امتیاز",
+  "Selection reason": "دلیل انتخاب",
+  "No selection reason is available for this clip.": "دلیلی برای انتخاب این کلیپ در دسترس نیست."
 }

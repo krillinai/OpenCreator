@@ -10,7 +10,7 @@ import Fastify from 'fastify';
 import { registerGatewayAccountRoutes } from '../../src/api/routes.gateway-account.js';
 import { createOfficialModelAccess, type OfficialModelAccess } from '../../src/gateway/model-access.js';
 import { createGatewayCreatorSource } from '../../src/gateway/creator-service-source.js';
-import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
+import { createDefaultCreatorServicesConfig, type GatewayAccountState } from '@opencreator/protocol';
 import { createRuntimeSource } from '../../src/gateway/runtime-source.js';
 import type { AppServerRuntimeManager } from '../../src/codex/app-server-runtime-manager.js';
 
@@ -1441,6 +1441,38 @@ it('can sign out and sign back in with unfinished jobs, while keeping old jobs b
     await expect(source.runForJob('original', 'stage', execute)).rejects.toMatchObject({ code: 'task_source_mismatch' });
     expect(execute).not.toHaveBeenCalled();
   } finally { await source.revoke(); await f.service.close(); }
+});
+
+it('never runs an unbound official translation under local settings or a different account, then pins the same account on retry', async () => {
+  const account = { id: 'original', email: 'fixture@example.test', verified: true };
+  let state: GatewayAccountState = { source: 'gateway', authState: 'signed_in', activationState: 'blocked',
+    account, supplier: 'openrouter', bindingVersion: null, models: [], activationError: { code: 'gateway_unavailable',
+      message: 'Unavailable', stage: 'credentials', request: { path: '/api/v1/auth/refresh', reason: 'network', networkCode: 'ECONNREFUSED' } } };
+  const manual = createDefaultCreatorServicesConfig();
+  let binding: ReturnType<ReturnType<typeof createGatewayCreatorSource>['snapshot']>;
+  const source = createGatewayCreatorSource({
+    account: { peekState: () => state, modelCredentials: vi.fn() },
+    manual: { read: async () => manual, write: async value => value, reset: async () => manual },
+    getLocalOrigin: () => 'http://127.0.0.1:39999', readJobTemplateId: () => 'video-translation',
+    readJobBinding: () => binding, finalizeJobBinding: (_id, next) => { binding = next; }
+  });
+  binding = source.snapshot('video-translation', true);
+  expect(binding).toMatchObject({ source: 'gateway', accountId: account.id, bindingVersion: null });
+  const work = vi.fn(async () => 'ready');
+  await expect(source.runForJob('job', 'stage', work)).rejects.toMatchObject({ code: 'GATEWAY_SERVICES_NOT_READY',
+    publicFacts: { kind: 'connection-refused', upstreamCode: 'ECONNREFUSED' } });
+  state = { ...state, source: 'manual', authState: 'signed_out', account: null };
+  await expect(source.runForJob('job', 'stage', work)).rejects.toMatchObject({ code: 'auth_required' });
+  state = { ...state, source: 'gateway', authState: 'signed_in', account: { ...account, id: 'different' },
+    activationState: 'ready', activationError: null, bindingVersion: 'different:1' };
+  await expect(source.runForJob('job', 'stage', work)).rejects.toMatchObject({ code: 'task_source_mismatch' });
+  expect(work).not.toHaveBeenCalled();
+  state = { ...state, account, bindingVersion: 'original:1' };
+  await expect(source.runForJob('job', 'stage', work)).resolves.toBe('ready');
+  expect(binding).toMatchObject({ source: 'gateway', accountId: account.id, bindingVersion: 'original:1' });
+  state = { ...state, bindingVersion: 'original:2' };
+  await expect(source.runForJob('job', 'stage', work)).resolves.toBe('ready');
+  expect(binding).toMatchObject({ bindingVersion: 'original:1' });
 });
 
 it('signs out locally when usage reporting and remote logout are unavailable', async () => {

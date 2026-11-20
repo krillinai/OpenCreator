@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/text/language"
 )
 
 type ClipRequest struct {
@@ -22,6 +24,7 @@ type ClipRequest struct {
 	Workdir            string
 	TaskID             string
 	OriginLang         string
+	ReasonLocale       string
 	CaptionSource      CaptionSource
 	DeferTranscription bool
 	Count              int
@@ -38,11 +41,12 @@ type ClipResult struct {
 }
 
 type ClipResultItem struct {
-	ID      string  `json:"id"`
-	File    string  `json:"file"`
-	StartMS int64   `json:"start_ms"`
-	EndMS   int64   `json:"end_ms"`
-	Score   float64 `json:"score"`
+	ID      string      `json:"id"`
+	File    string      `json:"file"`
+	StartMS int64       `json:"start_ms"`
+	EndMS   int64       `json:"end_ms"`
+	Score   float64     `json:"score"`
+	Reason  *clipReason `json:"selection_reason,omitempty"`
 }
 
 type ClipAnalyzer interface {
@@ -59,6 +63,13 @@ type clipCandidate struct {
 	StartMS int64
 	EndMS   int64
 	Score   float64
+	Reason  *clipReason
+}
+
+type clipReason struct {
+	Text     string `json:"text"`
+	OffsetMS int64  `json:"offset_ms"`
+	Locale   string `json:"locale"`
 }
 
 type clipMedia struct {
@@ -162,7 +173,7 @@ func RunClip(ctx context.Context, svc StageService, req ClipRequest) (Response, 
 		}
 		result.Clips = append(result.Clips, ClipResultItem{
 			ID: fmt.Sprintf("clip-%02d", index+1), File: filepath.ToSlash(filepath.Join("clips", name)),
-			StartMS: candidate.StartMS, EndMS: candidate.EndMS, Score: candidate.Score,
+			StartMS: candidate.StartMS, EndMS: candidate.EndMS, Score: candidate.Score, Reason: candidate.Reason,
 		})
 	}
 	indexPath := filepath.Join(req.Workdir, "clips.json")
@@ -399,8 +410,9 @@ func clipPrompt(rows []clipRow, span [2]int, req ClipRequest) string {
 	builder.WriteString("Cut-point rules (most important): each clip covers one complete answer or central idea. Start with its first sentence and end with the last sentence needed to complete that idea. Never stop mid-sentence or before the answer is complete. Exclude opening pleasantries, the next question or use case, transitions, requests for comments, and the full video's closing remarks. Different uses of the same device or person are different ideas.\n")
 	fmt.Fprintf(&builder, "Duration: each clip must be %d to %d seconds, measured from the first row's start to the last row's end in milliseconds. Once the minimum is met, choose the earliest complete ending of the central idea. Do not pad the clip to fill the duration or to cover every use of the same device. Split an overlong answer at a natural paragraph boundary. Before choosing end, check whether its final sentences still support the title and reason; if they introduce a parallel use case or a new topic, end earlier.\n", req.MinDurationSec, req.MaxDurationSec)
 	fmt.Fprintf(&builder, "Count: read the entire transcript and return exactly %d complete, non-overlapping clips on distinct topics when available. Return fewer only if there truly are not enough clips satisfying the duration and completeness rules.\n", req.Count)
-	builder.WriteString("For each clip, provide start/end (inclusive row numbers), title (a faithful Chinese title of at most 20 characters), reason (15 to 30 Chinese characters describing its single central highlight), and score (publishability from 0 to 1; 0.7 or above is worth publishing). Select only publishable clips. Do not translate the subtitles.\n")
-	builder.WriteString("Return only JSON: {\"clips\":[{\"start\":1,\"end\":2,\"title\":\"<Chinese title>\",\"reason\":\"<Chinese reason>\",\"score\":0.8}]}\n")
+	builder.WriteString("For each clip, provide start/end (inclusive row numbers) and score (publishability from 0 to 1; 0.7 or above is worth publishing). Select only publishable clips. Do not translate the subtitles.\n")
+	fmt.Fprintf(&builder, "In reason, write one concise sentence (at most 240 characters) in locale %s explaining the specific insight, example or moment that makes the clip worth watching on its own. Base it only on the selected subtitles. Set reason_row to the global number of the subtitle row inside the clip where that evidence begins, not a timestamp. Omit both fields if you cannot point to evidence.\n", clipReasonLocale(req.ReasonLocale))
+	builder.WriteString("Return only JSON: {\"clips\":[{\"start\":1,\"end\":2,\"reason\":\"<one sentence>\",\"reason_row\":2,\"score\":0.8}]}\n")
 	for index := span[0]; index <= span[1]; index++ {
 		row := rows[index]
 		fmt.Fprintf(&builder, "%d|%d-%d|%s\n", index+1, row.StartMS, row.EndMS, row.Text)
@@ -411,9 +423,11 @@ func clipPrompt(rows []clipRow, span [2]int, req ClipRequest) string {
 func parseClipWindow(raw string, rows []clipRow, span [2]int, req ClipRequest, videoDurationMS int64) ([]clipCandidate, error) {
 	var result struct {
 		Clips []struct {
-			Start int     `json:"start"`
-			End   int     `json:"end"`
-			Score float64 `json:"score"`
+			Start     int             `json:"start"`
+			End       int             `json:"end"`
+			Score     float64         `json:"score"`
+			Reason    json.RawMessage `json:"reason"`
+			ReasonRow json.RawMessage `json:"reason_row"`
 		} `json:"clips"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &result); err != nil {
@@ -432,10 +446,28 @@ func parseClipWindow(raw string, rows []clipRow, span [2]int, req ClipRequest, v
 		if end > videoDurationMS || end-start < int64(req.MinDurationSec)*1000 || end-start > int64(req.MaxDurationSec)*1000 {
 			continue
 		}
-		clips = append(clips, clipCandidate{StartMS: start, EndMS: end, Score: item.Score})
+		candidate := clipCandidate{StartMS: start, EndMS: end, Score: item.Score}
+		var reasonText string
+		var reasonRow int
+		if json.Unmarshal(item.Reason, &reasonText) == nil && json.Unmarshal(item.ReasonRow, &reasonRow) == nil &&
+			reasonRow > first && reasonRow <= last+1 {
+			reasonText = strings.Join(strings.Fields(reasonText), " ")
+			offset := rows[reasonRow-1].StartMS - start
+			if reasonText != "" && utf8.RuneCountInString(reasonText) <= 240 && offset >= 0 && offset < end-start {
+				candidate.Reason = &clipReason{Text: reasonText, OffsetMS: offset, Locale: clipReasonLocale(req.ReasonLocale)}
+			}
+		}
+		clips = append(clips, candidate)
 	}
 	if len(result.Clips) > 0 && len(clips) == 0 {
 		return nil, errors.New("all candidate ranges were invalid")
 	}
 	return clips, nil
+}
+
+func clipReasonLocale(value string) string {
+	if tag, err := language.Parse(value); err == nil && tag != language.Und {
+		return tag.String()
+	}
+	return "en-US"
 }

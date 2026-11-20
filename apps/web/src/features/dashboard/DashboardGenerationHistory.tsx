@@ -11,8 +11,9 @@ import { isMeaningfulCreatorJob, ProjectCoverImage, projectCover, youtubeThumbna
 import { isYtDlpCaptionConnectionRefused, isYtDlpCaptionTimeout, isYtDlpPreviewConnectionRefused, isYtDlpPreviewTimeout } from '../issues/issue-catalog.js';
 import { generationHistoryTypeForWorkspace, type GenerationHistoryType } from './generation-history-type.js';
 import { creatorWorkspaceForTemplate } from './creator-workspace.js';
-import { creatorPanelAdapterFor } from './creator-panel-adapters.js';
+import { autoClipPanelAdapter, creatorPanelAdapterFor } from './creator-panel-adapters.js';
 import { hasDownloadFormats } from './VideoDownloadWorkspace.js';
+import { translationStartupFailureMessage, translationStartupIssue } from './translation-startup-issue.js';
 import './DashboardGenerationHistory.css';
 
 export type { GenerationHistoryType } from './generation-history-type.js';
@@ -137,14 +138,9 @@ export default function DashboardGenerationHistory(props: {
   }, [jobs, props.autoOpenDownload, props.onOpenJob, props.projectId]);
 
   const outputs = useMemo(() => jobs
-    .flatMap(job => {
-      const artifacts = job.artifacts.filter(artifact => artifact.path !== null
-        && artifact.status !== 'stale' && outputKinds.has(artifact.kind));
-      const visibleArtifacts = job.templateId === 'video-translation'
-        ? processStageForJob(job) !== undefined ? [] : [translationHistoryArtifact(artifacts)].filter((artifact): artifact is CreatorArtifact => artifact !== undefined)
-        : artifacts;
-      return visibleArtifacts.map(artifact => ({ artifact, job, name: artifactName(artifact, l), title: resultTitle(job, l), type: workflowLabel(job.templateId, l), kind: artifactKind(artifact.kind) }));
-    })
+    .flatMap(job => historyArtifacts(job).map(artifact => ({
+      artifact, job, name: artifactName(artifact, l), title: resultTitle(job, l), type: workflowLabel(job.templateId, l), kind: artifactKind(artifact.kind)
+    })))
     .filter(output => type === 'all'
       || generationHistoryTypeForWorkspace(creatorWorkspaceForTemplate(output.job.templateId)) === type)
     .sort((left, right) => historyOutputTime(right).localeCompare(historyOutputTime(left))),
@@ -264,12 +260,14 @@ export default function DashboardGenerationHistory(props: {
                   && (run.status === 'queued' || run.status === 'running'));
                 const translationWorkflow = translationAdapter?.taskProgress?.(job, l);
                 const translationStageProgress = translationAdapter?.readStageProgress(stage, l);
+                const clipStageProgress = job.templateId === 'auto-clip' ? autoClipPanelAdapter.readStageProgress(stage, l) : undefined;
                 const translationWaitingForSource = translationAdapter !== undefined && backgroundSourceActive
                   && stage.progress.backgroundSourceDownload !== true && stage.status === 'succeeded'
                   && translationWorkflow?.waitingForNext !== true;
                 const translationWaitingForNext = translationAdapter !== undefined && backgroundSourceActive
                   && stage.status === 'succeeded' && translationWorkflow?.waitingForNext === true;
-                const failed = stage.status === 'failed';
+                const startupIssue = translationStartupIssue(job);
+                const failed = stage.status === 'failed' || startupIssue !== undefined;
                 const pending = !failed && (job.status === 'draft' || job.status === 'needs_input');
                 const openable = failed || pending || (job.templateId === 'video-download'
                   && (stage.status === 'queued' || stage.status === 'running'));
@@ -286,7 +284,7 @@ export default function DashboardGenerationHistory(props: {
                   ? job.templateId === 'video-download'
                     ? l('请选择下载格式并继续创作', 'Choose a download format to continue')
                     : l('继续配置这个创作项目', 'Continue configuring this project')
-                  : failed
+                  : startupIssue ? translationStartupFailureMessage(startupIssue, l) : failed
                     ? translationConnectionFailure ?? stage.errorMessage ?? (typeof stage.progress.message === 'string' ? stage.progress.message : stage.stageId)
                     : translationWaitingForSource
                       ? l('视频翻译已完成，正在等待原视频', 'Translation complete; waiting for the source video', 'Översättningen är klar; väntar på originalvideon')
@@ -296,6 +294,10 @@ export default function DashboardGenerationHistory(props: {
                       ? (translationStageProgress?.showMessage ? translationStageProgress.message : null)
                         ?? (typeof stage.progress.phase === 'string' ? translationAdapter.phaseLabel(stage.progress.phase, l) : null)
                         ?? translationAdapter.stageLabel(stage.stageId, l)
+                    : clipStageProgress !== undefined
+                      ? stage.status === 'queued' ? l('等待执行', 'Queued')
+                        : [autoClipPanelAdapter.runningProgressText?.(stage, clipStageProgress, l) ?? l('执行中', 'Running'),
+                          clipStageProgress.message].filter(Boolean).join(' · ')
                     : typeof stage.progress.message === 'string' ? stage.progress.message
                       : job.templateId === 'image-generation' && stage.progress.phase === 'generating_candidates'
                         ? l('正在生成图片', 'Generating image', 'Skapar bild') : stage.stageId;
@@ -338,6 +340,7 @@ export default function DashboardGenerationHistory(props: {
                 </article>;
                 }
               const output = item.output;
+              const clipTask = output.job.templateId === 'auto-clip';
               const openable = [
                 'video-translation', 'transcription', 'video-download', 'cover', 'cover-generator',
                 'image-generation', 'video-generation', 'smart-dubbing', 'short-video-script', 'auto-clip'
@@ -345,7 +348,7 @@ export default function DashboardGenerationHistory(props: {
               const previewable = isPreviewableOutput(output);
               return <article
                 className="dashboard-generation-result-card"
-                key={output.artifact.id}
+                key={clipTask ? output.job.id : output.artifact.id}
                 role={previewable ? 'button' : openable ? 'link' : undefined}
                 tabIndex={previewable || openable ? 0 : undefined}
                 aria-label={previewable ? `${l('预览', 'Preview')} ${output.title}` : openable ? `${l('打开', 'Open')} ${output.title}` : undefined}
@@ -363,11 +366,11 @@ export default function DashboardGenerationHistory(props: {
                 <GenerationArtifactMedia output={output} service={props.service} />
                 <div className="dashboard-generation-result-copy">
                   <strong title={output.title}>{output.title}</strong>
-                  <small>{output.type} · {output.name} · V{output.artifact.version} · {formatDateTime(historyOutputTime(output), language)}</small>
+                  <small>{output.type} · {clipTask ? null : `${output.name} · V${output.artifact.version} · `}{formatDateTime(historyOutputTime(output), language)}</small>
                 </div>
-                <button type="button" className="dashboard-generation-result-download" disabled={downloadingId !== undefined} aria-busy={downloadingId === output.artifact.id} onClick={() => void download(output)} aria-label={`${l('下载', 'Download')} ${output.name}`} title={l('下载', 'Download')}>
+                {!clipTask ? <button type="button" className="dashboard-generation-result-download" disabled={downloadingId !== undefined} aria-busy={downloadingId === output.artifact.id} onClick={() => void download(output)} aria-label={`${l('下载', 'Download')} ${output.name}`} title={l('下载', 'Download')}>
                   {downloadingId === output.artifact.id ? <LoaderCircle size={16} className="smart-dubbing-spinner" /> : <Download size={16} />}
-                </button>
+                </button> : null}
                 {props.service.deleteJob ? <button type="button" className="dashboard-generation-result-delete" aria-label={`${l('删除项目', 'Delete project')} ${output.title}`} title={l('删除项目', 'Delete project')} onClick={event => { event.stopPropagation(); requestDeletion(output.job); }}><Trash2 size={16} /></button> : null}
                 {openable ? <button type="button" className="dashboard-generation-result-open" aria-label={`${l('打开项目编辑区', 'Open project editor')} · ${output.title}`} title={l('打开项目', 'Open project')} onClick={event => { event.stopPropagation(); props.onOpenJob(output.job); }}><ArrowUpRight size={16} /></button> : null}
               </article>;
@@ -408,11 +411,13 @@ function GenerationArtifactMedia(props: {
   service: Pick<CreatorWebService, 'openArtifact'> & Partial<Pick<CreatorWebService, 'openProjectCover'>>;
 }) {
   const { output } = props;
-  const subtitlePreview = output.kind === 'subtitle' && output.job.templateId === 'video-translation';
+  const showProjectCover = output.job.templateId === 'auto-clip'
+    || (output.kind === 'subtitle' && output.job.templateId === 'video-translation');
+  const loadMedia = !showProjectCover && (output.kind === 'video' || output.kind === 'image');
   const [url, setUrl] = useState<string>();
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (output.kind !== 'video' && output.kind !== 'image') return;
+    if (!loadMedia) return;
     let active = true;
     let objectUrl: string | undefined;
     setFailed(false);
@@ -429,15 +434,15 @@ function GenerationArtifactMedia(props: {
       setUrl(undefined);
       if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
     };
-  }, [output.artifact.id, output.job.id, output.kind, props.service]);
+  }, [loadMedia, output.artifact.id, output.job.id, output.kind, props.service]);
 
   return <div className="dashboard-generation-result-media" data-kind={output.kind}>
     {output.kind === 'video' && url ? <video src={url} preload="metadata" aria-label={output.name} /> : null}
     {output.kind === 'image' && url ? <img src={url} alt={output.name} /> : null}
-    {subtitlePreview ? <ProjectCoverImage job={output.job} youtubeCovers={projectPreviewUrls(output.job)} fallback={projectCover(output.job.templateId)} service={props.service.openProjectCover ? props.service as Pick<CreatorWebService, 'openProjectCover'> : undefined} /> : null}
-    {((output.kind !== 'video' && output.kind !== 'image' && !subtitlePreview) || failed) ? <span>{artifactIcon(output.kind, 30)}</span> : null}
+    {showProjectCover ? <ProjectCoverImage job={output.job} youtubeCovers={projectPreviewUrls(output.job)} fallback={projectCover(output.job.templateId)} service={props.service.openProjectCover ? props.service as Pick<CreatorWebService, 'openProjectCover'> : undefined} /> : null}
+    {!showProjectCover && (!loadMedia || failed) ? <span>{artifactIcon(output.kind, 30)}</span> : null}
     {output.kind === 'video' && isPreviewableOutput(output) ? <span className="dashboard-generation-result-play"><Play size={24} fill="currentColor" /></span> : null}
-    {(output.kind === 'video' || output.kind === 'image') && !url && !failed ? <span className="dashboard-generation-result-loading"><LoaderCircle size={22} className="smart-dubbing-spinner" /></span> : null}
+    {loadMedia && !url && !failed ? <span className="dashboard-generation-result-loading"><LoaderCircle size={22} className="smart-dubbing-spinner" /></span> : null}
   </div>;
 }
 
@@ -529,7 +534,8 @@ function HistoryMediaPreviewDialog(props: {
 }
 
 function isPreviewableOutput(output: HistoryOutput): boolean {
-  return output.kind === 'image' || (output.kind === 'video' && output.job.templateId !== 'video-translation');
+  return output.job.templateId !== 'auto-clip' && (output.kind === 'image'
+    || (output.kind === 'video' && output.job.templateId !== 'video-translation'));
 }
 
 function processStageForJob(job: CreatorJob): CreatorJob['stages'][number] | undefined {
@@ -602,6 +608,17 @@ function downloadableArtifact(job: CreatorJob): CreatorArtifact | undefined {
   return job.artifacts.filter(artifact => artifact.path !== null && artifact.status !== 'stale' && outputKinds.has(artifact.kind)).at(-1);
 }
 
+function historyArtifacts(job: CreatorJob): CreatorArtifact[] {
+  const artifacts = job.artifacts.filter(artifact => artifact.path !== null
+    && artifact.status !== 'stale' && outputKinds.has(artifact.kind));
+  if (job.templateId !== 'video-translation' && job.templateId !== 'auto-clip') return artifacts;
+  if (processStageForJob(job) !== undefined) return [];
+  const result = job.templateId === 'video-translation' ? translationHistoryArtifact(artifacts)
+    : artifacts.find(artifact => artifact.kind === 'auto_clip_video')
+      ?? artifacts.find(artifact => artifact.kind === 'clip_candidates') ?? artifacts.at(-1);
+  return result === undefined ? [] : [result];
+}
+
 function translationHistoryArtifact(artifacts: CreatorArtifact[]): CreatorArtifact | undefined {
   const priority = ['horizontal_video', 'vertical_video', 'bilingual_video', 'clean_video',
     'target_subtitle', 'bilingual_subtitle', 'dubbed_audio'];
@@ -618,7 +635,8 @@ function translationHistoryArtifact(artifacts: CreatorArtifact[]): CreatorArtifa
 }
 
 function historyOutputTime(output: HistoryOutput): string {
-  return output.job.templateId === 'video-translation' ? output.job.updatedAt : output.artifact.createdAt;
+  return output.job.templateId === 'video-translation' || output.job.templateId === 'auto-clip'
+    ? output.job.updatedAt : output.artifact.createdAt;
 }
 
 function projectPreviewUrls(job: CreatorJob): string[] {

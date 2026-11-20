@@ -2,10 +2,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AutoClipWorkspaceV3 from './AutoClipWorkspaceV3.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
+import { createLocalizedCopy, type LocalizeCopy } from '../../i18n/localized-copy.js';
 
 const sessionRef = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
 const createObjectUrl = vi.hoisted(() => vi.fn(async (_session: unknown, id: string) => `blob:${id}`));
-const localize = vi.hoisted(() => (zh: string) => zh);
+const localize = vi.hoisted(() => vi.fn<LocalizeCopy>());
 
 vi.mock('../../i18n/useLocalizedCopy.js', () => ({ useLocalizedCopy: () => localize }));
 vi.mock('./creator-session-store.js', () => ({
@@ -15,12 +16,14 @@ vi.mock('./creator-session-store.js', () => ({
 vi.mock('./CreatorToolShell.js', () => ({ default: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 
 beforeEach(() => {
-  createObjectUrl.mockClear();
+  localize.mockImplementation(createLocalizedCopy('zh-CN'));
+  createObjectUrl.mockReset().mockImplementation(async (_session, id) => `blob:${id}`);
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
   sessionRef.current = {
     job: { id: 'job', templateId: 'auto-clip', templateVersion: 3, status: 'draft',
       stages: [], artifacts: [], state: { sourceType: 'url', sourceUrl: '', clipCount: 3, duration: '90-180' } },
     state: { sourceType: 'url', sourceUrl: '', clipCount: 3, duration: '90-180' },
+    issues: [],
     error: null,
     updateDraft: vi.fn(),
     flush: vi.fn(async () => undefined),
@@ -82,6 +85,7 @@ describe('KrillinAI auto clip workspace', () => {
     expect(completedView.container.querySelector('.creator-tool-embedded')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '视频来源' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '开始切片' })).not.toBeInTheDocument();
+    await waitFor(() => expect(completedView.container.querySelector('video')).toHaveAttribute('src', 'blob:clip-1'));
   });
 
   it('keeps the form editable and creates a new job while another clip is running', async () => {
@@ -143,7 +147,7 @@ describe('KrillinAI auto clip workspace', () => {
     }), { semantic: true });
   });
 
-  it('renders independent MP4 previews and downloads for a completed version', async () => {
+  it('shows one preview and downloads the selected clip', async () => {
     const artifacts = [1, 2].map(number => ({
       id: `clip-${number}`, jobId: 'job', kind: 'auto_clip_video', status: 'completed',
       version: number, sourceArtifactIds: [], metadata: {
@@ -153,41 +157,30 @@ describe('KrillinAI auto clip workspace', () => {
     }));
     sessionRef.current = {
       ...sessionRef.current,
-      job: { ...(sessionRef.current?.job as object), artifacts }
+      job: { ...(sessionRef.current?.job as object), status: 'completed', artifacts }
     };
     const { container } = render(<AutoClipWorkspaceV3 onBack={() => undefined} />);
 
-    await waitFor(() => expect(container.querySelectorAll('video')).toHaveLength(2));
-    expect(screen.getByRole('button', { name: '下载片段 1' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: '下载片段 2' })).toBeEnabled();
-    expect(createObjectUrl).toHaveBeenCalledTimes(2);
-  });
+    await waitFor(() => expect(container.querySelectorAll('video')).toHaveLength(1));
+    const first = container.querySelector('video');
+    expect(first).toHaveAttribute('src', 'blob:clip-1');
+    expect(first).not.toHaveAttribute('autoplay');
+    expect(createObjectUrl).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /^片段 1/ })).toHaveAttribute('aria-pressed', 'true');
 
-  it('pauses the previous clip when another preview starts playing', async () => {
-    const artifacts = [1, 2].map(number => ({
-      id: `clip-${number}`, jobId: 'job', kind: 'auto_clip_video', status: 'completed',
-      version: number, sourceArtifactIds: [], metadata: {
-        resultVersion: 1, start: (number - 1) * 30, end: number * 30,
-        fileName: `clip-0${number}.mp4`
-      }
-    }));
-    sessionRef.current = {
-      ...sessionRef.current,
-      job: { ...(sessionRef.current?.job as object), artifacts }
-    };
-    const { container } = render(<AutoClipWorkspaceV3 onBack={() => undefined} />);
-    await waitFor(() => expect(container.querySelectorAll('video')).toHaveLength(2));
-    const [first, second] = container.querySelectorAll('video');
-    const pauseFirst = vi.spyOn(first!, 'pause').mockImplementation(() => undefined);
-    const pauseSecond = vi.spyOn(second!, 'pause').mockImplementation(() => undefined);
-
-    fireEvent.play(first!);
-    fireEvent.play(second!);
-    expect(pauseFirst).toHaveBeenCalledOnce();
-    expect(pauseSecond).toHaveBeenCalledOnce();
-
-    fireEvent.play(first!);
-    expect(pauseSecond).toHaveBeenCalledTimes(2);
+    const second = screen.getByRole('button', { name: /^片段 2/ });
+    fireEvent.click(second);
+    await waitFor(() => expect(container.querySelector('video')).toHaveAttribute('src', 'blob:clip-2'));
+    expect(first).not.toBeInTheDocument();
+    expect(second).toHaveAttribute('aria-pressed', 'true');
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:clip-1');
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.download).toBe('clip-02.mp4');
+      expect(this.href).toBe('blob:clip-2');
+    });
+    fireEvent.click(screen.getByRole('button', { name: '下载片段' }));
+    expect(download).toHaveBeenCalledOnce();
+    download.mockRestore();
   });
 
   it('keeps the playing preview URL when a job snapshot contains the same clips', async () => {
@@ -218,5 +211,80 @@ describe('KrillinAI auto clip workspace', () => {
     expect(preview).toHaveAttribute('src', 'blob:preview-1');
     expect(createObjectUrl).toHaveBeenCalledTimes(1);
     expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('ranks scored clips without changing the active player and seeks to the evidence cue', async () => {
+    const artifacts = [
+      { score: 0.72, selectionReason: { text: '这里给出具体例子。', offsetMs: 12345, locale: 'zh-CN' } },
+      { score: 0.86 },
+      { score: 0, selectionReason: { text: '时间越界。', offsetMs: 30000, locale: 'zh-CN' } },
+      {}
+    ].map((metadata, index) => ({
+      id: `clip-${index + 1}`, jobId: 'job', kind: 'auto_clip_video', status: 'completed', version: index + 1,
+      sourceArtifactIds: [], metadata: { resultVersion: 1, start: 120 + index * 30, end: 150 + index * 30, ...metadata }
+    }));
+    const legacy = { ...artifacts[3]!, id: 'legacy-clip', metadata: { start: 55, end: 95, resultVersion: 1 } };
+    const snapshot = (version: number, ids: string[]) => ({
+      version, createdAt: '2026-11-20T00:00:00Z', action: 'stage-succeeded', stageId: 'clip',
+      description: `V${version}`, artifactRefs: { auto_clip_video: ids }, changedArtifactIds: ids, staleArtifactIds: [], state: {}
+    });
+    const state = { resultSnapshots: [snapshot(1, [legacy.id]), snapshot(2, artifacts.map(artifact => artifact.id))] };
+    sessionRef.current = {
+      ...sessionRef.current,
+      job: { ...(sessionRef.current?.job as object), status: 'completed', artifacts: [legacy, ...artifacts], state },
+      state
+    };
+    const { container } = render(<AutoClipWorkspaceV3 onBack={() => undefined} />);
+    await waitFor(() => expect(container.querySelector('video')).toHaveAttribute('src', 'blob:clip-1'));
+    const player = container.querySelector('video')!;
+    const score = screen.getByText('72', { exact: true });
+    expect(score).toHaveAttribute('title', 'AI 选段评分');
+    expect(screen.getByText('这里给出具体例子。')).toHaveAttribute('lang', 'zh-CN');
+    const anchor = screen.getByRole('button', { name: '跳转到 00:12' });
+    expect(anchor).toBeDisabled();
+    Object.defineProperty(player, 'duration', { configurable: true, value: 30 });
+    fireEvent.loadedMetadata(player);
+    fireEvent.click(anchor);
+    expect(player.currentTime).toBeCloseTo(12.345);
+    fireEvent.click(screen.getByRole('combobox', { name: '排序' }));
+    fireEvent.click(screen.getByRole('option', { name: '按评分排序' }));
+    expect(screen.getAllByRole('button', { name: /^片段 \d/ }).map(button => button.querySelector('strong')?.textContent))
+      .toEqual(['片段 2', '片段 1', '片段 3', '片段 4']);
+    expect(container.querySelector('video')).toBe(player);
+    expect(player.currentTime).toBeCloseTo(12.345);
+    fireEvent.click(screen.getByRole('button', { name: /^片段 2/ }));
+    expect(screen.getByText('此片段暂无选段理由。')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /^片段 3/ }));
+    await waitFor(() => expect(container.querySelector('video')).toHaveAttribute('src', 'blob:clip-3'));
+    expect(screen.queryByRole('button', { name: '跳转到 00:12' })).not.toBeInTheDocument();
+    expect(screen.queryByText('时间越界。')).not.toBeInTheDocument();
+    expect(screen.getByText('此片段暂无选段理由。')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '项目 V2' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^项目 V1/ }));
+    await waitFor(() => expect(container.querySelector('video')).toHaveAttribute('src', 'blob:legacy-clip'));
+    expect(screen.queryByTitle('AI 选段评分')).not.toBeInTheDocument();
+    expect(screen.getByText('选段理由', { exact: true })).toBeVisible();
+    expect(screen.getByText('此片段暂无选段理由。')).toBeVisible();
+    expect(screen.queryByRole('combobox', { name: '排序' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['en-US', 'No selection reason is available for this clip.'],
+    ['sv-SE', 'Ingen motivering finns för det här klippet.'],
+    ['ja-JP', 'このクリップには選定理由がありません。']
+  ] as const)('explains missing selection reasons in %s without a broken cue button', async (language, message) => {
+    localize.mockImplementation(createLocalizedCopy(language));
+    const artifact = {
+      id: 'clip-1', jobId: 'job', kind: 'auto_clip_video', status: 'completed',
+      version: 1, sourceArtifactIds: [], metadata: { resultVersion: 1, start: 0, end: 30, score: 0.94 }
+    };
+    sessionRef.current = {
+      ...sessionRef.current,
+      job: { ...(sessionRef.current?.job as object), status: 'completed', artifacts: [artifact] }
+    };
+    const { container } = render(<AutoClipWorkspaceV3 onBack={() => undefined} />);
+    expect(screen.getByText(message)).toBeVisible();
+    expect(container.querySelector('.auto-clip-v3-reason button')).not.toBeInTheDocument();
+    await waitFor(() => expect(container.querySelector('video')).toHaveAttribute('src', 'blob:clip-1'));
   });
 });

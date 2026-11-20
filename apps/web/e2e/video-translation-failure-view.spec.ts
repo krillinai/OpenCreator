@@ -31,7 +31,11 @@ test('failed video generation reference workbench', async ({ page, runtime }, te
   await expect(page.getByRole('textbox', { name: '提示词' })).toBeVisible();
   await expect(page.getByRole('button', { name: '重新生成' })).toBeVisible();
   if (testInfo.project.name === 'chromium-mobile') await page.getByRole('tab', { name: 'Agent' }).click();
-  await expect(page.getByRole('complementary', { name: 'OpenCreator' })).toBeVisible();
+  const agent = page.getByRole('complementary', { name: 'OpenCreator' });
+  await expect(agent).toBeVisible();
+  if (testInfo.project.name === 'chromium-desktop') {
+    await expect.poll(async () => Math.round((await agent.boundingBox())?.width ?? 0)).toBe(420);
+  }
   if (testInfo.project.name === 'chromium-mobile') await page.getByRole('tab', { name: '创作' }).click();
   await page.screenshot({ path: testInfo.outputPath('video-generation-failure-reference.png'), animations: 'disabled' });
 });
@@ -203,4 +207,67 @@ test('failed video translation opens recovery in the actual workbench', async ({
       expect([bounds.y, bounds.x + bounds.width, bounds.height].map(Math.round)).toEqual([0, viewport.width, viewport.height]);
     }
   });
+});
+
+test('failed video clips fill the workspace beside the shared Agent panel', async ({ page, runtime }, testInfo) => {
+  const { job } = await runtime.api<{ job: CreatorJob }>('POST', '/creator/jobs', {
+    projectId: runtime.projectId, templateId: 'auto-clip', templateVersion: 3,
+    state: { sourceType: 'url', sourceUrl: 'https://www.youtube.com/watch?v=example-video' }
+  });
+  const stage: CreatorStageRun = {
+    id: 'failed-clip', jobId: job.id, stageId: 'clip', executor: 'krillinai', status: 'failed',
+    dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null, attempt: 1,
+    idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: { percent: 3 },
+    errorCode: 'clip_subtitle_failed', errorMessage: 'downloadYouTubeSubtitle: [youtube] Sign in to confirm you are not a bot.',
+    startedAt: job.createdAt, finishedAt: job.createdAt
+  };
+  const failed: CreatorJob = { ...job, status: 'failed', revision: job.revision + 1, stages: [stage] };
+  const retrying: CreatorJob = { ...failed, status: 'running', revision: failed.revision + 1, stages: [stage, {
+    ...stage, id: 'retrying-clip', status: 'running', dispatchStatus: 'claimed', attempt: 2,
+    progress: { phase: 'downloading_media', percent: 41 }, errorCode: null, errorMessage: null, finishedAt: null
+  }] };
+  let currentJob = failed;
+  await page.route(`**/creator/jobs/${job.id}`, route => route.request().method() === 'GET'
+    ? route.fulfill({ json: { job: currentJob } }) : route.continue());
+  await page.route(/\/creator\/jobs(?:\?.*)?$/, route => route.request().method() === 'GET'
+    ? route.fulfill({ json: { jobs: [currentJob] } }) : route.continue());
+  await page.route(`**/creator/jobs/${job.id}/actions`, route => {
+    if (route.request().postDataJSON()?.action === 'run-stage') currentJob = retrying;
+    return route.fulfill({ json: { job: currentJob } });
+  });
+  await runtime.openApp(page);
+  await page.goto(`${runtime.origin}/#/workbench?tool=auto-clips&jobId=${job.id}`);
+
+  const workspace = page.locator('.creator-workspace-main');
+  const agent = page.getByRole('complementary', { name: 'OpenCreator' });
+  const composer = workspace.getByRole('form', { name: '视频切片' });
+  const retry = composer.getByRole('button', { name: '重试当前阶段' });
+  await expect(workspace.getByRole('alert')).toContainText('YouTube 要求重新登录，未能读取视频字幕。');
+  await expect(retry).toBeEnabled();
+  if (testInfo.project.name === 'chromium-mobile') {
+    await page.getByRole('tab', { name: 'Agent' }).click();
+    await expect(agent.getByRole('textbox')).toBeEditable();
+    await page.getByRole('tab', { name: '创作' }).click();
+  }
+  if (testInfo.project.name === 'chromium-desktop') for (const [width, agentWidth] of [[980, 320], [1440, 420], [2540, 520]]) {
+    const height = 900;
+    await page.setViewportSize({ width, height });
+    await expect.poll(async () => {
+      const bounds = await agent.boundingBox();
+      return bounds && [bounds.width, bounds.y, bounds.x + bounds.width, bounds.height].map(Math.round);
+    }).toEqual([agentWidth, 0, width, height]);
+    await expect(agent.getByRole('textbox')).toBeEditable();
+    await expect.poll(() => workspace.evaluate(section => {
+      const content = section.querySelector('.creator-workspace-content')!;
+      const { paddingLeft, paddingRight } = getComputedStyle(content);
+      const available = content.clientWidth - parseFloat(paddingLeft) - parseFloat(paddingRight);
+      const error = section.querySelector('[role="alert"]')!.getBoundingClientRect();
+      const form = section.querySelector('form')!.getBoundingClientRect();
+      return [Math.round(available - error.width), Math.round(available - form.width), error.left === form.left, error.bottom <= form.top];
+    })).toEqual([0, 0, true, true]);
+  }
+  await retry.click();
+  await expect(page).toHaveURL(/#\/projects$/);
+  await expect(page.getByRole('tab', { name: '生成记录' })).toBeVisible();
+  await expect(page.getByRole('status', { name: /^正在生成/ })).toContainText('41%');
 });

@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "자막 미리보기 진행 상황",
   "Adjust timing": "타이밍 조정",
   "Enter the required credentials for the selected dubbing service to continue.": "계속하려면 선택한 더빙 서비스에 필요한 인증 정보를 입력하세요.",
-  "Save and continue composing": "저장하고 영상 합성 계속"
+  "Save and continue composing": "저장하고 영상 합성 계속",
+  "AI clip score": "AI 클립 점수",
+  "Sort clips": "클립 정렬",
+  "Source order": "원본 순서",
+  "By score": "점수순",
+  "Selection reason": "선정 이유",
+  "No selection reason is available for this clip.": "이 클립의 선택 이유가 없습니다."
 }

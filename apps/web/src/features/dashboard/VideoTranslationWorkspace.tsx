@@ -44,6 +44,7 @@ import type { RuntimeDependenciesController } from '../../app/use-runtime-depend
 import { LocalTranscriptionNotice } from './LocalTranscriptionNotice.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import { useCreatorRecoveryCopy } from './creator-recovery-copy.js';
+import { translationStartupFailureMessage, translationStartupIssue } from './translation-startup-issue.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { GatewayAccountSettingsService } from '../../services/gateway-account-service.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
@@ -1763,7 +1764,7 @@ export default function VideoTranslationWorkspace(props: {
   embedded?: boolean;
   embeddedTabs?: ReactNode;
   forceComposer?: boolean;
-  onGenerated?(): void;
+  onGenerated?(jobId?: string): void;
   initialDubbing?: boolean;
   initialComposeVideo?: boolean;
   videoMetadataService?: VideoMetadataService;
@@ -2545,13 +2546,23 @@ export default function VideoTranslationWorkspace(props: {
   ], [bilingual, composeVideo, dubbing, initialTranslation, l, outputLabel, sourceLanguage, subtitlePosition, subtitleStyleLabel, targetLanguage, voiceCode, voiceName]);
   const targetLanguageLabel = languageLabel(targetLanguages, targetLanguage);
   const selectedResult = props.forceComposer ? undefined : resultVersions.find(version => version.value === resultVersion);
-  const failedWithoutResult = (creatorSession?.job.status === 'failed' || creatorSession?.job.status === 'needs_input')
-    && taskProgress?.stage?.status === 'failed'
+  const startupIssue = translationStartupIssue(creatorSession?.job);
+  const failedWithoutResult = creatorSession !== null && (startupIssue !== undefined
+    || ((creatorSession.job.status === 'failed' || creatorSession.job.status === 'needs_input') && taskProgress?.stage?.status === 'failed'))
     && selectedResult === undefined
     && resultVersionsFromArtifacts(creatorSession.job.artifacts, creatorSession.state).length === 0;
   const backgroundPreviewStage = failedWithoutResult ? [...(creatorSession?.job.stages ?? [])].reverse().find(stage =>
     stage.stageId === 'preview-source-video' && (stage.status === 'queued' || stage.status === 'running')) : undefined;
-  const failureRecovery = failedWithoutResult ? translationFailureRecovery(
+  const failureRecovery = startupIssue ? {
+    title: l('翻译未启动', 'Translation did not start', 'Översättningen startade inte'),
+    reason: translationStartupFailureMessage(startupIssue, l),
+    nextStep: startupIssue.publicFacts?.kind === 'connection-refused'
+      ? l('检查网络或代理设置，然后重试。', 'Check the network or proxy settings, then retry.', 'Kontrollera nätverks- eller proxyinställningarna och försök igen.')
+      : l('确认官方服务可用后重试。', 'Retry when the official service is available.', 'Försök igen när den officiella tjänsten är tillgänglig.'),
+    settingsTab: startupIssue.publicFacts?.kind === 'connection-refused' ? 'general' : 'ai-services',
+    settingsLabel: startupIssue.publicFacts?.kind === 'connection-refused' ? recoveryCopy.checkProxy : l('检查 AI 服务', 'Check AI services', 'Kontrollera AI-tjänster'),
+    settingsSection: undefined
+  } : failedWithoutResult ? translationFailureRecovery(
     stageFailure?.errorCode ?? taskProgress?.stage?.errorCode ?? null,
     stageFailure?.errorMessage ?? taskProgress?.stage?.errorMessage ?? null,
     sourceType === 'url',
@@ -3498,8 +3509,9 @@ export default function VideoTranslationWorkspace(props: {
         setDubbing(props.initialDubbing ?? false);
         await creatorSession.applyAction({
           action: 'run-stage',
-          input: { stageId: 'subtitle', workflow: true }
-        });
+          input: { stageId: 'subtitle', workflow: true },
+          ...(startupIssue ? { repairIssueId: startupIssue.id } : {})
+        }, { serverPreflight: true });
       }
       setWorkspacePhase('result');
       setResultTab('subtitles');
@@ -3519,8 +3531,13 @@ export default function VideoTranslationWorkspace(props: {
           : translationStartedNotice);
       props.onGenerated?.();
     } catch (cause) {
-      if ((cause as { code?: unknown })?.code === 'creator_revision_conflict') {
+      const code = (cause as { code?: unknown })?.code;
+      if (code === 'creator_revision_conflict') {
         setStartRevisionConflict(true);
+      }
+      const scope = (cause as { issue?: { scope?: { kind?: string; jobId?: string } } })?.issue?.scope;
+      if (!startupIssue && code === 'GATEWAY_SERVICES_NOT_READY' && scope?.kind === 'creator-job') {
+        props.onGenerated?.(scope.jobId);
       }
       setResultNotice(creatorErrorMessage(cause, l));
     } finally {
@@ -4243,12 +4260,12 @@ export default function VideoTranslationWorkspace(props: {
           : l('请确认链接有效，并选择要翻译的分集后开始', 'Check the link and choose a part before starting')
       : resultNotice;
     const linkPreviewFallback = <span><Link2 size={23} strokeWidth={1.5} /><strong>{l('链接预览', 'Link preview')}</strong><small>{l('已添加链接', 'Link added')}</small></span>;
-    const retryDisabled = submitting || taskProgress?.retryPending || taskProgress?.retryBlocked;
+    const retryDisabled = submitting || (!startupIssue && (taskProgress?.retryPending || taskProgress?.retryBlocked));
     const composer = (
         <div className="creator-tool-stack image-generation-studio">
           <form className="image-generation-composer dashboard-translation-composer" aria-label={l('视频翻译', 'Video Translation')} onSubmit={event => {
             event.preventDefault();
-            if (failedWithoutResult) {
+            if (failedWithoutResult && !startupIssue) {
               if (taskProgress && !retryDisabled) void taskProgress.retry().then(started => { if (started) props.onBack(); });
             } else void submit();
           }}>
@@ -4427,7 +4444,8 @@ export default function VideoTranslationWorkspace(props: {
                   <button className="creator-tool-primary" type="submit" disabled={failedWithoutResult ? retryDisabled : submitting}>
                     {failedWithoutResult ? <RefreshCw size={16} aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
                     {failedWithoutResult
-                      ? taskProgress?.retryPending ? l('正在重试…', 'Retrying…') : recoveryCopy.retryStage
+                      ? submitting || taskProgress?.retryPending ? l('正在重试…', 'Retrying…')
+                        : startupIssue ? l('重试翻译', 'Retry translation', 'Försök översätta igen') : recoveryCopy.retryStage
                       : submitting
                         ? submissionPhase === 'uploading' ? l('正在上传...', 'Uploading...') : l('正在启动...', 'Starting...')
                         : l('开始翻译', 'Translate')}
@@ -4470,6 +4488,7 @@ export default function VideoTranslationWorkspace(props: {
       }]}
       onBack={() => void leaveWorkspace()}
       pageClassName="video-translation-failure-page"
+      fillWorkspace
       contentClassName="media-generation-workspace-content"
     ><div className="creator-tool-embedded">{composer}</div></CreatorToolShell>;
   }

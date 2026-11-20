@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Напредак прегледа титлова",
   "Adjust timing": "Подеси време",
   "Enter the required credentials for the selected dubbing service to continue.": "Унесите потребне акредитиве за изабрану услугу синхронизације да бисте наставили.",
-  "Save and continue composing": "Сачувај и настави састављање видеа"
+  "Save and continue composing": "Сачувај и настави састављање видеа",
+  "AI clip score": "Оцена клипа помоћу ВИ",
+  "Sort clips": "Сортирај клипове",
+  "Source order": "Изворни редослед",
+  "By score": "Према оцени",
+  "Selection reason": "Разлог избора",
+  "No selection reason is available for this clip.": "Образложење за избор овог исечка није доступно."
 }

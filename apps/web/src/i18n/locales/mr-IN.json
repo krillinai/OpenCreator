@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "उपशीर्षक पूर्वावलोकनाची प्रगती",
   "Adjust timing": "वेळ समायोजित करा",
   "Enter the required credentials for the selected dubbing service to continue.": "पुढे जाण्यासाठी निवडलेल्या डबिंग सेवेची आवश्यक ओळखपत्रे प्रविष्ट करा.",
-  "Save and continue composing": "जतन करा आणि व्हिडिओ तयार करणे सुरू ठेवा"
+  "Save and continue composing": "जतन करा आणि व्हिडिओ तयार करणे सुरू ठेवा",
+  "AI clip score": "AI क्लिप गुण",
+  "Sort clips": "क्लिप क्रमवारी लावा",
+  "Source order": "मूळ क्रम",
+  "By score": "गुणांनुसार",
+  "Selection reason": "निवडीचे कारण",
+  "No selection reason is available for this clip.": "ही क्लिप निवडण्याचे कारण उपलब्ध नाही."
 }

@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Tiến trình xem trước phụ đề",
   "Adjust timing": "Điều chỉnh thời gian",
   "Enter the required credentials for the selected dubbing service to continue.": "Nhập thông tin xác thực cần thiết cho dịch vụ lồng tiếng đã chọn để tiếp tục.",
-  "Save and continue composing": "Lưu và tiếp tục ghép video"
+  "Save and continue composing": "Lưu và tiếp tục ghép video",
+  "AI clip score": "Điểm AI của đoạn cắt",
+  "Sort clips": "Sắp xếp đoạn cắt",
+  "Source order": "Thứ tự gốc",
+  "By score": "Theo điểm",
+  "Selection reason": "Lý do chọn",
+  "No selection reason is available for this clip.": "Chưa có lý do chọn đoạn này."
 }

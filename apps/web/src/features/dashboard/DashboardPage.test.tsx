@@ -7,7 +7,8 @@ import {
   type CreatorArtifact,
   type CreatorJob,
   type CreatorJson,
-  type CreatorResultSnapshot
+  type CreatorResultSnapshot,
+  type OpenCreatorIssue
 } from '@opencreator/protocol';
 import { useState, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +21,7 @@ import DashboardPageView, {
 } from './DashboardPage.js';
 import type { CreatorWorkspace } from './creator-workspace.js';
 import { isMeaningfulCreatorJob } from '../projects/ProjectsPage.js';
+import { normalizePageIssue } from '../issues/page-issue-state.js';
 
 function DashboardPage(props: ComponentProps<typeof DashboardPageView>) {
   return (
@@ -114,6 +116,13 @@ function pendingDownloadProbe() {
   }));
   return {
     service,
+    fail() {
+      if (!probeJob) throw new Error('No download probe has been started');
+      probeJob = { ...probeJob, status: 'failed', revision: probeJob.revision + 1, stages: [{
+        ...probeJob.stages[0]!, status: 'failed', errorCode: 'network_unavailable',
+        errorMessage: 'Fixture video platform unreachable', finishedAt: probeJob.updatedAt
+      }] };
+    },
     finish() {
       if (!probeJob) throw new Error('No download probe has been started');
       const job = probeJob;
@@ -1686,6 +1695,32 @@ describe('DashboardPage', () => {
     expect(await screen.findByRole('img', { name: '生成图片 1' })).toBeVisible();
   });
 
+  it('opens one completed auto clip task from history with all clips and the Agent panel', async () => {
+    const baseService = createInMemoryCreatorService();
+    const { job } = await baseService.createJob({ projectId: 'project_1', templateId: 'auto-clip', templateVersion: 3,
+      state: { title: 'YouTube clips' } });
+    const clips = [1, 2, 3].map(number => ({
+      ...translationArtifact(job, { kind: 'auto_clip_video', version: 1, artifactVersion: number, fileName: `clip-0${number}.mp4` }),
+      id: `clip-${number}`
+    }));
+    const completed: CreatorJob = { ...job, templateVersion: 3, status: 'completed', artifacts: [
+      ...clips, translationArtifact(job, { kind: 'source_video', version: 1, fileName: 'origin_video.mp4' })
+    ] };
+    const service = { ...withHistoryJobs(baseService, [completed]),
+      openArtifact: vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' }))) };
+    render(<RoutedDashboardPage service={service} initialWorkspace="auto-clips" />);
+    fireEvent.click(screen.getByRole('button', { name: '生成记录' }));
+
+    fireEvent.click(await screen.findByRole('link', { name: '打开 YouTube clips' }));
+    const results = await screen.findByRole('region', { name: '切片结果' });
+    expect(results.closest('.creator-workspace-page')).toHaveAttribute('data-fill-workspace', 'true');
+    expect(within(results).getAllByRole('button', { name: /^片段 [1-3]/ })).toHaveLength(3);
+    expect(screen.getByRole('complementary', { name: /^OpenCreator$/ })).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^返回$/ }));
+    expect(await screen.findAllByRole('link', { name: '打开 YouTube clips' })).toHaveLength(1);
+  });
+
   it('renders the generation composer and searchable creator app directory', () => {
     const { container } = render(<DashboardPage onSelectPrompt={vi.fn()} />);
 
@@ -2172,6 +2207,71 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('tab', { name: '下载规格' })).not.toBeInTheDocument();
   });
 
+  it('keeps a failed download probe in history and opens its diagnostics', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      const probe = pendingDownloadProbe();
+      render(<RoutedDashboardPage service={probe.service} />);
+      fireEvent.click(screen.getByRole('tab', { name: /^视频下载/ }));
+      fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+        target: { value: 'https://www.youtube.com/watch?v=download-test' }
+      });
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: '获取' })));
+      expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+
+      probe.fail();
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      await act(async () => fireEvent.click(screen.getByRole('link', { name: /^生成失败/ })));
+      expect(await screen.findByRole('complementary', { name: 'OpenCreator' })).toBeInTheDocument();
+      expect(screen.getAllByText('无法连接视频平台，请检查网络或代理设置后重试').length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('opens a recorded translation startup failure from generation history', async () => {
+    const service = createInMemoryCreatorService();
+    const createJob = vi.spyOn(service, 'createJob');
+    const applyAction = service.applyAction;
+    const listJobs = service.listJobs;
+    let issue: OpenCreatorIssue | undefined;
+    let connectionRestored = false;
+    service.preflight = vi.fn(async () => ({ templateId: 'video-translation', templateVersion: 2,
+      stageId: 'subtitle', canStart: false, executionMode: 'remote' as const, checkedAt: '2026-11-19T00:00:00Z',
+      ready: [], warning: [], blocked: [{ id: 'service-source', title: 'Service unavailable', message: 'Service unavailable',
+        executionMode: 'remote' as const, repair: { label: 'Open settings' } }] }));
+    const start = vi.spyOn(service, 'applyAction').mockImplementation(async (jobId, request) => {
+      if (request.action !== 'run-stage' || connectionRestored) return applyAction(jobId, request);
+      const error = { status: 503, code: 'GATEWAY_SERVICES_NOT_READY', message: 'Official services are not ready',
+        publicFacts: { kind: 'connection-refused' as const, provider: 'opencreator-gateway', upstreamCode: 'ECONNREFUSED' } };
+      issue = { ...normalizePageIssue('creator-session', 'creator.action', new ApiClientError(error), error.message),
+        id: 'translation-startup-issue', source: 'preflight', stageId: 'subtitle', scope: { kind: 'creator-job', jobId } };
+      throw new ApiClientError({ ...error, issue });
+    });
+    vi.spyOn(service, 'listJobs').mockImplementation(async projectId => ({
+      jobs: (await listJobs(projectId)).jobs.map(job => issue?.scope.kind === 'creator-job' && issue.scope.jobId === job.id
+        ? { ...job, issues: [issue] } : job)
+    }));
+    render(<RoutedDashboardPage service={service} initialWorkspace="video-translation" />);
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=translation-start-test' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+    const failed = await screen.findByRole('link', { name: /^生成失败/ });
+    expect(screen.getByRole('tab', { name: '生成记录' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(failed);
+    expect(await screen.findByRole('complementary', { name: 'OpenCreator' })).toBeInTheDocument();
+    expect(screen.getAllByText('官方服务连接被拒绝，翻译尚未开始。').length).toBeGreaterThan(0);
+    const originalStart = start.mock.calls.find(([, request]) => request.action === 'run-stage');
+    expect(originalStart).toBeDefined();
+    connectionRestored = true;
+    fireEvent.click(screen.getByRole('button', { name: '重试翻译' }));
+    await waitFor(() => expect(start).toHaveBeenCalledWith(originalStart![0], expect.objectContaining({
+      action: 'run-stage', input: { stageId: 'subtitle', workflow: true }, repairIssueId: 'translation-startup-issue'
+    })));
+    expect(createJob).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['waits', 'starts another task'] as const)('handles format selection after a video probe when the user %s', async behavior => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     try {
@@ -2349,6 +2449,102 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('textbox', { name: '视频链接' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '开始切片' })).toBeDisabled();
     expect(document.querySelector('fieldset.image-generation-fields')).not.toBeDisabled();
+  });
+
+  it.each([
+    ['zh-CN', 'YouTube 要求重新登录，未能读取视频字幕。', '重试当前阶段'],
+    ['en-US', 'YouTube requires you to sign in again. Video captions could not be read.', 'Retry stage'],
+    ['sv-SE', 'YouTube kräver att du loggar in igen. Videons undertexter kunde inte läsas.', 'Försök igen med steget'],
+    ['ja-JP', 'プラットフォームのキャプションを取得する · YouTube: 再度サインインしてください', '再試行']
+  ] as const)('explains a failed auto clip above its input in %s and retries the same stage', async (language, reason, retryLabel) => {
+    const baseService = createInMemoryCreatorService();
+    const sourceUrl = 'https://www.youtube.com/watch?v=failed-clips';
+    const { job } = await baseService.createJob({ projectId: 'project_1', templateId: 'auto-clip', state: {
+      sourceType: 'url', sourceUrl, clipCount: 5, duration: '30-60'
+    } });
+    const finishedAt = job.createdAt;
+    const issue = {
+      ...normalizePageIssue('creator-session', 'creator.retry-stage', new Error('The creator step failed'), 'The creator step failed'),
+      id: 'clip-issue', source: 'stage' as const, scope: { kind: 'creator-job' as const, jobId: job.id },
+      code: 'clip_subtitle_failed', stageId: 'clip', stageRunId: 'clip-failed', repairActions: [{
+        kind: 'retry-operation' as const, operationId: 'creator.retry-stage', requiresConfirmation: false, risk: 'normal' as const
+      }]
+    };
+    const stage: CreatorJob['stages'][number] = {
+      id: 'clip-failed', jobId: job.id, stageId: 'clip', executor: 'krillinai', status: 'failed',
+      dispatchStatus: 'finished', claimOwner: null, claimExpiresAt: null, attempt: 1,
+      idempotencyKey: null, scopeKey: null, inputFingerprint: null, progress: { phase: 'reading_platform_captions', percent: 3 },
+      errorCode: 'clip_subtitle_failed',
+      errorMessage: 'downloadYouTubeSubtitle: resolve origin subtitle: platform caption access failed: yt-dlp subtitle metadata error: ERROR: [youtube] failed-clips: Sign in to confirm you’re not a bot. WARNING: [youtube] [SSL: UNEXPECTED_EOF_WHILE_READING]',
+      startedAt: finishedAt, finishedAt
+    };
+    const failed: CreatorJob = { ...job, templateVersion: 3, status: 'failed', stages: [stage], issues: [issue] };
+    const historyJobs = [failed];
+    const service = withHistoryJobs(baseService, historyJobs);
+    const onWorkspaceNavigate = vi.fn();
+    const createJob = vi.spyOn(service, 'createJob');
+    const applyAction = vi.spyOn(service, 'applyAction').mockImplementation(async (jobId, request) => {
+      const response = await baseService.applyAction(jobId, request);
+      const running: CreatorJob = { ...failed, revision: failed.revision + 1, status: 'running', stages: [stage, {
+        ...stage, id: 'clip-retry', status: 'running', dispatchStatus: 'claimed', attempt: 2, progress: { phase: 'reading_platform_captions', percent: 3 },
+        errorCode: null, errorMessage: null, finishedAt: null
+      }] };
+      historyJobs[0] = running;
+      return { ...response, job: running };
+    });
+    if (language === 'en-US') applyAction.mockRejectedValueOnce(new Error('Retry request refused'));
+    const { container } = render(<LanguageProvider initialPreference={language}>
+      {language === 'zh-CN' ? <RoutedDashboardPage initialWorkspace="auto-clips" service={service} />
+        : <DashboardPage onSelectPrompt={vi.fn()} workspace="auto-clips" jobId={job.id} returnTo="projects" creatorService={service}
+          onWorkspaceNavigate={onWorkspaceNavigate} />}
+    </LanguageProvider>);
+    if (language === 'zh-CN') {
+      fireEvent.click(screen.getByRole('button', { name: '生成记录' }));
+      fireEvent.click(await screen.findByRole('link', { name: /^生成失败/ }));
+    }
+
+    await screen.findByRole('complementary', { name: 'OpenCreator' });
+    const workspace = within(container.querySelector<HTMLElement>('.creator-workspace-main')!);
+    const alert = await workspace.findByRole('alert');
+    expect(alert.closest('.creator-workspace-page')).toHaveAttribute('data-fill-workspace', 'true');
+    expect(within(alert).getByText(reason)).toBeVisible();
+    const form = workspace.getByRole('form');
+    expect(alert.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const source = within(form).getByRole('textbox');
+    expect(source).toHaveValue(sourceUrl);
+    expect(source).toHaveAttribute('readonly');
+    if (language === 'zh-CN') {
+      fireEvent.click(within(form).getByRole('button', { name: '切片设置' }));
+      expect(screen.getByRole('combobox', { name: '切片时长' })).toHaveValue('30-60');
+      expect(screen.getByRole('spinbutton', { name: '切片数量' })).toHaveValue(5);
+      fireEvent.keyDown(screen.getByRole('dialog', { name: '切片设置' }), { key: 'Escape' });
+      expect(within(screen.getByRole('complementary', { name: 'OpenCreator' })).getByRole('textbox', { name: '告诉 Agent 你的要求' })).toBeEnabled();
+    }
+    const settingsLink = within(alert).getByRole('link');
+    const settings = new URLSearchParams(settingsLink.getAttribute('href')!.split('?')[1]);
+    expect(settings.get('tab')).toBe('platform-connections');
+    expect(settings.get('returnPath')).toContain(`jobId=${job.id}`);
+    expect(within(alert).queryByRole('button', { name: retryLabel })).not.toBeInTheDocument();
+    const retry = within(form).getByRole('button', { name: retryLabel });
+    fireEvent.click(retry);
+    if (language === 'en-US') {
+      expect(await within(form).findByRole('alert')).toHaveTextContent('Could not start the retry. View details and try again.');
+      expect(retry).toBeEnabled();
+      expect(onWorkspaceNavigate).not.toHaveBeenCalled();
+      fireEvent.click(retry);
+    }
+    await waitFor(() => expect(applyAction).toHaveBeenLastCalledWith(job.id, expect.objectContaining({
+      action: 'run-stage', input: { stageId: 'clip', resumedFromStageRunId: stage.id }, repairIssueId: issue.id
+    })));
+    expect(applyAction).toHaveBeenCalledTimes(language === 'en-US' ? 2 : 1);
+    expect(createJob).not.toHaveBeenCalled();
+    if (language === 'zh-CN') {
+      expect(await screen.findByRole('tab', { name: '生成记录' })).toBeVisible();
+      expect(screen.getByRole('status', { name: /^正在生成/ })).toHaveTextContent('3%');
+    } else {
+      await waitFor(() => expect(onWorkspaceNavigate).toHaveBeenCalledWith(null));
+    }
+    expect(form).not.toBeInTheDocument();
   });
 
   it('configures cover output in the unified composer', () => {

@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Progresso da prévia de legendas",
   "Adjust timing": "Ajustar tempo",
   "Enter the required credentials for the selected dubbing service to continue.": "Insira as credenciais necessárias para o serviço de dublagem selecionado para continuar.",
-  "Save and continue composing": "Salvar e continuar a composição do vídeo"
+  "Save and continue composing": "Salvar e continuar a composição do vídeo",
+  "AI clip score": "Nota do clipe por IA",
+  "Sort clips": "Ordenar clipes",
+  "Source order": "Ordem original",
+  "By score": "Por nota",
+  "Selection reason": "Motivo da seleção",
+  "No selection reason is available for this clip.": "Não há uma justificativa disponível para a seleção deste clipe."
 }

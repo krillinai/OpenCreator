@@ -20,6 +20,7 @@ export default function CreatorToolShell(props: {
   suggestions: string[];
   placeholder: string;
   pageClassName?: string;
+  fillWorkspace?: boolean;
   contentClassName?: string;
   stepLabel?: string;
   currentIssue?: string;
@@ -69,7 +70,7 @@ export default function CreatorToolShell(props: {
   </section>;
 
   return (
-    <main className={`creator-workspace-page${props.pageClassName ? ` ${props.pageClassName}` : ''}`}>
+    <main className={`creator-workspace-page${props.pageClassName ? ` ${props.pageClassName}` : ''}`} data-fill-workspace={props.fillWorkspace || undefined}>
       {props.showAgentPanel === false ? workspace : <CreatorResizableLayout
         className="creator-workspace-layout"
         workspace={workspace}

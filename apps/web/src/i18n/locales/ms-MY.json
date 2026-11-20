@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Kemajuan pratonton sari kata",
   "Adjust timing": "Laraskan masa",
   "Enter the required credentials for the selected dubbing service to continue.": "Masukkan kelayakan yang diperlukan untuk perkhidmatan alih suara yang dipilih untuk meneruskan.",
-  "Save and continue composing": "Simpan dan teruskan penggabungan video"
+  "Save and continue composing": "Simpan dan teruskan penggabungan video",
+  "AI clip score": "Skor klip AI",
+  "Sort clips": "Isih klip",
+  "Source order": "Turutan asal",
+  "By score": "Mengikut skor",
+  "Selection reason": "Sebab pemilihan",
+  "No selection reason is available for this clip.": "Tiada sebab pemilihan untuk klip ini."
 }

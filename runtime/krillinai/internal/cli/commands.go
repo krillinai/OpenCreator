@@ -570,6 +570,7 @@ func parseClip(name string, args []string) (Command, error) {
 		Input: *input, InputSRT: *inputSRT, Workdir: *workdir, TaskID: *taskID,
 		Count: *count, MinDurationSec: *minDuration, MaxDurationSec: *maxDuration,
 		OriginLang: *originLang, CaptionSource: pipeline.CaptionSource(*captionSource),
+		ReasonLocale:       os.Getenv("OPENCREATOR_CLIP_REASON_LOCALE"),
 		DeferTranscription: *deferTranscription,
 	}
 	if err := req.Validate(); err != nil {

@@ -63,7 +63,7 @@ export type CreatorSessionContextValue = {
   focusIssue(issue: OpenCreatorIssue | null): void;
   askPendingIssue(question: string, issue: OpenCreatorIssue): void;
   applyRemoteSnapshot(job: CreatorJob): void;
-  applyAction(request: Omit<CreatorActionRequest, 'expectedRevision'>): Promise<CreatorJob>;
+  applyAction(request: Omit<CreatorActionRequest, 'expectedRevision'>, options?: { serverPreflight?: boolean }): Promise<CreatorJob>;
   cancelJob(): Promise<void>;
   resumeJob(): Promise<void>;
   controlDownload?(stageRunId: string, action: 'pause' | 'resume' | 'cancel'): Promise<void>;
@@ -643,14 +643,15 @@ export function CreatorSessionProvider(props: {
   }, [confirmedJob.id, props.service, reloadAgentTimeline]);
 
   const applyAction = useCallback(async (
-    request: Omit<CreatorActionRequest, 'expectedRevision'>
+    request: Omit<CreatorActionRequest, 'expectedRevision'>,
+    options?: { serverPreflight?: boolean }
   ) => {
     let requestRevision = confirmedRef.current.revision;
     try {
       await flush();
       await ensurePersistedJob();
       requestRevision = confirmedRef.current.revision;
-      if (request.action === 'run-stage' && props.service.preflight !== undefined) {
+      if (request.action === 'run-stage' && !options?.serverPreflight && props.service.preflight !== undefined) {
         const stageId = request.input.stageId;
         if (typeof stageId === 'string') await runPreflight(stageId, {
           launch: true,
@@ -665,6 +666,8 @@ export function CreatorSessionProvider(props: {
       setError(null);
       return confirmedRef.current;
     } catch (cause) {
+      const blocked = (cause as { details?: { preflight?: CreatorPreflightResponse } } | null)?.details?.preflight;
+      if (options?.serverPreflight && blocked?.canStart === false && Array.isArray(blocked.blocked)) setPreflight(blocked);
       const nextError = toSessionError(cause);
       if (!isSupersededRevisionConflict(cause, requestRevision, confirmedRef.current.revision)) {
         setError(nextError);

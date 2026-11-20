@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Tekstityksen esikatselun edistyminen",
   "Adjust timing": "Säädä ajoitusta",
   "Enter the required credentials for the selected dubbing service to continue.": "Jatka antamalla valitun dubbauspalvelun vaatimat tunnistetiedot.",
-  "Save and continue composing": "Tallenna ja jatka videon koostamista"
+  "Save and continue composing": "Tallenna ja jatka videon koostamista",
+  "AI clip score": "Leikkeen tekoälypisteet",
+  "Sort clips": "Lajittele leikkeet",
+  "Source order": "Alkuperäinen järjestys",
+  "By score": "Pisteiden mukaan",
+  "Selection reason": "Valinnan peruste",
+  "No selection reason is available for this clip.": "Tämän leikkeen valinnalle ei ole perustelua."
 }

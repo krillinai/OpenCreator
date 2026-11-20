@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Altyazı önizleme ilerlemesi",
   "Adjust timing": "Zamanlamayı ayarla",
   "Enter the required credentials for the selected dubbing service to continue.": "Devam etmek için seçilen dublaj hizmetinin gerekli kimlik bilgilerini girin.",
-  "Save and continue composing": "Kaydet ve videoyu oluşturmaya devam et"
+  "Save and continue composing": "Kaydet ve videoyu oluşturmaya devam et",
+  "AI clip score": "YZ klip puanı",
+  "Sort clips": "Klipleri sırala",
+  "Source order": "Kaynak sırası",
+  "By score": "Puana göre",
+  "Selection reason": "Seçim nedeni",
+  "No selection reason is available for this clip.": "Bu klibin neden seçildiğine ilişkin bir açıklama yok."
 }

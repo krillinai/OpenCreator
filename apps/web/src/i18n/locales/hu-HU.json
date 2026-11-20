@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Feliratelőnézet állapota",
   "Adjust timing": "Időzítés módosítása",
   "Enter the required credentials for the selected dubbing service to continue.": "A folytatáshoz adja meg a kiválasztott szinkronizálási szolgáltatás szükséges hitelesítő adatait.",
-  "Save and continue composing": "Mentés és a videó összeállításának folytatása"
+  "Save and continue composing": "Mentés és a videó összeállításának folytatása",
+  "AI clip score": "Klip MI-pontszáma",
+  "Sort clips": "Klipek rendezése",
+  "Source order": "Eredeti sorrend",
+  "By score": "Pontszám szerint",
+  "Selection reason": "A kiválasztás oka",
+  "No selection reason is available for this clip.": "A klip kiválasztásának indoka nem érhető el."
 }

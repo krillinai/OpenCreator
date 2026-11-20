@@ -18,6 +18,31 @@ import { createDirectTransport, directRequestId } from './direct-transport.js';
 import { createOfficialFetch } from './official-fetch.js';
 import { chatAnywhereImage } from './chatanywhere-media.js';
 import { resolveGatewaySpeech } from './speech-response.js';
+import type { GatewayAccountState } from '@opencreator/protocol';
+import { publicFactsFromFailure } from '../creator/public-error-facts.js';
+import { extractDiagnosticEvidence, type FailureDiagnostic } from '../telemetry/diagnostic.js';
+
+export class CreatorGatewayNotReadyError extends GatewayError {
+  readonly publicFacts;
+  readonly failureDiagnostic: FailureDiagnostic;
+
+  constructor(activation: GatewayAccountState['activationError']) {
+    super('GATEWAY_SERVICES_NOT_READY', 503, activation?.request);
+    const request = activation?.request;
+    const operation = request?.path === '/api/v1/auth/refresh' ? 'gateway.auth.refresh'
+      : activation?.stage ? `gateway.activation.${activation.stage}` : 'gateway.activation';
+    const networkCode = request?.networkCode;
+    if (activation) {
+      this.cause = Object.assign(new Error(), { code: activation.code,
+        ...(networkCode ? { cause: Object.assign(new Error(), { code: networkCode }) } : {}) });
+    }
+    this.publicFacts = { ...publicFactsFromFailure(this, 'opencreator-gateway'),
+      ...(request?.httpStatus === undefined ? {} : { httpStatus: request.httpStatus }) };
+    this.failureDiagnostic = { version: 1, operation, causes: [],
+      ...(activation ? { steps: [{ operation, code: activation.code, result: 'failed' }] } : {}),
+      ...(networkCode ? { evidence: extractDiagnosticEvidence(networkCode) } : {}) };
+  }
+}
 
 export type GatewayCreatorBinding = { accountId: string; bindingVersion: string; baseUrl: string; apiKey: string; models: Record<string, string>; catalog?: GatewayModel[]; capabilities?: Record<string, string[]>; speechVoices?: string[]; logicalId?: string; stageRunId?: string };
 const bindings = new WeakMap<CreatorServicesConfig, GatewayCreatorBinding>();
@@ -29,6 +54,7 @@ export function createGatewayCreatorSource(input: {
   getLocalOrigin(): string | undefined;
   fetcher?: typeof fetch;
   readJobBinding?(jobId: string): CreatorServiceBinding;
+  finalizeJobBinding?(jobId: string, binding: CreatorServiceBinding): void;
   readJobState?(jobId: string): CreatorJob['state'] | undefined;
   readJobTemplateId?(jobId: string): string | undefined;
   readStageRun?(stageRunId: string): CreatorStageRun | undefined;
@@ -37,7 +63,7 @@ export function createGatewayCreatorSource(input: {
   telemetry?: Pick<CreatorTelemetrySink, 'gatewayCall' | 'traceEnabled'>;
 }) {
   const capabilities = new Map<string, { token: string; accountId: string; bindingVersion: string; supplierBase: string; logicalId?: string; stageRunId?: string; jobId?: string }>();
-  const context = new AsyncLocalStorage<{ snapshot: CreatorServiceBinding; logicalId: string; stageRunId: string; jobId: string; manualVideo: boolean }>();
+  const context = new AsyncLocalStorage<{ snapshot: CreatorServiceBinding; logicalId: string; stageRunId: string; jobId: string; allowManualSource: boolean }>();
   const inFlight = new Map<AbortController, { stageRunId?: string; done: Promise<void> }>();
   const remoteTasks = new Set<string>();
   const prefix = `${KRILLIN_LLM_ROUTE_PREFIX}/gateway/v1`;
@@ -51,11 +77,17 @@ export function createGatewayCreatorSource(input: {
       if (updated.baseUrl !== baseUrl) throw new GatewayError('supplier_binding_changed', 409);
       return updated.modelKey !== failedKey ? updated.modelKey : undefined;
     } : undefined) : undefined;
-  function snapshot(templateId?: string): CreatorServiceBinding {
+  function snapshot(templateId?: string, allowPending = false): CreatorServiceBinding {
+    if (templateId === 'video-download') return { source: 'manual' };
     const state = input.account.peekState();
     if (state.source === 'manual') return { source: 'manual' };
     if (state.authState !== 'signed_in') throw new GatewayError('auth_required', 401);
-    if (state.activationState !== 'ready' || !state.account || !state.bindingVersion) throw new GatewayError('services_not_ready');
+    if (state.activationState !== 'ready' || !state.account || !state.bindingVersion) {
+      if (allowPending && templateId === 'video-translation' && state.account) {
+        return { source: 'gateway', accountId: state.account.id, bindingVersion: null, supplier: state.supplier, models: {}, capabilities: {} };
+      }
+      throw new GatewayError('services_not_ready');
+    }
     const models: Record<string, string> = {};
     const caps: Record<string, string[]> = {};
     for (const model of state.models) {
@@ -78,14 +110,17 @@ export function createGatewayCreatorSource(input: {
     if (flash) { models.text = flash.id; caps.text = [...flash.capabilities]; }
     return { source: 'gateway', accountId: state.account.id, bindingVersion: state.bindingVersion, supplier: state.supplier ?? 'openrouter', models, capabilities: caps };
   }
-  function assertSnapshot(value: CreatorServiceBinding, recovery = false, manualVideo = false) {
+  function assertSnapshot(value: CreatorServiceBinding, recovery = false, allowManualSource = false, translation = false) {
     const state = input.account.peekState();
     if (value.source === 'gateway' && state.authState !== 'signed_in') throw new GatewayError('auth_required', 401);
-    if (value.source === 'gateway' && (!recovery && state.activationState !== 'ready')) throw new GatewayError('services_not_ready');
-    if ((value.source !== state.source && !(manualVideo && value.source === 'manual')) || (value.source === 'gateway' && value.accountId !== state.account?.id)) throw new GatewayError('task_source_mismatch', 409);
-    if (value.source === 'gateway' && state.supplier) {
-      const supplier = value.supplier ?? (value.bindingVersion.startsWith(`${value.accountId}:88api:`) ? '88api'
-        : value.bindingVersion.startsWith(`${value.accountId}:chatanywhere:`) ? 'chatanywhere' : 'openrouter');
+    if (value.source === 'gateway' && ((!recovery || value.bindingVersion === null) && state.activationState !== 'ready')) {
+      if (translation) throw new CreatorGatewayNotReadyError(state.activationError);
+      throw new GatewayError('services_not_ready');
+    }
+    if ((value.source !== state.source && !(allowManualSource && value.source === 'manual')) || (value.source === 'gateway' && value.accountId !== state.account?.id)) throw new GatewayError('task_source_mismatch', 409);
+    if (value.source === 'gateway' && state.supplier && (value.supplier || value.bindingVersion !== null)) {
+      const supplier = value.supplier ?? (value.bindingVersion?.startsWith(`${value.accountId}:88api:`) ? '88api'
+        : value.bindingVersion?.startsWith(`${value.accountId}:chatanywhere:`) ? 'chatanywhere' : 'openrouter');
       if (supplier !== state.supplier) throw new GatewayError('supplier_binding_changed', 409);
     }
   }
@@ -95,12 +130,12 @@ export function createGatewayCreatorSource(input: {
     return value === 'manual' || value === 'gateway' ? value : undefined;
   }
   function assertJob(jobId: string) {
-    if (videoSource(jobId)) return;
-    if (input.readJobBinding) assertSnapshot(input.readJobBinding(jobId));
+    if (input.readJobTemplateId?.(jobId) === 'video-download' || videoSource(jobId)) return;
+    if (input.readJobBinding) assertSnapshot(input.readJobBinding(jobId), false, false, input.readJobTemplateId?.(jobId) === 'video-translation');
   }
   async function binding(): Promise<GatewayCreatorBinding | undefined> {
     const scope = context.getStore();
-    if (scope) assertSnapshot(scope.snapshot, false, scope.manualVideo);
+    if (scope) assertSnapshot(scope.snapshot, false, scope.allowManualSource);
     if (scope?.snapshot.source === 'manual' || (!scope && input.account.peekState().source === 'manual')) return undefined;
     const credentials = await input.account.modelCredentials();
     const local = input.getLocalOrigin();
@@ -205,13 +240,19 @@ export function createGatewayCreatorSource(input: {
       const stage = input.readStageRun?.(stageRunId);
       const resumed = typeof stage?.progress.resumedFromStageRunId === 'string';
       const pinned = stage?.progress.videoServiceSource;
-      const source = pinned === 'manual' || pinned === 'gateway' ? pinned
+      const source = input.readJobTemplateId?.(jobId) === 'video-download' ? 'manual'
+        : pinned === 'manual' || pinned === 'gateway' ? pinned
         : resumed ? input.readJobBinding?.(jobId).source : videoSource(jobId);
       const jobBinding = input.readJobBinding?.(jobId);
       let original = source === 'manual' ? { source: 'manual' as const }
         : source === 'gateway' ? resumed && jobBinding?.source === 'gateway' ? jobBinding : snapshot('video-generation')
           : jobBinding ?? snapshot();
-      assertSnapshot(original, false, source === 'manual');
+      const translation = input.readJobTemplateId?.(jobId) === 'video-translation';
+      assertSnapshot(original, false, source === 'manual', translation);
+      if (original.source === 'gateway' && original.bindingVersion === null) {
+        original = snapshot('video-translation');
+        input.finalizeJobBinding?.(jobId, original);
+      }
       if (original.source === 'gateway') {
         const pinnedVideoModel = stage?.progress.videoModelId;
         const choices = typeof pinnedVideoModel === 'string'
@@ -251,7 +292,7 @@ export function createGatewayCreatorSource(input: {
       }
       let failed = false;
       try {
-        return await context.run({ snapshot: original, logicalId, stageRunId, jobId, manualVideo: source === 'manual' }, work);
+        return await context.run({ snapshot: original, logicalId, stageRunId, jobId, allowManualSource: source === 'manual' }, work);
       } catch (error) {
         failed = true;
         throw error;

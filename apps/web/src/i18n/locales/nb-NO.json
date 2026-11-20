@@ -3349,5 +3349,11 @@
   "Subtitle preview progress": "Fremdrift for forhåndsvisning av undertekster",
   "Adjust timing": "Juster timing",
   "Enter the required credentials for the selected dubbing service to continue.": "Skriv inn nødvendig påloggingsinformasjon for den valgte dubbingtjenesten for å fortsette.",
-  "Save and continue composing": "Lagre og fortsett å sette sammen videoen"
+  "Save and continue composing": "Lagre og fortsett å sette sammen videoen",
+  "AI clip score": "AI-poeng for klipp",
+  "Sort clips": "Sorter klipp",
+  "Source order": "Opprinnelig rekkefølge",
+  "By score": "Etter poeng",
+  "Selection reason": "Hvorfor klippet ble valgt",
+  "No selection reason is available for this clip.": "Det er ingen begrunnelse for valget av dette klippet."
 }
