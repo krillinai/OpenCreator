@@ -9,6 +9,13 @@
   The open-source AI workspace & Skills for creators
 </h1>
 
+</div>
+
+> [!IMPORTANT]
+> The application currently doesn't support English / localization. See https://github.com/krillinai/OpenCreator/issues/364 to track progress.
+
+<div align="center">
+
 <p>Bring visual settings, reusable Skills, and Agents together for scripts, video, images, voice, translation, and editing—all in one workspace.</p>
 
 <p><strong>OpenCreator was formerly known as KrillinAI.</strong></p>
