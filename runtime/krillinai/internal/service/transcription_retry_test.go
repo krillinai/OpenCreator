@@ -3,11 +3,16 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"krillin-ai/config"
 	"krillin-ai/internal/types"
 	"krillin-ai/log"
+	"krillin-ai/pkg/util"
 	"krillin-ai/pkg/whisper"
 
 	"golang.org/x/sync/errgroup"
@@ -65,5 +70,80 @@ func TestTranscriptionRetriesOnlyRetryableFailures(t *testing.T) {
 				t.Fatalf("transcription position = %d, %d; want 2, %d", segment, attempt, test.calls)
 			}
 		})
+	}
+}
+
+type recordingTranscriber struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (r *recordingTranscriber) Transcription(audioFile, _, _ string) (*types.TranscriptionData, error) {
+	r.mu.Lock()
+	r.calls = append(r.calls, audioFile)
+	r.mu.Unlock()
+	return &types.TranscriptionData{Text: "fresh transcript"}, nil
+}
+
+func TestTranscribeWorkersReuseSegmentCheckpoint(t *testing.T) {
+	log.InitLogger()
+	previous := config.Conf.App
+	t.Cleanup(func() { config.Conf.App = previous })
+	config.Conf.App.TranscribeParallelNum = 1
+	config.Conf.App.TranscribeMaxAttempts = 1
+
+	workDir := t.TempDir()
+	cached := &types.TranscriptionData{Language: "en", Text: "cached transcript"}
+	checkpoint := filepath.Join(workDir, fmt.Sprintf(types.SubtitleTaskAudioTranscriptionDataPersistenceFileNamePattern, 0))
+	if err := util.SaveToDisk(cached, checkpoint); err != nil {
+		t.Fatalf("save transcription checkpoint: %v", err)
+	}
+	if _, err := os.Stat(checkpoint); err != nil {
+		t.Fatalf("transcription checkpoint was not created: %v", err)
+	}
+	corruptCheckpoint := filepath.Join(workDir, fmt.Sprintf(types.SubtitleTaskAudioTranscriptionDataPersistenceFileNamePattern, 2))
+	if err := os.WriteFile(corruptCheckpoint, []byte("not-json"), 0o600); err != nil {
+		t.Fatalf("save corrupt transcription checkpoint: %v", err)
+	}
+
+	transcriber := &recordingTranscriber{}
+	pending := make(chan DataWithId[string], 3)
+	pending <- DataWithId[string]{Id: 0, Data: "cached.wav"}
+	pending <- DataWithId[string]{Id: 1, Data: "missing.wav"}
+	pending <- DataWithId[string]{Id: 2, Data: "corrupt.wav"}
+	close(pending)
+	transcribed := make(chan DataWithId[*types.TranscriptionData], 3)
+	group, ctx := errgroup.WithContext(context.Background())
+	(Service{Transcriber: transcriber}).startTranscribeWorkers(
+		ctx,
+		group,
+		&types.SubtitleTaskStepParam{TaskBasePath: workDir},
+		pending,
+		make(chan DataWithId[float64], 2),
+		transcribed,
+	)
+	if err := group.Wait(); err != nil {
+		t.Fatalf("transcription workers failed: %v", err)
+	}
+
+	results := make(map[int]*types.TranscriptionData, 3)
+	for range 3 {
+		item := <-transcribed
+		results[item.Id] = item.Data
+	}
+	if got := len(transcriber.calls); got != 2 {
+		t.Fatalf("transcriber calls = %d, want 2 for missing and corrupt segments", got)
+	}
+	if got := fmt.Sprint(transcriber.calls); got != "[missing.wav corrupt.wav]" {
+		t.Fatalf("transcriber calls = %s, want missing.wav and corrupt.wav", got)
+	}
+	if got := results[0]; got == nil || got.Text != cached.Text {
+		t.Fatalf("cached segment = %#v, want checkpoint data %#v", got, cached)
+	}
+	if got := results[1]; got == nil || got.Text != "fresh transcript" {
+		t.Fatalf("missing segment = %#v, want fresh transcript", got)
+	}
+	if got := results[2]; got == nil || got.Text != "fresh transcript" {
+		t.Fatalf("corrupt segment = %#v, want fresh transcript", got)
 	}
 }
