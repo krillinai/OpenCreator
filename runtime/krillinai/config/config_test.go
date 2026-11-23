@@ -6,8 +6,10 @@ func TestDefaultImageConfig(t *testing.T) {
 	if Conf.Image.Provider != "openai-compatible" {
 		t.Fatalf("Image.Provider = %q, want openai-compatible", Conf.Image.Provider)
 	}
-	if Conf.Image.Openai.Model == "" {
-		t.Fatalf("Image.Openai.Model is empty")
+	// OpenAI retired gpt-image-1 on 2026-10-23; the daemon migrates saved
+	// gpt-image-1 settings to gpt-image-2, so the runtime default must match.
+	if Conf.Image.Openai.Model != "gpt-image-2" {
+		t.Fatalf("Image.Openai.Model = %q, want gpt-image-2", Conf.Image.Openai.Model)
 	}
 }
 

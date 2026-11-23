@@ -92,4 +92,4 @@
     [image.openai]
         base_url = "" # 生图接口base url，留空使用OpenAI官方接口；自定义转发站通常填写以/v1结尾的地址
         api_key = "" # 生图API密钥
-        model = "gpt-image-1" # 生图模型，例如gpt-image-1，或转发站支持的兼容模型
+        model = "gpt-image-2" # 生图模型，例如gpt-image-2，或转发站支持的兼容模型
