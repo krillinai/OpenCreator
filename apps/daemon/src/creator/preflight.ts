@@ -406,7 +406,8 @@ async function checkProviderConfig(
       add('blocked', { id: 'tts-style-capability', title: 'Unsupported speech settings', message: 'Style and speed controls are not verified for this official speech model. Select another TTS service.', executionMode: 'remote' }, { label: 'Open speech settings', deepLink: '#/settings?tab=ai-services&section=tts' });
     }
     const provider = readTtsProvider(job, config);
-    if (provider === 'edge-tts') add('ready', { id: 'tts', title: 'Speech service', message: 'Edge TTS does not require an API key.', executionMode: 'remote' });
+    if (provider === 'omnivoice') add('ready', { id: 'tts', title: 'OmniVoice', message: 'Local speech synthesis', executionMode: 'local' });
+    else if (provider === 'edge-tts') add('ready', { id: 'tts', title: 'Speech service', message: 'Edge TTS does not require an API key.', executionMode: 'remote' });
     else checkTts(config, provider, add);
   }
   if (needs.has('image')) {
@@ -534,7 +535,7 @@ function checkOpenAi(
   else add('ready', { id, title, message: `${value.model} is configured.`, executionMode: 'remote' });
 }
 
-function checkTts(config: CreatorServicesConfig, provider: Exclude<CreatorServicesConfig['tts']['provider'], 'edge-tts'>, add: Parameters<typeof checkProviderConfig>[5]) {
+function checkTts(config: CreatorServicesConfig, provider: Exclude<CreatorServicesConfig['tts']['provider'], 'edge-tts' | 'omnivoice'>, add: Parameters<typeof checkProviderConfig>[5]) {
   const credentialsReady = provider === 'volcengine'
     ? Boolean(
         config.tts.volcengine.accessToken.trim()
@@ -575,7 +576,7 @@ async function checkInputs(
 function readTtsProvider(job: CreatorJob, config: CreatorServicesConfig): CreatorServicesConfig['tts']['provider'] {
   if (gatewayCreatorBinding(config)) return 'openai';
   const value = job.state.ttsProvider;
-  return value === 'openai' || value === 'aliyun' || value === 'edge-tts' || value === 'minimax' || value === 'volcengine' ? value : config.tts.provider;
+  return value === 'openai' || value === 'aliyun' || value === 'omnivoice' || value === 'edge-tts' || value === 'minimax' || value === 'volcengine' ? value : config.tts.provider;
 }
 function readVideoProvider(job: CreatorJob, config: CreatorServicesConfig): CreatorServicesConfig['video']['provider'] {
   const value = job.state.provider;

@@ -6,6 +6,7 @@ import (
 	"krillin-ai/config"
 	"krillin-ai/internal/types"
 	"krillin-ai/pkg/aliyun"
+	"krillin-ai/pkg/localtts"
 	"krillin-ai/pkg/minimax"
 	"krillin-ai/pkg/openai"
 	"krillin-ai/pkg/volcengine"
@@ -13,6 +14,8 @@ import (
 
 func New(provider string) (types.TTSProvider, error) {
 	switch provider {
+	case "omnivoice":
+		return localtts.OmniVoice{Reference: config.Conf.Tts.OmniVoiceReference}, nil
 	case "openai":
 		return openai.NewTtsClient(
 			config.Conf.Tts.Openai.BaseUrl,

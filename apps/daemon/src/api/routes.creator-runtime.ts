@@ -1,3 +1,4 @@
+import { closeOmniVoiceWorker, downloadOmniVoiceComponent, omniVoiceComponentStatus } from '../creator/krillin/omnivoice.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod/v3';
 import type { YtDlpUpdateManager } from '../creator/yt-dlp/update-manager.js';
@@ -17,10 +18,15 @@ export async function registerCreatorRuntimeRoutes(
   local?: { loader: ReturnType<typeof createKrillinDependencyLoader>; readConfig(): Promise<CreatorServicesConfig>; remotion?: RemotionComponentManager }
 ): Promise<void> {
   server.addHook('preClose', () => {
+    closeOmniVoiceWorker();
     ytDlp?.close();
     local?.loader.close();
     local?.remotion?.close();
   });
+
+  server.get('/creator/models/omnivoice', async () => omniVoiceComponentStatus());
+  server.post('/creator/models/omnivoice/install', async (_request, reply) =>
+    reply.code(202).send(downloadOmniVoiceComponent()));
 
   server.get('/creator/yt-dlp/status', async (_request, reply) => {
     if (ytDlp === undefined) return unavailable(reply);

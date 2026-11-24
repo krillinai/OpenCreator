@@ -15,7 +15,8 @@ export function dubbingSegmentCacheDir(input: {
   if (stage.job.templateId !== 'video-translation' || stage.stageRun.stageId !== 'tts') return undefined;
   const { provider } = config.tts;
   const speech = provider === 'edge-tts' ? undefined : config.tts[provider];
-  const gateway = provider === 'openai' && binding?.baseUrl === speech?.baseUrl ? binding : undefined;
+  const endpoint = speech && 'baseUrl' in speech ? speech.baseUrl : undefined;
+  const gateway = provider === 'openai' && binding?.baseUrl === endpoint ? binding : undefined;
   const key = createHash('sha256').update(JSON.stringify({
     version: 1,
     templateVersion: stage.job.templateVersion,
@@ -24,7 +25,8 @@ export function dubbingSegmentCacheDir(input: {
     targetLanguage: options.targetLanguage,
     bilingualTop: options.bilingualTop,
     provider,
-    endpoint: gateway ? [gateway.accountId, gateway.bindingVersion] : speech?.baseUrl,
+    endpoint: gateway ? [gateway.accountId, gateway.bindingVersion] : endpoint,
+    referenceAudio: provider === 'omnivoice' ? config.tts.omnivoice.referenceAudio : undefined,
     model: speech?.model,
     defaultVoice: speech?.defaultVoiceId,
     voice: options.voiceCode,

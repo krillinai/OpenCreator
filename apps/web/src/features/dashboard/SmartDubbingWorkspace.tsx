@@ -76,13 +76,13 @@ export default function SmartDubbingWorkspace(props: {
   const requireGenerationAccess = useGenerationAccess();
   const session = useOptionalCreatorSession();
   const official = useOfficialServices('speech', true, undefined, models => [...models].sort(compareGatewayModelsByName)[0]);
-  const supportsStyle = !official.official || official.model?.capabilities.includes('speech_instructions') === true;
   const supportsSpeed = !official.official || official.model?.capabilities.includes('speech_speed') === true;
   const [submitting, setSubmitting] = useState(false);
   const [text, setText] = useState(() => readString(session?.state.text));
   const [provider, setProvider] = useState<CreatorTtsProvider>(() => (
     readProvider(session?.state.ttsProvider) ?? 'openai'
   ));
+  const supportsStyle = provider !== 'omnivoice' && (!official.official || official.model?.capabilities.includes('speech_instructions') === true);
   const [model, setModel] = useState(() => readString(session?.state.ttsModel) || 'gpt-4o-mini-tts');
   const [voice, setVoice] = useState<SmartDubbingVoice>(() => readString(session?.state.voiceCode));
   const [voiceName, setVoiceName] = useState(() => readString(session?.state.voiceName));
@@ -111,7 +111,7 @@ export default function SmartDubbingWorkspace(props: {
   const [config, setConfig] = useState<CreatorServicesConfig>();
   const modelOptions = useMemo(() => {
     if (config === undefined) return [];
-    const providers = ['openai', 'minimax', 'aliyun', 'volcengine'] as const;
+    const providers = ['openai', 'minimax', 'aliyun', 'volcengine', 'omnivoice'] as const;
     return providers.map(nextProvider => {
       const nextModel = config.tts[nextProvider].model;
       return {
@@ -481,6 +481,7 @@ export default function SmartDubbingWorkspace(props: {
                   <div className="smart-dubbing-voice-field">
                     <TtsVoicePicker
                       id="smart-dubbing-voice"
+                      importService={props.creatorServicesService}
                       presentation="library-inline"
                       allowPreviewLanguage={official.official}
                       catalogKey={official.official ? JSON.stringify([official.model?.voices, official.model?.voiceProfiles]) : undefined}
@@ -528,6 +529,7 @@ export default function SmartDubbingWorkspace(props: {
                   <div className="smart-dubbing-voice-field">
                     <TtsVoicePicker
                       id="smart-dubbing-voice"
+                      importService={props.creatorServicesService}
                       presentation="library"
                       allowPreviewLanguage={official.official}
                       catalogKey={official.official ? JSON.stringify([official.model?.voices, official.model?.voiceProfiles]) : undefined}
@@ -641,6 +643,7 @@ function providerLabel(
   provider: CreatorTtsProvider,
   l: (zh: string, en: string) => string
 ): string {
+  if (provider === 'omnivoice') return l('本地 OmniVoice', 'Local OmniVoice');
   if (provider === 'aliyun') return l('阿里云百炼', 'Alibaba Cloud Model Studio');
   if (provider === 'minimax') return 'MiniMax';
   if (provider === 'volcengine') return l('火山引擎', 'Volcengine');
@@ -657,6 +660,7 @@ function formatGenerationError(error: unknown, l: (zh: string, en: string) => st
   const code = typeof error === 'object' && error !== null && 'code' in error
     ? String((error as { code?: unknown }).code)
     : '';
+  if (code === 'creator_tts_runtime_unavailable' && error && typeof error === 'object' && 'message' in error && String(error.message).includes('OmniVoice')) return l('本地 OmniVoice 暂不可用，请在组件设置中检查模型。', 'Local OmniVoice is unavailable. Check the model in component settings.');
   if (code === 'SMART_DUBBING_CONFIG_REQUIRED' || code === 'creator_tts_config_missing') {
     return l('请先在设置的配音服务中配置当前服务商的 API Key', 'Configure the selected TTS provider API key in Settings first');
   }
@@ -678,7 +682,7 @@ function readString(value: CreatorJson | undefined): string {
 }
 
 function readProvider(value: CreatorJson | undefined): CreatorTtsProvider | undefined {
-  return value === 'openai' || value === 'aliyun' || value === 'minimax' || value === 'edge-tts' || value === 'volcengine'
+  return value === 'openai' || value === 'aliyun' || value === 'minimax' || value === 'omnivoice' || value === 'edge-tts' || value === 'volcengine'
     ? value
     : undefined;
 }

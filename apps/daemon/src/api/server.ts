@@ -1,3 +1,4 @@
+import { registerOmniVoiceReference } from './routes.omnivoice-reference.js';
 import { isDirectTransport } from '../gateway/supplier.js';
 import type Database from 'better-sqlite3';
 import type { CodexAvailabilityProbe, CodexRuntimeComponentReadiness } from '@opencreator/protocol';
@@ -1718,6 +1719,7 @@ export async function buildServer(input: BuildServerInput) {
   });
   await registerCleanupRoutes(server, cleanupService);
   await registerSettingsRoutes(server, openCreatorSettingsStore);
+  registerOmniVoiceReference(server, dataDir, creatorFfmpegPath ?? 'ffmpeg');
   await registerCreatorServicesRoutes(
     server,
     creatorServicesConfigStore,

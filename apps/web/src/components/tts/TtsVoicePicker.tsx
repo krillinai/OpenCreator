@@ -17,6 +17,7 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import { TtsVoiceSelect, type TtsVoiceSelectGroup } from './TtsVoiceSelect.js';
 import { TtsVoiceLibrary, type VoiceLibraryOption } from './TtsVoiceLibrary.js';
+import { OmniVoiceLibrary } from '../../features/settings/OmniVoiceLibrary.js';
 import { TtsVoiceLibraryPopover } from './TtsVoiceLibraryPopover.js';
 import { voiceScenarioLabel } from './voice-scenario-copy.js';
 import './tts-voice-picker.css';
@@ -28,6 +29,7 @@ export function TtsVoicePicker(props: {
   catalogKey?: string;
   value: string;
   service: Pick<CreatorServicesSettingsService, 'getTtsVoices' | 'previewTtsVoice'> | null;
+  importService?: CreatorServicesSettingsService | null;
   label?: string;
   presentation?: 'select' | 'library' | 'library-inline';
   disabled?: boolean;
@@ -353,6 +355,19 @@ export function TtsVoicePicker(props: {
       id={props.id}
       label={props.label ?? l('默认音色', 'Default voice')}
       value={props.value}
+      importAction={props.provider === 'omnivoice' && props.importService?.uploadOmniVoiceReference &&
+        <OmniVoiceLibrary addOnly service={props.importService} disabled={props.disabled} onAdd={async profile => {
+          const service = props.importService;
+          if (!service) return false;
+          const { config } = await service.getConfig();
+          const profiles = config.tts.omnivoice.profiles ?? [];
+          if (profiles.some(existing => existing.name === profile.name && existing.language === profile.language)) return false;
+          await service.saveConfig({ ...config, tts: { ...config.tts, omnivoice: {
+            ...config.tts.omnivoice, profiles: [...profiles, profile]
+          } } });
+          setReloadToken(token => token + 1);
+          return true;
+        }} />}
       options={libraryOptions}
       loading={loading}
       disabled={props.disabled || props.provider === 'edge-tts'}

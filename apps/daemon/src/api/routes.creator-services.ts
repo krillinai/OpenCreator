@@ -332,7 +332,7 @@ function sendTtsError(reply: FastifyReply, error: unknown) {
 }
 
 function parseTtsProvider(value: unknown): CreatorTtsProvider | undefined {
-  if (value === 'openai' || value === 'aliyun' || value === 'minimax' || value === 'edge-tts' || value === 'volcengine') {
+  if (value === 'openai' || value === 'aliyun' || value === 'minimax' || value === 'omnivoice' || value === 'edge-tts' || value === 'volcengine') {
     return value;
   }
   return undefined;

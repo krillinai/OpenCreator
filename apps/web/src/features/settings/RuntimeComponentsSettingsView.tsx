@@ -1,3 +1,4 @@
+import { OmniVoiceComponentCard } from './OmniVoiceComponentCard.js';
 import {
   AlertCircle,
   CheckCircle2,
@@ -48,6 +49,7 @@ export function RuntimeComponentsSettingsView(props: {
     return (
       <section className="settings-section settings-management runtime-components-settings" aria-labelledby="runtime-components-title">
         <SettingsHeader />
+        {props.controller.omniVoice && <OmniVoiceComponentCard service={props.controller.omniVoice} />}
         <RuntimeManagedComponents controller={props.controller} componentId={props.componentId} onReturn={props.onReturn} />
         <article className="runtime-component-item runtime-component-row">
           <div className="runtime-component-heading">
@@ -105,6 +107,7 @@ export function RuntimeComponentsSettingsView(props: {
   return (
     <section className="settings-section settings-management runtime-components-settings" aria-labelledby="runtime-components-title">
       <SettingsHeader />
+      {props.controller.omniVoice && <OmniVoiceComponentCard service={props.controller.omniVoice} />}
       <RuntimeManagedComponents controller={props.controller} componentId={props.componentId} onReturn={props.onReturn} />
       <article className="runtime-component-item runtime-component-row">
         <div className="runtime-component-heading">

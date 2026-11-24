@@ -395,6 +395,7 @@ function ttsProviderLabel(provider: CreatorTtsProvider, l: LocalizeCopy): string
   if (provider === 'aliyun') return l('阿里云百炼', 'Alibaba Cloud Model Studio');
   if (provider === 'minimax') return 'MiniMax';
   if (provider === 'volcengine') return l('火山引擎', 'Volcengine');
+  if (provider === 'omnivoice') return 'OmniVoice';
   if (provider === 'edge-tts') return 'Edge TTS';
   return 'OpenAI TTS';
 }
@@ -1173,7 +1174,7 @@ function isTtsProvider(value: unknown): value is CreatorTtsProvider {
   return value === 'openai'
     || value === 'aliyun'
     || value === 'minimax'
-    || value === 'edge-tts'
+    || value === 'omnivoice' || value === 'edge-tts'
     || value === 'volcengine';
 }
 
@@ -4202,6 +4203,8 @@ export default function VideoTranslationWorkspace(props: {
           </div>}
           <TtsVoicePicker
             id="video-translation-voice"
+            importService={props.creatorServicesService}
+            presentation={ttsProvider === 'omnivoice' ? 'library' : 'select'}
             catalogKey={officialSpeech.official ? JSON.stringify([officialSpeech.model?.voices, officialSpeech.model?.voiceProfiles]) : undefined}
             provider={ttsProvider}
             model={ttsModel}

@@ -1,5 +1,5 @@
 import type { CreatorYtDlpStatus } from '@opencreator/protocol';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeDependenciesController } from '../../app/use-runtime-dependencies.js';
 import { normalizePageIssue } from '../issues/page-issue-state.js';
@@ -7,6 +7,21 @@ import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { RuntimeComponentsSettingsView } from './RuntimeComponentsSettingsView.js';
 
 describe('RuntimeComponentsSettingsView', () => {
+  it('downloads OmniVoice and refreshes the card when the background install completes', async () => {
+    const service = {
+      getOmniVoiceComponent: vi.fn().mockResolvedValueOnce({ state: 'missing' })
+        .mockResolvedValue({ state: 'ready', path: '/models/OmniVoice' }),
+      downloadOmniVoiceComponent: vi.fn().mockResolvedValue({ state: 'preparing' })
+    };
+    renderView({ omniVoice: service });
+    const card = within(screen.getByRole('heading', { name: 'OmniVoice 本地配音' }).closest('article')!);
+    fireEvent.click(await card.findByRole('button', { name: '下载模型' }));
+    expect(await card.findByRole('progressbar')).toBeInTheDocument();
+    expect(await card.findByText('/models/OmniVoice', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(card.getByRole('status')).toHaveTextContent('已就绪');
+    expect(card.queryByRole('button', { name: '下载模型' })).not.toBeInTheDocument();
+    expect(service.downloadOmniVoiceComponent).toHaveBeenCalledTimes(1);
+  });
   it.each([
     ['zh-CN', '已就绪', '上次检查版本', '检查更新'],
     ['en-US', 'Ready', 'Last checked version', 'Check for updates']

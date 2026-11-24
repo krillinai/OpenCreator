@@ -11,6 +11,7 @@ describe('useRuntimeDependencies', () => {
       platform: 'darwin', arch: 'arm64', selectedProvider: 'openai', selectedModel: null, components: []
     };
     const service: RuntimeDependencyService = {
+      getOmniVoiceComponent: vi.fn(), downloadOmniVoiceComponent: vi.fn(),
       getComponentsStatus: vi.fn(async () => componentsStatus),
       downloadComponents: vi.fn(async () => componentsStatus),
       getYtDlpStatus: vi.fn(async () => ({ ytDlp: status() })),
@@ -38,6 +39,7 @@ describe('useRuntimeDependencies', () => {
       })
     }));
     const service = {
+      getOmniVoiceComponent: vi.fn(), downloadOmniVoiceComponent: vi.fn(),
       getComponentsStatus: vi.fn(), downloadComponents: vi.fn(),
       getYtDlpStatus,
       checkYtDlpUpdate,
@@ -65,6 +67,7 @@ describe('useRuntimeDependencies', () => {
       })
     }));
     const service = {
+      getOmniVoiceComponent: vi.fn(), downloadOmniVoiceComponent: vi.fn(),
       getComponentsStatus: vi.fn(), downloadComponents: vi.fn(),
       getYtDlpStatus: vi.fn(async () => ({ ytDlp: status() })),
       checkYtDlpUpdate: vi.fn(),
@@ -93,6 +96,7 @@ describe('useRuntimeDependencies', () => {
         .mockResolvedValueOnce({ ytDlp: status() })
         .mockResolvedValue({ ytDlp: status({ source: 'managed', currentVersion: latestVersion, latestVersion }) });
       const service: RuntimeDependencyService = {
+        getOmniVoiceComponent: vi.fn(), downloadOmniVoiceComponent: vi.fn(),
         getComponentsStatus: vi.fn(async () => ({ platform: 'darwin', arch: 'arm64', selectedProvider: 'openai', selectedModel: null, components: [] })),
         downloadComponents: vi.fn(), getYtDlpStatus, checkYtDlpUpdate: vi.fn(), updateYtDlp: vi.fn()
       };
@@ -120,6 +124,7 @@ describe('useRuntimeDependencies', () => {
       });
     });
     const service = {
+      getOmniVoiceComponent: vi.fn(), downloadOmniVoiceComponent: vi.fn(),
       getComponentsStatus: vi.fn(), downloadComponents: vi.fn(),
       getYtDlpStatus: vi.fn(async () => ({ ytDlp: status() })),
       checkYtDlpUpdate: vi.fn(),

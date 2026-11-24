@@ -1,3 +1,4 @@
+import { omniVoiceEndpoint } from './omnivoice.js';
 import { copyFile, link, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -156,7 +157,17 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
       : undefined,
     ytDlpRuntime: input.ytDlpRuntime
   });
-  const cliConfig = stageConfig(input.config, krillinCliStageId(input.stage.stageRun.stageId), input.options);
+  const stageId = krillinCliStageId(input.stage.stageRun.stageId);
+  let cliConfig = stageConfig(input.config, stageId, input.options);
+  if (stageId === 'tts' && cliConfig.tts.provider === 'omnivoice') {
+    const local = cliConfig.tts.omnivoice;
+    const selected = stringOption(input.options, 'voiceCode') || local.defaultVoiceId;
+    const profile = local.profiles?.find(voice => voice.id === selected);
+    if (profile) {
+      cliConfig = { ...cliConfig, tts: { ...cliConfig.tts, omnivoice: { ...local, referenceAudio: profile.referenceAudio } } };
+    }
+    input = { ...input, options: { ...input.options, voiceCode: profile ? 'omnivoice-' + profile.language : selected } };
+  }
   const officialBinding = gatewayCreatorBinding(input.config);
   const dubbingCacheDir = dubbingSegmentCacheDir({
     stage: input.stage, config: cliConfig, options: input.options, artifacts: input.artifacts, binding: officialBinding
@@ -252,7 +263,10 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
   try {
     let response: KrillinCliResponse;
     try {
+      const worker = args[0] === 'tts' && cliConfig.tts.provider === 'omnivoice'
+        ? await omniVoiceEndpoint(input.stage.signal) : undefined;
       response = await executeCli({
+        worker,
         executable: resolveInside(input.resourceRoot, cli.path),
         args,
         operation: `krillinai.${args[0]}`,
@@ -331,6 +345,7 @@ function stageConfig(
     provider !== 'openai'
     && provider !== 'aliyun'
     && provider !== 'minimax'
+    && provider !== 'omnivoice'
     && provider !== 'edge-tts'
     && provider !== 'volcengine'
   ) return source;
@@ -482,6 +497,7 @@ async function writeInitialManifest(
 }
 
 function executeCli(input: {
+  worker?: { port: number; token: string };
   executable: string;
   args: string[];
   operation: string;
@@ -506,6 +522,7 @@ function executeCli(input: {
       env: {
         ...createKrillinCliEnvironment(process.env, input.runtimeBin, input.resourceRoot,
           input.dependencyBin, input.ytDlpRuntime, input.nlpPython),
+        ...(input.worker ? { OPENCREATOR_OMNIVOICE_PORT: String(input.worker.port), OPENCREATOR_OMNIVOICE_TOKEN: input.worker.token } : {}),
         OPENCREATOR_KRILLIN_DUBBING_CACHE: input.dubbingCacheDir,
         OPENCREATOR_CLIP_REASON_LOCALE: input.clipReasonLocale
       },
