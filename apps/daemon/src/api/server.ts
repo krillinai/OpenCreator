@@ -93,6 +93,8 @@ import { createRemotionComponentManager } from '../creator/stickman/remotion-com
 import { createStickmanMediaValidationExecutor } from '../creator/stickman/media-validation-executor.js';
 import { createStickmanDeliveryExecutor } from '../creator/stickman/delivery-executor.js';
 import { CreatorProviderRequestLedger, hasPendingPaidCreatorRequests } from '../creator/provider-requests.js';
+import { createUploadPostPublishExecutor } from '../creator/stickman/social-publish-executor.js';
+import { createUploadPostProviderCapabilities } from '../creator/publishing/upload-post-provider-lookup.js';
 import { createCreatorProjectCoverService } from '../creator/project-cover.js';
 import { createVideoGenerationService } from '../video-generation/service.js';
 import { createImageGenerationService } from '../image-generation/service.js';
@@ -1086,6 +1088,10 @@ export async function buildServer(input: BuildServerInput) {
     console.warn(`Creator optional runtime executors are unavailable: ${formatError(error)}`);
   }
   if (input.creatorExecutors === undefined) {
+    creatorExecutors.push(createUploadPostPublishExecutor({
+      configStore: creatorServicesConfigStore,
+      ledger: creatorProviderRequestLedger
+    }));
     creatorExecutors.push(createXiaohongshuPostExecutor({
       configStore: creatorServicesConfigStore
     }));
@@ -1362,7 +1368,10 @@ export async function buildServer(input: BuildServerInput) {
         configStore: creatorServicesConfigStore,
         readConfigForJob: readCreatorConfigForJob,
         repository: creatorRepository,
-        providerLedger: creatorProviderRequestLedger
+        providerLedger: creatorProviderRequestLedger,
+        providerCapabilities: createUploadPostProviderCapabilities({
+          configStore: creatorServicesConfigStore
+        })
       });
   autoClipWorkflow = creatorStageRunner === undefined
     ? undefined

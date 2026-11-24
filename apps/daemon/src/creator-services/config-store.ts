@@ -107,6 +107,13 @@ const legacyVideoConfigSchema = z.object({
   ...structuredClone(videoConfigDefault),
   provider: 'seedance' as const
 }));
+const publishingConfigSchema = z.object({
+  provider: z.literal('upload-post'),
+  uploadPost: z.object({
+    apiKey: boundedString(4096),
+    profile: z.string().trim().max(256)
+  }).strict()
+}).strict();
 const legacyAliyunTtsSchema = aliyunSchema.transform(() => (
   structuredClone(creatorServicesDefaults.tts.aliyun)
 ));
@@ -151,7 +158,8 @@ export const creatorServicesConfigSchema = z.object({
   }).strict(),
   tts: ttsConfigSchema,
   image: z.union([imageConfigSchema, legacyImageConfigSchema]),
-  video: z.union([videoConfigSchema, legacyVideoConfigSchema]).default(videoConfigDefault)
+  video: z.union([videoConfigSchema, legacyVideoConfigSchema]).default(videoConfigDefault),
+  publishing: publishingConfigSchema.default(creatorServicesDefaults.publishing)
 }).strict();
 
 export type CreatorServicesConfigStore = {
@@ -339,7 +347,8 @@ export const creatorCredentialPaths = [
   'video.seedance.apiKey',
   'video.kling.accessKey',
   'video.kling.secretKey',
-  'video.veo.apiKey'
+  'video.veo.apiKey',
+  'publishing.uploadPost.apiKey'
 ] as const;
 
 function splitCreatorServiceCredentials(config: CreatorServicesConfig): {
@@ -441,6 +450,9 @@ export function presentCreatorServicesConfig(
   redact('video.kling.accessKey', redacted.video.kling.accessKey, () => { redacted.video.kling.accessKey = ''; });
   redact('video.kling.secretKey', redacted.video.kling.secretKey, () => { redacted.video.kling.secretKey = ''; });
   redact('video.veo.apiKey', redacted.video.veo.apiKey, () => { redacted.video.veo.apiKey = ''; });
+  redact('publishing.uploadPost.apiKey', redacted.publishing.uploadPost.apiKey, () => {
+    redacted.publishing.uploadPost.apiKey = '';
+  });
 
   return { config: redacted, configuredCredentials };
 }
@@ -489,6 +501,11 @@ export function retainCreatorServicesCredentials(
   retainBlank(() => merged.video.kling.accessKey, value => { merged.video.kling.accessKey = value; }, current.video.kling.accessKey);
   retainBlank(() => merged.video.kling.secretKey, value => { merged.video.kling.secretKey = value; }, current.video.kling.secretKey);
   retainBlank(() => merged.video.veo.apiKey, value => { merged.video.veo.apiKey = value; }, current.video.veo.apiKey);
+  retainBlank(
+    () => merged.publishing.uploadPost.apiKey,
+    value => { merged.publishing.uploadPost.apiKey = value; },
+    current.publishing.uploadPost.apiKey
+  );
   for (const path of clearCredentials) writePath(merged, path, '');
   return merged;
 }

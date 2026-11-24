@@ -9,6 +9,7 @@ import {
   type CreatorStageRun
 } from '@opencreator/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ConfirmDialogProvider } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { CreatorSessionProvider, useCreatorSession } from './creator-session-store.js';
 import StickmanVideoWorkspace from './StickmanVideoWorkspace.js';
@@ -881,6 +882,81 @@ describe('StickmanVideoWorkspace', () => {
     );
   });
 
+  it('publishes the delivery to social platforms only after a user confirmation', async () => {
+    const persisted = completedJob();
+    const applyAction = vi.fn(async (_jobId: string, request: Record<string, unknown>) => ({
+      job: persisted.job,
+      receipt: {
+        actor: 'user' as const,
+        action: String(request.action),
+        summary: String(request.action),
+        affectedArtifacts: [],
+        newRevision: persisted.job.revision,
+        createdAt: persisted.job.updatedAt
+      }
+    }));
+    const config = createDefaultCreatorServicesConfig();
+    config.publishing.uploadPost.profile = 'my-brand';
+    const creatorServicesService = {
+      getConfig: vi.fn(async () => ({
+        config,
+        configuredCredentials: ['tts.openai.apiKey', 'image.openai.apiKey', 'publishing.uploadPost.apiKey']
+      })),
+      getTtsVoices: vi.fn(async () => ({ provider: 'openai' as const, model: '', voices: [] })),
+      previewTtsVoice: vi.fn()
+    };
+    persisted.contents.set('manifest', deliveryManifestContent());
+    renderWorkspace(persisted.job, persisted.contents, applyAction, creatorServicesService as never);
+
+    fireEvent.click(screen.getByRole('button', { name: /成片交付/ }));
+    const panel = await screen.findByRole('region', { name: '发布到社交平台' });
+    await waitFor(() => expect(within(panel).getByRole('button', { name: '发布…' })).toBeEnabled());
+    await waitFor(() => expect(within(panel).getByRole('textbox', { name: '标题 / 文案' })).toHaveValue('测试脚本'));
+    fireEvent.click(within(panel).getByRole('button', { name: '发布…' }));
+    expect(applyAction).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: '发布' }));
+
+    await waitFor(() => expect(applyAction).toHaveBeenCalledTimes(2));
+    expect(applyAction.mock.calls[0]?.[1]).toMatchObject({
+      action: 'confirm-social-publish',
+      input: {
+        platforms: ['youtube', 'linkedin'],
+        title: '测试脚本',
+        youtubePrivacy: 'private',
+        deliveryManifestArtifactId: 'manifest'
+      }
+    });
+    expect(applyAction.mock.calls[1]?.[1]).toMatchObject({
+      action: 'run-stage',
+      input: { stageId: 'social-publish' }
+    });
+  });
+
+  it('does not offer publishing for a technical draft delivery', async () => {
+    const persisted = completedJob();
+    persisted.contents.set('manifest', deliveryManifestContent({
+      packageStatus: 'technical-draft',
+      placeholderAssets: ['shot-02'],
+      blockingChecks: ['visual_ocr_unverified']
+    }));
+    const applyAction = vi.fn();
+    const config = createDefaultCreatorServicesConfig();
+    config.publishing.uploadPost.profile = 'my-brand';
+    const creatorServicesService = {
+      getConfig: vi.fn(async () => ({ config, configuredCredentials: ['publishing.uploadPost.apiKey'] })),
+      getTtsVoices: vi.fn(async () => ({ provider: 'openai' as const, model: '', voices: [] })),
+      previewTtsVoice: vi.fn()
+    };
+    renderWorkspace(persisted.job, persisted.contents, applyAction as never, creatorServicesService as never);
+
+    fireEvent.click(screen.getByRole('button', { name: /成片交付/ }));
+    const panel = await screen.findByRole('region', { name: '发布到社交平台' });
+    expect(await within(panel).findByText('未通过的发布检查：visual_ocr_unverified')).toBeInTheDocument();
+    expect(within(panel).getByText('仍有占位素材：shot-02')).toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: '发布…' })).not.toBeInTheDocument();
+    expect(applyAction).not.toHaveBeenCalled();
+  });
+
   it('scrolls only storyboard content and keeps back and next actions visible', async () => {
     const persisted = completedJob({ withSnapshot: false });
     const applyAction = vi.fn(async (_jobId: string, request: Record<string, unknown>) => ({
@@ -1213,6 +1289,7 @@ function renderWorkspace(
   });
   const workspace = (previewOptions: typeof options) => (
     <LanguageProvider initialPreference="zh-CN">
+      <ConfirmDialogProvider>
       <CreatorSessionProvider
         initialJob={initialJob}
         onPreJobFailure={() => undefined}
@@ -1232,6 +1309,7 @@ function renderWorkspace(
         />
         {previewOptions.children}
       </CreatorSessionProvider>
+      </ConfirmDialogProvider>
     </LanguageProvider>
   );
   const view = render(workspace(options));
@@ -1697,5 +1775,19 @@ function partialStoryboardJob(status: 'idle' | 'failed' | 'running') {
       }
     },
     contents
+  };
+}
+
+function deliveryManifestContent(verdict: {
+  packageStatus?: 'publishable' | 'technical-draft';
+  placeholderAssets?: string[];
+  blockingChecks?: string[];
+} = {}) {
+  return {
+    packageStatus: verdict.packageStatus ?? 'publishable',
+    ratio: '16:9',
+    placeholderAssets: verdict.placeholderAssets ?? [],
+    blockingChecks: verdict.blockingChecks ?? [],
+    files: []
   };
 }

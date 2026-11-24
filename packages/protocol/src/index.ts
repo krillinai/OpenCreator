@@ -20,3 +20,4 @@ export * from './gateway-account.js';
 export * from './platform-connections.js';
 export * from './creator-languages.js';
 export * from './subtitle-render.js';
+export * from './social-publish.js';

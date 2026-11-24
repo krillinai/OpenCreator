@@ -1569,6 +1569,7 @@ function summarizeAction(action: string, input: Record<string, CreatorJson>): st
   if (action === 'import-subtitle') return 'Imported local subtitles and retained previous versions';
   if (action === 'edit-subtitle') return 'Updated subtitles and retained previous downstream versions';
   if (action === 'commit-version') return 'Saved project version settings';
+  if (action === 'confirm-social-publish') return 'Confirmed publishing to social platforms';
   if (action === 'run-stage') return `Started stage ${String(input.stageId ?? '')}`.trim();
   if (action === 'retry-stage') return `Retried stage ${String(input.stageId ?? '')}`.trim();
   if (action === 'resolve-provider-request') return 'Resolved a billed service request';

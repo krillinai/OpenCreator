@@ -4,6 +4,7 @@ import {
   stickmanOutputPresets,
   stickmanRatios
 } from '@opencreator/protocol';
+import { socialPublishConfirmationInputSchema } from '../stickman/social-publish.js';
 import type { CreatorTemplateAction, CreatorTemplateDefinition, CreatorTemplateStage } from './types.js';
 
 const jsonRecord = z.record(z.string(), z.unknown());
@@ -93,7 +94,8 @@ export const stickmanVideoStageIds = [
   'timeline',
   'render-clean',
   'media-validation',
-  'package-validation'
+  'package-validation',
+  'social-publish'
 ] as const;
 
 export function createStickmanVideoTemplate(): CreatorTemplateDefinition {
@@ -134,7 +136,24 @@ export function createStickmanVideoTemplate(): CreatorTemplateDefinition {
         { kind: 'thumbnail', status: 'completed' },
         { kind: 'publish_copy', status: 'completed' },
         { kind: 'delivery_manifest', status: 'completed' }
-      ] })
+      ] }),
+      // Never queued by the workflow: it runs only after a user-only
+      // `confirm-social-publish`, and publishes that confirmation at most once.
+      {
+        id: 'social-publish',
+        executor: 'upload-post-publish',
+        dependsOn: ['package-validation'],
+        optional: true,
+        allowedJobStatuses: ['completed', 'failed', 'needs_input'],
+        jobCompletionPolicy: 'complete',
+        resultVersionPolicy: 'none',
+        invalidateDependentArtifacts: false,
+        inputArtifacts: [
+          { kind: 'clean_video', selector: 'latest-completed' },
+          { kind: 'delivery_manifest', selector: 'latest-completed' }
+        ],
+        outputArtifacts: [{ kind: 'social_publish_result', status: 'completed' }]
+      }
     ],
     actions: [
       action('update-settings', z.object({ patch: jsonRecord, activityMode: z.enum(['draft', 'semantic']).optional(), objectId: z.string().optional() }).strict(), allStages),
@@ -147,6 +166,7 @@ export function createStickmanVideoTemplate(): CreatorTemplateDefinition {
       action('generate-missing-shots', z.object({ revision: z.number().int().nonnegative() }).strict(), ['images', 'visual-validation']),
       action('run-stage', z.object({ stageId, baseResultVersion: positiveVersion.optional(), inputResultVersion: positiveVersion.optional(), targetResultVersion: positiveVersion.optional() }).strict(), allStages),
       action('commit-version', z.object({ baseResultVersion: positiveVersion }).strict(), ['package-validation']),
+      action('confirm-social-publish', socialPublishConfirmationInputSchema, ['package-validation', 'social-publish']),
       action('retry-stage', z.object({ stageId, scopeKey: scopeKey.optional() }).strict(), allStages),
       action('resolve-provider-request', z.discriminatedUnion('decision', [
         z.object({ ledgerId: z.string().min(1), revision: z.number().int().nonnegative(), decision: z.literal('query') }).strict(),
@@ -162,6 +182,6 @@ export function createStickmanVideoTemplate(): CreatorTemplateDefinition {
       { kind: 'publish_copy', required: true },
       { kind: 'delivery_manifest', required: true }
     ],
-    agentGuidance: '按脚本、配音、分镜画面、动画合成和成片交付的阶段边界推进；计费请求未知时只能建议用户显式处置。'
+    agentGuidance: '按脚本、配音、分镜画面、动画合成和成片交付的阶段边界推进；计费请求未知时只能建议用户显式处置。发布到社交平台只能由用户在成片交付页确认，Agent 不得确认或代替用户发布。'
   };
 }
