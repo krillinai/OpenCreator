@@ -56,6 +56,10 @@ func DownloadFile(urlStr, filepath, proxyAddr string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("下载失败: %s 返回状态码 %d", urlStr, resp.StatusCode)
+	}
+
 	size := resp.ContentLength
 	fmt.Printf("文件大小: %.2f MB\n", float64(size)/1024/1024)
 
@@ -63,7 +67,6 @@ func DownloadFile(urlStr, filepath, proxyAddr string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
 	// 带有进度的 Reader
 	progress := &progressWriter{
@@ -72,7 +75,13 @@ func DownloadFile(urlStr, filepath, proxyAddr string) error {
 	reader := io.TeeReader(resp.Body, progress)
 
 	_, err = io.Copy(out, reader)
+	closeErr := out.Close()
+	if err == nil {
+		err = closeErr
+	}
 	if err != nil {
+		// 不留下半截文件，否则后续 os.Stat 检查会误以为已下载
+		_ = os.Remove(filepath)
 		return err
 	}
 	fmt.Printf("\n") // 进度信息结束，换新行
