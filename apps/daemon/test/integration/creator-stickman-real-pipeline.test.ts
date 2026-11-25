@@ -597,6 +597,7 @@ function configuredTts(config: CreatorServicesConfig): {
   voiceId: string;
 } {
   const provider = config.tts.provider;
+  if (provider === 'omnivoice') throw new Error('This fixture requires a cloud speech provider');
   if (provider === 'edge-tts') {
     throw new Error('真实火柴人 E2E 必须配置真实配音服务，不能使用本地 edge-tts');
   }

@@ -12,6 +12,22 @@ import {
 
 describe('KrillinTtsService', () => {
   const roots: string[] = [];
+  it('lists local OmniVoice languages without starting Python and previews the selected language', async () => {
+    const root = await temporaryRoot();
+    const config = createDefaultCreatorServicesConfig();
+    const executeSynthesis = vi.fn(async () => ({ content: Buffer.from('audio'), format: 'wav' as const }));
+    const service = createKrillinTtsService({
+      resourceRoot: root, workRoot: root, configStore: createConfigStore(config), executeSynthesis
+    });
+    const list = await service.listVoices('omnivoice');
+    expect(list.voices.map(v => v.language)).toEqual(expect.arrayContaining(['ms', 'id', 'th']));
+    expect(executeSynthesis).not.toHaveBeenCalled();
+    await service.preview({ provider: 'omnivoice', voiceId: 'omnivoice-ms' });
+    expect(executeSynthesis).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'omnivoice', model: 'k2-fsa/OmniVoice', text: 'Helo, ini contoh suara yang dipilih.'
+    }));
+  });
+
 
   afterEach(async () => {
     vi.unstubAllGlobals();

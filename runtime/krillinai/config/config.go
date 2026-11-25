@@ -118,11 +118,12 @@ type AliyunTtsConfig struct {
 }
 
 type Tts struct {
-	Provider   string                 `toml:"provider"`
-	Openai     OpenaiCompatibleConfig `toml:"openai"`
-	Aliyun     AliyunTtsConfig        `toml:"aliyun"`
-	Minimax    OpenaiCompatibleConfig `toml:"minimax"`
-	Volcengine VolcengineTtsConfig    `toml:"volcengine"`
+	OmniVoiceReference string                 `toml:"omnivoice_reference"`
+	Provider           string                 `toml:"provider"`
+	Openai             OpenaiCompatibleConfig `toml:"openai"`
+	Aliyun             AliyunTtsConfig        `toml:"aliyun"`
+	Minimax            OpenaiCompatibleConfig `toml:"minimax"`
+	Volcengine         VolcengineTtsConfig    `toml:"volcengine"`
 }
 
 type Dubbing struct {
@@ -307,7 +308,7 @@ func ValidateTTSConfig() error {
 		if !strings.HasPrefix(Conf.Tts.Volcengine.Cluster, "seed-") && Conf.Tts.Volcengine.AppId == "" {
 			return errors.New("使用旧版火山引擎配音服务需要配置 App ID")
 		}
-	case "edge-tts":
+	case "omnivoice", "edge-tts":
 		return nil
 	default:
 		return errors.New("不支持的配音提供商")

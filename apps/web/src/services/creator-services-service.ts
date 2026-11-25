@@ -20,7 +20,8 @@ export type NetworkTestResult =
   | { status: 'upstream_unreachable' }
   | { status: 'reachable'; httpStatus: number };
 
-export type CreatorServicesSettingsService = Omit<ReturnType<typeof createCreatorServicesService>, 'getCodexImageStatus' | 'getCodexModelStatus' | 'getNetwork' | 'saveNetwork' | 'testNetwork' | 'getLocalVideoConfig' | 'saveLocalVideoConfig'> & {
+export type CreatorServicesSettingsService = Omit<ReturnType<typeof createCreatorServicesService>, 'uploadOmniVoiceReference' | 'getCodexImageStatus' | 'getCodexModelStatus' | 'getNetwork' | 'saveNetwork' | 'testNetwork' | 'getLocalVideoConfig' | 'saveLocalVideoConfig'> & {
+  uploadOmniVoiceReference?: (file: File) => Promise<{ path: string }>;
   getCodexImageStatus?: () => Promise<CodexImageStatus>;
   getCodexModelStatus?: () => Promise<CodexProviderConfig>;
   getNetwork?: () => Promise<{ proxy: string }>;
@@ -32,6 +33,13 @@ export type CreatorServicesSettingsService = Omit<ReturnType<typeof createCreato
 
 export function createCreatorServicesService(client: ClientLike) {
   return {
+    async uploadOmniVoiceReference(file: File): Promise<{ path: string }> {
+      const res = await client.rawRequest('/creator-services/tts/omnivoice/reference', {
+        method: 'POST', binaryBody: file, binaryContentType: 'application/vnd.opencreator.omnivoice-reference'
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => undefined))?.message || 'Upload failed (' + res.status + ')');
+      return res.json();
+    },
     getNetwork(): Promise<{ proxy: string }> { return client.get('/creator-services/network'); },
     saveNetwork(network: { proxy: string }): Promise<{ proxy: string }> { return client.patch('/creator-services/network', network); },
     testNetwork(network: { proxy: string }): Promise<NetworkTestResult> { return client.post('/creator-services/network/test', network); },

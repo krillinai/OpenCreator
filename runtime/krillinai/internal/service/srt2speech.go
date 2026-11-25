@@ -8,6 +8,7 @@ import (
 	"krillin-ai/internal/service/dubbing"
 	"krillin-ai/internal/storage"
 	"krillin-ai/internal/types"
+	"krillin-ai/pkg/localtts"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -214,7 +215,14 @@ func (s Service) srtFileToSpeech(ctx context.Context, stepParam *types.SubtitleT
 	if s.VoiceCloneClient != nil {
 		clone = s.VoiceCloneClient.CosyVoiceClone
 	}
-	voiceCode, err := resolveDubbingVoiceCode(stepParam.TtsVoiceCode, stepParam.VoiceCloneAudioUrl, clone)
+	tts := s.TtsClient
+	cloneSource := stepParam.VoiceCloneAudioUrl
+	if local, ok := tts.(localtts.OmniVoice); ok && cloneSource != "" {
+		local.Reference = cloneSource
+		tts = local
+		cloneSource = ""
+	}
+	voiceCode, err := resolveDubbingVoiceCode(stepParam.TtsVoiceCode, cloneSource, clone)
 	if err != nil {
 		return err
 	}
@@ -230,7 +238,7 @@ func (s Service) srtFileToSpeech(ctx context.Context, stepParam *types.SubtitleT
 
 	phase, phaseStart, phaseEnd, phaseLabel := "planning_voice", 20, 20, "正在规划配音片段"
 	runner := dubbing.NewRunner(dubbing.Dependencies{
-		TTS:         s.TtsClient,
+		TTS:         tts,
 		Chat:        s.ChatCompleter,
 		Language:    stepParam.TargetLanguage,
 		SourceSRT:   sourceSRT,

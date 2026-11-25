@@ -74,6 +74,8 @@ func NewService() *Service {
 		ttsClient, _ = ttsprovider.New("openai")
 	case "aliyun":
 		ttsClient, _ = ttsprovider.New("aliyun")
+	case "omnivoice":
+		ttsClient = localtts.OmniVoice{Reference: config.Conf.Tts.OmniVoiceReference}
 	case "edge-tts":
 		ttsClient = localtts.NewEdgeTtsClient()
 	case "minimax":

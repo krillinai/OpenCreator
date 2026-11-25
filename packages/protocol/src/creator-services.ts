@@ -9,7 +9,7 @@ export type OpenAiCompatibleConfig = {
   model: string;
 };
 
-export const creatorTtsProviders = ['openai', 'aliyun', 'edge-tts', 'minimax', 'volcengine'] as const;
+export const creatorTtsProviders = ['openai', 'aliyun', 'edge-tts', 'omnivoice', 'minimax', 'volcengine'] as const;
 export type CreatorTtsProvider = (typeof creatorTtsProviders)[number];
 
 export function isCreatorTtsProvider(value: unknown): value is CreatorTtsProvider {
@@ -54,6 +54,24 @@ export type CreatorTtsVoice = Omit<GatewayVoiceProfile, 'gender'> & {
   supportedModels?: string[];
   recommended?: boolean;
 };
+
+export const omniVoiceModel = 'k2-fsa/OmniVoice';
+
+export type OmniVoiceProfile = {
+  id: string; name: string; region?: string; language: string; gender?: 'male' | 'female'; referenceAudio: string;
+};
+
+export function localOmniVoiceVoices(profiles: readonly OmniVoiceProfile[] = []): CreatorTtsVoice[] {
+  const languages = ['ms', 'id', 'th', 'zh', 'en', 'vi', 'ja', 'ko', 'es', 'fr', 'de', 'pt', 'ru', 'it'];
+  return [...languages.map((language): CreatorTtsVoice => ({
+    id: 'omnivoice-' + language, name: 'OmniVoice · ' + language.toUpperCase(), language, provider: 'omnivoice',
+    kind: 'builtin', supportedModels: [omniVoiceModel]
+  })), ...profiles.map((voice): CreatorTtsVoice => ({
+    id: voice.id, name: voice.region ? voice.region + ' · ' + voice.name : voice.name, language: voice.language,
+    ...(voice.gender ? { gender: voice.gender } : {}),
+    provider: 'omnivoice', kind: 'custom', supportedModels: [omniVoiceModel]
+  }))];
+}
 
 export type CreatorTtsVoicesResponse = {
   provider: CreatorTtsProvider;
@@ -130,6 +148,7 @@ export type CreatorServicesConfig = {
   };
   tts: {
     provider: CreatorTtsProvider;
+    omnivoice: { model: string; defaultVoiceId: string; referenceAudio: string; profiles?: OmniVoiceProfile[] };
     openai: CreatorTtsProviderConfig;
     minimax: CreatorTtsProviderConfig;
     aliyun: CreatorTtsProviderConfig;
@@ -324,6 +343,7 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
     },
     tts: {
       provider: 'openai',
+      omnivoice: { model: omniVoiceModel, defaultVoiceId: 'omnivoice-zh', referenceAudio: '' },
       openai: {
         baseUrl: '',
         apiKey: '',

@@ -1820,6 +1820,7 @@ function createVideoConfig() {
       funasr: { baseUrl: 'http://127.0.0.1:8000/v1', apiKey: '', model: 'sensevoice', timeoutMs: 120000 }
     },
     tts: {
+      omnivoice: { model: 'k2-fsa/OmniVoice', defaultVoiceId: 'omnivoice-zh', referenceAudio: '' },
       provider: 'openai' as const,
       openai: { baseUrl: '', apiKey: '', model: '', defaultVoiceId: '' },
       minimax: { baseUrl: '', apiKey: '', model: '', defaultVoiceId: '' },

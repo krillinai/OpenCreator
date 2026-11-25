@@ -117,7 +117,7 @@ function readRequest(state: Record<string, CreatorJson>): {
     );
   }
   const provider = readString(state.ttsProvider);
-  if (provider !== undefined && !['openai', 'aliyun', 'minimax'].includes(provider)) {
+  if (provider !== undefined && !['openai', 'aliyun', 'minimax', 'omnivoice'].includes(provider)) {
     throw new CreatorExecutorError(
       'unsupported_capability',
       'The selected TTS provider does not support smart dubbing'

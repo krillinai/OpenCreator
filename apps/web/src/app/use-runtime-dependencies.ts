@@ -10,6 +10,7 @@ export type RuntimeDependencyPhase =
   | 'updating';
 
 export type RuntimeDependenciesController = {
+  omniVoice?: Pick<RuntimeDependencyService, 'getOmniVoiceComponent' | 'downloadOmniVoiceComponent'>;
   componentsStatus?: CreatorRuntimeComponentsResponse;
   componentError?: string;
   refreshComponents?(): Promise<void>;
@@ -185,6 +186,7 @@ export function useRuntimeDependencies(input: {
   }, [input.connected, input.service, pageIssues.captureOperationFailure, pageIssues.resolveOperation]);
 
   return {
+    ...(input.connected && input.service ? { omniVoice: input.service } : {}),
     componentsStatus, componentError, refreshComponents, downloadComponents,
     ytDlpStatus,
     phase,

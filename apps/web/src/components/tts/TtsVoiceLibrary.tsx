@@ -30,6 +30,7 @@ export function TtsVoiceLibrary(props: {
   options: VoiceLibraryOption[];
   loading: boolean;
   disabled?: boolean;
+  importAction?: import('react').ReactNode;
   canRefresh: boolean;
   canPreview: boolean;
   previewVoiceId: string;
@@ -92,6 +93,7 @@ export function TtsVoiceLibrary(props: {
   return <section className="tts-voice-library" aria-labelledby={`${props.id}-library-label`}>
     <div className="tts-voice-library-heading">
       <h2 id={`${props.id}-library-label`}><AudioLines size={17} aria-hidden="true" />{props.label}</h2>
+      {props.importAction}
       <small>{filtered.length} / {props.options.length}</small>
       <button className="tts-voice-library-refresh" type="button" disabled={disabled || !props.canRefresh}
         aria-label={l('刷新音色列表', 'Refresh voices')} title={l('刷新音色列表', 'Refresh voices')} onClick={props.onRefresh}>

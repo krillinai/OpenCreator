@@ -1,3 +1,4 @@
+import { OmniVoiceLibrary } from './OmniVoiceLibrary.js';
 import SuggestedInput from '../../components/forms/SuggestedInput.js';
 import AppSelect from '../../components/forms/Select.js';
 import {
@@ -978,6 +979,7 @@ function TtsSettings(props: SettingsGroupProps & {
           ['minimax', 'MiniMax'],
           ['aliyun', l('阿里云百炼', 'Alibaba Cloud Model Studio')],
           ['volcengine', l('火山引擎', 'Volcengine')],
+          ['omnivoice', l('本地 OmniVoice', 'Local OmniVoice')],
           ['edge-tts', 'Edge TTS']
         ]}
         onChange={value => props.update(config => {
@@ -1056,6 +1058,10 @@ function TtsSettings(props: SettingsGroupProps & {
           </p>
         </>
       ) : null}
+      {provider === 'omnivoice' && <OmniVoiceLibrary profiles={props.config.tts.omnivoice.profiles} service={props.service}
+        onAdd={profile => { props.update(config => { (config.tts.omnivoice.profiles ??= []).push(profile); config.tts.omnivoice.defaultVoiceId = profile.id; }); return true; }}
+        referenceAudio={props.config.tts.omnivoice.referenceAudio}
+        onSaveReference={path => { props.update(config => { config.tts.omnivoice.referenceAudio = path; }); return true; }} />}
       {provider !== 'edge-tts' ? (
         <div className="creator-services-tts-voice">
           <TtsVoicePicker

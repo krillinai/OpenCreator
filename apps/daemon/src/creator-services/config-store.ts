@@ -125,7 +125,16 @@ const volcengineTtsSchema = z.object({
   appId: value.appId
 }));
 const ttsConfigSchema = z.object({
-  provider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax', 'volcengine']),
+  provider: z.enum(['openai', 'aliyun', 'edge-tts', 'omnivoice', 'minimax', 'volcengine']),
+  omnivoice: z.object({
+    model: z.literal('k2-fsa/OmniVoice'), defaultVoiceId: boundedString(128), referenceAudio: boundedString(4096),
+    profiles: z.array(z.object({
+      id: z.string().regex(/^omnivoice-custom-[0-9a-f-]{36}$/), name: z.string().trim().min(1).max(64),
+      region: z.string().trim().min(1).max(64).optional(), gender: z.enum(['male', 'female']).optional(),
+      language: z.enum(['ms','id','th','zh','en','vi','ja','ko','es','fr','de','pt','ru','it']),
+      referenceAudio: z.string().min(1).max(4096)
+    }).strict()).max(500).refine(items => new Set(items.map(item => item.id)).size === items.length).optional()
+  }).strict().default({ model: 'k2-fsa/OmniVoice', defaultVoiceId: creatorServicesDefaults.tts.omnivoice.defaultVoiceId, referenceAudio: '' }),
   openai: ttsProviderSchema(creatorServicesDefaults.tts.openai.defaultVoiceId),
   minimax: ttsProviderSchema(creatorServicesDefaults.tts.minimax.defaultVoiceId),
   aliyun: z.union([

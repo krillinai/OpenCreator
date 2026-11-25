@@ -54,6 +54,7 @@ export function createKrillinConfigToml(
     },
     tts: {
       provider: config.tts.provider,
+      omnivoice_reference: config.tts.provider === 'omnivoice' ? config.tts.omnivoice.referenceAudio : undefined,
       openai: ttsProvider(config.tts.openai),
       minimax: ttsProvider(config.tts.minimax),
       aliyun: ttsProvider(config.tts.aliyun),

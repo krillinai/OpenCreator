@@ -1,3 +1,5 @@
+import { synthesizeOmniVoice } from './omnivoice.js';
+import { localOmniVoiceVoices } from '@opencreator/protocol';
 import type {
   CreatorServicesConfig,
   CreatorTtsPreviewRequest,
@@ -104,6 +106,23 @@ export type KrillinTtsSynthesisResult = {
   language?: string;
 };
 
+const PREVIEW_SAMPLE_TEXTS: Record<string, string> = {
+  zh: '你好，这是当前音色的试听效果。',
+  en: 'Hello, this is a preview of the selected voice.',
+  ja: 'こんにちは、選択した音声のサンプルです。',
+  ko: '안녕하세요, 선택한 음성의 미리듣기입니다.',
+  id: 'Halo, ini contoh suara yang dipilih.',
+  vi: 'Xin chào, đây là bản xem trước của giọng đọc.',
+  th: 'สวัสดี นี่คือตัวอย่างเสียงที่เลือก',
+  ru: 'Здравствуйте, это пример выбранного голоса.',
+  es: 'Hola, esta es una muestra de la voz seleccionada.',
+  pt: 'Olá, esta é uma prévia da voz selecionada.',
+  fr: 'Bonjour, ceci est un aperçu de la voix sélectionnée.',
+  de: 'Hallo, dies ist eine Vorschau der ausgewählten Stimme.',
+  it: 'Ciao, questa è un anteprima della voce selezionata.',
+  ms: 'Helo, ini contoh suara yang dipilih.',
+};
+
 export type KrillinTtsService = ReturnType<typeof createKrillinTtsService>;
 
 export class KrillinTtsServiceError extends Error {
@@ -179,7 +198,7 @@ export function createKrillinTtsService(input: {
       return { provider, model: '', voices: [] };
     }
     const prepared = prepareConfig(config, provider, model);
-    const bundledVoices = listBundledTtsVoices(provider, prepared.model);
+    const bundledVoices = provider === 'omnivoice' ? localOmniVoiceVoices(config.tts.omnivoice.profiles) : listBundledTtsVoices(provider, prepared.model);
     if (bundledVoices !== undefined) {
       return {
         provider,
@@ -304,8 +323,14 @@ export function createKrillinTtsService(input: {
       if (gatewayCreatorBinding(await input.configStore.read())) {
         throw new KrillinTtsServiceError('creator_tts_upstream_error', 'This voice sample is temporarily unavailable', 503);
       }
+      let sample = PREVIEW_SAMPLE_TEXTS.zh!;
+      if (request.provider === 'omnivoice' && !request.text?.trim()) {
+        const { tts } = await input.configStore.read();
+        const voice = localOmniVoiceVoices(tts.omnivoice.profiles).find(item => item.id === request.voiceId);
+        sample = PREVIEW_SAMPLE_TEXTS[voice?.language ?? 'en'] ?? PREVIEW_SAMPLE_TEXTS.en!;
+      }
       return synthesize({
-        text: request.text?.trim() || '你好，这是当前音色的试听效果。',
+        text: request.text?.trim() || sample,
         provider: request.provider,
         model: request.model,
         voiceId: request.voiceId,
@@ -332,6 +357,7 @@ function ensureCredentials(
   config: CreatorServicesConfig,
   provider: Exclude<CreatorTtsProvider, 'edge-tts'>
 ): void {
+  if (provider === 'omnivoice') return;
   if (provider === 'volcengine') {
     const value = config.tts.volcengine;
     if (value.accessToken.trim() && (
@@ -400,6 +426,18 @@ function ensureSuccessfulResponse(response: KrillinUtilityResponse): void {
 async function executeProviderSynthesis(
   input: ExecuteSynthesisInput & { timeoutMs: number }
 ): Promise<ExecuteSynthesisResult> {
+  if (input.provider === 'omnivoice') {
+    const local = input.config.tts.omnivoice;
+    const profile = local.profiles?.find(v => v.id === input.voiceId);
+    const voice = profile ?? localOmniVoiceVoices().find(v => v.id === input.voiceId);
+    if (!voice?.language) throw new KrillinTtsServiceError('VALIDATION_FAILED', 'Select an OmniVoice voice for the target language', 400);
+    try {
+      return await synthesizeOmniVoice({ text: input.text, speed: input.speed, format: input.format,
+        language: voice.language, reference: profile?.referenceAudio ?? local.referenceAudio, signal: input.signal });
+    } catch (error) {
+      throw new KrillinTtsServiceError('creator_tts_runtime_unavailable', error instanceof Error ? error.message : 'OmniVoice synthesis failed', 503);
+    }
+  }
   if (input.provider === 'aliyun') return synthesizeAliyun(input);
   if (input.provider === 'minimax') return synthesizeMinimax(input);
   if (input.provider === 'volcengine') return synthesizeVolcengine(input);

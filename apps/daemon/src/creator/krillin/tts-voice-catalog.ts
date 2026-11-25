@@ -1,3 +1,4 @@
+import { localOmniVoiceVoices } from '@opencreator/protocol';
 import type {
   CreatorTtsProvider,
   CreatorTtsVoice
@@ -88,6 +89,7 @@ export function listBundledTtsVoices(
   provider: Exclude<CreatorTtsProvider, 'edge-tts'>,
   model: string
 ): CreatorTtsVoice[] | undefined {
+  if (provider === 'omnivoice') return localOmniVoiceVoices();
   if (provider === 'openai') {
     return openAiVoices.map(voice => ({ ...voice }));
   }

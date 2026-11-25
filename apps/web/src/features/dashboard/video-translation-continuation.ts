@@ -20,7 +20,7 @@ export function saveTranslationContinuation(value: PendingTranslationComposition
 }
 export function clearTranslationContinuation(): void { sessionStorage.removeItem(key); }
 export function ttsServiceConfigured(response: CreatorServicesConfigResponse, provider: CreatorTtsProvider): boolean {
-  if (provider === 'edge-tts') return true;
+  if (provider === 'omnivoice' || provider === 'edge-tts') return true;
   const credentials = new Set<string>(response.configuredCredentials);
   if (provider === 'volcengine') return ['appId', 'accessToken'].every(field => (
     credentials.has(`tts.volcengine.${field}`) || Boolean(response.config.tts.volcengine[field as 'appId' | 'accessToken'].trim())

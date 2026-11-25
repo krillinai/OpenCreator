@@ -1287,6 +1287,7 @@ function ttsCredentialsConfigured(
   provider: CreatorTtsProvider,
   response: CreatorServicesConfigResponse
 ): boolean {
+  if (provider === 'omnivoice') return false;
   if (provider === 'edge-tts') return true;
   if (provider === 'volcengine') {
     const value = response.config.tts.volcengine;

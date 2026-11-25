@@ -42,6 +42,7 @@ export const creatorProviderCatalog = [
   entry({ id: 'openai-tts', kind: 'tts', label: 'OpenAI Voice', protocol: 'openai-compatible', defaultBaseUrl: 'https://api.openai.com/v1', models: [{ id: 'gpt-4o-mini-tts', label: 'GPT-4o mini TTS', recommended: true }], credentials: ['apiKey'], capabilities: ['speech-generation', 'voice-preview'], status: 'supported' }),
   entry({ id: 'minimax-tts', kind: 'tts', label: 'MiniMax Voice', protocol: 'openai-compatible', defaultBaseUrl: 'https://api.minimax.io', models: [{ id: 'speech-2.8-hd', label: 'Speech 2.8 HD', recommended: true }], credentials: ['apiKey'], capabilities: ['speech-generation', 'voice-preview'], status: 'supported' }),
   entry({ id: 'aliyun-tts', kind: 'tts', label: 'Alibaba Cloud Voice', protocol: 'openai-compatible', defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1', models: [{ id: 'qwen3-tts-flash', label: 'Qwen3 TTS Flash', recommended: true }], credentials: ['apiKey'], capabilities: ['speech-generation', 'voice-preview'], status: 'supported' }),
+  entry({ id: 'omnivoice-tts', kind: 'tts', label: 'OmniVoice', protocol: 'custom', models: [{ id: 'k2-fsa/OmniVoice', label: 'OmniVoice' }], credentials: [], capabilities: ['speech-generation', 'voice-preview'], status: 'supported' }),
   entry({ id: 'edge-tts', kind: 'tts', label: 'Edge TTS', protocol: 'custom', models: [], credentials: [], capabilities: ['speech-generation'], status: 'supported' })
 ] as const;
 

@@ -249,7 +249,7 @@ function hasTtsCredentials(
   services: CreatorServicesConfig,
   provider: string
 ): boolean {
-  return (provider === 'openai' || provider === 'aliyun' || provider === 'minimax')
+  return provider === 'omnivoice' || (provider === 'openai' || provider === 'aliyun' || provider === 'minimax')
     && services.tts[provider].apiKey.trim() !== '';
 }
 

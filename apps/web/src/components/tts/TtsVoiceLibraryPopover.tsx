@@ -75,11 +75,14 @@ export function TtsVoiceLibraryPopover(props: {
 
   useEffect(() => {
     if (!expanded) return;
+    // The import dialog is portalled to document.body and opens a native file picker.
+    const dialogOpen = () => panelRef.current?.querySelector('[aria-haspopup="dialog"][aria-expanded="true"]');
     const outside = (event: Event) => {
+      if (dialogOpen()) return;
       const target = event.target as Node;
       if (!triggerRef.current?.contains(target) && !panelRef.current?.contains(target)) close();
     };
-    const blur = () => close();
+    const blur = () => { if (!dialogOpen()) close(); };
     document.addEventListener('pointerdown', outside);
     document.addEventListener('focusin', outside);
     window.addEventListener('blur', blur);

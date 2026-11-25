@@ -236,7 +236,7 @@ function hasTtsCredentials(
   const provider = isTtsProvider(job.state.ttsProvider)
     ? job.state.ttsProvider
     : config.tts.provider;
-  if (provider === 'edge-tts') return true;
+  if (provider === 'omnivoice' || provider === 'edge-tts') return true;
   if (provider === 'openai') return config.tts.openai.apiKey.length > 0;
   if (provider === 'minimax') return config.tts.minimax.apiKey.length > 0;
   if (provider === 'volcengine') {
@@ -252,7 +252,7 @@ function hasTtsCredentials(
 function isTtsProvider(value: unknown): value is CreatorTtsProvider {
   return value === 'openai'
     || value === 'aliyun'
-    || value === 'edge-tts'
+    || value === 'omnivoice' || value === 'edge-tts'
     || value === 'minimax'
     || value === 'volcengine';
 }
