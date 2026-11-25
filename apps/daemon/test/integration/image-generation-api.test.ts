@@ -74,6 +74,17 @@ describe('image generation API', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['prompt blocked', { promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } }, 'PROHIBITED_CONTENT'],
+    ['image safety finish', { candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [{ text: 'I cannot create that image.' }] } }] }, 'IMAGE_SAFETY']
+  ])('surfaces Gemini safety blocks instead of a generic no-image error (%s)', async (_name, payload, reason) => {
+    const config = createDefaultCreatorServicesConfig();
+    config.image.gemini.apiKey = 'test-key';
+    const fetchImpl = vi.fn(async () => Response.json(payload));
+    await expect(generateImageContents({ prompt: 'A city', provider: 'gemini', size: '1024x1024', quality: 'medium', count: 1 }, config, { fetchImpl }))
+      .rejects.toThrow(new RegExp(`blocked.*${reason}`));
+  });
+
   it('generates and serves native ChatGPT artifacts through the existing image API without HTTP fallback', async () => {
     const home = join(dataDir, 'codex');
     await mkdir(home);
