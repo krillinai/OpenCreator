@@ -386,6 +386,13 @@ async function checkProviderConfig(
   if (stage.executor === 'stickman-audio' && stage.id === 'narration') needs.add('tts');
   if (stage.executor === 'stickman-image') needs.add('image');
   if (stage.executor === 'wechat-article' && stage.id === 'images') needs.add('image');
+  if (stage.executor === 'upload-post-publish') {
+    const uploadPost = config.publishing.uploadPost;
+    if (!uploadPost.apiKey.trim() || !uploadPost.profile.trim()) add('blocked', {
+      id: 'publishing', title: 'Publishing service not configured', message: 'Add the Upload-Post API key and profile.', executionMode: 'remote'
+    }, { label: 'Open publishing settings', deepLink: '#/settings?tab=ai-services&section=publishing' });
+    else add('ready', { id: 'publishing', title: 'Publishing service', message: `Upload-Post / ${uploadPost.profile} is configured.`, executionMode: 'remote' });
+  }
 
   if (needs.has('llm')) {
     if (config.llm.source === 'codex' && stage.executor === 'krillinai' && config.llm.apiKey.trim()) {
@@ -582,7 +589,7 @@ function readVideoProvider(job: CreatorJob, config: CreatorServicesConfig): Crea
   return value === 'seedance' || value === 'kling' || value === 'veo' ? value : config.video.provider;
 }
 function executionMode(stage: CreatorTemplateStage, job: CreatorJob): CreatorPreflightExecutionMode {
-  if (stage.executor === 'image' || stage.executor === 'video' || stage.executor === 'smart-dubbing' || stage.executor === 'stickman-image') return 'remote';
+  if (stage.executor === 'image' || stage.executor === 'video' || stage.executor === 'smart-dubbing' || stage.executor === 'stickman-image' || stage.executor === 'upload-post-publish') return 'remote';
   if (
     stage.executor === 'cover-analysis'
     || (stage.executor === 'clip')
